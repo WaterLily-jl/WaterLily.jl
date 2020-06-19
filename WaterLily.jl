@@ -67,13 +67,20 @@ function MG(cx,cy)
 end
 
 using LinearAlgebra: diag
-function project!(p,ux,uy,cx,cy,ml)
+function project!(p,ux,uy,cx,cy,σ,x,ml)
     n,m = size(p)
-    σ = [@inbounds ∫ˣ∂x(i+1,j,ux)+∫ʸ∂y(i,j+1,uy) for i ∈ 2:n-1, j ∈ 2:m-1][:]
-    x = @inbounds p[2:n-1,2:m-1][:]
+    for i ∈ 2:n-1, j ∈ 2:m-1
+        k = i-1+(n-2)*(j-2)
+        σ[k] = ∫ˣ∂x(i+1,j,ux)+∫ʸ∂y(i,j+1,uy)
+        x[k] = @inbounds p[i,j]
+    end
     solve!(x,ml,σ)
-    x[diag(ml.levels[1].A).==0.] .= 0
-    @inbounds p[2:n-1,2:m-1] .= reshape(x,n-2,m-2).-sum(x)/length(x)
+    # x[diag(ml.levels[1].A).==0.] .= 0
+    x .-= sum(x)/length(x)
+    for i ∈ 2:n-1, j ∈ 2:m-1
+        k = i-1+(n-2)*(j-2)
+        p[i,j] = x[k]
+    end
     for i ∈ 3:n-1, j ∈ 2:m-1
         @inbounds ux[i,j] -= cx[i,j]*∫ˣ∂x(i,j,p)
     end
@@ -89,20 +96,29 @@ end
     f[n,:] .= f[n-1,:]
     f[:,1] .= f[:,2]
     f[:,m] .= f[:,m-1]
+    return
 end
 @fastmath function BCˣ!(f,val)
     n,m = size(f)
-    f[1:2,2:m-1].= val
-    f[n,2:m-1].= val
-    f[:,1] .= f[:,2]
-    f[:,m] .= f[:,m-1]
+    f[1,2:m-1] .= val
+    f[2,2:m-1] .= val
+    f[n,2:m-1] .= val
+    for i ∈ 1:n
+        f[i,1] = f[i,2]
+        f[i,m] = f[i,m-1]
+    end
+    return
 end
 @fastmath function BCʸ!(f,val)
     n,m = size(f)
-    f[2:n-1,1:2].=val
-    f[2:n-1,m].=val
-    f[1,:] .= f[2,:]
-    f[n,:] .= f[n-1,:]
+    f[2:n-1,1] .= val
+    f[2:n-1,2] .= val
+    f[2:n-1,m] .= val
+    for j ∈ 1:m
+        f[1,j] = f[2,j]
+        f[n,j] = f[n-1,j]
+    end
+    return
 end
 
 function mom_transport!(rˣ,rʸ,uˣ,uʸ;ν=0.1)
@@ -131,13 +147,19 @@ function mom_transport!(rˣ,rʸ,uˣ,uʸ;ν=0.1)
     end
 end
 
-function mom_step!(p,uˣ,uʸ,cˣ,cʸ,ml;Δt=0.25,ν=0.1,Uˣ=1.,Uʸ=0.)
-    rˣ = zeros(size(uˣ)); rʸ = zeros(size(uˣ))
-    mom_transport!(rˣ,rʸ,uˣ,uʸ,ν=ν)
-    uˣ .+= Δt.*cˣ.*rˣ; BCˣ!(uˣ,Uˣ)
-    uʸ .+= Δt.*cʸ.*rʸ; BCʸ!(uʸ,Uʸ)
-    p .*= Δt
-    project!(p,uˣ,uʸ,cˣ,cʸ,ml)
-    p ./= Δt
-    BCˣ!(uˣ,Uˣ); BCʸ!(uʸ,Uʸ)
+struct flow
+    uˣ;uʸ;cˣ;cʸ;rˣ;rʸ
+    p
+    ml;σ;p_vec
+end
+
+function mom_step!(a::flow;Δt=0.25,ν=0.1,Uˣ=1.,Uʸ=0.)
+    fill!(a.rˣ,0.); fill!(a.rʸ,0.);
+    mom_transport!(a.rˣ,a.rʸ,a.uˣ,a.uʸ,ν=ν)
+    a.uˣ .+= Δt.*a.cˣ.*a.rˣ; BCˣ!(a.uˣ,Uˣ)
+    a.uʸ .+= Δt.*a.cʸ.*a.rʸ; BCʸ!(a.uʸ,Uʸ)
+    a.p .*= Δt
+    project!(a.p,a.uˣ,a.uʸ,a.cˣ,a.cʸ,a.σ,a.p_vec,a.ml)
+    a.p ./= Δt
+    BCˣ!(a.uˣ,Uˣ); BCʸ!(a.uʸ,Uʸ)
 end
