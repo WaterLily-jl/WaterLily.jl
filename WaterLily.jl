@@ -71,7 +71,7 @@ using AlgebraicMultigrid: solve!,ruge_stuben,GaussSeidel
 function MG(cx,cy)
     n,m = size(cx)
     ruge_stuben(construct(cx[2:n,2:m-1],cy[2:n-1,2:m]),
-        presmoother = GaussSeidel()(iter=0)) # no presmoother
+        presmoother = GaussSeidel(iter=0)) # no presmoother
 end
 
 using LinearAlgebra: diag,norm
