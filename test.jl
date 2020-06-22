@@ -18,14 +18,15 @@ function mom_init(n,m;xr=1:0,yr=1:0)
     return flow(uˣ,uʸ,cˣ,cʸ,rˣ,rʸ,p,MG(cˣ,cʸ),σ,p_vec)
 end
 
-n,m = 128,64; xr = m÷2:m÷2; yr = 3m÷8+2:5m÷8+1
+n,m = 2^7,2^6; xr = m÷2:m÷2; yr = 3m÷8+2:5m÷8+1
 a = mom_init(n,m,xr=xr,yr=yr);
 mom_step!(a,ν=0.01,Δt=0.1)
 a.p[xr,yr] .= -3.
 show(a.p,-3,1)
 
-function updatef()
-    @time for i ∈ 1:1000
+using Profile,ProfileView
+function test(n=1000)
+    @time for i ∈ 1:n
         mom_step!(a,ν=0.01,Δt=0.1)
     end
 end

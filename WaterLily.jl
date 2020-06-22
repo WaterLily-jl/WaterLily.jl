@@ -1,7 +1,7 @@
 using Images,Plots
 show(f) = plot(Gray.(f'[end:-1:1,:]))
 show(f,fmin,fmax) = show((f.-fmin)/(fmax-fmin))
-show_scaled(σ) = show((σ.-minimum(σ))./(maximum(σ)-minimum(σ)))
+show_scaled(σ) = show(σ,minimum(σ),maximum(σ))
 
 function median(a,b,c)
     x = a-b
@@ -22,7 +22,7 @@ end
 @inline ∫ˣ∂x(i,j,f) = @inbounds f[i,j]-f[i-1,j]
 @inline ∫ʸ∂y(i,j,f) = @inbounds f[i,j]-f[i,j-1]
 
-@fastmath function transport!(f,f₀,u,v;Δt=0.25,Pe=0.1)
+@fastmath function tracer_transport!(f,f₀,u,v;Δt=0.25,Pe=0.1)
     n,m = size(f)
     for i ∈ 2:n, j ∈ 2:m
         if i==2 || i==n
@@ -40,10 +40,16 @@ end
         @inbounds f[i,j-1] -= Δt*Φy
     end
 end
+@fastmath function BCᶜ!(f)
+    n,m = size(f)
+    f[1,:] .= f[2,:]
+    f[n,:] .= f[n-1,:]
+    f[:,1] .= f[:,2]
+    f[:,m] .= f[:,m-1]
+    return
+end
 
 using SparseArrays: sparse
-using AlgebraicMultigrid: solve!,ruge_stuben
-
 function construct(cx,cy)
     # get dimensions
     n,m = size(cy,1),size(cx,2)
@@ -61,12 +67,14 @@ function construct(cx,cy)
     return sparse(I,J,V) # return sparse Poisson matrix
 end
 
+using AlgebraicMultigrid: solve!,ruge_stuben,GaussSeidel
 function MG(cx,cy)
     n,m = size(cx)
-    ruge_stuben(construct(cx[2:n,2:m-1],cy[2:n-1,2:m]))
+    ruge_stuben(construct(cx[2:n,2:m-1],cy[2:n-1,2:m]),
+        presmoother = GaussSeidel()(iter=0)) # no presmoother
 end
 
-using LinearAlgebra: diag
+using LinearAlgebra: diag,norm
 function project!(p,ux,uy,cx,cy,σ,x,ml)
     n,m = size(p)
     for i ∈ 2:n-1, j ∈ 2:m-1
@@ -74,8 +82,9 @@ function project!(p,ux,uy,cx,cy,σ,x,ml)
         σ[k] = ∫ˣ∂x(i+1,j,ux)+∫ʸ∂y(i,j+1,uy)
         x[k] = @inbounds p[i,j]
     end
-    solve!(x,ml,σ)
-    # x[diag(ml.levels[1].A).==0.] .= 0
+    solve!(x,ml,σ,tol=1e-3/norm(σ))
+    # x,residuals = solve!(x,ml,σ,log=true,tol=1e-3/norm(σ))
+    # println([length(residuals) residuals[end] 1e-4/norm(σ) norm(σ)])
     x .-= sum(x)/length(x)
     for i ∈ 2:n-1, j ∈ 2:m-1
         k = i-1+(n-2)*(j-2)
@@ -89,15 +98,6 @@ function project!(p,ux,uy,cx,cy,σ,x,ml)
     end
 end
 
-
-@fastmath function BCᶜ!(f)
-    n,m = size(f)
-    f[1,:] .= f[2,:]
-    f[n,:] .= f[n-1,:]
-    f[:,1] .= f[:,2]
-    f[:,m] .= f[:,m-1]
-    return
-end
 @fastmath function BCˣ!(f,val)
     n,m = size(f)
     f[1,2:m-1] .= val
