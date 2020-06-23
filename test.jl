@@ -1,15 +1,13 @@
-function mom_init(n,m;xr=1:0,yr=1:0)
-    uˣ = zeros(n+2,m+2); BCˣ!(uˣ,1.)
-    uʸ = zeros(n+2,m+2)
-
-    cˣ = ones(n+2,m+2); BCˣ!(cˣ,0.)
-    cʸ = ones(n+2,m+2); BCʸ!(cʸ,0.)
+include("WaterLily.jl")
+function mom_init(n,m;xr=1:0,yr=1:0,U=[1. 0.])
+    u = zeros(n+2,m+2,2); BC!(u,U)
+    c = ones(n+2,m+2,2); BC!(c,[0. 0.])
 
     # immerse a solid block (proto-BDIM)
-    cˣ[first(xr):last(xr)+1,yr] .= 0
-    cʸ[xr,first(yr):last(yr)+1] .= 0
+    c[first(xr):last(xr)+1,yr,1] .= 0
+    c[xr,first(yr):last(yr)+1,2] .= 0
 
-    return flow(uˣ,uʸ,cˣ,cʸ)
+    return flow(u,c)
 end
 
 n,m = 2^7,2^6; xr = m÷2:m÷2; yr = 3m÷8+2:5m÷8+1
