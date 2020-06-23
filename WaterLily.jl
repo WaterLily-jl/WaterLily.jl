@@ -13,8 +13,9 @@ function median(a,b,c)
         return a
     end
 end
-
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
+@inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+
 @inline ∫ˣϕuⁿ(i,j,f,u) = @inbounds u>0 ? u*quick(f[i-2,j],f[i-1,j],f[i,j]) : u*quick(f[i+1,j],f[i,j],f[i-1,j])
 @inline ∫ʸϕuⁿ(i,j,f,v) = @inbounds v>0 ? v*quick(f[i,j-2],f[i,j-1],f[i,j]) : v*quick(f[i,j+1],f[i,j],f[i,j-1])
 @inline ∫ˣϕ(i,j,f) = @inbounds (f[i-1,j]+f[i,j])*0.5
@@ -22,30 +23,30 @@ end
 @inline ∫ˣ∂x(i,j,f) = @inbounds f[i,j]-f[i-1,j]
 @inline ∫ʸ∂y(i,j,f) = @inbounds f[i,j]-f[i,j-1]
 
-@fastmath function tracer_transport!(f,f₀,u,v;Δt=0.25,Pe=0.1)
-    n,m = size(f)
-    for i ∈ 2:n, j ∈ 2:m
-        if i==2 || i==n
-            Φx = ∫ˣϕ(i,j,f₀)*u[i,j]-Pe*∫ˣ∂x(i,j,f₀)
+@inline CI(a...) = CartesianIndex(a...)
+@inline δ(a,I::CartesianIndex{N}) where {N} = CI(ntuple(i -> i==a ? 1 : 0, N))
+@inline ∂(a,I,f) = @inbounds f[I]-f[I-δ(a,I)]
+@inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
+
+@fastmath function tracer_transport!(r,f,u;Pe=0.1)
+    N = size(u)
+    for b ∈ 1:N[3], j ∈ 2:N[2], i ∈ 2:N[1]
+        I,uᵇ = CI(i,j),u[i,j,b]
+        if I[b]==2 || I[b]==N[b]
+            Φ = ϕ(b,I,f)*uᵇ-Pe*∂(b,I,f)
         else
-            Φx = ∫ˣϕuⁿ(i,j,f₀,u[i,j])-Pe*∫ˣ∂x(i,j,f₀)
+            Φ = ϕu(b,I,f,uᵇ)-Pe*∂(b,I,f)
         end
-        if j==2 || j==m
-            Φy = ∫ʸϕ(i,j,f₀)*v[i,j]-Pe*∫ʸ∂y(i,j,f₀)
-        else
-            Φy = ∫ʸϕuⁿ(i,j,f₀,v[i,j])-Pe*∫ʸ∂y(i,j,f₀)
-        end
-        @inbounds f[i,j] += Δt*(Φx+Φy)
-        @inbounds f[i-1,j] -= Δt*Φx
-        @inbounds f[i,j-1] -= Δt*Φy
+        @inbounds r[I] += Φ
+        @inbounds r[I-δ(b,I)] -= Φ
     end
 end
 @fastmath function BCᶜ!(f)
     n,m = size(f)
-    f[1,:] .= f[2,:]
-    f[n,:] .= f[n-1,:]
-    f[:,1] .= f[:,2]
-    f[:,m] .= f[:,m-1]
+    f[1,:] .= @view f[2,:]
+    f[n,:] .= @view f[n-1,:]
+    f[:,1] .= @view f[:,2]
+    f[:,m] .= @view f[:,m-1]
     return
 end
 
