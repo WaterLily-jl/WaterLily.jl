@@ -27,6 +27,7 @@ end
 @inline δ(a,I::CartesianIndex{N}) where {N} = CI(ntuple(i -> i==a ? 1 : 0, N))
 @inline ∂(a,I,f) = @inbounds f[I]-f[I-δ(a,I)]
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
+@inline ∇(I,u) = sum(a -> u[I+δ(a,I),a]-u[I,a], 1:size(u)[end])
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
     N = size(u)
@@ -69,34 +70,48 @@ function construct(cx,cy)
 end
 
 using AlgebraicMultigrid: solve!,ruge_stuben,GaussSeidel
-function MG(cx,cy)
-    n,m = size(cx)
-    ruge_stuben(construct(cx[2:n,2:m-1],cy[2:n-1,2:m]),
+function MG(c)
+    n,m,d = size(c)
+    ruge_stuben(construct(c[2:n,2:m-1,1],c[2:n-1,2:m,2]),
         presmoother = GaussSeidel(iter=0)) # no presmoother
 end
 
 using LinearAlgebra: diag,norm
 function project!(p,ux,uy,cx,cy,σ,x,ml)
+    u = cat(ux,uy,dims=3)
+    c = cat(cx,cy,dims=3)
     n,m = size(p)
-    for i ∈ 2:n-1, j ∈ 2:m-1
-        k = i-1+(n-2)*(j-2)
-        σ[k] = ∫ˣ∂x(i+1,j,ux)+∫ʸ∂y(i,j+1,uy)
-        x[k] = @inbounds p[i,j]
+    R = CartesianIndices((2:n-1,2:m-1))
+    @simd for k ∈ 1:length(R); I=R[k]
+        @inbounds σ[k] = ∇(I,u)
+        @inbounds x[k] = p[I]
     end
     solve!(x,ml,σ,tol=1e-3/norm(σ))
     # x,residuals = solve!(x,ml,σ,log=true,tol=1e-3/norm(σ))
     # println([length(residuals) residuals[end] 1e-4/norm(σ) norm(σ)])
     x .-= sum(x)/length(x)
-    for i ∈ 2:n-1, j ∈ 2:m-1
-        k = i-1+(n-2)*(j-2)
-        p[i,j] = x[k]
+    @simd for k ∈ 1:length(R); I=R[k]
+        @inbounds p[I] = x[k]
     end
-    for i ∈ 3:n-1, j ∈ 2:m-1
-        @inbounds ux[i,j] -= cx[i,j]*∫ˣ∂x(i,j,p)
-    end
-    for i ∈ 2:n-1, j ∈ 3:m-1
-        @inbounds uy[i,j] -= cy[i,j]*∫ʸ∂y(i,j,p)
-    end
+    for a ∈ 1:2; @simd for I ∈ R
+        @inbounds u[I,a] -= c[I,a]*∂(a,I,p)
+    end;end
+    ux .= u[:,:,1]; uy .= u[:,:,2]
+end
+
+@fastmath function BC!(u,U)
+    n,m,d = size(u)
+    u[1,2:m-1,1] .= U[1]
+    u[2,2:m-1,1] .= U[1]
+    u[n,2:m-1,1] .= U[1]
+    u[:,1,1] .= @view u[:,2,1]
+    u[:,m,1] .= @view u[:,m-1,1]
+    u[2:n-1,1,2] .= U[2]
+    u[2:n-1,2,2] .= U[2]
+    u[2:n-1,m,2] .= U[2]
+    u[1,:,2] .= @view u[2,:,2]
+    u[n,:,2] .= @view u[n-1,:,2]
+    return
 end
 
 @fastmath function BCˣ!(f,val)
@@ -123,35 +138,32 @@ end
 end
 
 function mom_transport!(rˣ,rʸ,uˣ,uʸ;ν=0.1)
-    n,m = size(uˣ)
-    for i ∈ 2:n, j ∈ 2:m
-        if i==2 || i==n
-            Φˣˣ = ∫ˣϕ(i,j,uˣ)^2-ν*∫ˣ∂x(i,j,uˣ)
-            Φʸˣ = ∫ʸϕ(i,j,uˣ)*∫ˣϕ(i,j,uʸ)-ν*∫ˣ∂x(i,j,uʸ)
+    u = cat(uˣ,uʸ,dims=3)
+    N = size(u)
+    r = zeros(N)
+    for a ∈ 1:N[3], b ∈ 1:N[3], j ∈ 2:N[2], i ∈ 2:N[1]
+        Iᵃ,Iᵇ = CI(i,j,a),CI(i,j,b)
+        if Iᵇ[b]==2 || Iᵇ[b]==N[b]
+            Φ = ϕ(b,Iᵃ,u)*ϕ(a,Iᵇ,u)-ν*∂(b,Iᵃ,u)
         else
-            Φˣˣ = ∫ˣϕuⁿ(i,j,uˣ,∫ˣϕ(i,j,uˣ))-ν*∫ˣ∂x(i,j,uˣ)
-            Φʸˣ = ∫ˣϕuⁿ(i,j,uʸ,∫ʸϕ(i,j,uˣ))-ν*∫ˣ∂x(i,j,uʸ)
+            Φ = ϕu(b,Iᵃ,u,ϕ(a,Iᵇ,u))-Pe*∂(b,Iᵃ,u)
         end
-        if j==2 || j==m
-            Φˣʸ = ∫ʸϕ(i,j,uˣ)*∫ˣϕ(i,j,uʸ)-ν*∫ʸ∂y(i,j,uˣ)
-            Φʸʸ = ∫ʸϕ(i,j,uʸ)^2-ν*∫ʸ∂y(i,j,uʸ)
-        else
-            Φˣʸ = ∫ʸϕuⁿ(i,j,uˣ,∫ˣϕ(i,j,uʸ))-ν*∫ʸ∂y(i,j,uˣ)
-            Φʸʸ = ∫ʸϕuⁿ(i,j,uʸ,∫ʸϕ(i,j,uʸ))-ν*∫ʸ∂y(i,j,uʸ)
-        end
-        @inbounds rˣ[i,j] += Φˣˣ+Φˣʸ
-        @inbounds rˣ[i-1,j] -= Φˣˣ
-        @inbounds rˣ[i,j-1] -= Φˣʸ
-        @inbounds rʸ[i,j] += Φʸˣ+Φʸʸ
-        @inbounds rʸ[i-1,j] -= Φʸˣ
-        @inbounds rʸ[i,j-1] -= Φʸʸ
+        @inbounds r[Iᵃ] += Φ
+        @inbounds r[Iᵃ-δ(b,Iᵃ)] -= Φ
     end
+    rˣ .= r[:,:,1]; rʸ .= r[:,:,2]
+    return
 end
 
 struct flow
     uˣ;uʸ;cˣ;cʸ;rˣ;rʸ
     p
     ml;σ;p_vec
+end
+function flow(uˣ,uʸ,cˣ,cʸ)
+    n,m = size(uˣ)
+    flow(uˣ,uʸ,cˣ,cʸ,similar(uˣ),similar(uˣ),zeros(n,m),
+        MG(cˣ,cʸ),zeros((n-2)*(m-2)),zeros((n-2)*(m-2)))
 end
 
 function mom_step!(a::flow;Δt=0.25,ν=0.1,Uˣ=1.,Uʸ=0.)
