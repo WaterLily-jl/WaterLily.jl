@@ -84,15 +84,15 @@ function MG(c)
         presmoother = GaussSeidel(iter=0)) # no presmoother
 end
 
-using LinearAlgebra: diag,norm
-function project!(p,u,c,σ,x,ml)
+using LinearAlgebra: norm
+function project!(p,u,c,σ,x,ml,Δt)
     n,m,d = size(u)
     R = CR((2:n-1,2:m-1))
     @simd for k ∈ 1:length(R); I=R[k]
-        @inbounds σ[k] = ∇(I,u)
+        @inbounds σ[k] = ∇(I,u)/Δt
         @inbounds x[k] = p[I]
     end
-    solve!(x,ml,σ,tol=1e-3/norm(σ))
+    solve!(x,ml,σ,tol=1e-3/Δt/norm(σ))
     # x,residuals = solve!(x,ml,σ,log=true,tol=1e-3/norm(σ))
     # println([length(residuals) residuals[end] 1e-4/norm(σ) norm(σ)])
     x .-= sum(x)/length(x)
@@ -100,7 +100,7 @@ function project!(p,u,c,σ,x,ml)
         @inbounds p[I] = x[k]
     end
     for a ∈ 1:d; @simd for I ∈ R
-        @inbounds u[I,a] -= c[I,a]*∂(a,I,p)
+        @inbounds u[I,a] -= Δt*c[I,a]*∂(a,I,p)
     end;end
 end
 
@@ -133,8 +133,6 @@ end
     fill!(a.r,0.)
     mom_transport!(a.r,a.u,ν=ν)
     @. a.u += Δt*a.c*a.r; BC!(a.u,U)
-    a.p .*= Δt
-    project!(a.p,a.u,a.c,a.σ,a.p_vec,a.ml)
-    a.p ./= Δt
+    project!(a.p,a.u,a.c,a.σ,a.p_vec,a.ml,Δt)
     BC!(a.u,U);
 end
