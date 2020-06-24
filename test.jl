@@ -1,9 +1,10 @@
 include("WaterLily.jl")
 function mom_init(n,m;xr=1:0,yr=1:0,U=[1. 0.])
-    u = zeros(n+2,m+2,2); BC!(u,U)
+    u = cat(fill(U[1],(n+2,m+2)),fill(U[2],(n+2,m+2)),dims=3)
     c = ones(n+2,m+2,2); BC!(c,[0. 0.])
 
     # immerse a solid block (proto-BDIM)
+    u[first(xr):last(xr)+1,yr,1] .= 0
     c[first(xr):last(xr)+1,yr,1] .= 0
     c[xr,first(yr):last(yr)+1,2] .= 0
 
@@ -13,7 +14,6 @@ end
 n,m = 2^7,2^6; xr = m÷2:m÷2; yr = 3m÷8+2:5m÷8+1
 a = mom_init(n,m,xr=xr,yr=yr);
 mom_step!(a,ν=0.01,Δt=0.1)
-a.p[xr,yr] .= -3.
 show(a.p,-3,1)
 
 using Profile,ProfileView
