@@ -36,27 +36,26 @@ end
     end
 end
 
-function BC!(f::Array{T,d}) where {T<:Real, d}
-    for I ∈ CR(f), b ∈ 1:d
-        if I[b] == 1
-            f[I] = f[I+δ(b,I)]
-        elseif I[b] == size(f)[b]
-            f[I] = f[I-δ(b,I)]
-        end
+function BC!(u::Array{T,d},U) where {T<:Real, d}
+    for a ∈ 1:d-1, b ∈ 1:d-1 # components, faces
+        a==b ?
+        _dirichlet(u,b,CR(size(u)[1:b-1]),CR(size(u)[b+1:end-1]),a,U[a]) :
+        _nuemann(u,b,CR(size(u)[1:b-1]),CR(size(u)[b+1:end-1]),a)
     end
 end
-
-function BC!(u::Array{T,3},U) where T<:Real
-    N = size(u)
-    @simd for I ∈ CR(u)
-        a = I[3]; b = a%N[3]+1
-        if I[a] in (1,2,N[a])
-            u[I] = U[a]
-        elseif I[b] == 1
-            u[I] = u[I+δ(b,I)]
-        elseif I[b] == N[b]
-            u[I] = u[I-δ(b,I)]
-        end
+function BC!(f::Array{T,d}) where {T<:Real, d}
+    for b ∈ 1:d # domain faces
+        _nuemann(f,b,CR(size(f)[1:b-1]),CR(size(f)[b+1:end]),CI())
+    end
+end
+function _nuemann(f,b,left,right,a)
+    for r ∈ right, l ∈ left
+        f[l,1,r,a] = f[l,2,r,a]; f[l,size(f,b),r,a] = f[l,size(f,b)-1,r,a]
+    end
+end
+function _dirichlet(f,b,left,right,a,F)
+    for r ∈ right, l ∈ left
+        f[l,1,r,a] = f[l,2,r,a] = f[l,size(f,b),r,a] = F
     end
 end
 
