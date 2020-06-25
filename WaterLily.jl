@@ -73,24 +73,20 @@ end
     end
 end
 
-include("AMGproject.jl")
+include("GMG.jl")
 struct flow
-    u;c;r
-    p
-    aml;σ;p_vec
+    u;c;f
+    p;σ;iD
 end
 function flow(u,c)
     n,m,d = size(u)
-    # flow(u,c,similar(u),zeros(n,m),AMG(c),zeros((n-2)*(m-2)),zeros((n-2)*(m-2)))
-    flow(u,c,similar(u),zeros(n,m),AMG(c),zeros(n,m),GMG(c))
+    flow(u,c,zeros(n,m,d),zeros(n,m),zeros(n,m),GMG(c))
 end
 
-include("GMG.jl")
 @fastmath function mom_step!(a::flow;Δt=0.25,ν=0.1,U=[1. 0.])
-    fill!(a.r,0.)
-    mom_transport!(a.r,a.u,ν=ν)
-    @. a.u += Δt*a.c*a.r; BC!(a.u,U)
-    # projectAMG!(a.p,a.u,a.c,a.σ,a.p_vec,a.aml,Δt)
-    projectGMG!(a.p,a.u,a.c,a.σ,a.p_vec,Δt)
+    fill!(a.f,0.)
+    mom_transport!(a.f,a.u,ν=ν)
+    @. a.u += Δt*a.c*a.f; BC!(a.u,U)
+    projectGMG!(a.p,a.u,a.c,a.σ,a.iD,Δt)
     BC!(a.u,U);
 end
