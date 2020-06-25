@@ -22,17 +22,15 @@ end
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 
-function BC!(u::Array{T,d},U) where {T<:Real, d}
-    for a ∈ 1:d-1, b ∈ 1:d-1 # components, faces
-        a==b ?
-        _dirichlet(u,b,CR(size(u)[1:b-1]),CR(size(u)[b+1:end-1]),a,U[a]) :
-        _nuemann(u,b,CR(size(u)[1:b-1]),CR(size(u)[b+1:end-1]),a)
-    end
+function BC!(u::Array{Float64,3},U)
+    _dirichlet(u,1,CR(()),CR(1:size(u,2)),1,U[1])
+    _dirichlet(u,2,CR(1:size(u,1)),CR(()),2,U[2])
+    _nuemann(u,2,CR(1:size(u,1)),CR(()),1)
+    _nuemann(u,1,CR(()),CR(1:size(u,2)),2)
 end
-function BC!(f::Array{T,d}) where {T<:Real, d}
-    for b ∈ 1:d # domain faces
-        _nuemann(f,b,CR(size(f)[1:b-1]),CR(size(f)[b+1:end]),CI())
-    end
+function BC!(f::Array{Float64,2})
+    _nuemann(f,1,CR(()),CR(1:size(f,2)),CI())
+    _nuemann(f,2,CR(1:size(f,1)),CR(()),CI())
 end
 function _nuemann(f,b,left,right,a)
     for r ∈ right, l ∈ left
