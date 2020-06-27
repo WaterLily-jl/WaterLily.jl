@@ -23,20 +23,20 @@ end
     end
     return s
 end
-@fastmath @inline mult(I,L,D,x) = multLU(I,L,x)+x[I]*D[I]
-mult!(p::PoissonSys{n,m}) where {n,m} = @simd for I ∈ inside(p.r)
+@fastmath @inline @inbounds mult(I,L,D,x) = multLU(I,L,x)+x[I]*D[I]
+mult!(p::PoissonSys) = @simd for I ∈ inside(p.r)
     @inbounds p.r[I] = mult(I,p.L,p.D,p.x)
 end
 
-@fastmath function resid(p::PoissonSys{n,m}) where {n,m}
+@fastmath function resid(p::PoissonSys)
     s = 0.
     @simd for I ∈ inside(p.r)
-        s += abs2(p.r[I]-mult(I,p.L,p.D,p.x))
+        @inbounds s += abs2(p.r[I]-mult(I,p.L,p.D,p.x))
     end
     return s
 end
 
-@fastmath SOR!(p::PoissonSys{n,m}; ω::Real=1.5) where {n,m} = @simd for I ∈ inside(p.r)
+@fastmath SOR!(p::PoissonSys; ω::Real=1.5) = @simd for I ∈ inside(p.r)
     @inbounds p.x[I] += ω*((p.r[I]-multLU(I,p.L,p.x))*p.iD[I]-p.x[I])
 end
 
