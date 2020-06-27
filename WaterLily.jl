@@ -1,14 +1,8 @@
-using Images,Plots
-show(f) = plot(Gray.(f'[end:-1:1,:]))
-show(f,fmin,fmax) = show((f.-fmin)/(fmax-fmin))
-show_scaled(σ) = show(σ,minimum(σ),maximum(σ))
+include("util.jl")
 
-@inline CI(a...) = CartesianIndex(a...)
-@inline CR(a...) = CartesianIndices(a...)
-@inline δ(a,I::CartesianIndex{N}) where {N} = CI(ntuple(i -> i==a ? 1 : 0, N))
-@inline ∂(a,I,f) = @inbounds f[I]-f[I-δ(a,I)]
+@inline ∂(a,I::CartesianIndex{d},f::Array{Float64,d}) where d = @inbounds f[I]-f[I-δ(a,I)]
+@inline ∂(a,I::CartesianIndex{m},u::Array{Float64,n}) where {n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
-@inline ∇(I::CartesianIndex{2},u) = u[I+δ(1,I),1]-u[I,1]+u[I+δ(2,I),2]-u[I,2]
 function median(a,b,c)
     x = a-b
     if x*(b-c) ≥ 0
@@ -32,15 +26,11 @@ function BC!(f::Array{Float64,2})
     _nuemann(f,1,CR(()),CR(1:size(f,2)),CI())
     _nuemann(f,2,CR(1:size(f,1)),CR(()),CI())
 end
-function _nuemann(f,b,left,right,a)
-    for r ∈ right, l ∈ left
-        f[l,1,r,a] = f[l,2,r,a]; f[l,size(f,b),r,a] = f[l,size(f,b)-1,r,a]
-    end
+@inline _nuemann(f,b,left,right,a) = for r ∈ right, l ∈ left
+    f[l,1,r,a] = f[l,2,r,a]; f[l,size(f,b),r,a] = f[l,size(f,b)-1,r,a]
 end
-function _dirichlet(f,b,left,right,a,F)
-    for r ∈ right, l ∈ left
-        f[l,1,r,a] = f[l,2,r,a] = f[l,size(f,b),r,a] = F
-    end
+@inline _dirichlet(f,b,left,right,a,F) = for r ∈ right, l ∈ left
+    f[l,1,r,a] = f[l,2,r,a] = f[l,size(f,b),r,a] = F
 end
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
@@ -71,20 +61,39 @@ end
     end
 end
 
-include("GMG.jl")
-struct flow
-    u;c;f
-    p;σ;iD
-end
-function flow(u,c)
-    n,m,d = size(u)
-    flow(u,c,zeros(n,m,d),zeros(n,m),zeros(n,m),GMG(c))
+struct Flow{N,M}
+    u :: Array{Float64,N} # velocity vector field
+    c :: Array{Float64,N} # BDIM \mu_0 vector field
+    f :: Array{Float64,N} # force vector field
+    p :: Array{Float64,M} # pressure scalar field
+    σ :: Array{Float64,M} # divergence scalar field
+    function Flow(u::Array{Float64,n},c::Array{Float64,n}) where n
+        N = size(u); M = N[1:end-1]; m = length(M)
+        @assert N==size(c)
+        @assert N[end]==m
+        p = zeros(M)
+        f,σ = AU(N),AU(M)
+        new{n,m}(u,c,f,p,σ)
+    end
 end
 
-@fastmath function mom_step!(a::flow;Δt=0.25,ν=0.1,U=[1. 0.])
+include("PoissonSys.jl")
+@fastmath @inline ∇(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
+@fastmath @inline ∇(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
+@fastmath function project!(a::Flow{n,m},b::PoissonSys{n,m},Δt) where {n,m}
+    @simd for I ∈ inside(a.σ)
+        @inbounds a.σ[I] = ∇(I,a.u)/Δt
+    end
+    solve!(a.p,b,a.σ)
+    for i ∈ 1:m; @simd for I ∈ inside(a.σ)
+        @inbounds  a.u[I,i] -= Δt*a.c[I,i]*∂(i,I,a.p)
+    end;end
+end
+
+include("PoissonSys.jl")
+@fastmath function mom_step!(a::Flow,b::PoissonSys;Δt=0.25,ν=0.1,U=[1. 0.])
     fill!(a.f,0.)
     mom_transport!(a.f,a.u,ν=ν)
     @. a.u += Δt*a.c*a.f; BC!(a.u,U)
-    projectGMG!(a.p,a.u,a.c,a.σ,a.iD,Δt)
-    BC!(a.u,U);
+    project!(a,b,Δt); BC!(a.u,U)
 end
