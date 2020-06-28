@@ -1,5 +1,3 @@
-@inline AU(a...) = Array{Float64}(undef, a...)
-
 @inline CR(a...) = CartesianIndices(a...)
 @inline CI(a...) = CartesianIndex(a...)
 @inline δ(a,d::Int) = CI(ntuple(i -> i==a ? 1 : 0, d))

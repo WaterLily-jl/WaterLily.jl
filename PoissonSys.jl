@@ -18,7 +18,8 @@ To help iteratively solve the system above, the PoissonSys structure holds
 helper arrays for inv(D), the error ϵ=x̂=x, and residual r=b-Ax. An iterative
 solution method then estimates the error ϵ=̃A⁻¹r and increments x+=ϵ, r-=Aϵ.
 """
-struct PoissonSys{N,M}
+abstract type Poisson{N,M} end
+struct PoissonSys{N,M} <: Poisson{N,M}
     L :: Array{Float64,N} # Lower diagonal coefficients
     D :: Array{Float64,M} # Diagonal coefficients
     iD :: Array{Float64,M} # 1/Diagonal
@@ -28,7 +29,7 @@ struct PoissonSys{N,M}
     function PoissonSys(L::Array{Float64,n}) where n
         N = size(L); M = N[1:end-1]; m = length(M)
         @assert N[end] == m
-        x,ϵ,r,D,iD = AU(M),AU(M),AU(M),AU(M),AU(M)
+        x,ϵ,r,D,iD = zeros(M),zeros(M),zeros(M),zeros(M),zeros(M)
         for I ∈ inside(M)
             D[I] = -sum(i->L[I,i]+L[I+δ(i,m),i],1:m)
             iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
@@ -45,8 +46,13 @@ end
     return s
 end
 @fastmath @inline @inbounds mult(I,L,D,x) = multLU(I,L,x)+x[I]*D[I]
-mult!(p::PoissonSys) = @simd for I ∈ inside(p.r)
-    @inbounds p.r[I] = mult(I,p.L,p.D,p.x)
+function mult(p::PoissonSys{n,m},x::Array{Float64,m}) where {n,m}
+    @assert size(p.x)==size(x)
+    b = zeros(size(p.x))
+    @simd for I ∈ inside(b)
+        @inbounds b[I] = mult(I,p.L,p.D,x)
+    end
+    return b
 end
 
 @fastmath function L₂(a::Array{Float64})
@@ -81,6 +87,20 @@ to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
     end
     increment!(p)
 end
+"""
+GS!(p::PoissonSys;it=0)
+
+Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
+"""
+@fastmath function GS!(p::PoissonSys{n,m};it=0) where {n,m}
+    @simd for I ∈ inside(p.r)
+        @inbounds p.ϵ[I] = p.r[I]*p.iD[I]
+    end
+    for i ∈ 1:it, I ∈ inside(p.r) # order matters here
+        @inbounds p.ϵ[I] = (p.r[I]-multLU(I,p.L,p.ϵ))*p.iD[I]
+    end
+    increment!(p)
+end
 
 function solve!(x::Array{Float64,m},p::PoissonSys{n,m},b::Array{Float64,m};log=false,tol=1e-4) where {n,m}
     p.x .= x
@@ -91,5 +111,5 @@ function solve!(x::Array{Float64,m},p::PoissonSys{n,m},b::Array{Float64,m};log=f
         log && push!(res,r₂)
     end
     x .= p.x
-    return log ? (x,res) : x
+    return log ? res : nothing
 end

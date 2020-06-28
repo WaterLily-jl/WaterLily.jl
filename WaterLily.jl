@@ -71,8 +71,7 @@ struct Flow{N,M}
         N = size(u); M = N[1:end-1]; m = length(M)
         @assert N==size(c)
         @assert N[end]==m
-        p = zeros(M)
-        f,σ = AU(N),AU(M)
+        f,p,σ = zeros(N),zeros(M),zeros(M)
         new{n,m}(u,c,f,p,σ)
     end
 end
@@ -80,7 +79,7 @@ end
 include("PoissonSys.jl")
 @fastmath @inline ∇(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
 @fastmath @inline ∇(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
-@fastmath function project!(a::Flow{n,m},b::PoissonSys{n,m},Δt) where {n,m}
+@fastmath function project!(a::Flow{n,m},b::Poisson{n,m},Δt) where {n,m}
     @simd for I ∈ inside(a.σ)
         @inbounds a.σ[I] = ∇(I,a.u)/Δt
     end
@@ -90,8 +89,7 @@ include("PoissonSys.jl")
     end;end
 end
 
-include("PoissonSys.jl")
-@fastmath function mom_step!(a::Flow,b::PoissonSys;Δt=0.25,ν=0.1,U=[1. 0.])
+@fastmath function mom_step!(a::Flow,b::Poisson;Δt=0.25,ν=0.1,U=[1. 0.])
     fill!(a.f,0.)
     mom_transport!(a.f,a.u,ν=ν)
     @. a.u += Δt*a.c*a.f; BC!(a.u,U)
