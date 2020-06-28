@@ -23,7 +23,7 @@ mom_step!(a,c,ν=0.01,Δt=0.1)
 show(a.p,-3,1)
 
 using Profile,ProfileView
-function mom_test(a,b,n=1000)
+function mom_test(a::Flow,b::Poisson,n=1000)
     @time for i ∈ 1:n
         mom_step!(a,b,ν=0.01,Δt=0.1)
     end

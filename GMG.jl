@@ -19,17 +19,22 @@ struct MultiLevelPS{N,M} <: Poisson{N,M}
         while all(size(levels[end].x) .|> divisible)
             push!(levels,restrict(levels[end].L))
         end
-        @assert all(size(levels[end].x).<10) "GMG requires size=a2ⁿ, where a<10"
+        text = "MultiLevelPS requires size=a2ⁿ, where a<10, n>1"
+        @assert length(levels)>1 & all(size(levels[end].x).<10) text
         new{n,n-1}(levels)
     end
 end
 
 @fastmath restrict!(a::Array{Float64},b::Array{Float64}) = @simd for I ∈ inside(a)
-    @inbounds a[I] = sum(b[J] for J ∈ near(I))
+    σ = 0.
+    @simd for J ∈ near(I)
+        @inbounds σ+=b[J]
+    end
+    @inbounds a[I] = σ
 end
 
 prolongate!(a::Array{Float64},b::Array{Float64}) = for I ∈ inside(b)
-    for J ∈ near(I)
+    @simd for J ∈ near(I)
         @inbounds a[J] = b[I]
 end;end
 
@@ -38,23 +43,23 @@ function Vcycle!(p::MultiLevelPS;l=1)
     fill!(p.levels[l+1].x,0.)
     GS!(p.levels[l],it=0)
     restrict!(p.levels[l+1].r,p.levels[l].r)
-    # recurse
+    # solve l+1 (with recursion if possible)
     l+1<length(p.levels) && Vcycle!(p,l=l+1)
-    # correct level l
     GS!(p.levels[l+1],it=4)
+    # correct level l
     prolongate!(p.levels[l].ϵ,p.levels[l+1].x)
     increment!(p.levels[l])
 end
 
 function solve!(x::Array{Float64,m},p::MultiLevelPS{n,m},b::Array{Float64,m};log=false,tol=1e-4) where {n,m}
-    p1 = p.levels[1]; p1.x .= x
-    residual!(p1,b); r₂ = L₂(p1.r)
+    p.levels[1].x .= x
+    residual!(p.levels[1],b); r₂ = L₂(p.levels[1].r)
     log && (res = [r₂])
     while r₂>tol
         Vcycle!(p)
-        GS!(p1,it=4); r₂ = L₂(p1.r)
+        GS!(p.levels[1],it=4); r₂ = L₂(p.levels[1].r)
         log && push!(res,r₂)
     end
-    x .= p1.x
+    x .= p.levels[1].x
     return log ? res : nothing
 end
