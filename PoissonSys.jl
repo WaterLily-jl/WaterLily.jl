@@ -38,14 +38,16 @@ struct PoissonSys{N,M} <: Poisson{N,M}
     end
 end
 
-@fastmath @inline function multLU(I::CartesianIndex{d},L,x) where d
-    s = 0
-    for i ∈ 1:d
-        @inbounds s += x[I-δ(i,I)]*L[I,i]+x[I+δ(i,I)]*L[I+δ(i,I),i]
+@fastmath @inline multL(a,I,L,x) = @inbounds x[I-δ(a,I)]*L[I,a]
+@fastmath @inline multU(a,I,L,x) = @inbounds x[I+δ(a,I)]*L[I+δ(a,I),a]
+@fastmath @inline function mult(I::CartesianIndex{d},L,D,x) where d
+    σ = @inbounds x[I]*D[I]
+    @simd for a ∈ 1:d
+        σ += multL(a,I,L,x)
+        σ += multU(a,I,L,x)
     end
-    return s
+    return σ
 end
-@fastmath @inline @inbounds mult(I,L,D,x) = multLU(I,L,x)+x[I]*D[I]
 function mult(p::PoissonSys{n,m},x::Array{Float64,m}) where {n,m}
     @assert size(p.x)==size(x)
     b = zeros(size(p.x))
@@ -80,8 +82,8 @@ to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
 @fastmath function SOR!(p::PoissonSys{n,m}; ω=1.5) where {n,m}
     for I ∈ inside(p.r) # order matters here
         @inbounds σ = p.r[I]
-        for i ∈ 1:m
-            @inbounds σ -= p.L[I,i]*p.ϵ[I-δ(i,I)]
+        for a ∈ 1:m
+            σ -= multL(a,I,p.L,p.ϵ)
         end
         @inbounds p.ϵ[I] = ω*σ*p.iD[I]
     end
@@ -97,7 +99,12 @@ Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
         @inbounds p.ϵ[I] = p.r[I]*p.iD[I]
     end
     for i ∈ 1:it, I ∈ inside(p.r) # order matters here
-        @inbounds p.ϵ[I] = (p.r[I]-multLU(I,p.L,p.ϵ))*p.iD[I]
+        @inbounds σ = p.r[I]
+        for a ∈ 1:m
+            σ -= multL(a,I,p.L,p.ϵ)
+            σ -= multU(a,I,p.L,p.ϵ)
+        end
+        @inbounds p.ϵ[I] = σ*p.iD[I]
     end
     increment!(p)
 end
