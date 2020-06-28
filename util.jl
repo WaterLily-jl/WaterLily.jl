@@ -4,7 +4,16 @@
 @inline δ(a,I::CartesianIndex{N}) where {N} = δ(a,N)
 
 @inline inside(M::NTuple{N,Int}) where {N} = CR(ntuple(i-> 2:M[i]-1,N))
-@inline inside(a::Array) = inside(size(a))
+@inline inside(a::Array; reverse::Bool=false) =
+        reverse ? Iterators.reverse(inside(size(a))) : inside(size(a))
+
+@fastmath function L₂(a::Array{Float64})
+    s = 0.
+    @simd for I ∈ inside(a)
+        @inbounds s += abs2(a[I])
+    end
+    return s
+end
 
 using Images,Plots
 show(f) = plot(Gray.(f'[end:-1:1,:]))

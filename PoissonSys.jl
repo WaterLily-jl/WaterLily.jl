@@ -57,14 +57,6 @@ function mult(p::PoissonSys{n,m},x::Array{Float64,m}) where {n,m}
     return b
 end
 
-@fastmath function L₂(a::Array{Float64})
-    s = 0.
-    @simd for I ∈ inside(a)
-        @inbounds s += abs2(a[I])
-    end
-    return s
-end
-
 @fastmath residual!(p::PoissonSys,b::Array{Float64}) = @simd for I ∈ inside(p.r)
     @inbounds p.r[I] = b[I]-mult(I,p.L,p.D,p.x)
 end
@@ -98,14 +90,14 @@ Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
     @simd for I ∈ inside(p.r)
         @inbounds p.ϵ[I] = p.r[I]*p.iD[I]
     end
-    for i ∈ 1:it, I ∈ inside(p.r) # order matters here
+    for i ∈ 1:it; for I ∈ inside(p.r, reverse = i%2==0) # order matters here
         @inbounds σ = p.r[I]
         for a ∈ 1:m
             σ -= multL(a,I,p.L,p.ϵ)
             σ -= multU(a,I,p.L,p.ϵ)
         end
         @inbounds p.ϵ[I] = σ*p.iD[I]
-    end
+    end;end
     increment!(p)
 end
 

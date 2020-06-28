@@ -45,7 +45,7 @@ function Vcycle!(p::MultiLevelPS;l=1)
     restrict!(p.levels[l+1].r,p.levels[l].r)
     # solve l+1 (with recursion if possible)
     l+1<length(p.levels) && Vcycle!(p,l=l+1)
-    GS!(p.levels[l+1],it=4)
+    GS!(p.levels[l+1],it=2)
     # correct level l
     prolongate!(p.levels[l].ϵ,p.levels[l+1].x)
     increment!(p.levels[l])
@@ -57,7 +57,8 @@ function solve!(x::Array{Float64,m},p::MultiLevelPS{n,m},b::Array{Float64,m};log
     log && (res = [r₂])
     while r₂>tol
         Vcycle!(p)
-        GS!(p.levels[1],it=4); r₂ = L₂(p.levels[1].r)
+        GS!(p.levels[1],it=2); r₂ = L₂(p.levels[1].r)
+        5tol>r₂>tol && (GS!(p.levels[1],it=1); r₂ = L₂(p.levels[1].r))
         log && push!(res,r₂)
     end
     x .= p.levels[1].x
