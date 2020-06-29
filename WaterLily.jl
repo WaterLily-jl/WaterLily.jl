@@ -3,18 +3,10 @@ include("util.jl")
 @inline ∂(a,I::CartesianIndex{d},f::Array{Float64,d}) where d = @inbounds f[I]-f[I-δ(a,I)]
 @inline ∂(a,I::CartesianIndex{m},u::Array{Float64,n}) where {n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
-function median(a,b,c)
-    x = a-b
-    if x*(b-c) ≥ 0
-        return b
-    elseif x*(a-c) > 0
-        return c
-    else
-        return a
-    end
-end
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@fastmath @inline ∇(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
+@fastmath @inline ∇(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
 
 function BC!(u::Array{Float64,3},U)
     _dirichlet(u,1,CR(()),CR(1:size(u,2)),1,U[1])
@@ -77,8 +69,6 @@ struct Flow{N,M}
 end
 
 include("PoissonSys.jl")
-@fastmath @inline ∇(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
-@fastmath @inline ∇(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
 @fastmath function project!(a::Flow{n,m},b::Poisson{n,m},Δt) where {n,m}
     @simd for I ∈ inside(a.σ)
         @inbounds a.σ[I] = ∇(I,a.u)/Δt

@@ -13,13 +13,9 @@ end
 
 n,m = 2^7,2^6; xr = m÷2:m÷2; yr = 3m÷8+2:5m÷8+1
 a = mom_init(n,m,xr=xr,yr=yr);
-b = PoissonSys(a.c);
-mom_step!(a,b,ν=0.01,Δt=0.1)
-show(a.p,-3,1)
-
 include("GMG.jl")
-c = MultiLevelPS(a.c)
-mom_step!(a,c,ν=0.01,Δt=0.1)
+b = MultiLevelPS(a.c)
+mom_step!(a,b,ν=0.01,Δt=0.1)
 show(a.p,-3,1)
 
 using Profile,ProfileView

@@ -1,8 +1,8 @@
-@inline CR(a...) = CartesianIndices(a...)
 @inline CI(a...) = CartesianIndex(a...)
 @inline δ(a,d::Int) = CI(ntuple(i -> i==a ? 1 : 0, d))
 @inline δ(a,I::CartesianIndex{N}) where {N} = δ(a,N)
 
+@inline CR(a...) = CartesianIndices(a...)
 @inline inside(M::NTuple{N,Int}) where {N} = CR(ntuple(i-> 2:M[i]-1,N))
 @inline inside(a::Array; reverse::Bool=false) =
         reverse ? Iterators.reverse(inside(size(a))) : inside(size(a))
@@ -13,6 +13,17 @@
         @inbounds s += abs2(a[I])
     end
     return s
+end
+
+@fastmath function median(a,b,c)
+    x = a-b
+    if x*(b-c) ≥ 0
+        return b
+    elseif x*(a-c) > 0
+        return c
+    else
+        return a
+    end
 end
 
 using Images,Plots
