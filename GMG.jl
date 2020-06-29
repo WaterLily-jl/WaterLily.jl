@@ -1,28 +1,12 @@
 @inline near(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 
-@fastmath function restrict(b::Array{Float64,m}) where m
+@fastmath function restrictPS(b::Array{Float64,m}) where m
     N = ntuple(i-> i==m ? m-1 : 1+size(b,i)÷2, m)
     a = zeros(N)
     for i ∈ 1:m-1, I ∈ inside(N[1:m-1])
         @inbounds a[I,i] = 0.5sum(b[J,i] for J ∈ near(I,i))
     end
     PoissonSys(a)
-end
-
-@inline divisible(N) = mod(N,2)==0 && N>4
-
-struct MultiLevelPS{N,M} <: Poisson{N,M}
-    levels :: Vector{PoissonSys{N,M}}
-    function MultiLevelPS(L::Array{Float64,n}) where n
-        levels = Vector{PoissonSys}()
-        push!(levels,PoissonSys(L))
-        while all(size(levels[end].x) .|> divisible)
-            push!(levels,restrict(levels[end].L))
-        end
-        text = "MultiLevelPS requires size=a2ⁿ, where a<10, n>1"
-        @assert length(levels)>1 & all(size(levels[end].x).<10) text
-        new{n,n-1}(levels)
-    end
 end
 
 @fastmath restrict!(a::Array{Float64},b::Array{Float64}) = @simd for I ∈ inside(a)
@@ -37,6 +21,22 @@ prolongate!(a::Array{Float64},b::Array{Float64}) = for I ∈ inside(b)
     @simd for J ∈ near(I)
         @inbounds a[J] = b[I]
 end;end
+
+@inline divisible(N) = mod(N,2)==0 && N>4
+
+struct MultiLevelPS{N,M} <: Poisson{N,M}
+    levels :: Vector{PoissonSys{N,M}}
+    function MultiLevelPS(L::Array{Float64,n}) where n
+        levels = Vector{PoissonSys}()
+        push!(levels,PoissonSys(L))
+        while all(size(levels[end].x) .|> divisible)
+            push!(levels,restrictPS(levels[end].L))
+        end
+        text = "MultiLevelPS requires size=a2ⁿ, where a<10, n>1"
+        @assert length(levels)>1 & all(size(levels[end].x).<10) text
+        new{n,n-1}(levels)
+    end
+end
 
 function Vcycle!(p::MultiLevelPS;l=1)
     # set up level l+1
