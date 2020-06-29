@@ -6,6 +6,7 @@
 @inline inside(M::NTuple{N,Int}) where {N} = CR(ntuple(i-> 2:M[i]-1,N))
 @inline inside(a::Array; reverse::Bool=false) =
         reverse ? Iterators.reverse(inside(size(a))) : inside(size(a))
+@inline inside_u(N::NTuple{n,T}) where {n,T} = CR(ntuple(i->2:N[i],n-1))
 
 @fastmath function L₂(a::Array{Float64})
     s = 0.

@@ -27,22 +27,21 @@ end
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
     N = size(u)
-    for b ∈ 1:N[3], j ∈ 2:N[2], i ∈ 2:N[1]
-        I,uᵇ = CI(i,j),u[i,j,b]
+    for b ∈ 1:N[end]; @simd for I ∈ inside_u(N)
         if I[b]==2 || I[b]==N[b]
-            Φ = ϕ(b,I,f)*uᵇ-Pe*∂(b,I,f)
+            Φ = ϕ(b,I,f)*u[I,b]-Pe*∂(b,I,f)
         else
-            Φ = ϕu(b,I,f,uᵇ)-Pe*∂(b,I,f)
+            Φ = ϕu(b,I,f,u[I,b])-Pe*∂(b,I,f)
         end
         @inbounds r[I] += Φ
         @inbounds r[I-δ(b,I)] -= Φ
-    end
+    end;end
 end
 
 @fastmath function mom_transport!(r,u;ν=0.1)
     N = size(u)
-    for a ∈ 1:N[3], b ∈ 1:N[3], j ∈ 2:N[2], i ∈ 2:N[1]
-        Iᵃ,Iᵇ = CI(i,j,a),CI(i,j,b)
+    for a ∈ 1:N[end], b ∈ 1:N[end]; @simd for I ∈ inside_u(N)
+        Iᵃ,Iᵇ = CI(I,a),CI(I,b)
         if Iᵇ[b]==2 || Iᵇ[b]==N[b]
             Φ = ϕ(b,Iᵃ,u)*ϕ(a,Iᵇ,u)-ν*∂(b,Iᵃ,u)
         else
@@ -50,7 +49,7 @@ end
         end
         @inbounds r[Iᵃ] += Φ
         @inbounds r[Iᵃ-δ(b,Iᵃ)] -= Φ
-    end
+    end; end
 end
 
 struct Flow{N,M}
