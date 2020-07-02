@@ -8,21 +8,32 @@ include("util.jl")
 @fastmath @inline ∇(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
 @fastmath @inline ∇(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
 
-function BC!(u::Array{Float64,3},U)
-    _dirichlet(u,1,CR(()),CR(1:size(u,2)),1,U[1])
-    _dirichlet(u,2,CR(1:size(u,1)),CR(()),2,U[2])
-    _nuemann(u,2,CR(1:size(u,1)),CR(()),1)
-    _nuemann(u,1,CR(()),CR(1:size(u,2)),2)
+function BC!(a::Array{T,4},A) where T
+    for k∈1:size(a,3), j∈1:size(a,2)
+        a[1,j,k,1] = a[2,j,k,1] = a[size(a,1),j,k,1] = A[1]
+        a[1,j,k,2] = a[2,j,k,2]; a[size(a,1),j,k,2] = a[size(a,1)-1,j,k,2]
+        a[1,j,k,3] = a[2,j,k,3]; a[size(a,1),j,k,3] = a[size(a,1)-1,j,k,3]
+    end
+    for k∈1:size(a,3), i∈1:size(a,1)
+        a[i,1,k,2] = a[i,2,k,2] = a[i,size(a,2),k,2] = A[2]
+        a[i,1,k,1] = a[i,2,k,1]; a[i,size(a,2),k,1] = a[i,size(a,2)-1,k,1]
+        a[i,1,k,3] = a[i,2,k,3]; a[i,size(a,2),k,3] = a[i,size(a,2)-1,k,3]
+    end
+    for j∈1:size(a,2), i∈1:size(a,1)
+        a[i,j,1,3] = a[i,j,2,3] = a[i,j,size(a,3),3] = A[3]
+        a[i,j,1,1] = a[i,j,2,1]; a[i,j,size(a,3),1] = a[i,j,size(a,3)-1,1]
+        a[i,j,1,2] = a[i,j,2,2]; a[i,j,size(a,3),2] = a[i,j,size(a,3)-1,2]
+    end
 end
-function BC!(f::Array{Float64,2})
-    _nuemann(f,1,CR(()),CR(1:size(f,2)),CI())
-    _nuemann(f,2,CR(1:size(f,1)),CR(()),CI())
-end
-@inline _nuemann(f,b,left,right,a) = for r ∈ right, l ∈ left
-    f[l,1,r,a] = f[l,2,r,a]; f[l,size(f,b),r,a] = f[l,size(f,b)-1,r,a]
-end
-@inline _dirichlet(f,b,left,right,a,F) = for r ∈ right, l ∈ left
-    f[l,1,r,a] = f[l,2,r,a] = f[l,size(f,b),r,a] = F
+function BC!(a::Array{T,3},A) where T
+    for k∈1:size(a,3), j∈1:size(a,2)
+        a[1,j,1] = a[2,j,1] = a[size(a,1),j,1] = A[1]
+        a[1,j,2] = a[2,j,2]; a[size(a,1),j,2] = a[size(a,1)-1,j,2]
+    end
+    for k∈1:size(a,3), i∈1:size(a,1)
+        a[i,1,2] = a[i,2,2] = a[i,size(a,2),2] = A[2]
+        a[i,1,1] = a[i,2,1]; a[i,size(a,2),1] = a[i,size(a,2)-1,1]
+    end
 end
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
