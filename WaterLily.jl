@@ -26,11 +26,11 @@ function BC!(a::Array{T,4},A) where T
     end
 end
 function BC!(a::Array{T,3},A) where T
-    for k∈1:size(a,3), j∈1:size(a,2)
+    for j∈1:size(a,2)
         a[1,j,1] = a[2,j,1] = a[size(a,1),j,1] = A[1]
         a[1,j,2] = a[2,j,2]; a[size(a,1),j,2] = a[size(a,1)-1,j,2]
     end
-    for k∈1:size(a,3), i∈1:size(a,1)
+    for i∈1:size(a,1)
         a[i,1,2] = a[i,2,2] = a[i,size(a,2),2] = A[2]
         a[i,1,1] = a[i,2,1]; a[i,size(a,2),1] = a[i,size(a,2)-1,1]
     end
