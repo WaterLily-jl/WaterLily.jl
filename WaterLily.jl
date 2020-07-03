@@ -1,12 +1,19 @@
 include("util.jl")
 
-@inline ∂(a,I::CartesianIndex{d},f::Array{Float64,d}) where d = @inbounds f[I]-f[I-δ(a,I)]
-@inline ∂(a,I::CartesianIndex{m},u::Array{Float64,n}) where {n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
+@inline ∂(a,I::CartesianIndex{d},f::AbstractArray{Float64,d}) where d = @inbounds f[I]-f[I-δ(a,I)]
+@inline ∂(a,I::CartesianIndex{m},u::AbstractArrayArray{Float64,n}) where {n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@fastmath @inline ∇(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
-@fastmath @inline ∇(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
+@fastmath @inline div(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
+@fastmath @inline div(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
+function curl₃(u::AbstractArray{T,n}) where {T,n}
+    ω₃ = zeros(size(u)[1:n-1])
+     @simd for I ∈ inside(ω₃)
+        @inbounds ω₃[I] = ∂(1,CI(I,2),u)-∂(2,CI(I,1),u)
+    end
+    return ω₃
+end
 
 function BC!(a::Array{T,4},A) where T
     for k∈1:size(a,3), j∈1:size(a,2)
@@ -81,7 +88,7 @@ end
 include("PoissonSys.jl")
 @fastmath function project!(a::Flow{n,m},b::Poisson{n,m},Δt) where {n,m}
     @simd for I ∈ inside(a.σ)
-        @inbounds a.σ[I] = ∇(I,a.u)/Δt
+        @inbounds a.σ[I] = div(I,a.u)/Δt
     end
     solve!(a.p,b,a.σ)
     for i ∈ 1:m; @simd for I ∈ inside(a.σ)
