@@ -17,11 +17,17 @@ function TwoD_block(n,m;xr=1:0,yr=1:0,U=[1. 0.])
 
     return Flow(u,c),U
 end
-n,m = 2^7,2^6; xr = m÷2:m÷2; yr = 3m÷8+2:5m÷8+1
-a,U = TwoD_block(n,m,xr=xr,yr=yr);
-b = MultiLevelPS(a.c)
-mom_step!(a,b,U=U,ν=0.01,Δt=0.1)
-show(a.p,-3,1)
+
+function TwoD_block_test(p=7,N=[5000,1000])
+    n,m = 2^p,2^(p-1); xr = m÷2:m÷2; yr = 3m÷8+2:5m÷8+1
+    a,U = TwoD_block(n,m,xr=xr,yr=yr);
+    b = MultiLevelPS(a.c)
+    for n ∈ N
+        @show n
+        mom_test(a,b,U,n)
+    end
+    show(a.p,-3,1)
+end
 
 function TGVortex(p)
     L = 2^p
@@ -31,16 +37,22 @@ function TGVortex(p)
     c = ones(L+2,L+2,L+2,3); BC!(c,[0. 0. 0.])
     return Flow(u,c),[0. 0. 0.]
 end
-p = 7; a,U = TGVortex(p)
-b = MultiLevelPS(a.c)
-mom_step!(a,b,U=U,ν=0.01,Δt=0.1)
-show(curl₃(@view a.u[:,:,2^(p-2),:]),-0.025,0.025)
-#--------------------------
-gr(show = false)
-@gif for time ∈ 0:2^(p+5),Δt=0.25
-    mom_step!(a,b,U=U,ν=0.01,Δt=0.25)
-    show(curl₃(@view a.u[:,:,2^(p-1),:]),-0.25,0.25)
+
+function TGVortex_test(p=7,N=[1,10,100])
+    a,U = TGVortex(p)
+    b = MultiLevelPS(a.c)
+    for n ∈ N
+        @show n
+        mom_test(a,b,U,n)
+    end
+    show(curl₃(@view a.u[:,:,2^(p-2),:]),-0.025,0.025)
 end
+#--------------------------
+# gr(show = false)
+# @gif for time ∈ 0:2^(p+5),Δt=0.25
+#     mom_step!(a,b,U=U,ν=0.01,Δt=0.25)
+#     show(curl₃(@view a.u[:,:,2^(p-1),:]),-0.25,0.25)
+# end
 #-------------------------------------------------
 function poisson_test(n)
     c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
@@ -68,23 +80,20 @@ function tracer_init(n,m)
     return f,similar(f),cat(u,v,dims=3)
 end
 
-n = 8; Pe = 2^(n-9.)/50
-f,r,u = tracer_init(2^n,2^(n-1))
-
 function tracer_test(n=1000,Δt=0.25)
+    p = 8; Pe = 2^(p-9.)/50
+    f,r,u = tracer_init(2^p,2^(p-1))
     @time for time ∈ 0:n
         fill!(r,0.)
         tracer_transport!(r,f,u,Pe=Pe)
         @. f += Δt*r; BCᶜ!(f)
     end
 end
-tracer_test(1)
-show(f)
 
-gr(show = false)
-@gif for time ∈ 0:2^(n+5),Δt=0.25
-    fill!(r,0.)
-    tracer_transport!(r,f,u,Pe=Pe)
-    @. f += Δt*r; BCᶜ!(f)
-    show(f)
-end every 2^(n-2)
+# gr(show = false)
+# @gif for time ∈ 0:2^(n+5),Δt=0.25
+#     fill!(r,0.)
+#     tracer_transport!(r,f,u,Pe=Pe)
+#     @. f += Δt*r; BCᶜ!(f)
+#     show(f)
+# end every 2^(n-2)
