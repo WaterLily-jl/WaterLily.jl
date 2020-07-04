@@ -7,8 +7,16 @@ include("util.jl")
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @fastmath @inline div(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
 @fastmath @inline div(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
-@fastmath curl₃!(ω₃,u) = @simd for I ∈ inside(ω₃)
-    @inbounds ω₃[I] = ∂(1,CI(I,2),u)-∂(2,CI(I,1),u)
+@fastmath @inline curl(i,I,u) = @inbounds ∂(i%3+1,CI(I,(i+1)%3+1),u)-∂((i+1)%3+1,CI(I,i%3+1),u)
+@fastmath curl!(i,ω,u) = @simd for I ∈ inside(ω)
+    @inbounds ω[I] = curl(i,I,u)
+end
+@fastmath @inline function ke(I::CartesianIndex{m},u) where m
+    κ = 0.
+    for i ∈ 1:m
+        @inbounds κ += abs2(u[I,i]+u[I+δ(i,I),i])
+    end
+    return 0.25κ
 end
 
 function BC!(a::Array{T,4},A,f=1) where T
@@ -66,7 +74,6 @@ end
     end; end
 end
 
-using ElasticArrays
 struct Flow{N,M}
     u :: Array{Float64,N} # velocity vector field
     u⁰:: Array{Float64,N} # previous velocity
@@ -75,7 +82,7 @@ struct Flow{N,M}
     p :: Array{Float64,M} # pressure scalar field
     σ :: Array{Float64,M} # divergence scalar field
     U :: Vector{Float64}  # domain boundary values
-    Δt:: Float64          # time step
+    Δt:: Vector{Float64}  # time step
     ν :: Float64          # kinematic viscosity
     function Flow(u::Array{Float64,n},μ₀::Array{Float64,n},U;Δt=0.25,ν=0.) where n
         N = size(u); M = N[1:end-1]; m = length(M)
@@ -84,30 +91,38 @@ struct Flow{N,M}
         @assert length(U)==m
         u⁰ = copy(u)
         f,p,σ = zeros(N),zeros(M),zeros(M)
-        new{n,m}(u,u⁰,μ₀,f,p,σ,U,Δt,ν)
+        new{n,m}(u,u⁰,μ₀,f,p,σ,U,[Δt],ν)
     end
 end
 
 include("PoissonSys.jl")
 @fastmath function project!(a::Flow{n,m},b::Poisson{n,m}) where {n,m}
     @simd for I ∈ inside(a.σ)
-        @inbounds a.σ[I] = div(I,a.u)/a.Δt
+        @inbounds a.σ[I] = div(I,a.u)/a.Δt[end]
     end
     solve!(a.p,b,a.σ)
     for i ∈ 1:m; @simd for I ∈ inside(a.σ)
-        @inbounds  a.u[I,i] -= a.Δt*a.μ₀[I,i]*∂(i,I,a.p)
+        @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
     end;end
 end
-@fastmath function mom_step!(a::Flow,b::Poisson;O1=false)
+@fastmath function mom_step!(a::Flow,b::Poisson;O1=false,adaptive=true)
     # predictor u* = u⁰+Δtμ₀(∂Φ⁰-∂p*); ∇⋅(μ₀∂p*)=∇⋅(u⁰/Δt+μ₀∂Φ⁰)
     copy!(a.u⁰,a.u); fill!(a.f,0.)
     mom_transport!(a.f,a.u,ν=a.ν)
-    @. a.u += a.Δt*a.μ₀*a.f; BC!(a.u,a.U)
+    @. a.u += a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U)
     project!(a,b); BC!(a.u,a.U)
     O1 && return
     # corrector u = ½(u⁰+u*+Δtμ₀(∂Φ*-∂p))
     fill!(a.f,0.)
     mom_transport!(a.f,a.u,ν=a.ν)
-    @. a.u += a.u⁰+a.Δt*a.μ₀*a.f; BC!(a.u,a.U,2)
+    @. a.u += a.u⁰+a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U,2)
     project!(a,b); a.u .*= 0.5; BC!(a.u,a.U)
+    adaptive && push!(a.Δt,CFL(a))
+end
+
+function CFL(a::Flow{n,m}) where {n,m}
+    @simd for I ∈ inside(a.σ)
+        @inbounds a.σ[I] = ke(I,a.u)
+    end
+    min(1.,inv(maximum(a.σ)+3a.ν))
 end
