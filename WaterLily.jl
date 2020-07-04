@@ -7,38 +7,34 @@ include("util.jl")
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @fastmath @inline div(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
 @fastmath @inline div(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
-function curl₃(u::AbstractArray{T,n}) where {T,n}
-    ω₃ = zeros(size(u)[1:n-1])
-     @simd for I ∈ inside(ω₃)
-        @inbounds ω₃[I] = ∂(1,CI(I,2),u)-∂(2,CI(I,1),u)
-    end
-    return ω₃
+@fastmath curl₃!(ω₃,u) = @simd for I ∈ inside(ω₃)
+    @inbounds ω₃[I] = ∂(1,CI(I,2),u)-∂(2,CI(I,1),u)
 end
 
-function BC!(a::Array{T,4},A) where T
+function BC!(a::Array{T,4},A,f=1) where T
     for k∈1:size(a,3), j∈1:size(a,2)
-        a[1,j,k,1] = a[2,j,k,1] = a[size(a,1),j,k,1] = A[1]
+        a[1,j,k,1] = a[2,j,k,1] = a[size(a,1),j,k,1] = f*A[1]
         a[1,j,k,2] = a[2,j,k,2]; a[size(a,1),j,k,2] = a[size(a,1)-1,j,k,2]
         a[1,j,k,3] = a[2,j,k,3]; a[size(a,1),j,k,3] = a[size(a,1)-1,j,k,3]
     end
     for k∈1:size(a,3), i∈1:size(a,1)
-        a[i,1,k,2] = a[i,2,k,2] = a[i,size(a,2),k,2] = A[2]
+        a[i,1,k,2] = a[i,2,k,2] = a[i,size(a,2),k,2] = f*A[2]
         a[i,1,k,1] = a[i,2,k,1]; a[i,size(a,2),k,1] = a[i,size(a,2)-1,k,1]
         a[i,1,k,3] = a[i,2,k,3]; a[i,size(a,2),k,3] = a[i,size(a,2)-1,k,3]
     end
     for j∈1:size(a,2), i∈1:size(a,1)
-        a[i,j,1,3] = a[i,j,2,3] = a[i,j,size(a,3),3] = A[3]
+        a[i,j,1,3] = a[i,j,2,3] = a[i,j,size(a,3),3] = f*A[3]
         a[i,j,1,1] = a[i,j,2,1]; a[i,j,size(a,3),1] = a[i,j,size(a,3)-1,1]
         a[i,j,1,2] = a[i,j,2,2]; a[i,j,size(a,3),2] = a[i,j,size(a,3)-1,2]
     end
 end
-function BC!(a::Array{T,3},A) where T
+function BC!(a::Array{T,3},A,f=1) where T
     for j∈1:size(a,2)
-        a[1,j,1] = a[2,j,1] = a[size(a,1),j,1] = A[1]
+        a[1,j,1] = a[2,j,1] = a[size(a,1),j,1] = f*A[1]
         a[1,j,2] = a[2,j,2]; a[size(a,1),j,2] = a[size(a,1)-1,j,2]
     end
     for i∈1:size(a,1)
-        a[i,1,2] = a[i,2,2] = a[i,size(a,2),2] = A[2]
+        a[i,1,2] = a[i,2,2] = a[i,size(a,2),2] = f*A[2]
         a[i,1,1] = a[i,2,1]; a[i,size(a,2),1] = a[i,size(a,2)-1,1]
     end
 end
@@ -70,35 +66,48 @@ end
     end; end
 end
 
+using ElasticArrays
 struct Flow{N,M}
     u :: Array{Float64,N} # velocity vector field
-    c :: Array{Float64,N} # BDIM \mu_0 vector field
+    u⁰:: Array{Float64,N} # previous velocity
+    μ₀:: Array{Float64,N} # BDIM zero-moment vector field
     f :: Array{Float64,N} # force vector field
     p :: Array{Float64,M} # pressure scalar field
     σ :: Array{Float64,M} # divergence scalar field
-    function Flow(u::Array{Float64,n},c::Array{Float64,n}) where n
+    U :: Vector{Float64}  # domain boundary values
+    Δt:: Float64          # time step
+    ν :: Float64          # kinematic viscosity
+    function Flow(u::Array{Float64,n},μ₀::Array{Float64,n},U;Δt=0.25,ν=0.) where n
         N = size(u); M = N[1:end-1]; m = length(M)
-        @assert N==size(c)
+        @assert N==size(μ₀)
         @assert N[end]==m
+        @assert length(U)==m
+        u⁰ = copy(u)
         f,p,σ = zeros(N),zeros(M),zeros(M)
-        new{n,m}(u,c,f,p,σ)
+        new{n,m}(u,u⁰,μ₀,f,p,σ,U,Δt,ν)
     end
 end
 
 include("PoissonSys.jl")
-@fastmath function project!(a::Flow{n,m},b::Poisson{n,m},Δt) where {n,m}
+@fastmath function project!(a::Flow{n,m},b::Poisson{n,m}) where {n,m}
     @simd for I ∈ inside(a.σ)
-        @inbounds a.σ[I] = div(I,a.u)/Δt
+        @inbounds a.σ[I] = div(I,a.u)/a.Δt
     end
     solve!(a.p,b,a.σ)
     for i ∈ 1:m; @simd for I ∈ inside(a.σ)
-        @inbounds  a.u[I,i] -= Δt*a.c[I,i]*∂(i,I,a.p)
+        @inbounds  a.u[I,i] -= a.Δt*a.μ₀[I,i]*∂(i,I,a.p)
     end;end
 end
-
-@fastmath function mom_step!(a::Flow,b::Poisson;Δt=0.25,ν=0.1,U=[1. 0.])
+@fastmath function mom_step!(a::Flow,b::Poisson;O1=false)
+    # predictor u* = u⁰+Δtμ₀(∂Φ⁰-∂p*); ∇⋅(μ₀∂p*)=∇⋅(u⁰/Δt+μ₀∂Φ⁰)
+    copy!(a.u⁰,a.u); fill!(a.f,0.)
+    mom_transport!(a.f,a.u,ν=a.ν)
+    @. a.u += a.Δt*a.μ₀*a.f; BC!(a.u,a.U)
+    project!(a,b); BC!(a.u,a.U)
+    O1 && return
+    # corrector u = ½(u⁰+u*+Δtμ₀(∂Φ*-∂p))
     fill!(a.f,0.)
-    mom_transport!(a.f,a.u,ν=ν)
-    @. a.u += Δt*a.c*a.f; BC!(a.u,U)
-    project!(a,b,Δt); BC!(a.u,U)
+    mom_transport!(a.f,a.u,ν=a.ν)
+    @. a.u += a.u⁰+a.Δt*a.μ₀*a.f; BC!(a.u,a.U,2)
+    project!(a,b); a.u .*= 0.5; BC!(a.u,a.U)
 end
