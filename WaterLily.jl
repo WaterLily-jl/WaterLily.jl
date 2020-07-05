@@ -121,8 +121,9 @@ end
 end
 
 function CFL(a::Flow{n,m}) where {n,m}
+    mx = 0.
     @simd for I ∈ inside(a.σ)
-        @inbounds a.σ[I] = ke(I,a.u)
+        mx = max(mx,sqrt(ke(I,a.u)))
     end
-    min(1.,inv(maximum(a.σ)+3a.ν))
+    min(1.,inv(mx+3a.ν))
 end

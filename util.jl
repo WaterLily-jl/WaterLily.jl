@@ -8,13 +8,14 @@
         reverse ? Iterators.reverse(inside(size(a))) : inside(size(a))
 @inline inside_u(N::NTuple{n,T}) where {n,T} = CR(ntuple(i->2:N[i],n-1))
 
-@fastmath function L₂(a::Array{Float64})
+@fastmath function Σinside(a::Array{Float64},f=identity)
     s = 0.
     @simd for I ∈ inside(a)
-        @inbounds s += abs2(a[I])
+        s += @inbounds f(a[I])
     end
     return s
 end
+@fastmath L₂(a::Array{Float64}) = Σinside(a,abs2)
 
 @fastmath function median(a,b,c)
     x = a-b
