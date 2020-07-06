@@ -18,8 +18,14 @@ import Base.mapreduce
 end
 L₂(a::Array{Float64}) = mapreduce(I->@inbounds(abs2(a[I])),+,inside(a))
 
-map_inside!(a::AbstractArray,f) = @inbounds @simd for I ∈ inside(a)
-    a[I] = f(I)
+macro inside(ex)
+    @assert ex.head==:(=)
+    a,I = Meta.parse.(split(string(ex.args[1]),union("[","]")))
+    return quote
+        @inbounds @simd for $I ∈ inside($a)
+            $ex
+        end
+    end |> esc
 end
 
 @fastmath function median(a,b,c)

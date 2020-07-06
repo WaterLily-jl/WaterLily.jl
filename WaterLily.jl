@@ -89,9 +89,7 @@ end
 
 include("PoissonSys.jl")
 @fastmath function project!(a::Flow{n,m},b::Poisson{n,m}) where {n,m}
-    @inbounds @simd for I ∈ inside(a.σ)
-        a.σ[I] = div(I,a.u)/a.Δt[end]
-    end
+    @inside a.σ[I] = div(I,a.u)/a.Δt[end]
     solve!(a.p,b,a.σ)
     for i ∈ 1:m; @simd for I ∈ inside(a.σ)
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
@@ -99,13 +97,13 @@ include("PoissonSys.jl")
 end
 @fastmath function mom_step!(a::Flow,b::Poisson;O1=false,adaptive=true)
     # predictor u* = u⁰+Δtμ₀(∂Φ⁰-∂p*); ∇⋅(μ₀∂p*)=∇⋅(u⁰/Δt+μ₀∂Φ⁰)
-    copy!(a.u⁰,a.u); fill!(a.f,0.)
+    a.u⁰ .= a.u; a.f .= 0.
     mom_transport!(a.f,a.u,ν=a.ν)
     @. a.u += a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U)
     project!(a,b); BC!(a.u,a.U)
     O1 && return
     # corrector u = ½(u⁰+u*+Δtμ₀(∂Φ*-∂p))
-    fill!(a.f,0.)
+    a.f .= 0.
     mom_transport!(a.f,a.u,ν=a.ν)
     @. a.u += a.u⁰+a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U,2)
     project!(a,b); a.u .*= 0.5; BC!(a.u,a.U)

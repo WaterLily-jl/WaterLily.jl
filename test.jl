@@ -25,6 +25,7 @@ function TwoD_block_test(p=7,N=[5000,1000])
         mom_test(a,b,n)
     end
     # show(a.p,-3,1)
+    # show([curl(3,I,a.u) for I ∈ inside(a.p)],-1,1)
     return a,b
 end
 
@@ -44,9 +45,8 @@ function TGVortex_test(p=7,N=[1,10,100])
         @show n
         mom_test(a,b,n)
     end
-    # ω = zeros(size(a.p)[1:2]);
-    # curl!(3,ω,@view a.u[:,:,2^(p-1),:]);
-    # show(ω,-0.025,0.025)
+    # ω₃ = [curl(3,I,a.u) for I ∈ inside(a.p)]
+    # show(ω₃[:,:,2^(p-2)],-0.25,0.25)
     return a,b
 end
 #--------------------------

@@ -46,15 +46,12 @@ end
 function mult(p::PoissonSys{n,m},x::Array{Float64,m}) where {n,m}
     @assert size(p.x)==size(x)
     b = zeros(size(p.x))
-    @inbounds @simd for I ∈ inside(b)
-        b[I] = mult(I,p.L,p.D,x)
-    end
+    @inside b[I] = mult(I,p.L,p.D,x)
     return b
 end
 
-@fastmath residual!(p::PoissonSys,b::Array{Float64}) = @inbounds @simd for I ∈ inside(p.r)
-    p.r[I] = b[I]-mult(I,p.L,p.D,p.x)
-end
+@fastmath residual!(p::PoissonSys,b::Array{Float64}) =
+    @inside p.r[I] = b[I]-mult(I,p.L,p.D,p.x)
 
 @fastmath increment!(p::PoissonSys) = @inbounds @simd for I ∈ inside(p.x)
     p.x[I] += p.ϵ[I]
@@ -79,9 +76,7 @@ GS!(p::PoissonSys;it=0)
 Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
 """
 @fastmath function GS!(p::PoissonSys{n,m};it=0) where {n,m}
-    @inbounds @simd for I ∈ inside(p.r)
-        p.ϵ[I] = p.r[I]*p.iD[I]
-    end
+    @inside p.ϵ[I] = p.r[I]*p.iD[I]
     for i ∈ 1:it; @inbounds for I ∈ inside(p.r, reverse = i%2==0) # order matters here
         σ = p.r[I]-multL(I,p.L,p.ϵ)-multU(I,p.L,p.ϵ)
         p.ϵ[I] = σ*p.iD[I]
