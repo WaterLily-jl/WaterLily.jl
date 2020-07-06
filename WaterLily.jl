@@ -7,9 +7,7 @@ include("util.jl")
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(∂(i,I,u) for i ∈ 1:m)
 @fastmath @inline curl(i,I,u) = @inbounds ∂(i%3+1,CI(I,(i+1)%3+1),u)-∂((i+1)%3+1,CI(I,i%3+1),u)
-@fastmath curl!(i,ω,u) = @simd for I ∈ inside(ω)
-    @inbounds ω[I] = curl(i,I,u)
-end
+
 @fastmath @inline ke(I::CartesianIndex{m},u) where m =
     0.125sum(@inbounds(abs2(u[I,i]+u[I+δ(i,I),i])) for i ∈ 1:m)
 
@@ -91,8 +89,8 @@ end
 
 include("PoissonSys.jl")
 @fastmath function project!(a::Flow{n,m},b::Poisson{n,m}) where {n,m}
-    @simd for I ∈ inside(a.σ)
-        @inbounds a.σ[I] = div(I,a.u)/a.Δt[end]
+    @inbounds @simd for I ∈ inside(a.σ)
+        a.σ[I] = div(I,a.u)/a.Δt[end]
     end
     solve!(a.p,b,a.σ)
     for i ∈ 1:m; @simd for I ∈ inside(a.σ)
@@ -115,9 +113,6 @@ end
 end
 
 function CFL(a::Flow{n,m}) where {n,m}
-    mx = 0.
-    @simd for I ∈ inside(a.σ)
-        mx = max(mx,ke(I,a.u))
-    end
+    mx = mapreduce(I->ke(I,a.u),max,inside(a.p))
     min(1.,inv(sqrt(2mx)+3a.ν))
 end
