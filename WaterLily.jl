@@ -5,19 +5,13 @@ include("util.jl")
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@fastmath @inline div(I::CartesianIndex{2},u) = ∂(1,I,u)+∂(2,I,u)
-@fastmath @inline div(I::CartesianIndex{3},u) = ∂(1,I,u)+∂(2,I,u)+∂(3,I,u)
+@fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(∂(i,I,u) for i ∈ 1:m)
 @fastmath @inline curl(i,I,u) = @inbounds ∂(i%3+1,CI(I,(i+1)%3+1),u)-∂((i+1)%3+1,CI(I,i%3+1),u)
 @fastmath curl!(i,ω,u) = @simd for I ∈ inside(ω)
     @inbounds ω[I] = curl(i,I,u)
 end
-@fastmath @inline function ke(I::CartesianIndex{m},u) where m
-    κ = 0.
-    for i ∈ 1:m
-        @inbounds κ += abs2(u[I,i]+u[I+δ(i,I),i])
-    end
-    return 0.25κ
-end
+@fastmath @inline ke(I::CartesianIndex{m},u) where m =
+    0.125sum(@inbounds(abs2(u[I,i]+u[I+δ(i,I),i])) for i ∈ 1:m)
 
 function BC!(a::Array{T,4},A,f=1) where T
     for k∈1:size(a,3), j∈1:size(a,2)
@@ -123,7 +117,7 @@ end
 function CFL(a::Flow{n,m}) where {n,m}
     mx = 0.
     @simd for I ∈ inside(a.σ)
-        mx = max(mx,sqrt(ke(I,a.u)))
+        mx = max(mx,ke(I,a.u))
     end
-    min(1.,inv(mx+3a.ν))
+    min(1.,inv(sqrt(2mx)+3a.ν))
 end

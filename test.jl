@@ -44,8 +44,10 @@ function TGVortex_test(p=7,N=[1,10,100])
         @show n
         mom_test(a,b,n)
     end
+    # ω = zeros(size(a.p)[1:2]);
+    # curl!(3,ω,@view a.u[:,:,2^(p-1),:]);
+    # show(ω,-0.025,0.025)
     return a,b
-    # show(curl₃(@view a.u[:,:,2^(p-2),:]),-0.025,0.025)
 end
 #--------------------------
 # gr(show = false)

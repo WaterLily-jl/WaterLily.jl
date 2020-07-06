@@ -3,23 +3,19 @@
 @fastmath function restrictPS(b::Array{Float64,m}) where m
     N = ntuple(i-> i==m ? m-1 : 1+size(b,i)÷2, m)
     a = zeros(N)
-    for i ∈ 1:m-1, I ∈ inside(N[1:m-1])
-        @inbounds a[I,i] = 0.5sum(b[J,i] for J ∈ near(I,i))
+    @inbounds for i ∈ 1:m-1, I ∈ inside(N[1:m-1])
+        a[I,i] = 0.5sum(b[J,i] for J ∈ near(I,i))
     end
     PoissonSys(a)
 end
 
-@fastmath restrict!(a::Array{Float64},b::Array{Float64}) = @simd for I ∈ inside(a)
-    σ = 0.
-    @simd for J ∈ near(I)
-        @inbounds σ+=b[J]
-    end
-    @inbounds a[I] = σ
+@fastmath restrict!(a::Array{Float64},b::Array{Float64}) = @inbounds @simd for I ∈ inside(a)
+    a[I] = sum(@inbounds(b[J]) for J ∈ near(I))
 end
 
-prolongate!(a::Array{Float64},b::Array{Float64}) = for I ∈ inside(b)
+prolongate!(a::Array{Float64},b::Array{Float64}) = @inbounds for I ∈ inside(b)
     @simd for J ∈ near(I)
-        @inbounds a[J] = b[I]
+        a[J] = b[I]
 end;end
 
 @inline divisible(N) = mod(N,2)==0 && N>4
