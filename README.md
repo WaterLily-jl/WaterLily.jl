@@ -1,5 +1,5 @@
 # WaterLily
- Real-time fluid simulator in Julia
+
 ![Lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange.svg)<!--
 ![Lifecycle](https://img.shields.io/badge/lifecycle-maturing-blue.svg)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-stable-green.svg)
@@ -12,3 +12,5 @@
 [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/stable)
 [![Documentation](https://img.shields.io/badge/docs-master-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/dev)
 -->
+
+Real-time fluid simulator in Julia.
