@@ -1,5 +1,3 @@
-include("util.jl")
-
 @inline ∂(a,I::CartesianIndex{d},f::AbstractArray{Float64,d}) where d = @inbounds f[I]-f[I-δ(a,I)]
 @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{Float64,n}) where {n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
@@ -10,34 +8,6 @@ include("util.jl")
 
 @fastmath @inline ke(I::CartesianIndex{m},u) where m =
     0.125sum(@inbounds(abs2(u[I,i]+u[I+δ(i,I),i])) for i ∈ 1:m)
-
-function BC!(a::Array{T,4},A,f=1) where T
-    for k∈1:size(a,3), j∈1:size(a,2)
-        a[1,j,k,1] = a[2,j,k,1] = a[size(a,1),j,k,1] = f*A[1]
-        a[1,j,k,2] = a[2,j,k,2]; a[size(a,1),j,k,2] = a[size(a,1)-1,j,k,2]
-        a[1,j,k,3] = a[2,j,k,3]; a[size(a,1),j,k,3] = a[size(a,1)-1,j,k,3]
-    end
-    for k∈1:size(a,3), i∈1:size(a,1)
-        a[i,1,k,2] = a[i,2,k,2] = a[i,size(a,2),k,2] = f*A[2]
-        a[i,1,k,1] = a[i,2,k,1]; a[i,size(a,2),k,1] = a[i,size(a,2)-1,k,1]
-        a[i,1,k,3] = a[i,2,k,3]; a[i,size(a,2),k,3] = a[i,size(a,2)-1,k,3]
-    end
-    for j∈1:size(a,2), i∈1:size(a,1)
-        a[i,j,1,3] = a[i,j,2,3] = a[i,j,size(a,3),3] = f*A[3]
-        a[i,j,1,1] = a[i,j,2,1]; a[i,j,size(a,3),1] = a[i,j,size(a,3)-1,1]
-        a[i,j,1,2] = a[i,j,2,2]; a[i,j,size(a,3),2] = a[i,j,size(a,3)-1,2]
-    end
-end
-function BC!(a::Array{T,3},A,f=1) where T
-    for j∈1:size(a,2)
-        a[1,j,1] = a[2,j,1] = a[size(a,1),j,1] = f*A[1]
-        a[1,j,2] = a[2,j,2]; a[size(a,1),j,2] = a[size(a,1)-1,j,2]
-    end
-    for i∈1:size(a,1)
-        a[i,1,2] = a[i,2,2] = a[i,size(a,2),2] = f*A[2]
-        a[i,1,1] = a[i,2,1]; a[i,size(a,2),1] = a[i,size(a,2)-1,1]
-    end
-end
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
     N = size(u)
@@ -87,7 +57,6 @@ struct Flow{N,M}
     end
 end
 
-include("PoissonSys.jl")
 @fastmath function project!(a::Flow{n,m},b::Poisson{n,m}) where {n,m}
     @inside a.σ[I] = div(I,a.u)/a.Δt[end]
     solve!(a.p,b,a.σ)

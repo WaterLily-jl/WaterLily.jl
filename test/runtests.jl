@@ -1,5 +1,50 @@
-include("WaterLily.jl");include("GMG.jl")
-# using Profile,ProfileView
+using WaterLily
+using Test
+
+@testset "util.jl" begin
+    @test L₂(2ones(4,4)) == 16
+    a = Float64[i+j+k  for i ∈ 1:4, j ∈ 1:4, k ∈ 1:2]
+    BC!(a,[0. 0.])
+    @test a == cat([0. 0. 0. 0.
+                    0. 0. 0. 0.
+                    6. 6. 7. 7.
+                    0. 0. 0. 0.],
+                   [0. 0. 7. 0.
+                    0. 0. 7. 0.
+                    0. 0. 8. 0.
+                    0. 0. 8. 0.],dims=3)
+end
+
+function poisson_test(n)
+    c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
+    p = PoissonSys(c)
+    soln = Float64[ i for i ∈ 1:2^n+2, j ∈ 1:2^n+2]
+    b = mult(p,soln)
+    x = zeros(2^n+2,2^n+2)
+    solve!(x,p,b)
+    x .-= x[2,2]-2
+    return L₂(x.-soln)/L₂(soln)
+end
+
+@testset "PoissonSys.jl" begin
+    @test poisson_test(7) < 1e-5
+end
+
+function GMG_test(n)
+    c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
+    p = MultiLevelPS(c)
+    soln = Float64[ i for i ∈ 1:2^n+2, j ∈ 1:2^n+2]
+    b = mult(p,soln)
+    x = zeros(2^n+2,2^n+2)
+    solve!(x,p,b)
+    x .-= x[2,2]-2
+    return L₂(x.-soln)/L₂(soln)
+end
+
+@testset "GMG.jl" begin
+    @test GMG_test(7) < 1e-5
+end
+
 mom_test(a::Flow,b::Poisson,n=1000) = @time for i ∈ 1:n
     mom_step!(a,b)
 end
@@ -55,47 +100,3 @@ end
 #     mom_step!(a,b,U=U,ν=0.01,Δt=0.25)
 #     show(curl₃(@view a.u[:,:,2^(p-1),:]),-0.25,0.25)
 # end
-#-------------------------------------------------
-function poisson_test(n)
-    c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
-    p = PoissonSys(c)
-    x = Float64[i  for i ∈ 1:2^n+2, j ∈ 1:2^n+2]
-    b = mult(p,x)
-    fill!(x,0.)
-    @time solve!(x,p,b,log=true)
-end
-#
-function GMG_test(n)
-    c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
-    @time p = MultiLevelPS(c)
-    x = Float64[i for i∈1:2^n+2, j∈1:2^n+2]
-    b = mult(p.levels[1],x)
-    fill!(x,0.)
-    @time solve!(x,p,b,log=true)
-end
-#-------------------------------------------------
-function tracer_init(n,m)
-    f = zeros(n+2,m+2)
-    f[10:n÷4+10, m-n÷4-5:m-5] .= 1
-    u = [ sin((i-2)*π/m)*cos((j-1.5)*π/m) for i ∈ 1:n+2, j ∈ 1:m+2 ]
-    v = [-cos((i-1.5)*π/m)*sin((j-2)*π/m) for i ∈ 1:n+2, j ∈ 1:m+2 ]
-    return f,similar(f),cat(u,v,dims=3)
-end
-
-function tracer_test(n=1000,Δt=0.25)
-    p = 8; Pe = 2^(p-9.)/50
-    f,r,u = tracer_init(2^p,2^(p-1))
-    @time for time ∈ 0:n
-        fill!(r,0.)
-        tracer_transport!(r,f,u,Pe=Pe)
-        @. f += Δt*r; BCᶜ!(f)
-    end
-end
-
-# gr(show = false)
-# @gif for time ∈ 0:2^(n+5),Δt=0.25
-#     fill!(r,0.)
-#     tracer_transport!(r,f,u,Pe=Pe)
-#     @. f += Δt*r; BCᶜ!(f)
-#     show(f)
-# end every 2^(n-2)

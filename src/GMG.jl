@@ -47,6 +47,8 @@ function Vcycle!(p::MultiLevelPS;l=1)
     increment!(p.levels[l])
 end
 
+mult(p::MultiLevelPS,x) = mult(p.levels[1],x)
+
 function solve!(x::Array{Float64,m},p::MultiLevelPS{n,m},b::Array{Float64,m};log=false,tol=1e-4) where {n,m}
     p.levels[1].x .= x
     residual!(p.levels[1],b); r₂ = L₂(p.levels[1].r)
