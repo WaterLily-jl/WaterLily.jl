@@ -45,6 +45,7 @@ struct Flow{N,M}
     σ :: Array{Float64,M} # divergence scalar field
     U :: Vector{Float64}  # domain boundary values
     Δt:: Vector{Float64}  # time step
+    nᵖ:: Vector{Int16}    # pressure solver iterations
     ν :: Float64          # kinematic viscosity
     function Flow(u::Array{Float64,n},μ₀::Array{Float64,n},U;Δt=0.25,ν=0.) where n
         N = size(u); M = N[1:end-1]; m = length(M)
@@ -53,13 +54,14 @@ struct Flow{N,M}
         @assert length(U)==m
         u⁰ = copy(u)
         f,p,σ = zeros(N),zeros(M),zeros(M)
-        new{n,m}(u,u⁰,μ₀,f,p,σ,U,[Δt],ν)
+        new{n,m}(u,u⁰,μ₀,f,p,σ,U,[Δt],[0],ν)
     end
 end
 
 @fastmath function project!(a::Flow{n,m},b::Poisson{n,m}) where {n,m}
     @inside a.σ[I] = div(I,a.u)/a.Δt[end]
-    solve!(a.p,b,a.σ)
+    i = solve!(a.p,b,a.σ)
+    push!(a.nᵖ,i)
     for i ∈ 1:m; @simd for I ∈ inside(a.σ)
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
     end;end

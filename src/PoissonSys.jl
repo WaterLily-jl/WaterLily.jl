@@ -88,10 +88,12 @@ function solve!(x::Array{Float64,m},p::PoissonSys{n,m},b::Array{Float64,m};log=f
     p.x .= x
     residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])
+    nᵖ=0
     while r₂>tol
         SOR!(p,ω=1.8); r₂ = L₂(p.r)
         log && push!(res,r₂)
+        nᵖ+=1
     end
     x .= p.x
-    return log ? res : nothing
+    return log ? res : nᵖ
 end

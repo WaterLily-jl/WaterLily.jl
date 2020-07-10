@@ -53,12 +53,14 @@ function solve!(x::Array{Float64,m},p::MultiLevelPS{n,m},b::Array{Float64,m};log
     p.levels[1].x .= x
     residual!(p.levels[1],b); r₂ = L₂(p.levels[1].r)
     log && (res = [r₂])
+    nᵖ=0
     while r₂>tol
         Vcycle!(p)
         GS!(p.levels[1],it=2); r₂ = L₂(p.levels[1].r)
         5tol>r₂>tol && (GS!(p.levels[1],it=1); r₂ = L₂(p.levels[1].r))
         log && push!(res,r₂)
+        nᵖ+=1
     end
     x .= p.levels[1].x
-    return log ? res : nothing
+    return log ? res : nᵖ
 end
