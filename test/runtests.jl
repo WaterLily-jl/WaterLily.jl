@@ -15,34 +15,34 @@ using Test
                     0. 0. 8. 0.],dims=3)
 end
 
-function poisson_test(n)
+function Poisson_test_2D(f,n)
     c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
-    p = PoissonSys(c)
+    p = f(c)
     soln = Float64[ i for i ∈ 1:2^n+2, j ∈ 1:2^n+2]
     b = mult(p,soln)
     x = zeros(2^n+2,2^n+2)
     solve!(x,p,b)
-    x .-= x[2,2]-2
+    x .-= (x[2,2]-soln[2,2])
+    return L₂(x.-soln)/L₂(soln)
+end
+function Poisson_test_3D(f,n)
+    c = ones(2^n+2,2^n+2,2^n+2,3); BC!(c,[0. 0. 0.])
+    p = f(c)
+    soln = Float64[ i for i ∈ 1:2^n+2, j ∈ 1:2^n+2, k ∈ 1:2^n+2]
+    b = mult(p,soln)
+    x = zeros(2^n+2,2^n+2,2^n+2)
+    solve!(x,p,b)
+    x .-= (x[2,2,2]-soln[2,2,2])
     return L₂(x.-soln)/L₂(soln)
 end
 
 @testset "PoissonSys.jl" begin
-    @test poisson_test(7) < 1e-5
+    @test Poisson_test_2D(PoissonSys,6) < 1e-5
+    @test Poisson_test_3D(PoissonSys,4) < 1e-5
 end
-
-function GMG_test(n)
-    c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
-    p = MultiLevelPS(c)
-    soln = Float64[ i for i ∈ 1:2^n+2, j ∈ 1:2^n+2]
-    b = mult(p,soln)
-    x = zeros(2^n+2,2^n+2)
-    solve!(x,p,b)
-    x .-= x[2,2]-2
-    return L₂(x.-soln)/L₂(soln)
-end
-
 @testset "GMG.jl" begin
-    @test GMG_test(7) < 1e-5
+    @test Poisson_test_2D(MultiLevelPS,6) < 1e-5
+    @test Poisson_test_3D(MultiLevelPS,4) < 1e-5
 end
 
 mom_test(a::Flow,b::Poisson,n=1000) = @time for i ∈ 1:n
