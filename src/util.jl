@@ -66,8 +66,3 @@ function BC!(a::Array{T,3},A,f=1) where T
         a[i,1,1] = a[i,2,1]; a[i,size(a,2),1] = a[i,size(a,2)-1,1]
     end
 end
-
-using Images,Plots
-show(f) = plot(Gray.(f'[end:-1:1,:]))
-show(f,fmin,fmax) = show((f.-fmin)/(fmax-fmin))
-show_scaled(σ) = show(σ,minimum(σ),maximum(σ))
