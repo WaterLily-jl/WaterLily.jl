@@ -13,6 +13,6 @@ include("Flow.jl")
 export Flow,mom_step!
 
 include("plot.jl")
-export flood,body
+export flood,addbody
 
 end # module

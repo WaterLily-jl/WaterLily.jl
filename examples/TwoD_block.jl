@@ -26,8 +26,10 @@ function TwoD_block_video(p,Re=250)
             tprint += a.Δt[end]*U[1]/L
         end
         @inside ω₃[I]=WaterLily.curl(3,I,a.u)*L/U[1]
-        flood(collect(1:n).-0.5,collect(1:m).-0.5,ω₃,clims=(-16,16))
-        body([xr[1],xr[end],xr[end],xr[1],xr[1]],[yr[1],yr[1],yr[end],yr[end],yr[1]])
+        flood(ω₃,shift=(-0.5,-0.5),clims=(-16,16))
+        x = [xr[1],xr[end],xr[end],xr[1],xr[1]]
+        y = [yr[1],yr[1],yr[end],yr[end],yr[1]]
+        addbody(x,y)
         tprint-=Δprint
     end
     return a
