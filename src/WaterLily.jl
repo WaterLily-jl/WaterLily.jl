@@ -7,7 +7,7 @@ include("PoissonSys.jl")
 export Poisson,PoissonSys,solve!,mult
 
 include("GMG.jl")
-export MultiLevelPS,solve!
+export MultiLevelPS,solve!,mult
 
 include("Flow.jl")
 export Flow,mom_step!
