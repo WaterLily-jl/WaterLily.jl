@@ -21,7 +21,7 @@
 end
 
 @fastmath function mom_transport!(r,u;ν=0.1)
-    N = size(u)
+    N = size(u); r .= 0.
     for a ∈ 1:N[end], b ∈ 1:N[end]; @simd for I ∈ inside_u(N)
         Iᵃ,Iᵇ = CI(I,a),CI(I,b)
         if Iᵇ[b]==2 || Iᵇ[b]==N[b]
@@ -64,18 +64,16 @@ end
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
     end;end
 end
-@fastmath function mom_step!(a::Flow,b::Poisson;O1=false,adaptive=true)
+@fastmath function mom_step!(a::Flow,b::Poisson,adaptive=true)
+    a.u⁰ .= a.u
     # predictor u* = u⁰+Δtμ₀(∂Φ⁰-∂p*); ∇⋅(μ₀∂p*)=∇⋅(u⁰/Δt+μ₀∂Φ⁰)
-    a.u⁰ .= a.u; a.f .= 0.
     mom_transport!(a.f,a.u,ν=a.ν)
     @. a.u += a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U)
     project!(a,b); BC!(a.u,a.U)
-    O1 && return
     # corrector u = ½(u⁰+u*+Δtμ₀(∂Φ*-∂p))
-    a.f .= 0.
     mom_transport!(a.f,a.u,ν=a.ν)
     @. a.u += a.u⁰+a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U,2)
-    project!(a,b); a.u .*= 0.5; BC!(a.u,a.U)
+    project!(a,b); a.u ./= 2; BC!(a.u,a.U)
     adaptive && push!(a.Δt,CFL(a))
 end
 

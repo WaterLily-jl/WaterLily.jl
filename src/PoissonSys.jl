@@ -84,12 +84,12 @@ Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
     increment!(p)
 end
 
-function solve!(x::Array{Float64,m},p::PoissonSys{n,m},b::Array{Float64,m};log=false,tol=1e-4) where {n,m}
+function solve!(x::Array{Float64,m},p::PoissonSys{n,m},b::Array{Float64,m};log=false,tol=1e-4,itmx=1e3) where {n,m}
     p.x .= x
     residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])
     nᵖ=0
-    while r₂>tol
+    while r₂>tol && nᵖ<itmx
         SOR!(p,ω=1.8); r₂ = L₂(p.r)
         log && push!(res,r₂)
         nᵖ+=1

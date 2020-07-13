@@ -49,12 +49,12 @@ end
 
 mult(p::MultiLevelPS,x) = mult(p.levels[1],x)
 
-function solve!(x::Array{Float64,m},p::MultiLevelPS{n,m},b::Array{Float64,m};log=false,tol=1e-4) where {n,m}
+function solve!(x::Array{Float64,m},p::MultiLevelPS{n,m},b::Array{Float64,m};log=false,tol=1e-4,itmx=32) where {n,m}
     p.levels[1].x .= x
     residual!(p.levels[1],b); r₂ = L₂(p.levels[1].r)
     log && (res = [r₂])
     nᵖ=0
-    while r₂>tol
+    while r₂>tol && nᵖ<itmx
         Vcycle!(p)
         GS!(p.levels[1],it=2); r₂ = L₂(p.levels[1].r)
         5tol>r₂>tol && (GS!(p.levels[1],it=1); r₂ = L₂(p.levels[1].r))

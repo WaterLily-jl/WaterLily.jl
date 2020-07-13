@@ -3,6 +3,7 @@ Plots.GRBackend()
 
 function flood(f::Array;shift=(0.,0.),cfill=:RdBu_11,clims=(),kv...)
     if length(clims)==2
+        @assert clims[1]<clims[2]
         @. f=min(clims[2],max(clims[1],f))
     else
         clims = (minimum(f),maximum(f))
