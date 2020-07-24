@@ -45,6 +45,12 @@ end
     @test Poisson_test_3D(MultiLevelPoisson,4) < 1e-5
 end
 
+@testset "Body.jl" begin
+    c = ones(4,8,2); BC!(c,zeros(2))
+    @test BDIM_coef(i->1,4,8,2) ≈ c
+    @test L₂(BDIM_coef(i->-1,4,8,2))==0.0
+end
+
 @testset "Flow.jl" begin
     # Impulsive flow in a box with mismatched BCs
     U = rand(2)

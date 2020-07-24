@@ -9,6 +9,9 @@ export AbstractPoisson,Poisson,solve!,mult
 include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solve!,mult
 
+include("Body.jl")
+export BDIM_coef,BDIM_coef!
+
 include("Flow.jl")
 export Flow,mom_step!
 
