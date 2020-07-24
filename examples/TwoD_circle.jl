@@ -13,6 +13,7 @@ function TwoD_circle_video(p,Re=250)
     c = BDIM_coef(n+2,m+2,2) do xy
         norm2(xy .- center) - R  # signed distance function
     end
+    z = [R*exp(im*θ)+complex(center...) for θ ∈ range(0,2π,length=33)]
 
     # Initialize flow and Poisson system
     u = zeros(n+2,m+2,2); BC!(u,U)
@@ -20,7 +21,7 @@ function TwoD_circle_video(p,Re=250)
     b = MultiLevelPoisson(c)
 
     # Evolve solution in time and plot to a gif
-    tprint,Δprint,nprint = 0.0,0.25,200
+    tprint,Δprint,nprint = 0.0,0.5,100
     gr(show = false, size=(780,360))
     @time @gif for i ∈ 1:nprint
         while tprint<0
@@ -29,6 +30,7 @@ function TwoD_circle_video(p,Re=250)
         end
         @inside a.σ[I]=WaterLily.curl(3,I,a.u)*R/U[1]
         flood(a.σ,shift=(-0.5,-0.5),clims=(-5,5))
+        addbody(real(z),imag(z))
         tprint-=Δprint
     end
     return a
