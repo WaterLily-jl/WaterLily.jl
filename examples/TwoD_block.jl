@@ -1,5 +1,5 @@
 using WaterLily
-using Plots
+include("TwoD_plots.jl")
 
 function TwoD_block_video(p,Re=250)
     # Set simulation size & physical parameters
@@ -22,7 +22,7 @@ function TwoD_block_video(p,Re=250)
 
     # Initialize flow and Poisson system
     a = Flow(u,c,U,ν=ν);
-    b = MultiLevelPS(a.μ₀)
+    b = MultiLevelPoisson(a.μ₀)
 
     # Evolve solution in time and plot to a gif
     tprint,Δprint,nprint = -30.,0.25,100

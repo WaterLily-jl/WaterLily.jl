@@ -36,13 +36,13 @@ function Poisson_test_3D(f,n)
     return L₂(x.-soln)/L₂(soln)
 end
 
-@testset "PoissonSys.jl" begin
-    @test Poisson_test_2D(PoissonSys,6) < 1e-5
-    @test Poisson_test_3D(PoissonSys,4) < 1e-5
+@testset "Poisson.jl" begin
+    @test Poisson_test_2D(Poisson,6) < 1e-5
+    @test Poisson_test_3D(Poisson,4) < 1e-5
 end
-@testset "GMG.jl" begin
-    @test Poisson_test_2D(MultiLevelPS,6) < 1e-5
-    @test Poisson_test_3D(MultiLevelPS,4) < 1e-5
+@testset "MultiLevelPoisson.jl" begin
+    @test Poisson_test_2D(MultiLevelPoisson,6) < 1e-5
+    @test Poisson_test_3D(MultiLevelPoisson,4) < 1e-5
 end
 
 @testset "Flow.jl" begin
@@ -51,7 +51,7 @@ end
     u = zeros(6,10,2); BC!(u,U) # u≠U
     c = ones(6,10,2); BC!(c,[0.,0.])
     a = Flow(u,c,U)
-    b = MultiLevelPS(c)
+    b = MultiLevelPoisson(c)
     mom_step!(a,b) # now they should match
     @test L₂(a.u[:,:,1].-U[1]) < 1e-6
     @test L₂(a.u[:,:,2].-U[2]) < 1e-6

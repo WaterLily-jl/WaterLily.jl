@@ -8,7 +8,7 @@ function TwoD_block_test(p=7,N=[1,5000])
     c[first(xr):last(xr)+1,yr,1] .= 0
     c[xr,first(yr):last(yr)+1,2] .= 0
     a = Flow(u,c,[1.,0.],Δt=0.1,ν=0.01)
-    b = MultiLevelPS(c)
+    b = MultiLevelPoisson(c)
     for n ∈ N
         @show n
         for i ∈ 1:n
@@ -25,7 +25,7 @@ function TGVortex_test(p=7,N=[1,10])
     u = cat(u,v,zeros(L+2,L+2,L+2),dims=4); BC!(u,U)
     c = ones(L+2,L+2,L+2,3); BC!(c,U)
     a = Flow(u,c,U,Δt=0.1,ν=0.01)
-    b = MultiLevelPS(c)
+    b = MultiLevelPoisson(c)
     for n ∈ N
         @show n
         for i ∈ 1:n

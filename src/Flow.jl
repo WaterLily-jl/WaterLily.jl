@@ -56,7 +56,7 @@ struct Flow{N,M}
     end
 end
 
-@fastmath function project!(a::Flow{n,m},b::Poisson{n,m}) where {n,m}
+@fastmath function project!(a::Flow{n,m},b::AbstractPoisson{n,m}) where {n,m}
     @inside a.σ[I] = div(I,a.u)/a.Δt[end]
     i = solve!(a.p,b,a.σ)
     push!(a.nᵖ,i)
@@ -64,7 +64,7 @@ end
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
     end;end
 end
-@fastmath function mom_step!(a::Flow,b::Poisson,adaptive=true)
+@fastmath function mom_step!(a::Flow,b::AbstractPoisson,adaptive=true)
     a.u⁰ .= a.u
     # predictor u* = u⁰+Δtμ₀(∂Φ⁰-∂p*); ∇⋅(μ₀∂p*)=∇⋅(u⁰/Δt+μ₀∂Φ⁰)
     mom_transport!(a.f,a.u,ν=a.ν)
