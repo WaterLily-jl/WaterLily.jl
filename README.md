@@ -22,10 +22,12 @@ WaterLily is an experimental Julia port of [LilyPad](https://github.com/weymouth
 
 ## Method/capabilities
 
-WaterLily solves the unsteady incompressible 2D or 3D [Navier-Stokes equations](https://en.wikipedia.org/wiki/Navier%E2%80%93Stokes_equations) on a Cartesian grid. The pressure Poisson equation is solved with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
+WaterLily solves the unsteady incompressible 2D or 3D [Navier-Stokes equations](https://en.wikipedia.org/wiki/Navier%E2%80%93Stokes_equations) on a Cartesian grid. The pressure Poisson equation is solved with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method. Solid boundaries are modelled using the [Boundary Data Immersion Method](https://www.sciencedirect.com/science/article/pii/S0021999116307148).
+
+The user can set the boundary conditions (strength and direction of the background flow), the initial velocity field (see the Taylor Green Vortex "TGV" benchmark), and immerse solid obstacles using a signed distance function (see the 2D circle and 2D Julia logo examples). 
 
 ## Development goals
- - Full implementation of the [Boundary Data Immersion Method](https://www.sciencedirect.com/science/article/pii/S0021999116307148), probably using STLs to define solid geometries. 
+ - Immerse obstacles defined by 3D meshes or 2D lines using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl). 
  - GPU acceleration with [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl)
  - Split multigrid method into its own repository, possibly merging with [AlgebraicMultigrid](https://github.com/JuliaLinearAlgebra/AlgebraicMultigrid.jl) or [IterativeSolvers](https://github.com/JuliaMath/IterativeSolvers.jl).
  - Optimize for [autodiff](https://github.com/JuliaDiff/) 
