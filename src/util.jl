@@ -66,3 +66,22 @@ function BC!(a::Array{T,3},A,f=1) where T
         a[i,1,1] = a[i,2,1]; a[i,size(a,2),1] = a[i,size(a,2)-1,1]
     end
 end
+function BC!(a::Array{T,3}) where T
+    for k∈1:size(a,3), j∈1:size(a,2)
+        a[1,j,k] = a[2,j,k]; a[size(a,1),j,k] = a[size(a,1)-1,j,k]
+    end
+    for k∈1:size(a,3), i∈1:size(a,1)
+        a[i,1,k] = a[i,2,k]; a[i,size(a,2),k] = a[i,size(a,2)-1,k]
+    end
+    for j∈1:size(a,2), i∈1:size(a,1)
+        a[i,j,1] = a[i,j,2]; a[i,j,size(a,3)] = a[i,j,size(a,3)-1]
+    end
+end
+function BC!(a::Array{T,2}) where T
+    for j∈1:size(a,2)
+        a[1,j] = a[2,j]; a[size(a,1),j] = a[size(a,1)-1,j]
+    end
+    for i∈1:size(a,1)
+        a[i,1] = a[i,2]; a[i,size(a,2)] = a[i,size(a,2)-1]
+    end
+end

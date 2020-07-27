@@ -78,6 +78,8 @@ end
 end
 
 function CFL(a::Flow{n,m}) where {n,m}
-    mx = mapreduce(I->ke(I,a.u),max,inside(a.p))
-    min(1.,inv(sqrt(2mx)+3a.ν))
+    mx = mapreduce(max,inside(a.p)) do I
+        sum(@inbounds max(0.,a.u[I,i])+max(0.,a.u[I+δ(i,I),i]) for i in 1:m)
+    end
+    min(10.,inv(mx+3.5a.ν))
 end
