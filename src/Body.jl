@@ -23,5 +23,4 @@ end
             @inbounds c[I,b] = kern₀(clamp(d,-1,1))
         end
     end
-    BC!(c,zeros(N[end]))
 end

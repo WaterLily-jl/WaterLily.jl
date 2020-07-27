@@ -50,6 +50,7 @@ struct Flow{N,M}
         @assert N==size(μ₀)
         @assert N[end]==m
         @assert length(U)==m
+        BC!(u,U); BC!(μ₀,zeros(m))
         u⁰ = copy(u)
         f,p,σ = zeros(N),zeros(M),zeros(M)
         new{n,m}(u,u⁰,μ₀,f,p,σ,U,[Δt],[0],ν)
