@@ -46,16 +46,19 @@ end
 end
 
 @testset "Body.jl" begin
-    c = ones(4,8,2); BC!(c,zeros(2))
-    @test BDIM_coef(i->1,4,8,2) ≈ c
-    @test L₂(BDIM_coef(i->-1,4,8,2))==0.0
+    u = apply((i,x)->x[i],4,4,2)
+    @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
+    @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
+    @test BDIM_coef(i->1,4,8,2)==ones(4,8,2)
+    @test BDIM_coef(i->0,4,8,2)==0.5ones(4,8,2)
+    @test BDIM_coef(i->-1,4,8,2)≈zeros(4,8,2) atol=2eps(1.)
 end
 
 @testset "Flow.jl" begin
-    # Impulsive flow in a box with mismatched BCs
+    # Impulsive flow in a box
+    u = zeros(6,10,2)
+    c = ones(6,10,2)
     U = rand(2)
-    u = zeros(6,10,2); BC!(u,U) # u≠U
-    c = ones(6,10,2); BC!(c,[0.,0.])
     a = Flow(u,c,U)
     b = MultiLevelPoisson(c)
     mom_step!(a,b) # now they should match

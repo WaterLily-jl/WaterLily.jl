@@ -7,14 +7,16 @@ function TGV_video(p=6,Re=1e5)
     L = 2^p; U = 1; ν = U*L/Re
 
     # Apply Taylor-Green-Vortex velocity field
-    u = [-U*sin((i-2)*π/L)*cos((j-1.5)*π/L)*cos((k-1.5)*π/L) for i∈1:L+2, j∈1:L+2, k∈1:L+2]
-    v = [ U*cos((i-1.5)*π/L)*sin((j-2)*π/L)*cos((k-1.5)*π/L) for i∈1:L+2, j∈1:L+2, k∈1:L+2]
-    u = cat(u,v,zeros(L+2,L+2,L+2),dims=4)
+    u = apply(L+2,L+2,L+2,3) do i,vx
+        x,y,z = @. (vx-1.5)*π/L
+        i==1 && return -U*sin(x)*cos(y)*cos(z)
+        i==2 && return  U*cos(x)*sin(y)*cos(z)
+        return 0.
+    end
 
     # Initialize Flow and Poisson system
-    walls = zeros(3)
-    c = ones(L+2,L+2,L+2,3); BC!(c,walls) # domain boundaries
-    a = Flow(u,c,walls,ν=ν)
+    c = ones(L+2,L+2,L+2,3)
+    a = Flow(u,c,zeros(3),ν=ν)
     b = MultiLevelPoisson(c)
 
     # plot the vorticity modulus

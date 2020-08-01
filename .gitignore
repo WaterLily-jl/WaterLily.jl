@@ -1,4 +1,5 @@
 .ipynb_checkpoints
 *.png
 *.gif
+*.mp4
 Manifest.toml
