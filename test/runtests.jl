@@ -65,3 +65,10 @@ end
     @test L₂(a.u[:,:,1].-U[1]) < 1e-6
     @test L₂(a.u[:,:,2].-U[2]) < 1e-6
 end
+
+@testset "Metrics.jl" begin
+    u = apply((i,x)->x[i]+prod(x),3,4,5,3)
+    @test [WaterLily.∂(i,j,CartesianIndex(2,3,4),u)
+            for i in 1:3, j in 1:3] == [13 8 6; 12 9 6; 12 8 7]
+    @test WaterLily.λ₂(CartesianIndex(2,3,4),u)==1
+end

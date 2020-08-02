@@ -19,16 +19,17 @@ function donut_video(p=6,Re=1e3)
     u = zeros(2n+2,n+2,n+2,3)
     a = Flow(u,c,U,ν=ν)
     b = MultiLevelPoisson(c)
-    mom_step!(a,b)
 
-    # plot the geometry and vorticity modulus
+    # plot the geometry and flow
     scene = volume(geom,algorithm=:iso,isorange=0.2)
-    scene = volume!(scene,a.σ,colorrange=(0.5,1),algorithm=:absorption)
+    @inside a.σ[I] = -WaterLily.λ₂(I,a.u)*R^2/norm2(U)^2
+    BC!(a.σ)
+    scene = volume!(scene,a.σ,algorithm=:iso,isorange=0.6,isovalue=2)
     vol_plot = scene[end]
 
     # Plot flow evolution
-    tprint,Δprint,nprint = 0.0,0.25,72
-    record(scene,"file.mp4",1:nprint,framerate=24,compression=5) do i
+    tprint,Δprint,nprint = 0.0,0.20,24*3
+    record(scene,"file.mp4",1:nprint,compression=5) do i
         tprint-=Δprint
         while tprint<0
             println(round(Int,i/nprint*100),"%, tU/R=",
@@ -38,7 +39,7 @@ function donut_video(p=6,Re=1e3)
             tprint += a.Δt[end]*norm2(U)/R
         end
         # update volume plot data
-        @inside a.σ[I] = norm2((WaterLily.curl(i,I,a.u) for i∈1:3))*R/norm2(U)
+        @inside a.σ[I] = -WaterLily.λ₂(I,a.u)*R^2/norm2(U)^2
         BC!(a.σ)
         vol_plot[1] = a.σ
     end

@@ -15,4 +15,5 @@ export BDIM_coef,apply
 include("Flow.jl")
 export Flow,mom_step!
 
+include("Metrics.jl")
 end # module

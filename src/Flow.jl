@@ -4,8 +4,6 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(∂(i,I,u) for i ∈ 1:m)
-@fastmath @inline curl(i,I,u) = @inbounds ∂(i%3+1,CI(I,(i+1)%3+1),u)-∂((i+1)%3+1,CI(I,i%3+1),u)
-@fastmath @inline ke(I::CartesianIndex{m},u) where m = 0.125sum(@inbounds(abs2(u[I,i]+u[I+δ(i,I),i])) for i ∈ 1:m)
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
     N = size(u)
