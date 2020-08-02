@@ -23,8 +23,7 @@ end;end
 struct MultiLevelPoisson{N,M} <: AbstractPoisson{N,M}
     levels :: Vector{Poisson{N,M}}
     function MultiLevelPoisson(L::Array{Float64,n}) where n
-        levels = Vector{Poisson}()
-        push!(levels,Poisson(L))
+        levels = [Poisson(L)]
         while all(size(levels[end].x) .|> divisible)
             push!(levels,restrictML(levels[end].L))
         end
@@ -34,33 +33,35 @@ struct MultiLevelPoisson{N,M} <: AbstractPoisson{N,M}
     end
 end
 
-function Vcycle!(p::MultiLevelPoisson;l=1)
-    # set up level l+1
-    fill!(p.levels[l+1].x,0.)
-    GS!(p.levels[l],it=0)
-    restrict!(p.levels[l+1].r,p.levels[l].r)
-    # solve l+1 (with recursion if possible)
-    l+1<length(p.levels) && Vcycle!(p,l=l+1)
-    GS!(p.levels[l+1],it=2)
-    # correct level l
-    prolongate!(p.levels[l].ϵ,p.levels[l+1].x)
-    increment!(p.levels[l])
+function Vcycle!(ml::MultiLevelPoisson;l=1)
+    fine,coarse = ml.levels[l],ml.levels[l+1]
+    # set up coarse level
+    GS!(fine,it=0)
+    restrict!(coarse.r,fine.r)
+    fill!(coarse.x,0.)
+    # solve coarse (with recursion if possible)
+    l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
+    GS!(coarse,it=2)
+    # correct fine
+    prolongate!(fine.ϵ,coarse.x)
+    increment!(fine)
 end
 
-mult(p::MultiLevelPoisson,x) = mult(p.levels[1],x)
+mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
 
-function solve!(x::Array{Float64,m},p::MultiLevelPoisson{n,m},b::Array{Float64,m};log=false,tol=1e-4,itmx=32) where {n,m}
-    p.levels[1].x .= x
-    residual!(p.levels[1],b); r₂ = L₂(p.levels[1].r)
+function solve!(x::Array{Float64,m},ml::MultiLevelPoisson{n,m},b::Array{Float64,m};log=false,tol=1e-4,itmx=32) where {n,m}
+    p = ml.levels[1]
+    p.x .= x
+    residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])
     nᵖ=0
     while r₂>tol && nᵖ<itmx
-        Vcycle!(p)
-        GS!(p.levels[1],it=2); r₂ = L₂(p.levels[1].r)
-        5tol>r₂>tol && (GS!(p.levels[1],it=1); r₂ = L₂(p.levels[1].r))
+        Vcycle!(ml)
+        GS!(p,it=2); r₂ = L₂(p.r)
+        5tol>r₂>tol && (GS!(p,it=2); r₂ = L₂(p.r))
         log && push!(res,r₂)
         nᵖ+=1
     end
-    x .= p.levels[1].x
+    x .= p.x
     return log ? res : nᵖ
 end
