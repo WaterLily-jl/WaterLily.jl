@@ -61,5 +61,6 @@ direction around vector `z` passing through `center`.
 """
 function ω_θ(I::CartesianIndex{3},z,center,u)
     θ = z × (collect(I.I)-center)
-    θ ⋅ ω(I,u) / norm2(θ)
+    n = norm2(θ)
+    n<=eps(n) ? 0. : θ ⋅ ω(I,u) / n
 end
