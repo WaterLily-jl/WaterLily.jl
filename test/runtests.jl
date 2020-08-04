@@ -58,12 +58,12 @@ end
     # Impulsive flow in a box
     u = zeros(6,10,2)
     c = ones(6,10,2)
-    U = rand(2)
+    U = [2/3,-1/3]
     a = Flow(u,c,U)
     b = MultiLevelPoisson(c)
     mom_step!(a,b) # now they should match
-    @test L₂(a.u[:,:,1].-U[1]) < 1e-6
-    @test L₂(a.u[:,:,2].-U[2]) < 1e-6
+    @test L₂(a.u[:,:,1].-U[1]) < 1e-6*4*8
+    @test L₂(a.u[:,:,2].-U[2]) < 1e-6*4*8
 end
 
 @testset "Metrics.jl" begin
@@ -79,5 +79,3 @@ end
     @test WaterLily.ω_mag(CartesianIndex(2,3,4),u)==sqrt(sum(abs2,ω))
     @test WaterLily.ω_θ(CartesianIndex(2,3,4),[0,0,1],[2,2,2],u)==-ω[1]
 end
-
- 
