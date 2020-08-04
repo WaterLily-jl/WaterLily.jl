@@ -49,7 +49,7 @@ end
 
 mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
 
-function solve!(x::Array{Float64,m},ml::MultiLevelPoisson{n,m},b::Array{Float64,m};log=false,tol=1e-4,itmx=32) where {n,m}
+function solve!(x::Array{Float64,m},ml::MultiLevelPoisson{n,m},b::Array{Float64,m};log=false,tol=1e-3,itmx=32) where {n,m}
     p = ml.levels[1]
     p.x .= x
     residual!(p,b); r₂ = L₂(p.r)

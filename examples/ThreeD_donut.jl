@@ -2,46 +2,51 @@ using WaterLily
 using LinearAlgebra: norm2
 using Makie
 
-function donut_video(p=6,Re=1e3)
-    # Define vortex size, velocity, viscosity
+function donut_sim(p=6,Re=1e3)
+    # Define simulation size, velocity, viscosity
     n,U = 2^p, [1, 0, 0]
-    center,R,r = ones(3) .* n/2 .+ 1, n/4, n/16
+    center,R,r = [n/2,n/2,n/2], n/4, n/16
     ν = norm2(U)*R/Re
 
-    # Immerse a torus (change for other shapes)
-    c = BDIM_coef(2n+2,n+2,n+2,3) do xyz  # signed distance function
+    # Apply signed distance function for a torus
+    c = BDIM_coef(2n+2,n+2,n+2,3) do xyz  #
         x,y,z = xyz - center
         norm2([x,norm2([y,z])-R])-r
     end
-    geom = sum(c,dims=4)[:,:,:,1]/3; BC!(geom)
 
-    # Initialize Flow and Poisson system
+    # Initialize Flow, Poisson and make struct
     u = zeros(2n+2,n+2,n+2,3)
     a = Flow(u,c,U,ν=ν)
     b = MultiLevelPoisson(c)
+    Simulation(norm2(U),R,a,b),center
+end
 
+function flowdata(sim)
+    @inside sim.a.σ[I] = WaterLily.ω_θ(I,[1,0,0],center,sim.a.u)*sim.L/sim.U
+    @view sim.a.σ[2:end-1,2:end-1,2:end-1]
+end
+function geomdata(sim)
+    @inside sim.a.σ[I] = sum(sim.a.μ₀[I,i]+sim.a.μ₀[I+δ(i,I),i] for i=1:3)
+    @view sim.a.σ[2:end-1,2:end-1,2:end-1]
+end
+
+function make_video!(sim::Simulation;name="file.mp4",verbose=true,t₀=0.0,Δprint=0.1,nprint=24*3)
     # plot the geometry and flow
-    scene = volume(geom,algorithm=:iso,isorange=0.2)
-    @inside a.σ[I] = -WaterLily.λ₂(I,a.u)*R^2/norm2(U)^2
-    BC!(a.σ)
-    scene = volume!(scene,a.σ,algorithm=:iso,isorange=0.6,isovalue=2)
-    vol_plot = scene[end]
+    scene = contour(geomdata(sim),levels=[0.5])
+    scene = contour!(scene,flowdata(sim),levels=[-7,7],
+                     colormap=:balance,alpha=0.2,colorrange=[-7,7])
+    scene_data = scene[end]
 
     # Plot flow evolution
-    tprint,Δprint,nprint = 0.0,0.20,24*3
-    record(scene,"file.mp4",1:nprint,compression=5) do i
-        tprint-=Δprint
-        while tprint<0
-            println(round(Int,i/nprint*100),"%, tU/R=",
-                    round(sum(a.Δt)*norm2(U)/R,digits=4),", Δt=",
-                    round(a.Δt[end],digits=3))
-            mom_step!(a,b) # evolve Flow
-            tprint += a.Δt[end]*norm2(U)/R
-        end
-        # update volume plot data
-        @inside a.σ[I] = -WaterLily.λ₂(I,a.u)*R^2/norm2(U)^2
-        BC!(a.σ)
-        vol_plot[1] = a.σ
+    tprint = t₀+WaterLily.sim_time(sim)
+    record(scene,name,1:nprint,compression=5) do i
+        tprint+=Δprint
+        sim_step!(sim,tprint;verbose)
+        println("video ",round(Int,i*100/nprint),"% complete")
+        scene_data[1] = flowdata(sim)
     end
-    return a
+    return scene
 end
+
+#donut,center = donut_sim();
+#scene = make_video!(donut);
