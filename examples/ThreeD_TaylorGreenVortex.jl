@@ -2,44 +2,40 @@ using WaterLily
 using LinearAlgebra: norm2
 using Makie
 
-function TGV_video(p=6,Re=1e5)
+function flowdata(sim)
+    @inside sim.a.σ[I] = WaterLily.ω_mag(I,sim.a.u)*sim.L/sim.U
+    return @view sim.a.σ[2:end-1,2:end-1,2:end-1]
+end
+function TGV_video(p=6,Re=1e5,Δprint=0.1,nprint=100)
     # Define vortex size, velocity, viscosity
     L = 2^p; U = 1; ν = U*L/Re
 
-    # Apply Taylor-Green-Vortex velocity field
+    # Taylor-Green-Vortex initial velocity field
     u = apply(L+2,L+2,L+2,3) do i,vx
-        x,y,z = @. (vx-1.5)*π/L
-        i==1 && return -U*sin(x)*cos(y)*cos(z)
-        i==2 && return  U*cos(x)*sin(y)*cos(z)
-        return 0.
+        x,y,z = @. (vx-1.5)*π/L                # scaled coordinates
+        i==1 && return -U*sin(x)*cos(y)*cos(z) # u_x
+        i==2 && return  U*cos(x)*sin(y)*cos(z) # u_y
+        return 0.                              # u_z
     end
 
-    # Initialize Flow and Poisson system
-    c = ones(L+2,L+2,L+2,3)
+    # Initialize simulation
+    c = ones(L+2,L+2,L+2,3)  # no immersed solids
     a = Flow(u,c,zeros(3),ν=ν)
     b = MultiLevelPoisson(c)
+    sim = Simulation(U,L,a,b)
 
     # plot the vorticity modulus
-    @inside a.σ[I] = norm2((WaterLily.curl(i,I,a.u) for i∈1:3))*L/U
     scene = Scene(backgroundcolor = :black)
-    scene = volume!(scene,a.σ,colorrange=(π,4π),algorithm = :absorption)
+    scene = volume!(scene,flowdata(sim),colorrange=(π,4π),algorithm = :absorption)
     vol_plot = scene[end]
 
     # Plot flow evolution
-    tprint,Δprint,nprint = 0.0,0.1,100
-    record(scene,"file.mp4",1:nprint,framerate=10,compression=5) do i
-        tprint-=Δprint
-        while tprint<0
-            println(round(Int,i/nprint*100),"%, tU/L=",
-                    round(sum(a.Δt)*U/L,digits=4),", Δt=",
-                    round(a.Δt[end],digits=3))
-            mom_step!(a,b) # evolve Flow
-            tprint += a.Δt[end]*U/L
-        end
-        # update volume plot data
-        @inside a.σ[I] = norm2((WaterLily.curl(i,I,a.u) for i∈1:3))*L/U
-        BC!(a.σ)
-        vol_plot[1] = a.σ
+    tprint = 0.0
+    record(scene,"file.mp4",1:nprint,framerate=24,compression=5) do i
+        tprint += Δprint
+        sim_step!(sim,tprint)
+        println("video ",round(Int,i/nprint*100),"% complete")
+        vol_plot[1] = flowdata(sim)
     end
-    return a
+    return sim,scene
 end
