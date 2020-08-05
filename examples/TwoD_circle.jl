@@ -1,37 +1,45 @@
 using WaterLily
 using LinearAlgebra: norm2
 include("TwoD_plots.jl")
+using SmoothLivePlot
 
-function TwoD_circle_video(p,Re=250)
-    # Set simulation size & physical parameters
-    n,m = 2^p,2^(p-1)
-    U,R,center = [1.,0.], m/8., [m/2,m/2]
-    ν=U[1]*R/Re
+function circle(n,m;Re=250)
+    # Set physical parameters
+    U,R,center = 1., m/8., [m/2,m/2]
+    ν=U*R/Re
     @show R,ν
 
     # Immerse a circle (change for other shapes)
     c = BDIM_coef(n+2,m+2,2) do xy
         norm2(xy .- center) - R  # signed distance function
     end
-    z = [R*exp(im*θ)+complex(center...) for θ ∈ range(0,2π,length=33)]
 
-    # Initialize flow and Poisson system
-    u = zeros(n+2,m+2,2); BC!(u,U)
-    a = Flow(u,c,U,ν=ν);
+    # Initialize Simulation object
+    u = zeros(n+2,m+2,2)
+    a = Flow(u,c,[U,0.],ν=ν)
     b = MultiLevelPoisson(c)
+    Simulation(U,R,a,b)
+end
 
-    # Evolve solution in time and plot to a gif
-    tprint,Δprint,nprint = 0.0,0.5,100
-    gr(show = false, size=(780,360))
-    @time @gif for i ∈ 1:nprint
-        while tprint<0
-            mom_step!(a,b)
-            tprint += a.Δt[end]*U[1]/R
-        end
-        @inside a.σ[I]=WaterLily.curl(3,I,a.u)*R/U[1]
-        flood(a.σ,shift=(-0.5,-0.5),clims=(-5,5))
-        addbody(real(z),imag(z))
-        tprint-=Δprint
+function v_plot(i,v,t)
+    sleep(0.001)
+    plot(t[1:i],v[1:i],xlims=(first(t),last(t)),legend=false)
+    scatter!(t[i:i],v[i:i])
+    plot!(xaxis=("time"),yaxis=("v[I]"))
+end
+
+function sim_measure!(sim,I;Δt=1,step=0.1)
+    t₀ = round(sim_time(sim))
+    t = range(t₀,t₀+Δt;step)
+    v = Vector{Float64}(undef,length(t))
+    plt = @makeLivePlot v_plot(1,v,t)
+    for i ∈ 1:length(t)
+        sim_step!(sim,t[i])
+        # simulation will always slightly overshoot t[i]
+        # so linearly interpolate over last time step
+        r = (WaterLily.sim_time(sim)-t[i])/sim.a.Δt[end]
+        v[i] = sim.a.u[I]*(1-r)+sim.a.u⁰[I]*r
+        modifyPlotObject!(plt,arg1=i,arg2=v)
     end
-    return a
+    t,v
 end
