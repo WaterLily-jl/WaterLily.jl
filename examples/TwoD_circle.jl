@@ -21,25 +21,35 @@ function circle(n,m;Re=250)
     Simulation(U,R,a,b)
 end
 
-function v_plot(i,v,t)
+function v_plot(t,v,i=length(t))
     sleep(0.001)
     plot(t[1:i],v[1:i],xlims=(first(t),last(t)),legend=false)
     scatter!(t[i:i],v[i:i])
-    plot!(xaxis=("time"),yaxis=("v[I]"))
+    plot!(xaxis=("time"),yaxis=("cross-stream velocity"))
 end
+"""
+    sim_measure!(sim, I; duration=1, step=0.1)
 
-function sim_measure!(sim,I;Δt=1,step=0.1)
-    t₀ = round(sim_time(sim))
-    t = range(t₀,t₀+Δt;step)
+Example function to run a simulation `sim` over time `duration`,
+measuring the velocity `u[I]` every `step` and visualize `using
+SmoothLivePlot`. The function modifies `sim` and returns the time
+and velocity history `t,v`.
+
+# Examples
+```jldoctest
+julia> sim, I = circle(128,64,Re=250), CartesianIndex(60,40,2);
+julia> t, v = sim_measure!(sim, I, duration=100);
+```
+"""
+function sim_measure!(sim,I;duration=1,step=0.1)
+    t₀ = round(WaterLily.sim_time(sim))
+    t = range(t₀,t₀+duration;step)
     v = Vector{Float64}(undef,length(t))
-    plt = @makeLivePlot v_plot(1,v,t)
+    plt = @makeLivePlot v_plot(t,v,1)
     for i ∈ 1:length(t)
         sim_step!(sim,t[i])
-        # simulation will always slightly overshoot t[i]
-        # so linearly interpolate over last time step
-        r = (WaterLily.sim_time(sim)-t[i])/sim.a.Δt[end]
-        v[i] = sim.a.u[I]*(1-r)+sim.a.u⁰[I]*r
-        modifyPlotObject!(plt,arg1=i,arg2=v)
+        v[i] = sim.a.u[I]
+        modifyPlotObject!(plt,arg2=v,arg3=i)
     end
     t,v
 end
