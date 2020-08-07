@@ -72,7 +72,7 @@ end
     @test WaterLily.ke(CartesianIndex(2,3,4),u,[2,3,4])===1.5*24^2
     @test [WaterLily.∂(i,j,CartesianIndex(2,3,4),u)
             for i in 1:3, j in 1:3] == [13 8 6; 12 9 6; 12 8 7]
-    @test WaterLily.λ₂(CartesianIndex(2,3,4),u)==1
+    @test WaterLily.λ₂(CartesianIndex(2,3,4),u)≈1
     ω = [8-6,6-12,12-8]
     @test WaterLily.curl(2,CartesianIndex(2,3,4),u)==ω[2]
     @test WaterLily.ω(CartesianIndex(2,3,4),u)==ω

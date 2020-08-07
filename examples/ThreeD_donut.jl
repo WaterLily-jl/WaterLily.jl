@@ -22,12 +22,12 @@ function donut_sim(p=6,Re=1e3)
 end
 
 function flowdata(sim)
-    @inside sim.a.σ[I] = WaterLily.ω_θ(I,[1,0,0],center,sim.a.u)*sim.L/sim.U
-    @view sim.a.σ[2:end-1,2:end-1,2:end-1]
+    @inside sim.flow.σ[I] = WaterLily.ω_θ(I,[1,0,0],center,sim.flow.u)*sim.L/sim.U
+    @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
 end
 function geomdata(sim)
-    @inside sim.a.σ[I] = sum(sim.a.μ₀[I,i]+sim.a.μ₀[I+δ(i,I),i] for i=1:3)
-    @view sim.a.σ[2:end-1,2:end-1,2:end-1]
+    @inside sim.flow.σ[I] = sum(sim.flow.μ₀[I,i]+sim.flow.μ₀[I+δ(i,I),i] for i=1:3)
+    @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
 end
 
 function make_video!(sim::Simulation;name="file.mp4",verbose=true,t₀=0.0,Δprint=0.1,nprint=24*3)

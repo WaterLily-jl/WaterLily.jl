@@ -42,13 +42,13 @@ julia> t, v = sim_measure!(sim, I, duration=100);
 ```
 """
 function sim_measure!(sim,I;duration=1,step=0.1)
-    t₀ = round(WaterLily.sim_time(sim))
+    t₀ = round(sim_time(sim))
     t = range(t₀,t₀+duration;step)
     v = Vector{Float64}(undef,length(t))
     plt = @makeLivePlot v_plot(t,v,1)
     for i ∈ 1:length(t)
         sim_step!(sim,t[i])
-        v[i] = sim.a.u[I]
+        v[i] = sim.flow.u[I]
         modifyPlotObject!(plt,arg2=v,arg3=i)
     end
     t,v

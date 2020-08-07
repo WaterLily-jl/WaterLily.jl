@@ -3,8 +3,8 @@ using LinearAlgebra: norm2
 using Makie
 
 function flowdata(sim)
-    @inside sim.a.σ[I] = WaterLily.ω_mag(I,sim.a.u)*sim.L/sim.U
-    return @view sim.a.σ[2:end-1,2:end-1,2:end-1]
+    @inside sim.flow.σ[I] = WaterLily.ω_mag(I,sim.flow.u)*sim.L/sim.U
+    return @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
 end
 function TGV_video(p=6,Re=1e5,Δprint=0.1,nprint=100)
     # Define vortex size, velocity, viscosity
