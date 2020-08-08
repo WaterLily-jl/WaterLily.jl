@@ -53,13 +53,12 @@ function circle(p=7;Re=250)
 end
 sim = circle();
 ```
-Replace the circle's distance function with any other, and now you have the flow around something else... like such as a [donut](ThreeD_donut.jl) or the [Julia logo](TwoD_Julia.jl). Note that the 2D vector fields `c,u` are defined by 3D arrays such that `u[x,y,2]=u₂(x,y)` and that we add a ghost cell on either side so `size(u)=size(c)=(n+2,m+2,2)`.
+Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](ThreeD_donut.jl) or the [Julia logo](TwoD_Julia.jl). Note that the 2D vector fields `c,u` are defined by 3D arrays such that `u[x,y,2]=u₂(x,y)` and that the arrays are padded `size(u)=size(c)=(n+2,m+2,2)`.
 
 With the `Simulation` defined, you simulate the flow up to dimensionless time `t_end` by calling `sim_step!(sim::Simulation,t_end)`. You can then access and plot whatever variables you like. For example, you could print the velocity at `I::CartesianIndex` using `println(sim.flow.u[I])` or plot the whole pressure field
 ```julia
-sim = circle();
-sim_step!(sim,3)
-Using Plots
+using Plots
+sim_step!(circle(),3);
 contour(sim.flow.p')
 ```
 A set of [flow metric functions](src/Metrics.jl) have been implemented and the examples showcase a few of these to make gifs, etc.
@@ -86,7 +85,7 @@ function TGV_video(p=6,Re=1e5)
     Simulation(U,L,a,b)
 end
 ```
-Here we define a function of the velocity component `i=1,2` or `3` and the 3D position vector `vx`. We scale the coordinates so the velocity will be zero on the domain boundaries and then check which component is needed and return the correct expression.
+The velocity field is defined by the vector component `i` and the 3D position vector `vx`. We scale the coordinates so the velocity will be zero on the domain boundaries and then check which component is needed and return the correct expression.
 
 ## Development goals
  - Immerse obstacles defined by 3D meshes or 2D lines using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl).
