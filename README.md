@@ -58,7 +58,8 @@ Replace the circle's distance function with any other, and now you have the flow
 With the `Simulation` defined, you simulate the flow up to dimensionless time `t_end` by calling `sim_step!(sim::Simulation,t_end)`. You can then access and plot whatever variables you like. For example, you could print the velocity at `I::CartesianIndex` using `println(sim.flow.u[I])` or plot the whole pressure field
 ```julia
 using Plots
-sim_step!(circle(),3);
+sim = circle();
+sim_step!(sim,3);
 contour(sim.flow.p')
 ```
 A set of [flow metric functions](src/Metrics.jl) have been implemented and the examples showcase a few of these to make gifs, etc.
