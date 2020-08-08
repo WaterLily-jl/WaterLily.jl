@@ -58,8 +58,6 @@ Replace the circle's distance function with any other, and now you have the flow
 With the `Simulation` defined, you simulate the flow up to dimensionless time `t_end` by calling `sim_step!(sim::Simulation,t_end)`. You can then access and plot whatever variables you like. For example, you could print the velocity at `I::CartesianIndex` using `println(sim.flow.u[I])` or plot the whole pressure field
 ```julia
 using Plots
-sim = circle();
-sim_step!(sim,3);
 contour(sim.flow.p')
 ```
 A set of [flow metric functions](src/Metrics.jl) have been implemented and the examples showcase a few of these to make gifs, etc.
@@ -67,7 +65,7 @@ A set of [flow metric functions](src/Metrics.jl) have been implemented and the e
 ### 3D Taylor Green Vortex
 You can also simulate a nontrivial initial velocity field by `apply`ing a vector function.
 ```julia
-function TGV_video(p=6,Re=1e5)
+function TGV(p=6,Re=1e5)
     # Define vortex size, velocity, viscosity
     L = 2^p; U = 1; ν = U*L/Re
 
