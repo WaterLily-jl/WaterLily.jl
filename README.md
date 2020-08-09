@@ -13,12 +13,11 @@
 [![Documentation](https://img.shields.io/badge/docs-master-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/dev)
 -->
 
-Real-time fluid simulator in Julia.
 ![Julia flow](examples/julia.gif)
 
 ## Overview
 
-WaterLily is an experimental Julia port of [LilyPad](https://github.com/weymouth/lily-pad). The motivation for the port was to take advantage of the larger scientific community in Julia (compared to Processing), but if you want to play around with a much more fully developed solver right now, you should head over to [LilyPad](https://github.com/weymouth/lily-pad).
+WaterLily is a real-time fluid simulator written in pure Julia. This is an experimental project to take advantage of the active scientific community in Julia to accelerate and enhance fluid simulations. If you want to play around with a much more fully developed and documented solver right now, you should head over to [LilyPad](https://github.com/weymouth/lily-pad).
 
 ## Method/capabilities
 
@@ -88,6 +87,6 @@ The velocity field is defined by the vector component `i` and the 3D position ve
 
 ## Development goals
  - Immerse obstacles defined by 3D meshes or 2D lines using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl).
- - GPU acceleration with [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl)
+ - GPU acceleration with [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl).
  - Split multigrid method into its own repository, possibly merging with [AlgebraicMultigrid](https://github.com/JuliaLinearAlgebra/AlgebraicMultigrid.jl) or [IterativeSolvers](https://github.com/JuliaMath/IterativeSolvers.jl).
- - Optimize for [autodiff](https://github.com/JuliaDiff/)
+ - Automatic differentiation with [JuliaDiff](https://github.com/JuliaDiff/) for optimization and ML.
