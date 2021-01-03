@@ -27,7 +27,7 @@ end
     sim_time(sim::Simulation)
 
 Return the current dimensionless time of the simulation `tU/L`
-where `t=sum(Δt)``, and `U`,`L` are the simulation velocity and length
+where `t=sum(Δt)`, and `U`,`L` are the simulation velocity and length
 scales.
 """
 sim_time(sim::Simulation) = sum(sim.flow.Δt)*sim.U/sim.L
@@ -40,7 +40,6 @@ printed every time step.
 """
 function sim_step!(sim::Simulation,t_end;verbose=false)
     t = sim_time(sim)
-    t_0 = t
     while t < t_end
         mom_step!(sim.flow,sim.pois) # evolve Flow
         t += sim.flow.Δt[end]*sim.U/sim.L
