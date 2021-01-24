@@ -48,10 +48,16 @@ end
 @testset "Body.jl" begin
     u = apply((i,x)->x[i],4,4,2)
     @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
-    @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
     @test BDIM_coef(i->1,4,8,2)==ones(4,8,2)
     @test BDIM_coef(i->0,4,8,2)==0.5ones(4,8,2)
     @test BDIM_coef(i->-1,4,8,2)≈zeros(4,8,2) atol=2eps(1.)
+end
+
+@testset "AutoBody.jl" begin
+    using LinearAlgebra: norm2
+    body = AutoBody((x,t)->norm2(x)-2-t)
+    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.25,0.],[√.5,√.5]))
+    @test all(measure(body,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.5,0.25],[1.,0.,0.]))
 end
 
 @testset "Flow.jl" begin

@@ -1,3 +1,20 @@
+"""
+    AbstractBody
+
+Abstract body geometry data structure. This solver will call
+
+    `measure(body::AbstractBody,x::Vector,t::Real)`
+
+to query the body geometry for these properties at location `x` and time `t`:
+
+    `d :: Real`, Signed distance to surface
+    `n̂ :: Vector`, Outward facing unit normal
+    `κ :: Vector`, Mean and Gaussian curvature
+    `U :: Vector`, Body velocity
+
+"""
+abstract type AbstractBody end
+
 # Convolution kernel and its moments
 kern(d) = 0.5+0.5cos(π*d)
 kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π

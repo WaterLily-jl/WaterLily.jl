@@ -4,6 +4,8 @@ authors = ["Gabriel Weymouth <drweymouth@google.com>"]
 version = "0.1.0"
 
 [deps]
+DiffResults = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
 [compat]

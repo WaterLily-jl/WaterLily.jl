@@ -10,7 +10,10 @@ include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solve!,mult
 
 include("Body.jl")
-export BDIM_coef,apply
+export AbstractBody,BDIM_coef,apply
+
+include("AutoBody.jl")
+export AutoBody,measure
 
 include("Flow.jl")
 export Flow,mom_step!
