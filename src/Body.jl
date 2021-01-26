@@ -10,7 +10,7 @@ to query the body geometry for these properties at location `x` and time `t`:
     `d :: Real`, Signed distance to surface
     `n̂ :: Vector`, Outward facing unit normal
     `κ :: Vector`, Mean and Gaussian curvature
-    `U :: Vector`, Body velocity
+    `V :: Vector`, Body velocity
 
 """
 abstract type AbstractBody end

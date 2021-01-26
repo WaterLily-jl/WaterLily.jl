@@ -36,6 +36,7 @@ struct Flow{N,M}
     u :: Array{Float64,N} # velocity vector field
     u⁰:: Array{Float64,N} # previous velocity
     μ₀:: Array{Float64,N} # BDIM zero-moment vector field
+    V :: Array{Float64,N} # BDIM body velocity vector field
     f :: Array{Float64,N} # force vector field
     p :: Array{Float64,M} # pressure scalar field
     σ :: Array{Float64,M} # divergence scalar field
@@ -49,9 +50,10 @@ struct Flow{N,M}
         @assert N[end]==m
         @assert length(U)==m
         BC!(u,U); BC!(μ₀,zeros(m))
+        V = zeros(N); BC!(V,U)
         u⁰ = copy(u)
         f,p,σ = zeros(N),zeros(M),zeros(M)
-        new{n,m}(u,u⁰,μ₀,f,p,σ,U,[Δt],[0],ν)
+        new{n,m}(u,u⁰,μ₀,V,f,p,σ,U,[Δt],[0],ν)
     end
 end
 
@@ -63,17 +65,22 @@ end
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
     end;end
 end
-@fastmath function mom_step!(a::Flow,b::AbstractPoisson,adaptive=true)
+@fastmath function mom_step!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u
-    # predictor u* = u⁰+Δtμ₀(∂Φ⁰-∂p*); ∇⋅(μ₀∂p*)=∇⋅(u⁰/Δt+μ₀∂Φ⁰)
-    mom_transport!(a.f,a.u,ν=a.ν)
-    @. a.u += a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U)
-    project!(a,b); BC!(a.u,a.U)
-    # corrector u = ½(u⁰+u*+Δtμ₀(∂Φ*-∂p))
-    mom_transport!(a.f,a.u,ν=a.ν)
-    @. a.u += a.u⁰+a.Δt[end]*a.μ₀*a.f; BC!(a.u,a.U,2)
-    project!(a,b); a.u ./= 2; BC!(a.u,a.U)
-    adaptive && push!(a.Δt,CFL(a))
+    # predictor
+    mom_transport!(a.f,a.u⁰,ν=a.ν)       # convection+diffusion on u⁰
+    @. a.f = a.u⁰+a.Δt[end]*a.f-a.V      # 1st order BDIM
+    # @inside a.u[I] = ∂∂n(I,a.f,a.μ₁n̂)    # 2nd order BDIM
+    # @. a.u += a.V+a.μ₀*a.f; BC!(a.u,a.U) # momentum predictor
+    @. a.u = a.V+a.μ₀*a.f; BC!(a.u,a.U)  # momentum predictor (temp)
+    project!(a,b); BC!(a.u,a.U)          # pressure projection
+    # corrector
+    mom_transport!(a.f,a.u,ν=a.ν)        # convection+diffusion on u'
+    @. a.f = a.u⁰+a.Δt[end]*a.f-a.V      # 1st order BDIM
+    # @inside a.u[I] += ∂∂n(I,a.f,a.μ₁n̂)   # 2nd order BDIM + u'
+    @. a.u += a.V+a.μ₀*a.f; BC!(a.u,a.U,2) # momentum corrector
+    project!(a,b); a.u ./= 2; BC!(a.u,a.U) # pressure projection
+    push!(a.Δt,CFL(a))
 end
 
 function CFL(a::Flow{n,m}) where {n,m}

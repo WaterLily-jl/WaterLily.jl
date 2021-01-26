@@ -33,7 +33,7 @@ Return the current dimensionless time of the simulation `tU/L`
 where `t=sum(Δt)`, and `U`,`L` are the simulation velocity and length
 scales.
 """
-sim_time(sim::Simulation) = sum(sim.flow.Δt)*sim.U/sim.L
+sim_time(sim::Simulation) = sum(sim.flow.Δt[1:end-1])*sim.U/sim.L
 """
     sim_step!(sim::Simulation,t_end;verbose=false)
 
