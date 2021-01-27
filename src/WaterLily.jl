@@ -9,14 +9,14 @@ export AbstractPoisson,Poisson,solve!,mult
 include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solve!,mult
 
+include("Flow.jl")
+export Flow,mom_step!
+
 include("Body.jl")
-export AbstractBody,BDIM_coef,apply
+export AbstractBody,BDIM_coef,apply,measure!
 
 include("AutoBody.jl")
 export AutoBody,measure
-
-include("Flow.jl")
-export Flow,mom_step!
 
 include("Metrics.jl")
 

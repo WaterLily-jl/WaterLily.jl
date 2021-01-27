@@ -8,16 +8,9 @@ function circle(n,m;Re=250)
     ν=U*R/Re
     @show R,ν
 
-    # Immerse a circle (change for other shapes)
-    c = BDIM_coef(n+2,m+2,2) do xy
-        norm2(xy .- center) - R  # signed distance function
-    end
-
-    # Initialize Simulation object
-    u = zeros(n+2,m+2,2)
-    a = Flow(u,c,[U,0.],ν=ν)
-    b = MultiLevelPoisson(c)
-    Simulation(U,R,a,b)
+    a = Flow((n+2,m+2),[U,0.];ν=ν)
+    measure!(a,AutoBody(x->norm2(x .- center) - R))
+    Simulation(U,R,a,MultiLevelPoisson(a.μ₀))
 end
 
 function sim_gif!(sim;duration=1,step=0.1,verbose=true)
