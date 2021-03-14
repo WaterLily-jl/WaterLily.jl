@@ -21,46 +21,32 @@ kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
 kern₁(d) = 0.25*(d^2-1)+0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
 
 clamp1(x) = clamp(x,-1,1)
+μ₀(d;ϵ=1) = d/ϵ |> clamp1 |> kern₀
 
 """
-    apply(f, N...)
+    measure(a::Flow,body::AbstractBody;t=0,ϵ=1)
 
-Apply a vector function f(i,x) to the faces of a uniform staggard grid.
+Measure the `body` properties on `flow` using a kernel
+size `ϵ`. Weymouth & Yue, JCP, 2011
 """
-function apply(f,N...)
-    # TODO be more clever with the type
-    c = Array{Float64}(undef,N...)
-    apply!(f,c)
-    return c
-end
-function apply!(f,c)
-    N = size(c)
+function measure!(a::Flow,body::AbstractBody;t=0,ϵ=1)
+    N = size(a.μ₀)
     for b ∈ 1:N[end]
         @simd for I ∈ CR(N[1:end-1])
             x = collect(Float16, I.I) # location at cell center
             x[b] -= 0.5               # location at face
-            @inbounds c[I,b] = f(b,x) # apply function to location
+            d,n̂,κ,V = measure(body,x,t)
+            @inbounds a.μ₀[I,b] = μ₀(d;ϵ)
+            @inbounds a.V[I,b] = V[b]
         end
-    end
-end
-
-"""
-    BDIM_coef(f, N...)
-
-Compute the boundary data immersion method coefficients `c`
-given a signed distance function `f`. Weymouth & Yue, JCP, 2011
-"""
-BDIM_coef(f,N...) = apply((i,x)->f(x),N...) .|> clamp1 .|> kern₀
-
-"""
-    measure(a::Flow,body::AbstractBody;ϵ=2)
-
-Measure the body properties needed for BDIM onto the flow grid using a kernel
-size ϵ. Weymouth & Yue, JCP, 2011
-"""
-function measure!(a::Flow{n,m},body::AbstractBody;ϵ=2) where {n,m}
-    apply!(a.μ₀) do i,x
-        body.sdf(x)/ϵ |> clamp1 |> kern₀
     end
     BC!(a.μ₀,zeros(m))
 end
+
+"""
+    NoBody
+
+Use for a simulation without a body
+"""
+struct NoBody <: AbstractBody end
+function measure!(a::Flow,body::NoBody;t=0,ϵ=1) end

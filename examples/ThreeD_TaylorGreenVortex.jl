@@ -11,7 +11,7 @@ function TGV_video(p=6,Re=1e5,Δprint=0.1,nprint=100)
     L = 2^p; U = 1; ν = U*L/Re
 
     # Taylor-Green-Vortex initial velocity field
-    u = apply(L+2,L+2,L+2,3) do i,vx
+    function uλ(i,vx)
         x,y,z = @. (vx-1.5)*π/L                # scaled coordinates
         i==1 && return -U*sin(x)*cos(y)*cos(z) # u_x
         i==2 && return  U*cos(x)*sin(y)*cos(z) # u_y
@@ -19,10 +19,7 @@ function TGV_video(p=6,Re=1e5,Δprint=0.1,nprint=100)
     end
 
     # Initialize simulation
-    c = ones(L+2,L+2,L+2,3)  # no immersed solids
-    a = Flow(u,c,zeros(3),ν=ν)
-    b = MultiLevelPoisson(c)
-    sim = Simulation(U,L,a,b)
+    sim = Simulation((L+2,L+2,L+2),zeros(3),L;uλ,ν)
 
     # plot the vorticity modulus
     scene = Scene(backgroundcolor = :black)

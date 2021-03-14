@@ -55,9 +55,8 @@ struct Flow{N,M}
         f,p,σ = zeros(N),zeros(M),zeros(M)
         new{n,m}(u,u⁰,μ₀,V,f,p,σ,U,[Δt],[0],ν)
     end
-    function Flow(N::Tuple,U;Δt=0.25,ν=0.)
-        m = length(N)
-        Flow(zeros(N...,m),ones(N...,m),U;Δt=Δt,ν=ν)
+    function Flow(N::Tuple,U;Δt=0.25,ν=0.,uλ::Function=(i,x)->0.)
+        Flow(apply(uλ,N...,length(N)),ones(N...,length(N)),U;Δt,ν)
     end
 end
 

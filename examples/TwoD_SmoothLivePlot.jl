@@ -1,25 +1,8 @@
 using WaterLily
 using LinearAlgebra: norm2
 include("TwoD_plots.jl")
+include("TwoD_circle.jl")
 using SmoothLivePlot
-
-function circle(n,m;Re=250)
-    # Set physical parameters
-    U,R,center = 1., m/8., [m/2,m/2]
-    ν=U*R/Re
-    @show R,ν
-
-    # Immerse a circle (change for other shapes)
-    c = BDIM_coef(n+2,m+2,2) do xy
-        norm2(xy .- center) - R  # signed distance function
-    end
-
-    # Initialize Simulation object
-    u = zeros(n+2,m+2,2)
-    a = Flow(u,c,[U,0.],ν=ν)
-    b = MultiLevelPoisson(c)
-    Simulation(U,R,a,b)
-end
 
 function v_plot(t,v,i=length(t))
     sleep(0.001)

@@ -1,7 +1,7 @@
 module WaterLily
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ
+export L₂,BC!,@inside,inside,δ,apply,apply!
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solve!,mult
@@ -13,18 +13,28 @@ include("Flow.jl")
 export Flow,mom_step!
 
 include("Body.jl")
-export AbstractBody,BDIM_coef,apply,measure!
+export AbstractBody,measure!
 
 include("AutoBody.jl")
 export AutoBody,measure
 
 include("Metrics.jl")
+using LinearAlgebra: norm2
 
 struct Simulation
     U :: Number # velocity scale
     L :: Number # length scale
     flow :: Flow
+    body :: AbstractBody
     pois :: AbstractPoisson
+    function Simulation(U,L,flow,pois) new(U,L,flow,NoBody(),pois) end
+    function Simulation(N::Tuple,U::Vector,L::Number;
+                        uλ::Function=(i,x)->U[i],Δt=0.25,ν=0.,
+                        body::AbstractBody=NoBody())
+        flow = Flow(N,U;uλ,Δt,ν)
+        measure!(flow,body)
+        new(norm2(U),L,flow,body,MultiLevelPoisson(flow.μ₀))
+    end
 end
 """
     sim_time(sim::Simulation)
