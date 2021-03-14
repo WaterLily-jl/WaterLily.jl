@@ -27,7 +27,6 @@ struct Simulation
     flow :: Flow
     body :: AbstractBody
     pois :: AbstractPoisson
-    function Simulation(U,L,flow,pois) new(U,L,flow,NoBody(),pois) end
     function Simulation(N::Tuple,U::Vector,L::Number;
                         uλ::Function=(i,x)->U[i],Δt=0.25,ν=0.,
                         body::AbstractBody=NoBody())

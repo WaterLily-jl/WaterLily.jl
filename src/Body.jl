@@ -18,10 +18,11 @@ abstract type AbstractBody end
 # Convolution kernel and its moments
 kern(d) = 0.5+0.5cos(π*d)
 kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
-kern₁(d) = 0.25*(d^2-1)+0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
+kern₁(d) = 0.25*(1-d^2)-0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
 
 clamp1(x) = clamp(x,-1,1)
-μ₀(d;ϵ=1) = d/ϵ |> clamp1 |> kern₀
+μ₀(d;ϵ=1) = kern₀(clamp1(d/ϵ))
+μ₁(d;ϵ=1) = ϵ*kern₁(clamp1(d/ϵ))
 
 """
     measure(a::Flow,body::AbstractBody;t=0,ϵ=1)
@@ -35,12 +36,13 @@ function measure!(a::Flow,body::AbstractBody;t=0,ϵ=1)
         @simd for I ∈ CR(N[1:end-1])
             x = collect(Float16, I.I) # location at cell center
             x[b] -= 0.5               # location at face
-            d,n̂,κ,V = measure(body,x,t)
-            @inbounds a.μ₀[I,b] = μ₀(d;ϵ)
+            d,n,κ,V = measure(body,x,t)
             @inbounds a.V[I,b] = V[b]
+            @inbounds a.μ₀[I,b] = μ₀(d;ϵ)
+            @inbounds a.μ₁[I,b,:] = μ₁(d;ϵ).*n
         end
-    end
-    BC!(a.μ₀,zeros(m))
+     end
+    BC!(a.μ₀,zeros(N[end]))
 end
 
 """

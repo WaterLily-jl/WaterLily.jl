@@ -11,6 +11,9 @@ function circle(n,m;Re=250)
     Simulation((n+2,m+2), [U,0.], R; ν, body)
 end
 
-circ = circle(3*2^6,2^7);
-sim_gif!(circ;duration=0.1)
-sim_gif!(circ;duration=10,step=0.25)
+function test(tend=10)
+    sim = circle(3*2^6,2^7)
+    sim_step!(sim,0.01)
+    @time sim_step!(sim,tend)
+end
+# sim_gif!(circle(3*2^6,2^7);duration=10,step=0.25)

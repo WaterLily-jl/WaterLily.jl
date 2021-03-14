@@ -4,6 +4,8 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @inline ϕu(a,I,f,u) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(∂(i,I,u) for i ∈ 1:m)
+@fastmath @inline ∇(a,I::CartesianIndex,u) = @inbounds 0.5*(u[I+δ(a,I)]-u[I-δ(a,I)])
+@fastmath @inline ∂∂n(I::CartesianIndex{m},u,n) where {m} = sum(@inbounds n(I,i)*∇(i,I,u) for i ∈ 1:m)
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
     N = size(u)
@@ -32,39 +34,40 @@ end
     end; end
 end
 
-struct Flow{N,M}
-    u :: Array{Float64,N} # velocity vector field
-    u⁰:: Array{Float64,N} # previous velocity
-    μ₀:: Array{Float64,N} # BDIM zero-moment vector field
-    V :: Array{Float64,N} # BDIM body velocity vector field
-    f :: Array{Float64,N} # force vector field
-    p :: Array{Float64,M} # pressure scalar field
-    σ :: Array{Float64,M} # divergence scalar field
+struct Flow{N,M,P}
+    # Fluid fields
+    u :: Array{Float64,M} # velocity vector
+    u⁰:: Array{Float64,M} # previous velocity
+    f :: Array{Float64,M} # force vector
+    p :: Array{Float64,N} # pressure scalar
+    σ :: Array{Float64,N} # divergence scalar
+    # BDIM fields
+    V :: Array{Float64,M} # BDIM body velocity vector
+    μ₀:: Array{Float64,M} # BDIM zeroth-moment vector
+    μ₁:: Array{Float64,P} # BDIM first-moment normal vector
+    # Non-fields
     U :: Vector{Float64}  # domain boundary values
     Δt:: Vector{Float64}  # time step
     nᵖ:: Vector{Int16}    # pressure solver iterations
     ν :: Float64          # kinematic viscosity
-    function Flow(u::Array{Float64,n},μ₀::Array{Float64,n},U;Δt=0.25,ν=0.) where n
-        N = size(u); M = N[1:end-1]; m = length(M)
-        @assert N==size(μ₀)
-        @assert N[end]==m
-        @assert length(U)==m
-        BC!(u,U); BC!(μ₀,zeros(m))
-        V = zeros(N); BC!(V,U)
+    function Flow(N::Tuple,U::Vector;Δt=0.25,ν=0.,uλ::Function=(i,x)->0.)
+        d = length(N); Nd = (N...,d)
+        @assert length(U)==d
+        u = apply(uλ,Nd); BC!(u,U)
         u⁰ = copy(u)
-        f,p,σ = zeros(N),zeros(M),zeros(M)
-        new{n,m}(u,u⁰,μ₀,V,f,p,σ,U,[Δt],[0],ν)
-    end
-    function Flow(N::Tuple,U;Δt=0.25,ν=0.,uλ::Function=(i,x)->0.)
-        Flow(apply(uλ,N...,length(N)),ones(N...,length(N)),U;Δt,ν)
+        f,p,σ = zeros(Nd),zeros(N),zeros(N)
+        V = zeros(Nd); BC!(V,U)
+        μ₀ = ones(Nd); BC!(μ₀,zeros(d))
+        μ₁ = zeros(N...,d,d)
+        new{d,d+1,d+2}(u,u⁰,f,p,σ,V,μ₀,μ₁,U,[Δt],[0],ν)
     end
 end
 
-@fastmath function project!(a::Flow{n,m},b::AbstractPoisson{n,m}) where {n,m}
+@fastmath function project!(a::Flow{n},b::AbstractPoisson{n}) where n
     @inside a.σ[I] = div(I,a.u)/a.Δt[end]
     i = solve!(a.p,b,a.σ)
     push!(a.nᵖ,i)
-    for i ∈ 1:m; @simd for I ∈ inside(a.σ)
+    for i ∈ 1:n; @simd for I ∈ inside(a.σ)
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
     end;end
 end
@@ -73,22 +76,22 @@ end
     # predictor
     mom_transport!(a.f,a.u⁰,ν=a.ν)       # convection+diffusion on u⁰
     @. a.f = a.u⁰+a.Δt[end]*a.f-a.V      # 1st order BDIM
-    # @inside a.u[I] = ∂∂n(I,a.f,a.μ₁n̂)    # 2nd order BDIM
+    # @inside a.u[I] = ∂∂n(I,a.f,a.μ₁)     # 2nd order BDIM
     # @. a.u += a.V+a.μ₀*a.f; BC!(a.u,a.U) # momentum predictor
     @. a.u = a.V+a.μ₀*a.f; BC!(a.u,a.U)  # momentum predictor (temp)
     project!(a,b); BC!(a.u,a.U)          # pressure projection
     # corrector
     mom_transport!(a.f,a.u,ν=a.ν)        # convection+diffusion on u'
     @. a.f = a.u⁰+a.Δt[end]*a.f-a.V      # 1st order BDIM
-    # @inside a.u[I] += ∂∂n(I,a.f,a.μ₁n̂)   # 2nd order BDIM + u'
+    # @inside a.u[I] = a.u[I]+∂∂n(I,a.f,a.μ₁)# 2nd order BDIM + u'
     @. a.u += a.V+a.μ₀*a.f; BC!(a.u,a.U,2) # momentum corrector
     project!(a,b); a.u ./= 2; BC!(a.u,a.U) # pressure projection
     push!(a.Δt,CFL(a))
 end
 
-function CFL(a::Flow{n,m}) where {n,m}
+function CFL(a::Flow{n}) where n
     mx = mapreduce(max,inside(a.p)) do I
-        sum(@inbounds max(0.,a.u[I,i])+max(0.,a.u[I+δ(i,I),i]) for i in 1:m)
+        sum(@inbounds max(0.,a.u[I,i])+max(0.,a.u[I+δ(i,I),i]) for i in 1:n)
     end
     min(10.,inv(mx+5a.ν))
 end

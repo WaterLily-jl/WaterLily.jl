@@ -13,6 +13,8 @@ using Test
                     0. 0. 7. 0.
                     0. 0. 8. 0.
                     0. 0. 8. 0.],dims=3)
+    u = apply((i,x)->x[i],4,4,2)
+    @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
 end
 
 function Poisson_test_2D(f,n)
@@ -46,11 +48,9 @@ end
 end
 
 @testset "Body.jl" begin
-    u = apply((i,x)->x[i],4,4,2)
-    @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
-    @test BDIM_coef(i->1,4,8,2)==ones(4,8,2)
-    @test BDIM_coef(i->0,4,8,2)==0.5ones(4,8,2)
-    @test BDIM_coef(i->-1,4,8,2)≈zeros(4,8,2) atol=2eps(1.)
+    @test WaterLily.μ₀(3;ϵ=6)==WaterLily.μ₀(0.5)
+    @test WaterLily.μ₀(0)==0.5
+    @test WaterLily.μ₁(0;ϵ=2)==2*(1/4-1/π^2)
 end
 
 @testset "AutoBody.jl" begin
@@ -62,12 +62,9 @@ end
 
 @testset "Flow.jl" begin
     # Impulsive flow in a box
-    u = zeros(6,10,2)
-    c = ones(6,10,2)
     U = [2/3,-1/3]
-    a = Flow(u,c,U)
-    b = MultiLevelPoisson(c)
-    mom_step!(a,b) # now they should match
+    a = Flow((6,10),U)
+    mom_step!(a,MultiLevelPoisson(a.μ₀))
     @test L₂(a.u[:,:,1].-U[1]) < 1e-6*4*8
     @test L₂(a.u[:,:,2].-U[2]) < 1e-6*4*8
 end
