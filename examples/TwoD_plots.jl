@@ -27,3 +27,11 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true)
     end
     return
 end
+
+function vectors(f::Array)
+    x = axes(f,1)' .* ones(size(f,2))
+    y = ones(size(f,2))' .* axes(f,2)
+    u,v = f[:,:,1]',f[:,:,2]'
+    Plots.quiver(x[:],y[:],quiver=(u[:],v[:]),
+                aspect_ratio=:equal)
+end
