@@ -2,23 +2,21 @@ using WaterLily
 using LinearAlgebra: norm2
 using Makie
 
-function donut_sim(p=6,Re=1e3)
-    # Define simulation size, velocity, viscosity
-    n,U = 2^p, [1, 0, 0]
+function donut_sim(;p=6,Re=1e3)
+    # Define simulation size, geometry dimensions, viscosity
+    n = 2^p
     center,R,r = [n/2,n/2,n/2], n/4, n/16
-    ν = norm2(U)*R/Re
+    ν = R/Re
+    @show R,ν
 
     # Apply signed distance function for a torus
-    c = BDIM_coef(2n+2,n+2,n+2,3) do xyz  #
+    body = AutoBody() do xyz,t
         x,y,z = xyz - center
         norm2([x,norm2([y,z])-R])-r
     end
 
-    # Initialize Flow, Poisson and make struct
-    u = zeros(2n+2,n+2,n+2,3)
-    a = Flow(u,c,U,ν=ν)
-    b = MultiLevelPoisson(c)
-    Simulation(norm2(U),R,a,b),center
+    # Initialize simulation
+    Simulation((2n+2,n+2,n+2),[1.,0.,0.],R;ν,body),center
 end
 
 function flowdata(sim)

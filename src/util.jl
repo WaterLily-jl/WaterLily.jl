@@ -39,6 +39,28 @@ end
     end
 end
 
+"""
+    apply(f, N...)
+
+Apply a vector function f(i,x) to the faces of a uniform staggered grid.
+"""
+function apply(f,N...)
+    # TODO be more clever with the type
+    c = Array{Float64}(undef,N...)
+    apply!(f,c)
+    return c
+end
+function apply!(f,c)
+    N = size(c)
+    for b ∈ 1:N[end]
+        @simd for I ∈ CR(N[1:end-1])
+            x = collect(Float16, I.I) # location at cell center
+            x[b] -= 0.5               # location at face
+            @inbounds c[I,b] = f(b,x) # apply function to location
+        end
+    end
+end
+
 function BC!(a::Array{T,4},A,f=1) where T
     for k∈1:size(a,3), j∈1:size(a,2)
         a[1,j,k,1] = a[2,j,k,1] = a[size(a,1),j,k,1] = f*A[1]

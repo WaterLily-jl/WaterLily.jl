@@ -29,7 +29,7 @@ struct MultiLevelPoisson{N,M} <: AbstractPoisson{N,M}
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where a<10, n>1"
         @assert length(levels)>1 & all(size(levels[end].x).<10) text
-        new{n,n-1}(levels)
+        new{n-1,n}(levels)
     end
 end
 
@@ -49,7 +49,7 @@ end
 
 mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
 
-function solve!(x::Array{Float64,m},ml::MultiLevelPoisson{n,m},b::Array{Float64,m};log=false,tol=1e-3,itmx=32) where {n,m}
+function solve!(x::Array{Float64,n},ml::MultiLevelPoisson{n},b::Array{Float64,n};log=false,tol=1e-3,itmx=32) where n
     p = ml.levels[1]
     p.x .= x
     residual!(p,b); r₂ = L₂(p.r)
