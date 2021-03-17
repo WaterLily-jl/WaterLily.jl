@@ -1,12 +1,8 @@
 using WaterLily
 using LinearAlgebra: norm2
-using Makie
+include("ThreeD_plots.jl")
 
-function flowdata(sim)
-    @inside sim.flow.σ[I] = WaterLily.ω_mag(I,sim.flow.u)*sim.L/sim.U
-    return @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
-end
-function TGV_video(p=6,Re=1e5,Δprint=0.1,nprint=100)
+function TGV(p=6,Re=1e5)
     # Define vortex size, velocity, viscosity
     L = 2^p; U = 1; ν = U*L/Re
 
@@ -19,20 +15,13 @@ function TGV_video(p=6,Re=1e5,Δprint=0.1,nprint=100)
     end
 
     # Initialize simulation
-    sim = Simulation((L+2,L+2,L+2),zeros(3),L;uλ,ν)
-
-    # plot the vorticity modulus
-    scene = Scene(backgroundcolor = :black)
-    scene = volume!(scene,flowdata(sim),colorrange=(π,4π),algorithm = :absorption)
-    vol_plot = scene[end]
-
-    # Plot flow evolution
-    tprint = 0.0
-    record(scene,"file.mp4",1:nprint,framerate=24,compression=5) do i
-        tprint += Δprint
-        sim_step!(sim,tprint)
-        println("video ",round(Int,i/nprint*100),"% complete")
-        vol_plot[1] = flowdata(sim)
-    end
-    return sim,scene
+    return Simulation((L+2,L+2,L+2),zeros(3),L;U,uλ,ν)
 end
+
+function ω_mag_data(sim)
+    # plot the vorticity modulus
+    @inside sim.flow.σ[I] = WaterLily.ω_mag(I,sim.flow.u)*sim.L/sim.U
+    return @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
+end
+
+sim,fig = volume_plot(TGV(),ω_mag_data,fname='TGV.mp4',duration=10)

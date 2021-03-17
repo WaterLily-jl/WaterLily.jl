@@ -38,12 +38,12 @@ function circle(n,m;Re=250)
     U,R,center = 1., m/8., [m/2,m/2]
     ν=U*R/Re
     @show R,ν
-    
+
     body = AutoBody((x,t)->norm2(x .- center) - R)
     Simulation((n+2,m+2), [U,0.], R; ν, body)
 end
 ```
-The second to last line defines the circle geometry using a signed distance function. The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameter automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](ThreeD_donut.jl), a [block](TwoD_block.jl) or the [Julia logo](TwoD_Julia.jl). Finally, the last line defines the `Simulation` by passing in the `size=(n+2,m+2)` and the other parameters we've defined.
+The second to last line defines the circle geometry using a signed distance function. The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameter automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](ThreeD_donut.jl), a [block](TwoD_block.jl) or the [Julia logo](TwoD_Julia.jl). Finally, the last line defines the `Simulation` by passing in the `dims=(n+2,m+2)` and the other parameters we've defined.
 
 Now we can create a simulation (first line) and run it forward in time (second line)
 ```julia
@@ -72,7 +72,7 @@ function TGV(p=6,Re=1e5)
     end
 
     # Initialize simulation
-    Simulation((L+2,L+2,L+2),zeros(3),L;uλ,ν)
+    Simulation((L+2,L+2,L+2), zeros(3), L; uλ, ν, U)
 end
 ```
 The velocity field is defined by the vector component `i` and the 3D position vector `vx`. We scale the coordinates so the velocity will be zero on the domain boundaries and then check which component is needed and return the correct expression.
