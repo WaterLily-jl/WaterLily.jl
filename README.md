@@ -43,7 +43,7 @@ function circle(n,m;Re=250)
     Simulation((n+2,m+2), [U,0.], R; ν, body)
 end
 ```
-The second to last line defines the circle geometry using a signed distance function. The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameter automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](ThreeD_donut.jl), a [block](TwoD_block.jl) or the [Julia logo](TwoD_Julia.jl). Finally, the last line defines the `Simulation` by passing in the `dims=(n+2,m+2)` and the other parameters we've defined.
+The second to last line defines the circle geometry using a signed distance function. The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameter automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](examples/ThreeD_donut.jl), a [block](examples/TwoD_block.jl) or the [Julia logo](examples/TwoD_Julia.jl). Finally, the last line defines the `Simulation` by passing in the `dims=(n+2,m+2)` and the other parameters we've defined.
 
 Now we can create a simulation (first line) and run it forward in time (second line)
 ```julia
