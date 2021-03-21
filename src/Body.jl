@@ -30,21 +30,25 @@ clamp1(x) = clamp(x,-1,1)
 Measure the `body` properties on `flow` using a kernel
 size `ϵ`. Weymouth & Yue, JCP, 2011
 """
-function measure!(a::Flow,body::AbstractBody;t=0,ϵ=1)
-    N = size(a.μ₀)
-    for b ∈ 1:N[end]
-        @simd for I ∈ CR(N[1:end-1])
-            x = collect(Float16, I.I) # location at cell center
-            x[b] -= 0.5               # location at face
-            d,n,κ,V = measure(body,x,t)
-            @inbounds a.V[I,b] = V[b]
-            @inbounds a.μ₀[I,b] = μ₀(d;ϵ)
-            @inbounds a.μ₁[I,b,:] = μ₁(d;ϵ).*n
+function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
+    a.V .= 0; a.μ₀ .= 0; a.μ₁ .= 0
+    for I ∈ inside(a.p)
+        x = collect(Float16, I.I) # location at cell center
+        d = body.sdf(x .-1/3,t)
+        if abs(d)<ϵ+0.5           # only measure near interface
+            for i ∈ 1:N
+                xᵢ=x; xᵢ[i] -= 0.5  # location at face
+                dᵢ,n,κ,V = measure(body,xᵢ,t)
+                a.V[I,i] = V[i]
+                a.μ₀[I,i] = μ₀(dᵢ;ϵ)
+                a.μ₁[I,i,:] = μ₁(dᵢ;ϵ).*n
+            end
+        elseif d>0
+            a.μ₀[I,:] .= 1
         end
-     end
-    BC!(a.μ₀,zeros(N[end]))
+    end
+    BC!(a.μ₀,zeros(N))
 end
-
 """
     NoBody
 
