@@ -18,33 +18,35 @@ using Test
 end
 
 function Poisson_test_2D(f,n)
-    c = ones(2^n+2,2^n+2,2); BC!(c,[0. 0.])
+    c = ones(n+2,n+2,2); BC!(c,[0. 0.])
     p = f(c)
-    soln = Float64[ i for i ∈ 1:2^n+2, j ∈ 1:2^n+2]
+    soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2]
     b = mult(p,soln)
-    x = zeros(2^n+2,2^n+2)
+    x = zeros(n+2,n+2)
     solve!(x,p,b)
     x .-= (x[2,2]-soln[2,2])
     return L₂(x.-soln)/L₂(soln)
 end
 function Poisson_test_3D(f,n)
-    c = ones(2^n+2,2^n+2,2^n+2,3); BC!(c,[0. 0. 0.])
+    c = ones(n+2,n+2,n+2,3); BC!(c,[0. 0. 0.])
     p = f(c)
-    soln = Float64[ i for i ∈ 1:2^n+2, j ∈ 1:2^n+2, k ∈ 1:2^n+2]
+    soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2, k ∈ 1:n+2]
     b = mult(p,soln)
-    x = zeros(2^n+2,2^n+2,2^n+2)
+    x = zeros(n+2,n+2,n+2)
     solve!(x,p,b)
     x .-= (x[2,2,2]-soln[2,2,2])
     return L₂(x.-soln)/L₂(soln)
 end
 
 @testset "Poisson.jl" begin
-    @test Poisson_test_2D(Poisson,6) < 1e-5
-    @test Poisson_test_3D(Poisson,4) < 1e-5
+    @test Poisson_test_2D(Poisson,2^6) < 1e-5
+    @test Poisson_test_3D(Poisson,2^4) < 1e-5
 end
 @testset "MultiLevelPoisson.jl" begin
-    @test Poisson_test_2D(MultiLevelPoisson,6) < 1e-5
-    @test Poisson_test_3D(MultiLevelPoisson,4) < 1e-5
+    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_2D(MultiLevelPoisson,67)
+    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_3D(MultiLevelPoisson,3^4)
+    @test Poisson_test_2D(MultiLevelPoisson,2^6) < 1e-5
+    @test Poisson_test_3D(MultiLevelPoisson,2^4) < 1e-5
 end
 
 @testset "Body.jl" begin

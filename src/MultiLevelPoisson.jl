@@ -27,8 +27,8 @@ struct MultiLevelPoisson{N,M} <: AbstractPoisson{N,M}
         while all(size(levels[end].x) .|> divisible)
             push!(levels,restrictML(levels[end].L))
         end
-        text = "MultiLevelPoisson requires size=a2ⁿ, where a<10, n>1"
-        @assert length(levels)>1 & all(size(levels[end].x).<10) text
+        text = "MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2"
+        @assert (length(levels)>2 && all(size(levels[end].x).<31)) text
         new{n-1,n}(levels)
     end
 end
