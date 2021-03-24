@@ -39,19 +39,21 @@ Text(α==0 ? "α=0" : string("α=π/",floor(Int,π/α)))
 md"Click `Start` (and then `stop`) to run (and then pause) the simulation."
 
 # ╔═╡ 6612b570-8a80-11eb-20e3-69d56c5ff765
-@bind tick PlutoUI.Clock(0.001)
+@bind tick PlutoUI.Clock(0.01)
 
 # ╔═╡ d48df7f8-8bd9-11eb-2f0b-1d3f58b046df
-md"Define the signed distance function and the `Simulation`. Note that you need to use `norm2`, as it plays nicely with ForwardDiff."
+md"Define the `Simulation` by setting the size and the signed distance function of the box. Note that you need to use `norm2`, as it plays nicely with ForwardDiff."
 
 # ╔═╡ dbfb0b2c-8be6-11eb-2f47-2d817a6def83
+# Simulation dims
 n,m = 3*2^6,2^7;
 
 # ╔═╡ dbb2dd16-8be6-11eb-2682-e3a289d36c15
+# n-dimensional box SDF. See https://www.iquilezles.org/
 body = AutoBody() do x,t
-	x = [cos(α) sin(α); -sin(α) cos(α)] * (x .- m/2)
-	x = abs.(x) .- size
-	norm2(max.(x, 0.))+min(maximum(x),0.)
+	x = [cos(α) sin(α); -sin(α) cos(α)] * (x .- m/2) # transform to body coords
+	x = abs.(x) .- size                              # position relative to corner 
+	norm2(max.(x, 0.))+min(maximum(x),0.)            # SDF
 end;
 
 # ╔═╡ b9c97692-8be6-11eb-1c4a-29c67b3b354d
@@ -62,7 +64,7 @@ begin
 	tick
 	sim_step!(sim,sim_time(sim)+0.25)
 	@inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-	flood(sim.flow.σ,clims=(-10,10))
+	as_png(flood(sim.flow.σ,clims=(-10,10)))
 end
 
 # ╔═╡ Cell order:
