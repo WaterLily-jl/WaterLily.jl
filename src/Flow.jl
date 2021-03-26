@@ -92,9 +92,9 @@ end
     push!(a.Δt,CFL(a))
 end
 
+@fastmath @inline fout(I::CartesianIndex{d},u) where {d} =
+    sum(@inbounds(max(0.,u[I+δ(a,I),a])+max(0.,-u[I,a])) for a ∈ 1:d)
 function CFL(a::Flow{n}) where n
-    mx = mapreduce(max,inside(a.p)) do I
-        sum(@inbounds max(0.,a.u[I,i])+max(0.,a.u[I+δ(i,I),i]) for i in 1:n)
-    end
+    mx = mapreduce(I->fout(I,a.u),max,inside(a.p))
     min(10.,inv(mx+5a.ν))
 end
