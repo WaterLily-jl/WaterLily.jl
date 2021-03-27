@@ -28,15 +28,15 @@ macro inside(ex)
     end |> esc
 end
 
-@fastmath function median(a,b,c)
-    x = a-b
-    if x*(b-c) ≥ 0
-        return b
-    elseif x*(a-c) > 0
-        return c
+function median(a,b,c)
+    if a>b
+        b>=c && return b
+        a>c && return c
     else
-        return a
+        b<=c && return b
+        a<c && return c
     end
+    return a
 end
 
 """
