@@ -19,18 +19,24 @@
     end;end
 end
 
-@fastmath function conv_diff!(r,u;ν=0.1)
-    N = size(u); r .= 0.
-    for a ∈ 1:N[end], b ∈ 1:N[end]; @simd for I ∈ inside_u(N)
-        Iᵃ,Iᵇ = CI(I,a),CI(I,b)
-        if Iᵇ[b]==2 || Iᵇ[b]==N[b]
-            Φ = ϕ(b,Iᵃ,u)*ϕ(a,Iᵇ,u)-ν*∂(b,Iᵃ,u)
-        else
-            Φ = ϕu(b,Iᵃ,u,ϕ(a,Iᵇ,u))-ν*∂(b,Iᵃ,u)
+@fastmath function conv_diff!(r::Array{T,m},u::Array{T,m};ν=0.1) where {T,m}
+    r .= 0.
+    n = m-1; N = ntuple(i -> size(u,i), n)
+    for i ∈ 1:n, j ∈ 1:n
+        @simd for I ∈ slice(N,2,j,2)
+            Φ = ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u)
+            @inbounds r[I,i] += Φ
         end
-        @inbounds r[Iᵃ] += Φ
-        @inbounds r[Iᵃ-δ(b,Iᵃ)] -= Φ
-    end; end
+        @simd for I ∈ inside_u(N,j)
+            Φ = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u)
+            @inbounds r[I,i] += Φ
+            @inbounds r[I-δ(j,I),i] -= Φ
+        end
+        @simd for I ∈ slice(N,N[j],j,2)
+            Φ = ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u)
+            @inbounds r[I-δ(j,I),i] -= Φ
+        end
+    end
 end
 
 struct Flow{N,M,P}
