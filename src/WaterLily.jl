@@ -69,8 +69,12 @@ Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `verbose=true` the time `tU/L` and adaptive time step `Δt` are
 printed every time step.
 """
-function sim_step!(sim::Simulation,t_end;verbose=false)
+function sim_step!(sim::Simulation,t_end;verbose=false,remeasure=false)
     t = sim_time(sim)
+    if remeasure
+        measure!(sim.flow,sim.body)
+        update!(sim.pois,sim.flow.μ₀)
+    end
     while t < t_end
         mom_step!(sim.flow,sim.pois) # evolve Flow
         t += sim.flow.Δt[end]*sim.U/sim.L
