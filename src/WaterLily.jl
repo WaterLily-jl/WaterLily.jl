@@ -21,30 +21,30 @@ export AutoBody,measure
 include("Metrics.jl")
 using LinearAlgebra: norm2
 
+"""
+    Simulation(dims::Tuple, u_BC::Vector, L::Number;
+               U=norm2(u_BC), Δt=0.25, ν=0.,
+               uλ::Function=(i,x)->u_BC[i],
+               body::AbstractBody=NoBody())
+
+Constructor for a WaterLily.jl simulation:
+    - `dims`: Simulation domain dimensions.
+    - `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=1,2...`.
+    - `L`: Simulation length scale.
+    - `U`: Simulation velocity scale.
+    - `Δt`: Initial time step.
+    - `ν`: Scaled viscosity (`Re=UL/ν`)
+    - `uλ`: Function to generate the initial velocity field.
+    - `body`: Embedded geometry
+
+See files in `examples` folder for examples.
+"""
 struct Simulation
     U :: Number # velocity scale
     L :: Number # length scale
     flow :: Flow
     body :: AbstractBody
     pois :: AbstractPoisson
-    """
-        Simulation(dims::Tuple, u_BC::Vector, L::Number;
-                   U=norm2(u_BC), Δt=0.25, ν=0.,
-                   uλ::Function=(i,x)->u_BC[i],
-                   body::AbstractBody=NoBody())
-
-    Constructor for a WaterLily.jl simulation:
-        - `dims`: Simulation domain dimensions.
-        - `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=1,2...`.
-        - `L`: Simulation length scale.
-        - `U`: Simulation velocity scale.
-        - `Δt`: Initial time step.
-        - `ν`: Scaled viscosity (Re=UL/ν)
-        - `uλ`: Function to generate the initial velocity field.
-        - `body`: Embedded geometry
-
-    See files in `examples` folder for examples.
-    """
     function Simulation(dims::Tuple, u_BC::Vector, L::Number;
                         Δt=0.25, ν=0., U=norm2(u_BC),
                         uλ::Function=(i,x)->u_BC[i],
