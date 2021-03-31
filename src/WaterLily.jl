@@ -54,6 +54,7 @@ struct Simulation
         new(U,L,flow,body,MultiLevelPoisson(flow.μ₀))
     end
 end
+
 """
     sim_time(sim::Simulation)
 
@@ -62,6 +63,7 @@ where `t=sum(Δt)`, and `U`,`L` are the simulation velocity and length
 scales.
 """
 sim_time(sim::Simulation) = sum(sim.flow.Δt[1:end-1])*sim.U/sim.L
+
 """
     sim_step!(sim::Simulation,t_end;verbose=false)
 
@@ -71,11 +73,8 @@ printed every time step.
 """
 function sim_step!(sim::Simulation,t_end;verbose=false,remeasure=false)
     t = sim_time(sim)
-    if remeasure
-        measure!(sim.flow,sim.body)
-        update!(sim.pois,sim.flow.μ₀)
-    end
     while t < t_end
+        remeasure && sim_remeasure(sim,t)
         mom_step!(sim.flow,sim.pois) # evolve Flow
         t += sim.flow.Δt[end]*sim.U/sim.L
         verbose && println("tU/L=",round(t,digits=4),
@@ -83,5 +82,15 @@ function sim_step!(sim::Simulation,t_end;verbose=false,remeasure=false)
     end
 end
 
-export Simulation,sim_step!,sim_time
+"""
+    sim_remeasure!(sim::Simulation)
+
+Remeasure an updated SDF to update the Simulation coefficients.
+"""
+function sim_remeasure!(sim::Simulation)
+    measure!(sim.flow,sim.body,t=sim_time(sim))
+    update!(sim.pois,sim.flow.μ₀)
+end
+
+export Simulation,sim_step!,sim_time,sim_remeasure!
 end # module
