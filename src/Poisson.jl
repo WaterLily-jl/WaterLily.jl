@@ -34,7 +34,7 @@ struct Poisson{N,M} <: AbstractPoisson{N,M}
         new{n,m}(L,D,iD,x,ϵ,r)
     end
 end
-function set_diag!(D,iD,L)
+function set_diag!(D::Array{T,n},iD,L) where {T,n}
     @inbounds @simd for I ∈ inside(D)
         D[I] = -sum(@inbounds(L[I,i]+L[I+δ(i,n),i]) for i ∈ 1:n)
         iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])

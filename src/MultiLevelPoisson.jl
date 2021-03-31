@@ -39,9 +39,9 @@ function update!(ml::MultiLevelPoisson,L::Array)
     update!(ml.levels[1],L)
     for l ∈ 2:length(ml.levels)
         restrictL!(ml.levels[l].L,ml.levels[l-1].L)
-        set_diag!(ml.levels[l+1])
+        set_diag!(ml.levels[l])
     end
-end
+end 
 
 function Vcycle!(ml::MultiLevelPoisson;l=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
