@@ -58,8 +58,8 @@ end
 @testset "AutoBody.jl" begin
     using LinearAlgebra: norm2
     body = AutoBody((x,t)->norm2(x)-2-t)
-    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.25,0.],[√.5,√.5]))
-    @test all(measure(body,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.5,0.25],[1.,0.,0.]))
+    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.25,0.],[0.,0.]))
+    @test all(measure(body,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.5,0.25],[0.,0.,0.]))
 end
 
 @testset "Flow.jl" begin
