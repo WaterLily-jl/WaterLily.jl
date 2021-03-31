@@ -13,7 +13,7 @@ using ForwardDiff,DiffResults
     measure(body::AutoBody,x::Vector,t::Real)
 
 ForwardDiff is used to determine the geometry properties from the `sdf`.
-Note: V only contains the normal component which is generally not sufficient.
+Note: V set to 0 for now.
 """
 function measure(body::AutoBody,x::Vector,t::Real)
     result = DiffResults.HessianResult(x)
@@ -21,7 +21,7 @@ function measure(body::AutoBody,x::Vector,t::Real)
     d = DiffResults.value(result)
     n̂ = DiffResults.gradient(result)
     κ = curvature(DiffResults.hessian(result))
-    V = -ForwardDiff.derivative(t->body.sdf(x,t), t) .* n̂
+    V = zeros(length(x)) #-ForwardDiff.derivative(t->body.sdf(x,t), t) .* n̂
     d,n̂,κ,V
 end
 
