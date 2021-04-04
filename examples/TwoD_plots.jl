@@ -21,9 +21,11 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true)
     t = range(t₀,t₀+duration;step)
     gr(show=false)
     @time @gif for tᵢ in t
-        sim_step!(sim,tᵢ;verbose)
+        sim_step!(sim,tᵢ)
         @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
         flood(sim.flow.σ,shift=(-0.5,-0.5),clims=(-5,5))
+        verbose && println("tU/L=",round(tᵢ,digits=4),
+            ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
     return
 end
