@@ -1,28 +1,44 @@
 """
-    AutoBody
+    AutoBody(sdf,map=(x,t)->x) <: AbstractBody
 
-Defines the geometry using only a time variable signed distance function `sdf`.
-Other properties are determined using Automatic Differentiation.
+    - sdf(x::Vector,t::Real)::Real: signed distance function
+    - map(x::Vector,t::Real)::Vector: coordinate mapping function
+
+Define a geometry by its `sdf` and optional coordinate `map`. All other
+properties are determined using Automatic Differentiation. Note: the `map`
+is composed automatically if provided, ie `sdf(x,t) = sdf(map(x,t),t)`.
 """
 struct AutoBody <: AbstractBody
     sdf::Function
+    map::Function
+    function AutoBody(sdf,map=(x,t)->x)
+        new((x,t)->sdf(map(x,t),t),map)
+    end
 end
 
 using ForwardDiff,DiffResults
+using LinearAlgebra: norm2
 """
     measure(body::AutoBody,x::Vector,t::Real)
 
-ForwardDiff is used to determine the geometry properties from the `sdf`.
-Note: V only contains the normal component which is generally not sufficient.
+ForwardDiff is used to determine the geometric properties from the `sdf`.
+Note: The velocity is determined _soley_ from the optional `map` function.
 """
 function measure(body::AutoBody,x::Vector,t::Real)
+    # V = dot(map), ignoring any other time dependancy in sdf.
+    V = -ForwardDiff.derivative(t->body.map(x,t), t)
+
+    # Use DiffResults to get Hessian/gradient/value in one shot
     result = DiffResults.HessianResult(x)
     result = ForwardDiff.hessian!(result, x -> body.sdf(x,t), x)
     d = DiffResults.value(result)
     n̂ = DiffResults.gradient(result)
     κ = curvature(DiffResults.hessian(result))
-    V = -ForwardDiff.derivative(t->body.sdf(x,t), t) .* n̂
-    d,n̂,κ,V
+
+    # |∇d|=1 for a true distance function. If sdf or map violates this condition,
+    # scaling by |∇d| gives an approximate correction.
+    m = norm2(n̂)
+    d/m,n̂./m,κ./[m,m^2],V
 end
 
 using LinearAlgebra: tr

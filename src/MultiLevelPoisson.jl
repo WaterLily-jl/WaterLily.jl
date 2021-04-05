@@ -1,12 +1,15 @@
 @inline near(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 
-@fastmath function restrictML(b::Array{Float64,m}) where m
+function restrictML(b::Array{Float64,m}) where m
     N = ntuple(i-> i==m ? m-1 : 1+size(b,i)÷2, m)
     a = zeros(N)
-    @inbounds for i ∈ 1:m-1, I ∈ inside(N[1:m-1])
-        a[I,i] = 0.5sum(b[J,i] for J ∈ near(I,i))
-    end
+    restrictL!(a,b)
     Poisson(a)
+end
+@fastmath function restrictL!(a::Array{Float64,m},b::Array{Float64,m}) where m
+    @inbounds for i ∈ 1:m-1, I ∈ inside(size(a)[1:m-1])
+        a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ near(I,i))
+    end
 end
 
 @fastmath restrict!(a::Array{Float64},b::Array{Float64}) = @inbounds @simd for I ∈ inside(a)
@@ -32,6 +35,13 @@ struct MultiLevelPoisson{N,M} <: AbstractPoisson{N,M}
         new{n-1,n}(levels)
     end
 end
+function update!(ml::MultiLevelPoisson,L::Array)
+    update!(ml.levels[1],L)
+    for l ∈ 2:length(ml.levels)
+        restrictL!(ml.levels[l].L,ml.levels[l-1].L)
+        set_diag!(ml.levels[l])
+    end
+end 
 
 function Vcycle!(ml::MultiLevelPoisson;l=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
