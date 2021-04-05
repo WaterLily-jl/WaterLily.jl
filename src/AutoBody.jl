@@ -26,7 +26,7 @@ Note: The velocity is determined _soley_ from the optional `map` function.
 """
 function measure(body::AutoBody,x::Vector,t::Real)
     # V = dot(map), ignoring any other time dependancy in sdf.
-    V = ForwardDiff.derivative(t->body.map(x,t), t)
+    V = -ForwardDiff.derivative(t->body.map(x,t), t)
 
     # Use DiffResults to get Hessian/gradient/value in one shot
     result = DiffResults.HessianResult(x)
