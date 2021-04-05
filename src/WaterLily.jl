@@ -55,6 +55,7 @@ struct Simulation
     end
 end
 
+time(sim::Simulation) = sum(sim.flow.Δt[1:end-1])
 """
     sim_time(sim::Simulation)
 
@@ -62,7 +63,7 @@ Return the current dimensionless time of the simulation `tU/L`
 where `t=sum(Δt)`, and `U`,`L` are the simulation velocity and length
 scales.
 """
-sim_time(sim::Simulation) = sum(sim.flow.Δt[1:end-1])*sim.U/sim.L
+sim_time(sim::Simulation) = time(sim)*sim.U/sim.L
 
 """
     sim_step!(sim::Simulation,t_end;verbose=false)
@@ -72,25 +73,25 @@ If `verbose=true` the time `tU/L` and adaptive time step `Δt` are
 printed every time step.
 """
 function sim_step!(sim::Simulation,t_end;verbose=false,remeasure=false)
-    t = sim_time(sim)
-    while t < t_end
-        remeasure && sim_remeasure(sim,t)
+    t = time(sim)
+    while t < t_end*sim.L/sim.U
+        remeasure && measure!(sim,t)
         mom_step!(sim.flow,sim.pois) # evolve Flow
-        t += sim.flow.Δt[end]*sim.U/sim.L
-        verbose && println("tU/L=",round(t,digits=4),
+        t += sim.flow.Δt[end]
+        verbose && println("tU/L=",round(t*sim.U/sim.L,digits=4),
             ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
 end
 
 """
-    sim_remeasure!(sim::Simulation)
+    measure!(sim::Simulation,t=time(sim))
 
-Remeasure an updated SDF to update the Simulation coefficients.
+Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
-function sim_remeasure!(sim::Simulation)
-    measure!(sim.flow,sim.body,t=sim_time(sim))
+function measure!(sim::Simulation,t=time(sim))
+    measure!(sim.flow,sim.body;t)
     update!(sim.pois,sim.flow.μ₀)
 end
 
-export Simulation,sim_step!,sim_time,sim_remeasure!
+export Simulation,sim_step!,sim_time,measure!
 end # module
