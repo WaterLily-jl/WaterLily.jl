@@ -19,3 +19,6 @@ vort_sim = ()->Simulation((L+2,L+2,L+2),zeros(3),L;uλ,ν=L/Re,U=1.)
 function benchmark_step()
     @benchmark mom_step!($sim.flow,$sim.pois)
 end
+
+benchmark_vort() = @benchmark sim_step!(sim,10) setup=(sim=vort_sim()) seconds=30
+benchmark_body() = @benchmark sim_step!(sim,10) setup=(sim=body_sim())
