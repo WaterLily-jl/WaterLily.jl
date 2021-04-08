@@ -54,7 +54,6 @@ struct Flow{N,M,P}
     # Non-fields
     U :: Vector{Float64}  # domain boundary values
     Δt:: Vector{Float64}  # time step
-    nᵖ:: Vector{Int16}    # pressure solver iterations
     ν :: Float64          # kinematic viscosity
     function Flow(N::Tuple,U::Vector;Δt=0.25,ν=0.,uλ::Function=(i,x)->0.)
         d = length(N); Nd = (N...,d)
@@ -65,7 +64,7 @@ struct Flow{N,M,P}
         V = zeros(Nd); BC!(V,U)
         μ₀ = ones(Nd); BC!(μ₀,zeros(d))
         μ₁ = zeros(N...,d,d)
-        new{d,d+1,d+2}(u,u⁰,f,p,σ,V,μ₀,μ₁,U,[Δt],[0],ν)
+        new{d,d+1,d+2}(u,u⁰,f,p,σ,V,μ₀,μ₁,U,[Δt],ν)
     end
 end
 
@@ -79,8 +78,7 @@ end
 
 @fastmath function project!(a::Flow{n},b::AbstractPoisson{n}) where n
     @inside a.σ[I] = div(I,a.u)/a.Δt[end]
-    i = solve!(a.p,b,a.σ)
-    push!(a.nᵖ,i)
+    solver!(a.p,b,a.σ)
     for i ∈ 1:n; @simd for I ∈ inside(a.σ)
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
     end;end

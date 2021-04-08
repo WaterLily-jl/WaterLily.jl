@@ -25,6 +25,7 @@ end;end
 
 struct MultiLevelPoisson{N,M} <: AbstractPoisson{N,M}
     levels :: Vector{Poisson{N,M}}
+    n :: Vector{Int16}
     function MultiLevelPoisson(L::Array{Float64,n}) where n
         levels = [Poisson(L)]
         while all(size(levels[end].x) .|> divisible)
@@ -32,7 +33,7 @@ struct MultiLevelPoisson{N,M} <: AbstractPoisson{N,M}
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2"
         @assert (length(levels)>2 && all(size(levels[end].x).<31)) text
-        new{n-1,n}(levels)
+        new{n-1,n}(levels,[])
     end
 end
 function update!(ml::MultiLevelPoisson,L::Array)
@@ -41,7 +42,7 @@ function update!(ml::MultiLevelPoisson,L::Array)
         restrictL!(ml.levels[l].L,ml.levels[l-1].L)
         set_diag!(ml.levels[l])
     end
-end 
+end
 
 function Vcycle!(ml::MultiLevelPoisson;l=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
@@ -59,7 +60,7 @@ end
 
 mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
 
-function solve!(x::Array{Float64,n},ml::MultiLevelPoisson{n},b::Array{Float64,n};log=false,tol=1e-3,itmx=32) where n
+function solver!(x::Array{Float64,n},ml::MultiLevelPoisson{n},b::Array{Float64,n};log=false,tol=1e-3,itmx=32) where n
     p = ml.levels[1]
     p.x .= x
     residual!(p,b); r₂ = L₂(p.r)
@@ -73,5 +74,6 @@ function solve!(x::Array{Float64,n},ml::MultiLevelPoisson{n},b::Array{Float64,n}
         nᵖ+=1
     end
     x .= p.x
-    return log ? res : nᵖ
+    push!(ml.n,nᵖ)
+    log && return res
 end

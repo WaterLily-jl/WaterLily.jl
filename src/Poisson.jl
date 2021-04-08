@@ -26,12 +26,13 @@ struct Poisson{N,M} <: AbstractPoisson{N,M}
     x :: Array{Float64,N} # approximate solution
     ϵ :: Array{Float64,N} # increment/error
     r :: Array{Float64,N} # residual
+    n :: Vector{Int16}    # pressure solver iterations
     function Poisson(L::Array{Float64,m}) where m
         M = size(L); N = M[1:end-1]; n = m-1
         @assert M[end] == n
         x,ϵ,r,D,iD = zeros(N),zeros(N),zeros(N),zeros(N),zeros(N)
         set_diag!(D,iD,L)
-        new{n,m}(L,D,iD,x,ϵ,r)
+        new{n,m}(L,D,iD,x,ϵ,r,[])
     end
 end
 function set_diag!(D::Array{T,n},iD,L) where {T,n}
@@ -89,7 +90,7 @@ Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
     increment!(p)
 end
 
-function solve!(x::Array{Float64,n},p::Poisson{n},b::Array{Float64,n};log=false,tol=1e-4,itmx=1e3) where n
+function solver!(x::Array{Float64,n},p::Poisson{n},b::Array{Float64,n};log=false,tol=1e-4,itmx=1e3) where n
     p.x .= x
     residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])
@@ -100,5 +101,6 @@ function solve!(x::Array{Float64,n},p::Poisson{n},b::Array{Float64,n};log=false,
         nᵖ+=1
     end
     x .= p.x
-    return log ? res : nᵖ
+    push!(p.n,nᵖ)
+    log && return res
 end

@@ -23,7 +23,7 @@ function Poisson_test_2D(f,n)
     soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2]
     b = mult(p,soln)
     x = zeros(n+2,n+2)
-    solve!(x,p,b)
+    solver!(x,p,b)
     x .-= (x[2,2]-soln[2,2])
     return L₂(x.-soln)/L₂(soln)
 end
@@ -33,7 +33,7 @@ function Poisson_test_3D(f,n)
     soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2, k ∈ 1:n+2]
     b = mult(p,soln)
     x = zeros(n+2,n+2,n+2)
-    solve!(x,p,b)
+    solver!(x,p,b)
     x .-= (x[2,2,2]-soln[2,2,2])
     return L₂(x.-soln)/L₂(soln)
 end
