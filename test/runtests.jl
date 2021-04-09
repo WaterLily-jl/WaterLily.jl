@@ -66,6 +66,13 @@ end
 end
 
 @testset "Flow.jl" begin
+    # Horizontally moving body
+    using LinearAlgebra: norm2
+    a = Flow((20,20),[1.,0.])
+    measure!(a,AutoBody((x,t)->norm2(x)-5,(x,t)->x.-[t,0.].-10))
+    mom_step!(a,Poisson(a.μ₀))
+    @test sum(abs2,a.u[:,5,1].-1) < 1e-3
+
     # Impulsive flow in a box
     U = [2/3,-1/3]
     a = Flow((14,10),U)

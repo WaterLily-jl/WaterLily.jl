@@ -48,9 +48,10 @@ struct Flow{N,M,P}
     p :: Array{Float64,N} # pressure scalar
     σ :: Array{Float64,N} # divergence scalar
     # BDIM fields
-    V :: Array{Float64,M} # BDIM body velocity vector
-    μ₀:: Array{Float64,M} # BDIM zeroth-moment on faces
-    μ₁:: Array{Float64,P} # BDIM first-moment vector on faces
+    V :: Array{Float64,M} # body velocity vector
+    σᵥ:: Array{Float64,N} # body velocity divergence
+    μ₀:: Array{Float64,M} # zeroth-moment on faces
+    μ₁:: Array{Float64,P} # first-moment vector on faces
     # Non-fields
     U :: Vector{Float64}  # domain boundary values
     Δt:: Vector{Float64}  # time step
@@ -61,10 +62,10 @@ struct Flow{N,M,P}
         u = apply(uλ,Nd); BC!(u,U)
         u⁰ = copy(u)
         f,p,σ = zeros(Nd),zeros(N),zeros(N)
-        V = zeros(Nd); BC!(V,U)
+        V,σᵥ = zeros(Nd),zeros(N)
         μ₀ = ones(Nd); BC!(μ₀,zeros(d))
         μ₁ = zeros(N...,d,d)
-        new{d,d+1,d+2}(u,u⁰,f,p,σ,V,μ₀,μ₁,U,[Δt],ν)
+        new{d,d+1,d+2}(u,u⁰,f,p,σ,V,σᵥ,μ₀,μ₁,U,[Δt],ν)
     end
 end
 
@@ -76,8 +77,8 @@ end
     @. a.u += a.V+a.μ₀*a.f
 end
 
-@fastmath function project!(a::Flow{n},b::AbstractPoisson{n}) where n
-    @inside a.σ[I] = div(I,a.u)/a.Δt[end]
+@fastmath function project!(a::Flow{n},b::AbstractPoisson{n},w=1) where n
+    @inside a.σ[I] = (div(I,a.u)+w*a.σᵥ[I])/a.Δt[end]
     solver!(a.p,b,a.σ)
     for i ∈ 1:n; @simd for I ∈ inside(a.σ)
         @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
@@ -93,7 +94,7 @@ end
     # corrector u → u¹
     conv_diff!(a.f,a.u,ν=a.ν)
     BDIM!(a); BC!(a.u,a.U,2)
-    project!(a,b); a.u ./= 2; BC!(a.u,a.U)
+    project!(a,b,2); a.u ./= 2; BC!(a.u,a.U)
     push!(a.Δt,CFL(a))
 end
 

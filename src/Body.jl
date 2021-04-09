@@ -31,10 +31,10 @@ Measure the `body` properties on `flow` using a kernel
 size `ϵ`. Weymouth & Yue, JCP, 2011
 """
 function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
-    a.V .= 0; a.μ₀ .= 0; a.μ₁ .= 0
+    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
     for I ∈ inside(a.p)
         x = collect(Float16, I.I) # location at cell center
-        d = body.sdf(x .-1/3,t)
+        d = body.sdf(x,t)
         if abs(d)<ϵ+0.5           # only measure near interface
             for i ∈ 1:N
                 xᵢ=x; xᵢ[i] -= 0.5  # location at face
@@ -43,10 +43,12 @@ function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
                 a.μ₀[I,i] = μ₀(dᵢ;ϵ)
                 a.μ₁[I,i,:] = μ₁(dᵢ;ϵ).*n
             end
-        elseif d>0
-            a.μ₀[I,:] .= 1
+        elseif d<0
+            a.μ₀[I,:] .= 0
         end
+        a.σᵥ[I] = μ₀(d;ϵ)-1
     end
+    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)
     BC!(a.μ₀,zeros(N))
 end
 """
