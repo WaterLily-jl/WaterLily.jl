@@ -31,7 +31,7 @@ function measure(body::AutoBody,x::Vector,t::Real)
     # Use DiffResults to get Hessian/gradient/value in one shot
     result = DiffResults.HessianResult(x)
     result = ForwardDiff.hessian!(result, x -> body.sdf(x,t), x)
-    d = DiffResults.value(result)
+    d = Float64(DiffResults.value(result))
     n̂ = DiffResults.gradient(result)
     κ = curvature(DiffResults.hessian(result))
 

@@ -34,8 +34,8 @@ function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
     for I ∈ inside(a.p)
         x = collect(Float16, I.I) # location at cell center
-        d = body.sdf(x,t)
-        if abs(d)<ϵ+0.5           # only measure near interface
+        d = body.sdf(x.-1/4,t)
+        if abs(d)<ϵ+1             # only measure near interface
             for i ∈ 1:N
                 xᵢ=x; xᵢ[i] -= 0.5  # location at face
                 dᵢ,n,κ,V = measure(body,xᵢ,t)
