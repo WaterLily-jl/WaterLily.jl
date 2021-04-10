@@ -42,16 +42,17 @@ See files in `examples` folder for examples.
 struct Simulation
     U :: Number # velocity scale
     L :: Number # length scale
+    ϵ :: Number # kernel width
     flow :: Flow
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::Tuple, u_BC::Vector, L::Number;
-                        Δt=0.25, ν=0., U=norm2(u_BC),
+                        Δt=0.25, ν=0., U=norm2(u_BC), ϵ = 1,
                         uλ::Function=(i,x)->u_BC[i],
                         body::AbstractBody=NoBody())
         flow = Flow(dims,u_BC;uλ,Δt,ν)
-        measure!(flow,body)
-        new(U,L,flow,body,MultiLevelPoisson(flow.μ₀))
+        measure!(flow,body;ϵ)
+        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.μ₀))
     end
 end
 
@@ -89,7 +90,7 @@ end
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
 function measure!(sim::Simulation,t=time(sim))
-    measure!(sim.flow,sim.body;t)
+    measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
     update!(sim.pois,sim.flow.μ₀)
 end
 
