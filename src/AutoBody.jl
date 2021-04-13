@@ -8,11 +8,12 @@ Define a geometry by its `sdf` and optional coordinate `map`. All other
 properties are determined using Automatic Differentiation. Note: the `map`
 is composed automatically if provided, ie `sdf(x,t) = sdf(map(x,t),t)`.
 """
-struct AutoBody <: AbstractBody
-    sdf::Function
-    map::Function
+struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
+    sdf::F1
+    map::F2
     function AutoBody(sdf,map=(x,t)->x)
-        new((x,t)->sdf(map(x,t),t),map)
+        comp(x,t) = sdf(map(x,t),t)
+        new{typeof(comp),typeof(map)}(comp, map)
     end
 end
 
