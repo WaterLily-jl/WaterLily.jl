@@ -1,3 +1,4 @@
+using StaticArrays
 """
     AbstractBody
 
@@ -9,8 +10,8 @@ to query the body geometry for these properties at location `x` and time `t`:
 
     `d :: Real`, Signed distance to surface
     `n̂ :: Vector`, Outward facing unit normal
-    `κ :: Vector`, Mean and Gaussian curvature
     `V :: Vector`, Body velocity
+    `H,K :: Real`, Mean and Gaussian curvature
 
 """
 abstract type AbstractBody end
@@ -33,12 +34,12 @@ size `ϵ`. Weymouth & Yue, JCP, 2011
 function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
     for I ∈ inside(a.p)
-        x = collect(Float16, I.I) # location at cell center
+        x = SVector(I.I...)       # location at cell center
         d = body.sdf(x.-1/4,t)
         if abs(d)<ϵ+1             # only measure near interface
             for i ∈ 1:N
-                xᵢ=x; xᵢ[i] -= 0.5  # location at face
-                dᵢ,n,κ,V = measure(body,xᵢ,t)
+                xᵢ = x .-0.5.*δ(i,N).I    # location at face
+                dᵢ,n,V,H,K = measure(body,xᵢ,t)
                 a.V[I,i] = V[i]
                 a.μ₀[I,i] = μ₀(dᵢ;ϵ)
                 a.μ₁[I,i,:] = μ₁(dᵢ;ϵ).*n
