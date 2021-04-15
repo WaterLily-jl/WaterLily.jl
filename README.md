@@ -77,6 +77,36 @@ end
 ```
 The velocity field is defined by the vector component `i` and the 3D position vector `vx`. We scale the coordinates so the velocity will be zero on the domain boundaries and then check which component is needed and return the correct expression.
 
+### Moving bodies
+![Flapping line segment flow](examples/hover.gif)
+
+You can simulate moving bodies in Waterlily by passing a coordinate `map` to `AutoBody` in addition to the `sdf`. 
+```
+using LinearAlgebra: norm2
+using StaticArrays
+function hover(L=2^5;Re=250,U=1,amp=0,thk=1+√2)
+    # Set viscosity
+    ν=U*L/Re
+    @show L,ν
+
+    # Create dynamic block geometry
+    function sdf(x,t)
+        y = x .- SVector(0.,clamp(x[2],-L/2,L/2))
+        norm2(y)-thk/2
+    end
+    function map(x,t)
+        α = amp*cos(t*U/L); R = @SMatrix [cos(α) sin(α); -sin(α) cos(α)]
+        R * (x.-SVector(3L+L*sin(t*U/L)+0.01,4L))
+    end
+    body = AutoBody(sdf,map)
+
+    Simulation((6L+2,6L+2),zeros(2),L;U,ν,body,ϵ=0.5)
+end
+```
+In this case, the `sdf` defines a line segment from `-L/2 ≤ x[2] ≤ L/2` with a thickness `thk`. To make the line segment move, we define a coordinate tranformation function `map(x,t)`. In this example, the coordinate `x` is shifted by `(3L,4L)` at time `t=0`, which moves the center of the segment to this point. However, the horizontal shift varies harmonically in time, sweeping the segment left and right during the simulation. The example also rotates the segment using the rotation matrix `R = [cos(α) sin(α); -sin(α) cos(α)]` where the angle `α` is also varied harmonically. The combined result is a thin flapping line, similar to a cross-section of a hovering insect wing.
+
+One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation around a factor of 10 compared to using normal arrays since it reduces the number of allocations needed for every point at every time step. Hopefully, we'll get the allocations down to zero soon. 
+
 ## Development goals
  - Immerse obstacles defined by 3D meshes or 2D lines using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl).
  - GPU acceleration with [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl).
