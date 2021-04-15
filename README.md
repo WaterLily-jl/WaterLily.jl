@@ -81,7 +81,7 @@ The velocity field is defined by the vector component `i` and the 3D position ve
 ![Flapping line segment flow](examples/hover.gif)
 
 You can simulate moving bodies in Waterlily by passing a coordinate `map` to `AutoBody` in addition to the `sdf`. 
-```
+```julia
 using LinearAlgebra: norm2
 using StaticArrays
 function hover(L=2^5;Re=250,U=1,amp=0,thk=1+√2)
