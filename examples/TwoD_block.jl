@@ -11,7 +11,7 @@ function block(L=2^5;Re=250,U=1,amp=0,ϵ=0.5,thk=2ϵ+√2)
     sdf(x,t) = (x[2] -= clamp(x[2],-L/2,L/2); norm2(x)-thk/2)
     function map(x,t)
         α = amp*cos(t*U/L)
-        [cos(α) sin(α); -sin(α) cos(α)] * (x.-[3L+L*sin(t*U/L),4L])
+        [cos(α) sin(α); -sin(α) cos(α)] * (x.-[3L+L*sin(t*U/L)+0.01,4L])
     end
     body = AutoBody(sdf,map)
 
