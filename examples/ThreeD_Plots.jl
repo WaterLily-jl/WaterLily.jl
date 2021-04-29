@@ -1,5 +1,5 @@
 using GLMakie
-using AbstractPlotting # .Colors -> throws UndefVarError: AbstractPlotting not defined
+using AbstractPlotting
 AbstractPlotting.inline!(true) 
 
 function volume_video!(sim,data_func;name="file.mp4",duration=1,step=0.1)
