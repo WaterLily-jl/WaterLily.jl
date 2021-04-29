@@ -1,7 +1,7 @@
 using WaterLily
 using LinearAlgebra: norm2
 using StaticArrays
-include("TwoD_Plots.jl")
+include("TwoD_plots.jl")
 
 function block(L=2^5;Re=250,U=1,amp=0,ϵ=0.5,thk=2ϵ+√2)
     # Set viscosity
