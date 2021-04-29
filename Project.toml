@@ -4,9 +4,13 @@ authors = ["Gabriel Weymouth <drweymouth@google.com>"]
 version = "0.2.0"
 
 [deps]
+AbstractPlotting = "537997a7-5e4e-5d89-9595-2241ea00577e"
 DiffResults = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+SmoothLivePlot = "31434429-0e9f-4d24-947a-14cd43782323"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
