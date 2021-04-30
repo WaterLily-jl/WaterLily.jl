@@ -1,5 +1,5 @@
 using GLMakie
-using AbstractPlotting.Colors
+using AbstractPlotting
 AbstractPlotting.inline!(true)
 
 function volume_video!(sim,data_func;name="file.mp4",duration=1,step=0.1)
