@@ -12,6 +12,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 SmoothLivePlot = "31434429-0e9f-4d24-947a-14cd43782323"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [compat]
 julia = "^1.5"
