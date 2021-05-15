@@ -32,7 +32,7 @@ function TwoD_julia_video(;p=6,Re=250,stop=60.)
         flood(sim.flow.σ,shift=(-0.5,-0.5),clims=(-5,5),
             cfill=:Blues,legend=false,border=:none)
         for (center,color) ∈ zip(centers,colors)
-            addbody(real(z+center),imag(z+center),c=color)
+            addbody(real(z.+center),imag(z.+center),c=color)
         end
     end
     return sim
