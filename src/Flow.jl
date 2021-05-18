@@ -1,6 +1,6 @@
-@inline ∂(a,I::CartesianIndex{d},f::AbstractArray{Float64,d}) where d = @inbounds f[I]-f[I-δ(a,I)]
-@inline ∂(a,I::CartesianIndex{m},u::AbstractArray{Float64,n}) where {n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
-@inline ∂ₐ(a,I::CartesianIndex{d},f::AbstractArray{Float64,d}) where d = @inbounds 0.5*(f[I+δ(a,I)]-f[I-δ(a,I)])
+@inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
+@inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
+@inline ∂ₐ(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds 0.5*(f[I+δ(a,I)]-f[I-δ(a,I)])
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
@@ -40,32 +40,32 @@ end
     end
 end
 
-struct Flow{N,M,P}
+struct Flow{N,M,P,T}
     # Fluid fields
-    u :: Array{Float64,M} # velocity vector
-    u⁰:: Array{Float64,M} # previous velocity
-    f :: Array{Float64,M} # force vector
-    p :: Array{Float64,N} # pressure scalar
-    σ :: Array{Float64,N} # divergence scalar
+    u :: Array{T,M} # velocity vector
+    u⁰:: Array{T,M} # previous velocity
+    f :: Array{T,M} # force vector
+    p :: Array{T,N} # pressure scalar
+    σ :: Array{T,N} # divergence scalar
     # BDIM fields
-    V :: Array{Float64,M} # body velocity vector
-    σᵥ:: Array{Float64,N} # body velocity divergence
-    μ₀:: Array{Float64,M} # zeroth-moment on faces
-    μ₁:: Array{Float64,P} # first-moment vector on faces
+    V :: Array{T,M} # body velocity vector
+    σᵥ:: Array{T,N} # body velocity divergence
+    μ₀:: Array{T,M} # zeroth-moment on faces
+    μ₁:: Array{T,P} # first-moment vector on faces
     # Non-fields
-    U :: Vector{Float64}  # domain boundary values
-    Δt:: Vector{Float64}  # time step
-    ν :: Float64          # kinematic viscosity
-    function Flow(N::Tuple,U::Vector;Δt=0.25,ν=0.,uλ::Function=(i,x)->0.)
+    U :: Vector{T}  # domain boundary values
+    Δt:: Vector{T}  # time step
+    ν :: T          # kinematic viscosity
+    function Flow(N::Tuple,U::Vector;Δt=0.25,ν=0.,uλ::Function=(i,x)->0.,T=Float64)
         d = length(N); Nd = (N...,d)
         @assert length(U)==d
-        u = apply(uλ,Nd); BC!(u,U)
+        u = Array{T}(undef,Nd...); apply!(uλ,u); BC!(u,U)
         u⁰ = copy(u)
-        f,p,σ = zeros(Nd),zeros(N),zeros(N)
-        V,σᵥ = zeros(Nd),zeros(N)
-        μ₀ = ones(Nd); BC!(μ₀,zeros(d))
-        μ₁ = zeros(N...,d,d)
-        new{d,d+1,d+2}(u,u⁰,f,p,σ,V,σᵥ,μ₀,μ₁,U,[Δt],ν)
+        f,p,σ = zeros(T,Nd),zeros(T,N),zeros(T,N)
+        V,σᵥ = zeros(T,Nd),zeros(T,N)
+        μ₀ = ones(T,Nd); BC!(μ₀,zeros(T,d))
+        μ₁ = zeros(T,N...,d,d)
+        new{d,d+1,d+2,T}(u,u⁰,f,p,σ,V,σᵥ,μ₀,μ₁,U,[Δt],ν)
     end
 end
 

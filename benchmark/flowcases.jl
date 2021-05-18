@@ -5,7 +5,7 @@ using Profile
 
 radius = 8; Re = 250
 body = AutoBody((x,t)-> norm2(x .- 2radius) - radius)
-body_sim = ()->Simulation((6radius+2,4radius+2),[1.,0.],radius; body, ν=radius/Re)
+body_sim = (T=Float64)->Simulation((6radius+2,4radius+2),[1.,0.],radius; body, ν=radius/Re,T)
 
 L = 2^5
 function uλ(i,vx)

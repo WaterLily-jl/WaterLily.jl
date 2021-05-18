@@ -4,7 +4,7 @@
 
 @inline CR(a...) = CartesianIndices(a...)
 @inline inside(M::NTuple{N,Int}) where {N} = CR(ntuple(i-> 2:M[i]-1,N))
-@inline inside(a::Array; reverse::Bool=false) =
+@inline inside(a; reverse::Bool=false) =
         reverse ? Iterators.reverse(inside(size(a))) : inside(size(a))
 @inline inside_u(N::NTuple{n,T}) where {n,T} = CR(ntuple(i->2:N[i],n-1))
 function inside_u(N::NTuple{n,Int},j::Int)::CartesianIndices{n} where n
@@ -19,7 +19,7 @@ import Base.mapreduce
     end
     val
 end
-L₂(a::Array{Float64}) = mapreduce(I->@inbounds(abs2(a[I])),+,inside(a))
+L₂(a) = mapreduce(I->@inbounds(abs2(a[I])),+,inside(a))
 
 macro inside(ex)
     @assert ex.head==:(=)
@@ -43,16 +43,10 @@ function median(a,b,c)
 end
 
 """
-    apply(f, N...)
+    apply!(f, c)
 
-Apply a vector function f(i,x) to the faces of a uniform staggered grid.
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 """
-function apply(f,N...)
-    # TODO be more clever with the type
-    c = Array{Float64}(undef,N...)
-    apply!(f,c)
-    return c
-end
 function apply!(f,c)
     N = size(c)
     for b ∈ 1:N[end]
