@@ -10,6 +10,7 @@
 function inside_u(N::NTuple{n,Int},j::Int)::CartesianIndices{n} where n
     CartesianIndices(ntuple( i-> i==j ? (3:N[i]-1) : (2:N[i]), n))
 end
+splitn(u) = Base.front(u),u[end]
 
 import Base.mapreduce
 @fastmath function mapreduce(f,op,R::CartesianIndices;init=0.)
@@ -67,7 +68,7 @@ function slice(N::NTuple{n,Int},s::Int,dims::Int,low::Int=1)::CartesianIndices{n
     CartesianIndices(ntuple( i-> i==dims ? (s:s) : (low:N[i]), n))
 end
 
-function BC!(a::Array{T,m},A,f=1) where {T,m}
+function BC!(a::AbstractArray{T,m},A,f=1) where {T,m}
     n = m-1
     N = ntuple(i -> size(a,i), n)
     for j ∈ 1:n, i ∈ 1:n
@@ -85,7 +86,7 @@ function BC!(a::Array{T,m},A,f=1) where {T,m}
         end
     end
 end
-function BC!(a::Array{T,n}) where {T,n}
+function BC!(a::AbstractArray{T,n}) where {T,n}
     N = size(a)
     for j ∈ 1:n
         @simd for I ∈ slice(N,1,j)

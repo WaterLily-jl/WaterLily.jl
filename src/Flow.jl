@@ -20,9 +20,9 @@
     end;end
 end
 
-@fastmath function conv_diff!(r::Array{T,m},u::Array{T,m};ν=0.1) where {T,m}
+@fastmath function conv_diff!(r,u;ν=0.1)
     r .= 0.
-    n = m-1; N = ntuple(i -> size(u,i), n)
+    N,n = splitn(size(u))
     for i ∈ 1:n, j ∈ 1:n
         @simd for I ∈ slice(N,2,j,2)
             Φ = ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u)

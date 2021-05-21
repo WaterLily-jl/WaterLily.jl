@@ -1,22 +1,23 @@
 @inline near(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 
-function restrictML(b::Array{T,m}) where {T,m}
-    N = ntuple(i-> i==m ? m-1 : 1+size(b,i)÷2, m)
-    a = zeros(T,N)
+function restrictML(b::AbstractArray{T}) where T
+    N,n = splitn(size(b))
+    a = zeros(T,map(i->1+i÷2,N)...,n)
     restrictL!(a,b)
     Poisson(a)
 end
-@fastmath function restrictL!(a::Array{T,m},b::Array{T,m}) where {T,m}
-    @inbounds for i ∈ 1:m-1, I ∈ inside(size(a)[1:m-1])
+@fastmath function restrictL!(a,b)
+    N,n = splitn(size(a))
+    @inbounds for i ∈ 1:n, I ∈ inside(N)
         a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ near(I,i))
     end
 end
 
-@fastmath restrict!(a::Array,b::Array) = @inbounds @simd for I ∈ inside(a)
+@fastmath restrict!(a,b) = @inbounds @simd for I ∈ inside(a)
     a[I] = sum(@inbounds(b[J]) for J ∈ near(I))
 end
 
-prolongate!(a::Array,b::Array) = @inbounds for I ∈ inside(b)
+prolongate!(a,b) = @inbounds for I ∈ inside(b)
     @simd for J ∈ near(I)
         a[J] = b[I]
 end;end
@@ -26,7 +27,7 @@ end;end
 struct MultiLevelPoisson{N,M,T} <: AbstractPoisson{N,M,T}
     levels :: Vector{Poisson{N,M,T}}
     n :: Vector{Int16}
-    function MultiLevelPoisson(L::Array{T,n}) where {T,n}
+    function MultiLevelPoisson(L::AbstractArray{T,n}) where {T,n}
         levels = [Poisson(L)]
         while all(size(levels[end].x) .|> divisible)
             push!(levels,restrictML(levels[end].L))
@@ -36,7 +37,7 @@ struct MultiLevelPoisson{N,M,T} <: AbstractPoisson{N,M,T}
         new{n-1,n,T}(levels,[])
     end
 end
-function update!(ml::MultiLevelPoisson,L::Array)
+function update!(ml::MultiLevelPoisson,L)
     update!(ml.levels[1],L)
     for l ∈ 2:length(ml.levels)
         restrictL!(ml.levels[l].L,ml.levels[l-1].L)
@@ -60,7 +61,7 @@ end
 
 mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
 
-function solver!(x::Array,ml::MultiLevelPoisson,b::Array;log=false,tol=1e-3,itmx=32)
+function solver!(x,ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
     p = ml.levels[1]
     @assert size(p.x)==size(x)
     p.x .= x
