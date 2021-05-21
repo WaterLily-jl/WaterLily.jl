@@ -9,7 +9,8 @@
 function inside_u(N::NTuple{n,Int},j::Int)::CartesianIndices{n} where n
     CartesianIndices(ntuple( i-> i==j ? (3:N[i]-1) : (2:N[i]), n))
 end
-splitn(u) = Base.front(u),u[end]
+splitn(n) = Base.front(n),n[end]
+size_u(u) = splitn(size(u))
 
 import Base.mapreduce
 @fastmath function mapreduce(f,op,R::CartesianIndices;init=0.)

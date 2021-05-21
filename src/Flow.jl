@@ -7,7 +7,7 @@
 @fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(∂(i,I,u) for i ∈ 1:m)
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
-    N,n = splitn(size_u(u))
+    N,n = size_u(u)
     for j ∈ 1:n
         @simd for I ∈ slice(N,2,j,2)
             Φ = ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f)
@@ -27,7 +27,7 @@ end
 
 @fastmath function conv_diff!(r,u;ν=0.1)
     r .= 0.
-    N,n = splitn(size(u))
+    N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         @simd for I ∈ slice(N,2,j,2)
             Φ = ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u)

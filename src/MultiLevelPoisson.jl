@@ -1,13 +1,13 @@
 @inline near(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 
 function restrictML(b::AbstractArray{T}) where T
-    N,n = splitn(size(b))
+    N,n = size_u(b)
     a = zeros(T,map(i->1+i÷2,N)...,n)
     restrictL!(a,b)
     Poisson(a)
 end
 @fastmath function restrictL!(a,b)
-    N,n = splitn(size(a))
+    N,n = size_u(a)
     @inbounds for i ∈ 1:n, I ∈ inside(N)
         a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ near(I,i))
     end

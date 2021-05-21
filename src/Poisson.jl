@@ -28,7 +28,7 @@ struct Poisson{N,M,T} <: AbstractPoisson{N,M,T}
     r :: Array{T,N} # residual
     n :: Vector{Int16}    # pressure solver iterations
     function Poisson(L::AbstractArray{T}) where T
-        N,n = splitn(size(L))
+        N,n = size_u(L)
         x,ϵ,r,D,iD = zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N)
         set_diag!(D,iD,L,n)
         new{n,n+1,T}(L,D,iD,x,ϵ,r,[])
