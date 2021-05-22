@@ -18,45 +18,44 @@ To help iteratively solve the system above, the Poisson structure holds
 helper arrays for inv(D), the error ϵ, and residual r=b-Ax. An iterative
 solution method then estimates the error ϵ=̃A⁻¹r and increments x+=ϵ, r-=Aϵ.
 """
-abstract type AbstractPoisson{N,M} end
-struct Poisson{N,M} <: AbstractPoisson{N,M}
-    L :: Array{Float64,M} # Lower diagonal coefficients
-    D :: Array{Float64,N} # Diagonal coefficients
-    iD :: Array{Float64,N} # 1/Diagonal
-    x :: Array{Float64,N} # approximate solution
-    ϵ :: Array{Float64,N} # increment/error
-    r :: Array{Float64,N} # residual
+abstract type AbstractPoisson{N,M,T} end
+struct Poisson{N,M,T} <: AbstractPoisson{N,M,T}
+    L :: Array{T,M} # Lower diagonal coefficients
+    D :: Array{T,N} # Diagonal coefficients
+    iD :: Array{T,N} # 1/Diagonal
+    x :: Array{T,N} # approximate solution
+    ϵ :: Array{T,N} # increment/error
+    r :: Array{T,N} # residual
     n :: Vector{Int16}    # pressure solver iterations
-    function Poisson(L::Array{Float64,m}) where m
-        M = size(L); N = M[1:end-1]; n = m-1
-        @assert M[end] == n
-        x,ϵ,r,D,iD = zeros(N),zeros(N),zeros(N),zeros(N),zeros(N)
-        set_diag!(D,iD,L)
-        new{n,m}(L,D,iD,x,ϵ,r,[])
+    function Poisson(L::AbstractArray{T}) where T
+        N,n = size_u(L)
+        x,ϵ,r,D,iD = zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N)
+        set_diag!(D,iD,L,n)
+        new{n,n+1,T}(L,D,iD,x,ϵ,r,[])
     end
 end
-function set_diag!(D::Array{T,n},iD,L) where {T,n}
+function set_diag!(D,iD,L,n)
     @inbounds @simd for I ∈ inside(D)
         D[I] = -sum(@inbounds(L[I,i]+L[I+δ(i,n),i]) for i ∈ 1:n)
         iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
     end
 end
-set_diag!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
-update!(p::Poisson,L::Array) = (p.L .= L; set_diag!(p))
+set_diag!(p::Poisson{n}) where n = set_diag!(p.D,p.iD,p.L,n)
+update!(p::Poisson,L) = (p.L .= L; set_diag!(p))
 
 @fastmath @inline multL(I::CartesianIndex{d},L,x) where {d} =
     sum(@inbounds(x[I-δ(a,I)]*L[I,a]) for a ∈ 1:d)
 @fastmath @inline multU(I::CartesianIndex{d},L,x) where {d} =
     sum(@inbounds(x[I+δ(a,I)]*L[I+δ(a,I),a]) for a ∈ 1:d)
 @fastmath @inline mult(I,L,D,x) = @inbounds(x[I]*D[I])+multL(I,L,x)+multU(I,L,x)
-function mult(p::Poisson{n},x::Array{Float64,n}) where n
+function mult(p::Poisson,x)
     @assert size(p.x)==size(x)
     b = zeros(size(p.x))
     @inside b[I] = mult(I,p.L,p.D,x)
     return b
 end
 
-@fastmath residual!(p::Poisson,b::Array{Float64}) =
+@fastmath residual!(p::Poisson,b) =
     @inside p.r[I] = b[I]-mult(I,p.L,p.D,p.x)
 
 @fastmath increment!(p::Poisson) = @inbounds @simd for I ∈ inside(p.x)
@@ -90,7 +89,8 @@ Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
     increment!(p)
 end
 
-function solver!(x::Array{Float64,n},p::Poisson{n},b::Array{Float64,n};log=false,tol=1e-4,itmx=1e3) where n
+function solver!(x,p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
+    @assert size(p.x)==size(x)
     p.x .= x
     residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])

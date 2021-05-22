@@ -50,8 +50,8 @@ struct Simulation
     function Simulation(dims::Tuple, u_BC::Vector, L::Number;
                         Δt=0.25, ν=0., U=norm2(u_BC), ϵ = 1,
                         uλ::Function=(i,x)->u_BC[i],
-                        body::AbstractBody=NoBody())
-        flow = Flow(dims,u_BC;uλ,Δt,ν)
+                        body::AbstractBody=NoBody(),T=Float64)
+        flow = Flow(dims,u_BC;uλ,Δt,ν,T)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.μ₀))
     end

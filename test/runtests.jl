@@ -13,7 +13,7 @@ using Test
                     0. 0. 7. 0.
                     0. 0. 8. 0.
                     0. 0. 8. 0.],dims=3)
-    u = apply((i,x)->x[i],4,4,2)
+    u = zeros(4,4,2); apply!((i,x)->x[i],u)
     @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
 end
 
@@ -83,7 +83,7 @@ end
 end
 
 @testset "Metrics.jl" begin
-    u = apply((i,x)->x[i]+prod(x),3,4,5,3)
+    u = zeros(3,4,5,3); apply!((i,x)->x[i]+prod(x),u)
     @test WaterLily.ke(CartesianIndex(2,3,4),u)==0.5*(26^2+27^2+28^2)
     @test WaterLily.ke(CartesianIndex(2,3,4),u,[2,3,4])===1.5*24^2
     @test [WaterLily.∂(i,j,CartesianIndex(2,3,4),u)

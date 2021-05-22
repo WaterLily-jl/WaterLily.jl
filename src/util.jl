@@ -4,12 +4,13 @@
 
 @inline CR(a...) = CartesianIndices(a...)
 @inline inside(M::NTuple{N,Int}) where {N} = CR(ntuple(i-> 2:M[i]-1,N))
-@inline inside(a::Array; reverse::Bool=false) =
+@inline inside(a; reverse::Bool=false) =
         reverse ? Iterators.reverse(inside(size(a))) : inside(size(a))
-@inline inside_u(N::NTuple{n,T}) where {n,T} = CR(ntuple(i->2:N[i],n-1))
 function inside_u(N::NTuple{n,Int},j::Int)::CartesianIndices{n} where n
     CartesianIndices(ntuple( i-> i==j ? (3:N[i]-1) : (2:N[i]), n))
 end
+splitn(n) = Base.front(n),n[end]
+size_u(u) = splitn(size(u))
 
 import Base.mapreduce
 @fastmath function mapreduce(f,op,R::CartesianIndices;init=0.)
@@ -19,7 +20,7 @@ import Base.mapreduce
     end
     val
 end
-L₂(a::Array{Float64}) = mapreduce(I->@inbounds(abs2(a[I])),+,inside(a))
+L₂(a) = mapreduce(I->@inbounds(abs2(a[I])),+,inside(a))
 
 macro inside(ex)
     @assert ex.head==:(=)
@@ -43,16 +44,10 @@ function median(a,b,c)
 end
 
 """
-    apply(f, N...)
+    apply!(f, c)
 
-Apply a vector function f(i,x) to the faces of a uniform staggered grid.
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 """
-function apply(f,N...)
-    # TODO be more clever with the type
-    c = Array{Float64}(undef,N...)
-    apply!(f,c)
-    return c
-end
 function apply!(f,c)
     N = size(c)
     for b ∈ 1:N[end]
@@ -73,7 +68,7 @@ function slice(N::NTuple{n,Int},s::Int,dims::Int,low::Int=1)::CartesianIndices{n
     CartesianIndices(ntuple( i-> i==dims ? (s:s) : (low:N[i]), n))
 end
 
-function BC!(a::Array{T,m},A,f=1) where {T,m}
+function BC!(a::AbstractArray{T,m},A,f=1) where {T,m}
     n = m-1
     N = ntuple(i -> size(a,i), n)
     for j ∈ 1:n, i ∈ 1:n
@@ -91,7 +86,7 @@ function BC!(a::Array{T,m},A,f=1) where {T,m}
         end
     end
 end
-function BC!(a::Array{T,n}) where {T,n}
+function BC!(a::AbstractArray{T,n}) where {T,n}
     N = size(a)
     for j ∈ 1:n
         @simd for I ∈ slice(N,1,j)
