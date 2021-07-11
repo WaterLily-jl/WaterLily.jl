@@ -66,7 +66,7 @@ function TGV(p=6,Re=1e5)
     # Define vortex size, velocity, viscosity
     L = 2^p; U = 1; ν = U*L/Re
 
-    function uλ(i,vx) # vector function
+    function uλ(i,vx)                          # vector function
         x,y,z = @. (vx-1.5)*π/L                # scaled coordinates
         i==1 && return -U*sin(x)*cos(y)*cos(z) # u_x
         i==2 && return  U*cos(x)*sin(y)*cos(z) # u_y
