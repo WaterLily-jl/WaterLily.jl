@@ -105,7 +105,7 @@ function hover(L=2^5;Re=250,U=1,amp=0,thk=1+√2)
     Simulation((6L+2,6L+2),zeros(2),L;U,ν,body,ϵ=0.5)
 end
 ```
-<!---  Would be cool to see how you generated the gif, I had a hard time getting any visuals out of this simulation --->
+How to generate a .gif from this can be seen in the examples folder [TwoD_block.jl](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_block.jl).
 In this case, the `sdf` defines a line segment from `-L/2 ≤ x[2] ≤ L/2` with a thickness `thk`. To make the line segment move, we define a coordinate tranformation function `map(x,t)`. In this example, the coordinate `x` is shifted by `(3L,4L)` at time `t=0`, which moves the center of the segment to this point. However, the horizontal shift varies harmonically in time, sweeping the segment left and right during the simulation. The example also rotates the segment using the rotation matrix `R = [cos(α) sin(α); -sin(α) cos(α)]` where the angle `α` is also varied harmonically. The combined result is a thin flapping line, similar to a cross-section of a hovering insect wing.
 
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation around a factor of 10 compared to using normal arrays since it reduces the number of allocations needed for every point at every time step. Hopefully, we'll get the allocations down to zero soon. 
