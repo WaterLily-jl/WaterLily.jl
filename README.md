@@ -52,10 +52,10 @@ circ = circle(3*2^6,2^7);
 t_end = 10;
 sim_step!(circ,t_end)
 ```
-Note we've set `n,m` to be multiples of powers of 2, which is important when using the (very fast) Multi-Grid solver. We can now access and plot whatever variables we like. For example, we could print the velocity at `I::CartesianIndex` using `println(sim.flow.u[I])` or plot the whole pressure field using
+Note we've set `n,m` to be multiples of powers of 2, which is important when using the (very fast) Multi-Grid solver. We can now access and plot whatever variables we like. For example, we could print the velocity at `I::CartesianIndex` using `println(circ.flow.u[I])` or plot the whole pressure field using
 ```julia
 using Plots
-contour(sim.flow.p')
+contour(circ.flow.p')
 ```
 A set of [flow metric functions](src/Metrics.jl) have been implemented and the examples use these to make gifs such as the one above.
 
