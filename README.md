@@ -6,7 +6,7 @@
 ![Lifecycle](https://img.shields.io/badge/lifecycle-retired-orange.svg)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-archived-red.svg)
 ![Lifecycle](https://img.shields.io/badge/lifecycle-dormant-blue.svg) -->
-![![CI](https://github.com/Zitzeronion/WaterLily/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/Zitzeronion/WaterLily.jl/actions)
+[![CI](https://github.com/Zitzeronion/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/Zitzeronion/WaterLily.jl/actions)
 [![codecov](https://codecov.io/gh/Zitzeronion/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/Zitzeronion/WaterLily.jl)
 <!--
 [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/stable)
