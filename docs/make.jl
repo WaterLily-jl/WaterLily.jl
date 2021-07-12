@@ -2,7 +2,12 @@ using Documenter, WaterLily
 
 makedocs(
     modules = [WaterLily],
-    format = Documenter.HTML(; prettyurls = get(ENV, "CI", nothing) == "true"),
+    repo="https://github.com/gabrielweymouth/WaterLily.jl",
+    sitename="WaterLily",
+    format=Documenter.HTML(;
+        prettyurls=get(ENV, "CI", nothing) == "true",
+        canonical="https:/Zitzeronion.github.io/WaterLily.jl",
+        assets=String[],
     authors = "Gabriel Weymouth",
     sitename = "WaterLily.jl",
     pages = Any["index.md"]
@@ -12,6 +17,6 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/gabrielweymouth/WaterLily.jl.git",
+    repo = "github.com/Zitzeronion/WaterLily.jl.git",
     push_preview = true
 )
