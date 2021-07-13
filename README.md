@@ -13,7 +13,7 @@
 
 ## Overview
 
-WaterLily.jl is a real-time fluid simulator written in pure Julia. This is an experimental project to take advantage of the active scientific community in Julia to accelerate and enhance fluid simulations. If you want to play around with a much more fully developed and documented solver right now, you should head over to [LilyPad](https://github.com/weymouth/lily-pad).
+WaterLily.jl is a real-time fluid simulator written in pure Julia. This is an experimental project to take advantage of the active scientific community in Julia to accelerate and enhance fluid simulations.
 
 ## Method/capabilities
 
@@ -110,3 +110,5 @@ One important thing to note here is the use of `StaticArrays` to define the `sdf
  - Immerse obstacles defined by 3D meshes or 2D lines using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl).
  - GPU acceleration with [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl).
  - Split multigrid method into its own repository, possibly merging with [AlgebraicMultigrid](https://github.com/JuliaLinearAlgebra/AlgebraicMultigrid.jl) or [IterativeSolvers](https://github.com/JuliaMath/IterativeSolvers.jl).
+
+If you have other suggestions or want to help, please raise an issue on github. 
