@@ -1,3 +1,12 @@
 # WaterLily
 
-*Documentation goes here.*
+```@meta
+CurrentModule = WaterLily
+```
+
+```@autodocs
+Modules = [WaterLily]
+```
+
+```@index
+```

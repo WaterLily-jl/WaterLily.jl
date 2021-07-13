@@ -1,13 +1,9 @@
 # WaterLily.jl
 
-![Lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange.svg)<!--
-![Lifecycle](https://img.shields.io/badge/lifecycle-maturing-blue.svg)
-![Lifecycle](https://img.shields.io/badge/lifecycle-stable-green.svg)
-![Lifecycle](https://img.shields.io/badge/lifecycle-retired-orange.svg)
-![Lifecycle](https://img.shields.io/badge/lifecycle-archived-red.svg)
-![Lifecycle](https://img.shields.io/badge/lifecycle-dormant-blue.svg) -->
-[![Build Status](https://travis-ci.com/gabrielweymouth/WaterLily.jl.svg?branch=master)](https://travis-ci.com/gabrielweymouth/WaterLily.jl)
-[![codecov.io](http://codecov.io/github/gabrielweymouth/WaterLily.jl/coverage.svg?branch=master)](http://codecov.io/github/gabrielweymouth/WaterLily.jl?branch=master)
+![Lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange.svg)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://zitzeronion.github.io/WaterLily.jl/dev/)
+[![CI](https://github.com/Zitzeronion/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/Zitzeronion/WaterLily.jl/actions)
+[![codecov](https://codecov.io/gh/Zitzeronion/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/Zitzeronion/WaterLily.jl)
 <!--
 [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/stable)
 [![Documentation](https://img.shields.io/badge/docs-master-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/dev)
@@ -45,15 +41,16 @@ end
 ```
 The second to last line defines the circle geometry using a signed distance function. The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameter automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](examples/ThreeD_donut.jl), a [block](examples/TwoD_block.jl) or the [Julia logo](examples/TwoD_Julia.jl). Finally, the last line defines the `Simulation` by passing in the `dims=(n+2,m+2)` and the other parameters we've defined.
 
-Now we can create a simulation (first line) and run it forward in time (second line)
+Now we can create a simulation (first line) and run it forward in time (third line)
 ```julia
 circ = circle(3*2^6,2^7);
-sim_step!(circ,t_end=10)
+t_end = 10;
+sim_step!(circ,t_end)
 ```
-Note we've set `n,m` to be multiples of powers of 2, which is important when using the (very fast) Multi-Grid solver. We can now access and plot whatever variables we like. For example, we could print the velocity at `I::CartesianIndex` using `println(sim.flow.u[I])` or plot the whole pressure field using
+Note we've set `n,m` to be multiples of powers of 2, which is important when using the (very fast) Multi-Grid solver. We can now access and plot whatever variables we like. For example, we could print the velocity at `I::CartesianIndex` using `println(circ.flow.u[I])` or plot the whole pressure field using
 ```julia
 using Plots
-contour(sim.flow.p')
+contour(circ.flow.p')
 ```
 A set of [flow metric functions](src/Metrics.jl) have been implemented and the examples use these to make gifs such as the one above.
 
@@ -64,7 +61,7 @@ function TGV(p=6,Re=1e5)
     # Define vortex size, velocity, viscosity
     L = 2^p; U = 1; ν = U*L/Re
 
-    function uλ(i,vx) # vector function
+    function uλ(i,vx)                          # vector function
         x,y,z = @. (vx-1.5)*π/L                # scaled coordinates
         i==1 && return -U*sin(x)*cos(y)*cos(z) # u_x
         i==2 && return  U*cos(x)*sin(y)*cos(z) # u_y
@@ -103,6 +100,7 @@ function hover(L=2^5;Re=250,U=1,amp=0,thk=1+√2)
     Simulation((6L+2,6L+2),zeros(2),L;U,ν,body,ϵ=0.5)
 end
 ```
+How to generate a .gif from this can be seen in the examples folder [TwoD_block.jl](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_block.jl).
 In this case, the `sdf` defines a line segment from `-L/2 ≤ x[2] ≤ L/2` with a thickness `thk`. To make the line segment move, we define a coordinate tranformation function `map(x,t)`. In this example, the coordinate `x` is shifted by `(3L,4L)` at time `t=0`, which moves the center of the segment to this point. However, the horizontal shift varies harmonically in time, sweeping the segment left and right during the simulation. The example also rotates the segment using the rotation matrix `R = [cos(α) sin(α); -sin(α) cos(α)]` where the angle `α` is also varied harmonically. The combined result is a thin flapping line, similar to a cross-section of a hovering insect wing.
 
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation around a factor of 10 compared to using normal arrays since it reduces the number of allocations needed for every point at every time step. Hopefully, we'll get the allocations down to zero soon. 
