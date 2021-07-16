@@ -8,9 +8,9 @@ See the [WaterLily README](https://github.com/weymouth/WaterLily.jl/blob/master/
 CurrentModule = WaterLily
 ```
 
-```@autodocs
-Modules = [WaterLily]
+```@index
 ```
 
-```@index
+```@autodocs
+Modules = [WaterLily]
 ```
