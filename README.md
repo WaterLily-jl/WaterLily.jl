@@ -1,13 +1,8 @@
 # WaterLily.jl
 
-![Lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange.svg)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://zitzeronion.github.io/WaterLily.jl/dev/)
-[![CI](https://github.com/Zitzeronion/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/Zitzeronion/WaterLily.jl/actions)
-[![codecov](https://codecov.io/gh/Zitzeronion/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/Zitzeronion/WaterLily.jl)
-<!--
-[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/stable)
-[![Documentation](https://img.shields.io/badge/docs-master-blue.svg)](https://gabrielweymouth.github.io/WaterLily.jl/dev)
--->
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://weymouth.github.io/WaterLily.jl/)
+[![CI](https://github.com/weymouth/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/weymouth/WaterLily.jl/actions)
+[![codecov](https://codecov.io/gh/weymouth/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/weymouth/WaterLily.jl)
 
 ![Julia flow](examples/julia.gif)
 
