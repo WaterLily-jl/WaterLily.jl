@@ -17,5 +17,5 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/weymouth/WaterLily.jl.git"
+    repo = "github.com/weymouth/WaterLily.jl.git",
 )
