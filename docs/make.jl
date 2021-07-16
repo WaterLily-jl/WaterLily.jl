@@ -18,4 +18,7 @@ makedocs(
 
 deploydocs(
     repo = "github.com/weymouth/WaterLily.jl.git",
+    target = "build",
+    branch = "gh-pages",
+    versions = ["stable" => "v^", "v#.#" ],
 )
