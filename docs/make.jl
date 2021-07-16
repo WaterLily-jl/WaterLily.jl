@@ -5,7 +5,7 @@ makedocs(
     repo="https://github.com/gabrielweymouth/WaterLily.jl",
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", nothing) == "true",
-        canonical="https:/Zitzeronion.github.io/WaterLily.jl",
+        canonical="https:/weymouth.github.io/WaterLily.jl/",
         assets=String[],
     ),
     authors = "Gabriel Weymouth",
@@ -17,6 +17,6 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/Zitzeronion/WaterLily.jl.git",
+    repo = "github.com/weymouth/WaterLily.jl.git",
     push_preview = true
 )
