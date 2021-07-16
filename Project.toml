@@ -17,7 +17,7 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 [compat]
 AbstractPlotting = "^0.18.2"
 DiffResults = "^1.0.3"
-Documenter = "^0.27"
+Documenter = "^0.19"
 ForwardDiff = "^0.10.18"
 GLMakie = "^0.2.9"
 Plots = "^1.13.2"
