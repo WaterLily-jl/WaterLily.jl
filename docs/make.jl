@@ -17,6 +17,5 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/weymouth/WaterLily.jl.git",
-    push_preview = true
+    repo = "github.com/weymouth/WaterLily.jl.git"
 )
