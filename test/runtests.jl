@@ -50,9 +50,9 @@ end
 end
 
 @testset "Body.jl" begin
-    @test WaterLily.μ₀(3;ϵ=6)==WaterLily.μ₀(0.5)
-    @test WaterLily.μ₀(0)==0.5
-    @test WaterLily.μ₁(0;ϵ=2)==2*(1/4-1/π^2)
+    @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
+    @test WaterLily.μ₀(0,1)==0.5
+    @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
 end
 
 @testset "AutoBody.jl" begin

@@ -17,10 +17,45 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     end
 end
 
-using ForwardDiff,DiffResults
-using LinearAlgebra: norm2
+using StaticArrays
 """
-    measure(body::AutoBody,x::Vector,t::Real)
+    measure!(flow::Flow, body::AutoBody; t=0, ϵ=1)
+
+Uses `body.sdf` and `body.map` to fill the arrays:
+
+    `flow.μ₀`, Zeroth kernel moment
+    `flow.μ₁`, First kernel moment scaled by the body normal
+    `flow.V`,  Body velocity
+    `flow.σᵥ`,  Body velocity divergence scaled by `μ₀-1`
+
+at time `t` using an immersion kernel of size `ϵ`.
+See Maertens & Weymouth, https://doi.org/10.1016/j.cma.2014.09.007
+"""
+function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
+    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
+    for I ∈ inside(a.p)
+        x = SVector(I.I...)       # location at cell center
+        d = body.sdf(x,t)
+        if abs(d)<ϵ+1             # only measure near interface
+            for i ∈ 1:N
+                xᵢ = x .-0.5.*δ(i,N).I    # location at face
+                dᵢ,n,V,H,K = measure(body,xᵢ,t)
+                a.V[I,i] = V[i]
+                a.μ₀[I,i] = μ₀(dᵢ,ϵ)
+                a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
+            end
+        elseif d<0
+            a.μ₀[I,:] .= 0
+        end
+        a.σᵥ[I] = μ₀(d,ϵ)-1
+    end
+    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)
+    BC!(a.μ₀,zeros(N))
+end
+
+using ForwardDiff,DiffResults
+"""
+    measure(body::AutoBody,x,t)
 
 ForwardDiff is used to determine the geometric properties from the `sdf`.
 Note: The velocity is determined _soley_ from the optional `map` function.
@@ -38,7 +73,7 @@ function measure(body::AutoBody,x::AbstractVector,t::Real)
 
     # |∇d|=1 for a true distance function. If sdf or map violates this condition,
     # scaling by |∇d| gives an approximate correction.
-    m = norm2(n̂)
+    m = √sum(abs2,n̂)
     d/m,n̂./m,V,H/m,K/m^2
 end
 

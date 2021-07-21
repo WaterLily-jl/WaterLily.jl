@@ -2,17 +2,19 @@ using StaticArrays
 """
     AbstractBody
 
-Abstract body geometry data structure. This solver will call
+Immersed body Abstract Type. Any `AbstractBody` subtype must implement
 
-    `measure(body::AbstractBody,x::Vector,t::Real)`
+    `measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)`
 
-to query the body geometry for these properties at location `x` and time `t`:
+which queries the body geometry to fill the arrays:
 
-    `d :: Real`, Signed distance to surface
-    `n̂ :: Vector`, Outward facing unit normal
-    `V :: Vector`, Body velocity
-    `H,K :: Real`, Mean and Gaussian curvature
+    `flow.μ₀`, Zeroth kernel moment
+    `flow.μ₁`, First kernel moment scaled by the body normal
+    `flow.V`,  Body velocity
+    `flow.σᵥ`, Body velocity divergence scaled by `μ₀-1`
 
+at time `t` using an immersion kernel of size `ϵ`.
+See Maertens & Weymouth, https://doi.org/10.1016/j.cma.2014.09.007
 """
 abstract type AbstractBody end
 
@@ -21,37 +23,9 @@ kern(d) = 0.5+0.5cos(π*d)
 kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
 kern₁(d) = 0.25*(1-d^2)-0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
 
-clamp1(x) = clamp(x,-1,1)
-μ₀(d;ϵ=1) = kern₀(clamp1(d/ϵ))
-μ₁(d;ϵ=1) = ϵ*kern₁(clamp1(d/ϵ))
+μ₀(d,ϵ) = kern₀(clamp(d/ϵ,-1,1))
+μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))
 
-"""
-    measure(a::Flow,body::AbstractBody;t=0,ϵ=1)
-
-Measure the `body` properties on `flow` using a kernel
-size `ϵ`. Weymouth & Yue, JCP, 2011
-"""
-function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
-    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
-    for I ∈ inside(a.p)
-        x = SVector(I.I...)       # location at cell center
-        d = body.sdf(x.-1/4,t)
-        if abs(d)<ϵ+1             # only measure near interface
-            for i ∈ 1:N
-                xᵢ = x .-0.5.*δ(i,N).I    # location at face
-                dᵢ,n,V,H,K = measure(body,xᵢ,t)
-                a.V[I,i] = V[i]
-                a.μ₀[I,i] = μ₀(dᵢ;ϵ)
-                a.μ₁[I,i,:] = μ₁(dᵢ;ϵ).*n
-            end
-        elseif d<0
-            a.μ₀[I,:] .= 0
-        end
-        a.σᵥ[I] = μ₀(d;ϵ)-1
-    end
-    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)
-    BC!(a.μ₀,zeros(N))
-end
 """
     NoBody
 
