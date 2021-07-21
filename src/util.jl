@@ -43,18 +43,25 @@ function median(a,b,c)
     return a
 end
 
+using StaticArrays
+"""
+    loc(I;i=0)
+
+Location in space of the cell at CartesianIndex `I` at face `i`.
+Using `i=0` returns the cell center s.t. `loc = I`.
+"""
+@inline loc(i,I) = SVector(I.I .- 0.5 .* δ(i,I).I)
+
 """
     apply!(f, c)
 
 Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 """
 function apply!(f,c)
-    N = size(c)
-    for b ∈ 1:N[end]
-        @simd for I ∈ CR(N[1:end-1])
-            x = collect(Float16, I.I) # location at cell center
-            x[b] -= 0.5               # location at face
-            @inbounds c[I,b] = f(b,x) # apply function to location
+    N,n = size_u(c)
+    for i ∈ 1:n
+        @inbounds @simd for I ∈ CR(N)
+            c[I,i] = f(i,loc(i,I))
         end
     end
 end

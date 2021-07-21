@@ -15,6 +15,10 @@ using Test
                     0. 0. 8. 0.],dims=3)
     u = zeros(4,4,2); apply!((i,x)->x[i],u)
     @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
+    using StaticArrays
+    @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5)
+    I = CartesianIndex(rand(2:10,3)...)
+    @test loc(0,I) == SVector(I.I...)
 end
 
 function Poisson_test_2D(f,n)

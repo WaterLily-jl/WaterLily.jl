@@ -17,7 +17,6 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     end
 end
 
-using StaticArrays
 """
     measure!(flow::Flow, body::AutoBody; t=0, ϵ=1)
 
@@ -34,22 +33,21 @@ See Maertens & Weymouth, https://doi.org/10.1016/j.cma.2014.09.007
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
     for I ∈ inside(a.p)
-        x = SVector(I.I...)       # location at cell center
-        d = body.sdf(x,t)
-        if abs(d)<ϵ+1             # only measure near interface
+        d = body.sdf(loc(0,I),t)  # distance to cell center
+        if abs(d)<ϵ+1             # only need to measure near interface
+            # measure properties and fill arrays at face (i,I)
             for i ∈ 1:N
-                xᵢ = x .-0.5.*δ(i,N).I    # location at face
-                dᵢ,n,V,H,K = measure(body,xᵢ,t)
+                dᵢ,n,V,H,K = measure(body,loc(i,I),t)
                 a.V[I,i] = V[i]
                 a.μ₀[I,i] = μ₀(dᵢ,ϵ)
                 a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
             end
-        elseif d<0
+        elseif d<0               # only need μ₀ when well inside body
             a.μ₀[I,:] .= 0
         end
-        a.σᵥ[I] = μ₀(d,ϵ)-1
+        a.σᵥ[I] = μ₀(d,ϵ)-1      # moment scaling at face
     end
-    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)
+    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
     BC!(a.μ₀,zeros(N))
 end
 
