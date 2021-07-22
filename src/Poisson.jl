@@ -48,6 +48,13 @@ update!(p::Poisson,L) = (p.L .= L; set_diag!(p))
 @fastmath @inline multU(I::CartesianIndex{d},L,x) where {d} =
     sum(@inbounds(x[I+δ(a,I)]*L[I+δ(a,I),a]) for a ∈ 1:d)
 @fastmath @inline mult(I,L,D,x) = @inbounds(x[I]*D[I])+multL(I,L,x)+multU(I,L,x)
+
+"""
+    mult(A::AbstractPoisson,x)
+
+Efficient function for Poisson matrix-vector multiplication. Allocates and returns
+`b = Ax` with `b=0` in the ghost cells.
+"""
 function mult(p::Poisson,x)
     @assert size(p.x)==size(x)
     b = zeros(size(p.x))
@@ -63,7 +70,7 @@ end
     p.r[I] -= mult(I,p.L,p.D,p.ϵ)
 end
 """
-SOR!(p::Poisson;ω=1.5)
+    SOR!(p::Poisson;ω=1.5)
 
 Successive Over Relaxation preconditioner. The routine uses backsubstitution
 to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
@@ -76,7 +83,7 @@ to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
     increment!(p)
 end
 """
-GS!(p::Poisson;it=0)
+    GS!(p::Poisson;it=0)
 
 Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
 """
@@ -89,6 +96,18 @@ Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
     increment!(p)
 end
 
+"""
+    solver!(x,A::AbstractPoisson,b;log,tol,itmx)
+
+Approximate iterative solver for the Poisson matrix equation `Ax=b`.
+
+    `x`: Initial-solution vector mutated by `solver!`
+    `A`: Poisson matrix
+    `b`: Right-Hand-Side vector
+    `log`: If `true`, this function returns a vector holding the `L₂`-norm of the residual at each iteration.
+    `tol`: Convergence tolerance on the `L₂`-norm residual.
+    'itmx': Maximum number of iterations
+"""
 function solver!(x,p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
     @assert size(p.x)==size(x)
     p.x .= x

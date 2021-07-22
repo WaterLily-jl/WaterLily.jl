@@ -45,6 +45,16 @@ end
     end
 end
 
+"""
+    Flow{N,M,P}
+
+Composite type for a multidimensional immersed boundary flow simulation.
+
+Flow solves the unsteady incompressible [Navier-Stokes equations](https://en.wikipedia.org/wiki/Navier%E2%80%93Stokes_equations) on a Cartesian grid.
+Solid boundaries are modelled using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/).
+The primary variables are the scalar pressure `p` (an array of dimension `N`)
+and the velocity vector field `u` (an array of dimension `M=N+1`).
+"""
 struct Flow{N,M,P,T}
     # Fluid fields
     u :: Array{T,M} # velocity vector
@@ -91,6 +101,12 @@ end
     end;end
 end
 
+"""
+    mom_step!(a::Flow,b::AbstractPoisson)
+
+Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
+and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+"""
 @fastmath function mom_step!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u; a.u .= 0
     # predictor u → u'

@@ -13,10 +13,10 @@ include("Flow.jl")
 export Flow,mom_step!
 
 include("Body.jl")
-export AbstractBody,measure!
+export AbstractBody
 
 include("AutoBody.jl")
-export AutoBody,measure
+export AutoBody,measure!,measure
 
 include("Metrics.jl")
 using LinearAlgebra: norm2
@@ -28,15 +28,16 @@ using LinearAlgebra: norm2
                body::AbstractBody=NoBody())
 
 Constructor for a WaterLily.jl simulation:
-    - `dims`: Simulation domain dimensions.
-    - `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=1,2...`.
-    - `L`: Simulation length scale.
-    - `U`: Simulation velocity scale.
-    - `ϵ`: BDIM kernel width.
-    - `Δt`: Initial time step.
-    - `ν`: Scaled viscosity (`Re=UL/ν`)
-    - `uλ`: Function to generate the initial velocity field.
-    - `body`: Embedded geometry
+
+    `dims`: Simulation domain dimensions.
+    `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=1,2...`.
+    `L`: Simulation length scale.
+    `U`: Simulation velocity scale.
+    `ϵ`: BDIM kernel width.
+    `Δt`: Initial time step.
+    `ν`: Scaled viscosity (`Re=UL/ν`)
+    `uλ`: Function to generate the initial velocity field.
+    `body`: Immersed geometry
 
 See files in `examples` folder for examples.
 """

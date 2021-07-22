@@ -24,6 +24,12 @@ end;end
 
 @inline divisible(N) = mod(N,2)==0 && N>4
 
+"""
+    MultiLevelPoisson{N,M}
+
+Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
+The only variable is `levels`, a vector of nested `Poisson` systems.
+"""
 struct MultiLevelPoisson{N,M,T} <: AbstractPoisson{N,M,T}
     levels :: Vector{Poisson{N,M,T}}
     n :: Vector{Int16}
