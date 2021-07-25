@@ -70,12 +70,12 @@ end
 Surface normal integral of field `p` over the `body`.
 """
 function ∮nds(p::Array{T,N},body::AutoBody,t=0) where {T,N}
-    s = zeros(T,N)
+    s = zeros(SVector{N,T})
     n = x -> ForwardDiff.gradient(y -> body.sdf(y,t), x)
     for I ∈ inside(p)
         x = loc(0,I)
         d = body.sdf(x,0.)::Float64
-        abs(d) ≤ 1 && (s .+= n(x).*p[I]*WaterLily.kern(d))
+        abs(d) ≤ 1 && (s += n(x).*p[I]*WaterLily.kern(d))
     end
     return s
 end

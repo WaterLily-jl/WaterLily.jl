@@ -99,12 +99,10 @@ end
     @test WaterLily.ω_mag(CartesianIndex(2,3,4),u)==sqrt(sum(abs2,ω))
     @test WaterLily.ω_θ(CartesianIndex(2,3,4),[0,0,1],[2,2,2],u)==-ω[1]
 
-    n,m = 3*2^6,2^7
-    center,radius = m/2,m/6
-    body = AutoBody((x,t)->√sum(abs2,x .- center) - radius)
-    p = ones(n+2,m+2)
+    body = AutoBody((x,t)->√sum(abs2,x .- 2^6) - 2^5)
+    p = ones(2^7,2^7)
     @inside p[I] = sum(I.I[2])
-    @test sum(abs2,WaterLily.∮nds(p,body)/(π*radius^2).-(0,1))<1e-6
-    @inside p[I] = cos(atan(reverse(loc(0,I) .- center)...))
-    @test sum(abs2,WaterLily.∮nds(p,body)/(π*radius).-(1,0))<1e-6
+    @test sum(abs2,WaterLily.∮nds(p,body)/(π*2^10).-(0,1))<1e-6
+    @inside p[I] = cos(atan(reverse(loc(0,I) .- 2^6)...))
+    @test sum(abs2,WaterLily.∮nds(p,body)/(π*2^5).-(1,0))<1e-6
 end
