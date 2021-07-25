@@ -62,11 +62,11 @@ end
 @testset "AutoBody.jl" begin
     using LinearAlgebra: norm2
     body = AutoBody((x,t)->norm2(x)-2-t)
-    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.],0.25,0.))
-    @test all(measure(body,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.,0.,0.],0.5,0.25))
-    body = AutoBody((x,t)->norm2(x)-2,(x,t)->x.*(1+t))
-    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[-√2.,-√2.],0.25,0.))
-    @test all(measure(body,[1.,0.,0.],1.).≈(0.,[1.,0.,0.],[-1.,0.,0.],1.,1.))
+    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
+    @test all(measure(body,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.,0.,0.]))
+    body = AutoBody((x,t)->norm2(x)-2,(x,t)->x.+t^2)
+    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
+    @test all(WaterLily.measure(body,[1.,-1.,-1.],1.).≈(0.,[1.,0.,0.],[-2.,-2.,-2.]))
 end
 
 @testset "Flow.jl" begin

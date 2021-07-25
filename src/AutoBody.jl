@@ -37,7 +37,7 @@ function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
         if abs(d)<ϵ+1             # only need to measure near interface
             # measure properties and fill arrays at face (i,I)
             for i ∈ 1:N
-                dᵢ,n,V,H,K = measure(body,loc(i,I),t)
+                dᵢ,n,V = measure(body,loc(i,I),t)
                 a.V[I,i] = V[i]
                 a.μ₀[I,i] = μ₀(dᵢ,ϵ)
                 a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
@@ -48,32 +48,19 @@ function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
         a.σᵥ[I] = μ₀(d,ϵ)-1      # moment scaling at face
     end
     @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
-    BC!(a.μ₀,zeros(N))
+    BC!(a.μ₀,zeros(SVector{N}))
 end
 
-using ForwardDiff,DiffResults
+using ForwardDiff
 """
     measure(body::AutoBody,x,t)
 
 ForwardDiff is used to determine the geometric properties from the `sdf`.
 Note: The velocity is determined _soley_ from the optional `map` function.
 """
-function measure(body::AutoBody,x::AbstractVector,t::Real)
-    # V = dot(map), ignoring any other time dependancy in sdf.
-    V = -ForwardDiff.derivative(t->body.map(x,t), t)
-
-    # Use DiffResults to get Hessian/gradient/value in one shot
-    result = DiffResults.HessianResult(x)
-    result = ForwardDiff.hessian!(result, x -> body.sdf(x,t), x)
-    d = DiffResults.value(result)
-    n̂ = DiffResults.gradient(result)
-    H,K = curvature(DiffResults.hessian(result))
-
-    # |∇d|=1 for a true distance function. If sdf or map violates this condition,
-    # scaling by |∇d| gives an approximate correction.
-    m = √sum(abs2,n̂)
-    d/m,n̂./m,V,H/m,K/m^2
-end
+measure(body,x,t) = (body.sdf(x,t),                               # d
+                    ForwardDiff.gradient(x->body.sdf(x,t), x),    # ̂n=∇d
+                    -ForwardDiff.derivative(t->body.map(x,t), t)) # V = -̇x
 
 using LinearAlgebra: tr
 """

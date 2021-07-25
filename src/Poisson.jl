@@ -30,17 +30,18 @@ struct Poisson{N,M,T} <: AbstractPoisson{N,M,T}
     function Poisson(L::AbstractArray{T}) where T
         N,n = size_u(L)
         x,ϵ,r,D,iD = zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N)
-        set_diag!(D,iD,L,n)
+        set_diag!(D,iD,L)
         new{n,n+1,T}(L,D,iD,x,ϵ,r,[])
     end
 end
-function set_diag!(D,iD,L,n)
-    @inbounds @simd for I ∈ inside(D)
-        D[I] = -sum(@inbounds(L[I,i]+L[I+δ(i,n),i]) for i ∈ 1:n)
-        iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
-    end
+
+@fastmath @inline diag(I::CartesianIndex{d},L) where {d} =
+    -sum(@inbounds(L[I,i]+L[I+δ(i,I),i]) for i ∈ 1:d)
+function set_diag!(D,iD,L)
+    @inside D[I] = diag(I,L)
+    @inside iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
 end
-set_diag!(p::Poisson{n}) where n = set_diag!(p.D,p.iD,p.L,n)
+set_diag!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 update!(p::Poisson,L) = (p.L .= L; set_diag!(p))
 
 @fastmath @inline multL(I::CartesianIndex{d},L,x) where {d} =
