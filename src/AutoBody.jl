@@ -28,7 +28,7 @@ Uses `body.sdf` and `body.map` to fill the arrays:
     `flow.σᵥ`,  Body velocity divergence scaled by `μ₀-1`
 
 at time `t` using an immersion kernel of size `ϵ`.
-See Maertens & Weymouth, https://doi.org/10.1016/j.cma.2014.09.007
+See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
