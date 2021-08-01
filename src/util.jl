@@ -40,9 +40,7 @@ to the reduction.
 """
 @fastmath function mapreduce(f,op,R::CartesianIndices;init=0.)
     val = init
-    @inbounds @simd for I ∈ R
-        val = op(val,f(I))
-    end
+    @loop val = op(val,f(I)) over I ∈ R
     val
 end
 """
@@ -53,26 +51,30 @@ L₂ norm of array `a` excluding ghosts.
 L₂(a) = mapreduce(I->@inbounds(abs2(a[I])),+,inside(a))
 
 """
-    @inside
+    @inside <expr>
 
 Simple macro to automate efficient loops over cells excluding ghosts. For example
 
-    @inside p[I] = loc(0,I)
+    @inside p[I] = sum(I.I)
 
-will generate the code
+becomes
 
     @inbounds @simd for I ∈ inside(p)
-        p[I] = loc(0,I)
+        p[I] = sum(I.I)
     end
-
-Note: Someone better at meta-programming could help generalize this to work for
-other cases such as `@inside p[I] += f(I)` or `@inside u[I,j] = f(j,I)` etc.
 """
 macro inside(ex)
-    @assert ex.head==:(=)
-    a,I = Meta.parse.(split(string(ex.args[1]),union("[","]")))
+    a,I = Meta.parse.(split(string(ex.args[1]),union("[",",","]")))
+    return quote 
+        @loop $ex over $I ∈ inside($a)
+    end |> esc
+end
+macro loop(args...)
+    ex,_,itr = args
+    op,I,R = itr.args
+    @assert op ∈ (:(∈),:(in))
     return quote
-        @inbounds @simd for $I ∈ inside($a)
+        @inbounds @simd for $I ∈ $R
             $ex
         end
     end |> esc
@@ -106,9 +108,7 @@ Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 function apply!(f,c)
     N,n = size_u(c)
     for i ∈ 1:n
-        @inbounds @simd for I ∈ CartesianIndices(N)
-            c[I,i] = f(i,loc(i,I))
-        end
+        @loop c[I,i] = f(i,loc(i,I)) over I ∈ CartesianIndices(N)
     end
 end
 
@@ -134,17 +134,13 @@ is applied to the tangential components.
 function BC!(a,A,f=1)
     N,n = size_u(a)
     for j ∈ 1:n, i ∈ 1:n
-        if i==j # Inline direction
-            for s ∈ (1,2,N[j]); @simd for I ∈ slice(N,s,j)
-                a[I,i] = f*A[i] # Dirichlet
-            end; end
-        else    # Perpendicular directions
-            @simd for I ∈ slice(N,1,j)
-                a[I,i] = a[I+δ(j,I),i] # Neumann
+        if i==j # Normal direction, Dirichlet
+            for s ∈ (1,2,N[j])
+                @loop a[I,i] = f*A[i] over I ∈ slice(N,s,j)
             end
-            @simd for I ∈ slice(N,N[j],j)
-                a[I,i] = a[I-δ(j,I),i] # Neumann
-            end
+        else    # Tangential directions, Neumann
+            @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
         end
     end
 end
@@ -157,11 +153,7 @@ Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
 function BC!(a)
     N = size(a)
     for j ∈ 1:length(N)
-        @simd for I ∈ slice(N,1,j)
-            a[I] = a[I+δ(j,I)] # Neumann
-        end
-        @simd for I ∈ slice(N,N[j],j)
-            a[I] = a[I-δ(j,I)] # Neumann
-        end
+        @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
+        @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
 end
