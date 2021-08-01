@@ -30,19 +30,6 @@ end
 splitn(n) = Base.front(n),n[end]
 size_u(u) = splitn(size(u))
 
-import Base.mapreduce
-"""
-    mapreduce(f,op,R::CartesianIndices;init=0.)
-
-Apply a function `f(I:CartesianIndex)` and redution operation `op` over a
-CartesianIndices range `R`. Optionally specific the initial value `init`
-to the reduction.
-"""
-@fastmath function mapreduce(f,op,R::CartesianIndices;init=0.)
-    val = init
-    @loop val = op(val,f(I)) over I ∈ R
-    val
-end
 """
     L₂(a)
 
@@ -66,7 +53,7 @@ becomes
 macro inside(ex)
     a,I = Meta.parse.(split(string(ex.args[1]),union("[",",","]")))
     return quote 
-        @loop $ex over $I ∈ inside($a)
+        WaterLily.@loop $ex over $I ∈ inside($a)
     end |> esc
 end
 macro loop(args...)
