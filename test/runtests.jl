@@ -37,7 +37,7 @@ function Poisson_test_3D(f,n)
     soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2, k ∈ 1:n+2]
     b = mult(p,soln)
     x = zeros(n+2,n+2,n+2)
-    solver!(x,p,b)
+    solver!(x,p,b,tol=1e-5)
     x .-= (x[2,2,2]-soln[2,2,2])
     return L₂(x.-soln)/L₂(soln)
 end
@@ -47,6 +47,8 @@ end
     @test Poisson_test_3D(Poisson,2^4) < 1e-5
 end
 @testset "MultiLevelPoisson.jl" begin
+    I = CartesianIndex(4,3,2)
+    @test all(WaterLily.inear(J)==I for J ∈ WaterLily.near(I))
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_2D(MultiLevelPoisson,67)
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_3D(MultiLevelPoisson,3^4)
     @test Poisson_test_2D(MultiLevelPoisson,2^6) < 1e-5
@@ -87,17 +89,18 @@ end
 end
 
 @testset "Metrics.jl" begin
+    I = CartesianIndex(2,3,4)
     u = zeros(3,4,5,3); apply!((i,x)->x[i]+prod(x),u)
-    @test WaterLily.ke(CartesianIndex(2,3,4),u)==0.5*(26^2+27^2+28^2)
-    @test WaterLily.ke(CartesianIndex(2,3,4),u,[2,3,4])===1.5*24^2
-    @test [WaterLily.∂(i,j,CartesianIndex(2,3,4),u)
+    @test WaterLily.ke(I,u)==0.5*(26^2+27^2+28^2)
+    @test WaterLily.ke(I,u,[2,3,4])===1.5*24^2
+    @test [WaterLily.∂(i,j,I,u)
             for i in 1:3, j in 1:3] == [13 8 6; 12 9 6; 12 8 7]
-    @test WaterLily.λ₂(CartesianIndex(2,3,4),u)≈1
+    @test WaterLily.λ₂(I,u)≈1
     ω = [8-6,6-12,12-8]
-    @test WaterLily.curl(2,CartesianIndex(2,3,4),u)==ω[2]
-    @test WaterLily.ω(CartesianIndex(2,3,4),u)==ω
-    @test WaterLily.ω_mag(CartesianIndex(2,3,4),u)==sqrt(sum(abs2,ω))
-    @test WaterLily.ω_θ(CartesianIndex(2,3,4),[0,0,1],[2,2,2],u)==-ω[1]
+    @test WaterLily.curl(2,I,u)==ω[2]
+    @test WaterLily.ω(I,u)==ω
+    @test WaterLily.ω_mag(I,u)==sqrt(sum(abs2,ω))
+    @test WaterLily.ω_θ(I,[0,0,1],[2,2,2],u)==-ω[1]
 
     body = AutoBody((x,t)->√sum(abs2,x .- 2^6) - 2^5)
     p = ones(2^7,2^7)

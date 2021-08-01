@@ -1,4 +1,5 @@
 @inline near(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
+@inline inear(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
 
 function restrictML(b::AbstractArray{T}) where T
     N,n = size_u(b)
@@ -6,24 +7,16 @@ function restrictML(b::AbstractArray{T}) where T
     restrictL!(a,b)
     Poisson(a)
 end
-@fastmath function restrictL!(a,b)
+function restrictL!(a,b)
     N,n = size_u(a)
     @inbounds for i ∈ 1:n, I ∈ inside(N)
         a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ near(I,i))
     end
 end
-
-@fastmath restrict!(a,b) = @inbounds @simd for I ∈ inside(a)
-    a[I] = sum(@inbounds(b[J]) for J ∈ near(I))
-end
-
-prolongate!(a,b) = @inbounds for I ∈ inside(b)
-    @simd for J ∈ near(I)
-        a[J] = b[I]
-end;end
+restrict!(a,b) = @inside a[I] = sum(@inbounds(b[J]) for J ∈ near(I))
+prolongate!(a,b) = @inside a[I] = b[inear(I)]
 
 @inline divisible(N) = mod(N,2)==0 && N>4
-
 """
     MultiLevelPoisson{N,M}
 
@@ -77,7 +70,6 @@ function solver!(x,ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
         GS!(p,it=2); r₂ = L₂(p.r)
-        5tol>r₂>tol && (GS!(p,it=2); r₂ = L₂(p.r))
         log && push!(res,r₂)
         nᵖ+=1
     end

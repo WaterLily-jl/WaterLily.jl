@@ -1,5 +1,4 @@
 @inline CI(a...) = CartesianIndex(a...)
-@inline CR(a...) = CartesianIndices(a...)
 """
     δ(i,N::Int)
     δ(i,I::CartesianIndex{N}) where {N}
@@ -16,9 +15,8 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _scalar_ array `a` with `dims=size(a)`.
 """
-@inline inside(dims::NTuple{N}) where {N} = CR(ntuple(i-> 2:dims[i]-1,N))
-@inline inside(a; reverse::Bool=false) =
-        reverse ? Iterators.reverse(inside(size(a))) : inside(size(a))
+@inline inside(dims::NTuple{N}) where {N} = CartesianIndices(ntuple(i-> 2:dims[i]-1,N))
+@inline inside(a::AbstractArray) = inside(size(a))
 
 """
     inside_u(dims,j)
@@ -108,7 +106,7 @@ Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 function apply!(f,c)
     N,n = size_u(c)
     for i ∈ 1:n
-        @inbounds @simd for I ∈ CR(N)
+        @inbounds @simd for I ∈ CartesianIndices(N)
             c[I,i] = f(i,loc(i,I))
         end
     end
