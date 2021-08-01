@@ -103,7 +103,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 end
 
 function CFL(a::Flow{n}) where n
-    mx = mapreduce(I->fout(I,a.u),max,inside(a.p))
+    mx = maximum(fout(I,a.u) for I ∈ inside(a.p))
     min(10.,inv(mx+5a.ν))
 end
 @fastmath @inline fout(I::CartesianIndex{d},u) where {d} =
