@@ -9,8 +9,8 @@ function restrictML(b::AbstractArray{T}) where T
 end
 function restrictL!(a,b)
     N,n = size_u(a)
-    @inbounds for i ∈ 1:n, I ∈ inside(N)
-        a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i))
+    for i ∈ 1:n
+        @loop a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i)) over I ∈ inside(N)
     end
 end
 restrict!(a,b) = @inside a[I] = sum(@inbounds(b[J]) for J ∈ up(I))

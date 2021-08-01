@@ -9,19 +9,10 @@
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
     N,n = size_u(u)
     for j ∈ 1:n
-        @simd for I ∈ slice(N,2,j,2)
-            Φ = ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f)
-            @inbounds r[I] += Φ
-        end
-        @simd for I ∈ inside_u(N,j)
-            Φ = ϕu(j,I,f,u[I,j])-Pe*∂(j,I,f)
-            @inbounds r[I] += Φ
-            @inbounds r[I-δ(j,I)] -= Φ
-        end
-        @simd for I ∈ slice(N,N[j],j,2)
-            Φ = ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f)
-            @inbounds r[I-δ(j,I)] -= Φ
-        end
+        @loop r[I] += ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f) over I ∈ slice(N,2,j,2)
+        @loop (Φ = ϕu(j,I,f,u[I,j])-Pe*∂(j,I,f);
+                r[I] += Φ; r[I-δ(j,I)] -= Φ) over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I)] -= ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f) over I ∈ slice(N,N[j],j,2)
     end
 end
 
@@ -29,19 +20,10 @@ end
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
-        @simd for I ∈ slice(N,2,j,2)
-            Φ = ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u)
-            @inbounds r[I,i] += Φ
-        end
-        @simd for I ∈ inside_u(N,j)
-            Φ = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u)
-            @inbounds r[I,i] += Φ
-            @inbounds r[I-δ(j,I),i] -= Φ
-        end
-        @simd for I ∈ slice(N,N[j],j,2)
-            Φ = ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u)
-            @inbounds r[I-δ(j,I),i] -= Φ
-        end
+        @loop r[I,i] += ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
+        @loop (Φ = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u);
+                r[I,i] += Φ; r[I-δ(j,I),i] -= Φ) over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] -= ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
     end
 end
 
@@ -86,9 +68,9 @@ end
 
 @fastmath function BDIM!(a::Flow{n}) where n
     @. a.f = a.u⁰+a.Δt[end]*a.f-a.V
-    for j ∈ 1:n, i ∈ 1:n; @simd for I ∈ inside(a.p)
-        @inbounds a.u[I,i] += μddn(j,CI(I,i),a.μ₁,a.f)
-    end;end
+    for j ∈ 1:n, i ∈ 1:n
+        @loop a.u[I,i] += μddn(j,CI(I,i),a.μ₁,a.f) over I ∈ inside(a.p)
+    end
     @. a.u += a.V+a.μ₀*a.f
 end
 @inline μddn(j,I::CartesianIndex,μ,f) = @inbounds 0.5μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
@@ -96,9 +78,9 @@ end
 @fastmath function project!(a::Flow{n},b::AbstractPoisson{n},w=1) where n
     @inside a.σ[I] = (div(I,a.u)+w*a.σᵥ[I])/a.Δt[end]
     solver!(a.p,b,a.σ)
-    for i ∈ 1:n; @simd for I ∈ inside(a.σ)
-        @inbounds  a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p)
-    end;end
+    for i ∈ 1:n
+        @loop a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p) over I ∈ inside(a.σ)
+    end
 end
 
 """
