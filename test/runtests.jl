@@ -48,7 +48,7 @@ end
 end
 @testset "MultiLevelPoisson.jl" begin
     I = CartesianIndex(4,3,2)
-    @test all(WaterLily.inear(J)==I for J ∈ WaterLily.near(I))
+    @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_2D(MultiLevelPoisson,67)
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_3D(MultiLevelPoisson,3^4)
     @test Poisson_test_2D(MultiLevelPoisson,2^6) < 1e-5

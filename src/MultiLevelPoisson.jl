@@ -1,5 +1,5 @@
-@inline near(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
-@inline inear(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
+@inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
+@inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
 
 function restrictML(b::AbstractArray{T}) where T
     N,n = size_u(b)
@@ -10,11 +10,11 @@ end
 function restrictL!(a,b)
     N,n = size_u(a)
     @inbounds for i ∈ 1:n, I ∈ inside(N)
-        a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ near(I,i))
+        a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i))
     end
 end
-restrict!(a,b) = @inside a[I] = sum(@inbounds(b[J]) for J ∈ near(I))
-prolongate!(a,b) = @inside a[I] = b[inear(I)]
+restrict!(a,b) = @inside a[I] = sum(@inbounds(b[J]) for J ∈ up(I))
+prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(N) = mod(N,2)==0 && N>4
 """
