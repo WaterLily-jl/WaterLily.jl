@@ -4,7 +4,6 @@ using StaticArrays
 function block(L=2^5;Re=250,U=1,amp=0,ϵ=0.5,thk=2ϵ+√2)
     # Set viscosity
     ν=U*L/Re
-    @show L,ν
 
     # Create dynamic block geometry
     function sdf(x,t)
@@ -21,7 +20,7 @@ function block(L=2^5;Re=250,U=1,amp=0,ϵ=0.5,thk=2ϵ+√2)
 end
 
 using BenchmarkTools
-test() = @btime sim_step!(sim,π/4,remeasure=true) setup=(sim=block())
+test() = @benchmark sim_step!(sim,π/4,remeasure=true) setup=(sim=block())
 
 # include("TwoD_plots.jl")
 # sim_gif!(block();duration=4π,step=π/16,remeasure=true)
