@@ -31,21 +31,23 @@ at time `t` using an immersion kernel of size `ϵ`.
 See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
-    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
+    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
     for I ∈ inside(a.p)
         d = body.sdf(loc(0,I),t)  # distance to cell center
-        if abs(d)<ϵ+1             # only need to measure near interface
+        if abs(d)<ϵ+1             # near interface
+            a.σᵥ[I] = μ₀(d,ϵ)-1
             # measure properties and fill arrays at face (i,I)
             for i ∈ 1:N
                 dᵢ,n,V = measure(body,loc(i,I),t)
+                m = √sum(abs2,n); dᵢ /= m; n /= m
                 a.V[I,i] = V[i]
                 a.μ₀[I,i] = μ₀(dᵢ,ϵ)
                 a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
             end
-        elseif d<0               # only need μ₀ when well inside body
+        elseif d<0                # completely inside body
             a.μ₀[I,:] .= 0
+            a.σᵥ[I] = -1
         end
-        a.σᵥ[I] = μ₀(d,ϵ)-1      # moment scaling at face
     end
     @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
     BC!(a.μ₀,zeros(SVector{N}))
@@ -59,8 +61,8 @@ ForwardDiff is used to determine the geometric properties from the `sdf`.
 Note: The velocity is determined _soley_ from the optional `map` function.
 """
 measure(body,x,t) = (body.sdf(x,t),                               # d
-                    ForwardDiff.gradient(x->body.sdf(x,t), x),    # ̂n=∇d
-                    -ForwardDiff.derivative(t->body.map(x,t), t)) # V = -̇x
+                    ForwardDiff.gradient(x->body.sdf(x,t), x),    # n=∇d
+                    -ForwardDiff.derivative(t->body.map(x,t), t)) # V = -dot(X)
 
 using LinearAlgebra: tr
 """

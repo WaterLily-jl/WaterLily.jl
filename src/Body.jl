@@ -19,9 +19,9 @@ See Maertens & Weymouth, https://doi.org/10.1016/j.cma.2014.09.007
 abstract type AbstractBody end
 
 # Convolution kernel and its moments
-kern(d) = 0.5+0.5cos(π*d)
-kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
-kern₁(d) = 0.25*(1-d^2)-0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
+@fastmath kern(d) = 0.5+0.5cos(π*d)
+@fastmath kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
+@fastmath kern₁(d) = 0.25*(1-d^2)-0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
 
 μ₀(d,ϵ) = kern₀(clamp(d/ϵ,-1,1))
 μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))

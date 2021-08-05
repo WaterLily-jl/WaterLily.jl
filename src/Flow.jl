@@ -4,7 +4,7 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(∂(i,I,u) for i ∈ 1:m)
+@fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(@inbounds ∂(i,I,u) for i ∈ 1:m)
 
 @fastmath function tracer_transport!(r,f,u;Pe=0.1)
     N,n = size_u(u)
