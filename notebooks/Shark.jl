@@ -86,16 +86,16 @@ end
 
 # ╔═╡ f33b9315-b2d1-4fab-91c9-ed3b63fb4d41
 md"""
-*Suprisingly, we're nearly done!*
+*Suprisingly, we're nearly done with the set-up!*
 
-All that's left is to use these functions to define the shape of the body as a signed distance function `sdf` and the motion as a `map`. These functions are enough to define a body in a WaterLily simulation. 
+We can use the functions `thk` and `amp` above to define the shape and motion of a body in a WaterLily simulation. 
 
-The function `fish` below sets up the simulation. The parameters in the function are the length of the fish `L` measured "pixels", and the tail amplitude `A` as a fraction of the length (see the top image). The other two parameters are the [Stouhal number](https://en.wikipedia.org/wiki/Strouhal_number) which sets the motion frequency `ω` and the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number) which sets the fluid viscosity `ν`.
+The function `fish` below sets up the simulation. The new parameters in the function are the length of the fish `L` measured "pixels", and the tail amplitude `A` as a fraction of the length (see the top image). The other two parameters are the [Stouhal number](https://en.wikipedia.org/wiki/Strouhal_number) which sets the motion frequency `ω` and the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number) which sets the fluid viscosity `ν`.
 """
 
 # ╔═╡ 11702be3-d125-4ea4-b7e9-74d34943a164
 begin
-	function fish(;L=2^7,A=0.1,St=0.3,Re=1e4)
+	function fish(thk,amp,k=5.3;L=2^7,A=0.1,St=0.3,Re=1e4)
 		# fraction along fish length
 		s(x) = clamp(x[1]/L,0,1)
 		
@@ -114,23 +114,62 @@ begin
 		return Simulation((4L+2,2L+2),[U,0.],L;
 							ν=U*L/Re,body=AutoBody(sdf,map))
 	end
-	sim = fish()
-	print("ready")
+	sim = fish(thk,amp);
+	"simulation ready"
 end
 
 # ╔═╡ d844c02d-41c8-43a8-95dd-742ea6c24f86
 md"""
 We can test our geometry by plotting the immersed boundary function `μ₀`; which equals 1 in the fluid and 0 in the body. 
-
-Looks great!
 """
 
 # ╔═╡ e618b2d9-abe8-4e97-aab2-e87c6278378f
-@gif for t ∈ 0:8:256
+@gif for t ∈ 0:8:64
 	measure!(sim,t);
 	contour(sim.flow.μ₀[:,:,1]',
 		aspect_ratio=:equal,legend=false,border=:none)
 end
+
+# ╔═╡ 7329a0ba-c57c-4d77-99da-2f8f66d5a94e
+md"""
+Looks great, so we are ready to run the flow simulator! 
+
+The `sim_step!(sim,t,remeasuring=true)` function runs the simulator up to time `t`, remeasuring the body position every time step (not required for simulation with static bodies). The gif below plots the vorticity ω to visualize the vortices in the wake of the shark.
+"""
+
+# ╔═╡ 4bb2fa50-c8f9-4fae-adcd-e6936511b214
+sim_step!(sim,3,remeasure=true); # this one takes a minute
+
+# ╔═╡ a5c9b186-332f-4812-bb07-0bbe288f5091
+begin
+	# plot the vorcity ω=curl(u) scaled by the body length L and flow speed U
+	function plot_vorticity(sim)
+		@inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+		contourf(sim.flow.σ', 
+			color=palette(:BuGn), clims=(-10,10),linewidth=0,
+			aspect_ratio=:equal,legend=false,border=:none)
+	end
+	# make a gif over a swimming cycle
+	@gif for t ∈ sim_time(sim):0.025:(sim_time(sim)+0.6)
+		sim_step!(sim,t,remeasure=true)
+		plot_vorticity(sim)
+	end
+end
+
+# ╔═╡ c4c3fa5c-79bc-4d55-827f-c952b129ab5f
+begin
+	function get_force(sim,t)
+		sim_step!(sim,t,remeasure=true)
+		return WaterLily.∮nds(sim.flow.p,sim.body,t)./(0.5*sim.L*sim.U^2)
+	end
+	t₀,T = sim_time(sim),1
+	forces = [get_force(sim,t) for t ∈ t₀:(T/100):t₀+T]
+	forces = reshape(reinterpret(Float64, forces), (2, length(forces)))'
+	"got forces"
+end
+
+# ╔═╡ 9fc14582-108f-4434-83da-f7b32b676bd3
+plot(forces,labels=permutedims(["thrust","side"]), legendtitle="forces")
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -144,10 +183,10 @@ WaterLily = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 
 [compat]
 Images = "~0.24.1"
-Interpolations = "~0.13.2"
+Interpolations = "~0.13.3"
 Plots = "~1.20.0"
 PlutoUI = "~0.7.9"
-StaticArrays = "~1.2.9"
+StaticArrays = "~1.2.11"
 WaterLily = "~0.2.2"
 """
 
@@ -224,9 +263,9 @@ version = "0.2.2"
 
 [[ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "bdc0937269321858ab2a4f288486cb258b9a0af7"
+git-tree-sha1 = "f53ca8d41e4753c41cdafa6ec5f7ce914b34be54"
 uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-version = "1.3.0"
+version = "0.10.13"
 
 [[ColorSchemes]]
 deps = ["ColorTypes", "Colors", "FixedPointNumbers", "Random", "StaticArrays"]
@@ -623,10 +662,10 @@ deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 
 [[Interpolations]]
-deps = ["AxisAlgorithms", "LinearAlgebra", "OffsetArrays", "Random", "Ratios", "SharedArrays", "SparseArrays", "StaticArrays", "WoodburyMatrices"]
-git-tree-sha1 = "1e0e51692a3a77f1eeb51bf741bdd0439ed210e7"
+deps = ["AxisAlgorithms", "ChainRulesCore", "LinearAlgebra", "OffsetArrays", "Random", "Ratios", "Requires", "SharedArrays", "SparseArrays", "StaticArrays", "WoodburyMatrices"]
+git-tree-sha1 = "1470c80592cf1f0a35566ee5e93c5f8221ebc33a"
 uuid = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
-version = "0.13.2"
+version = "0.13.3"
 
 [[IntervalSets]]
 deps = ["Dates", "EllipsisNotation", "Statistics"]
@@ -652,9 +691,9 @@ version = "1.3.0"
 
 [[JSON]]
 deps = ["Dates", "Mmap", "Parsers", "Unicode"]
-git-tree-sha1 = "81690084b6198a2e1da36fcfda16eeca9f9f24e4"
+git-tree-sha1 = "8076680b162ada2a031f707ac7b4953e30667a37"
 uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
-version = "0.21.1"
+version = "0.21.2"
 
 [[JpegTurbo_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -845,9 +884,9 @@ uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 
 [[OffsetArrays]]
 deps = ["Adapt"]
-git-tree-sha1 = "4f825c6da64aebaa22cc058ecfceed1ab9af1c7e"
+git-tree-sha1 = "5cc97a6f806ba1b36bac7078b866d4297ae8c463"
 uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
-version = "1.10.3"
+version = "1.10.4"
 
 [[Ogg_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -892,9 +931,9 @@ version = "0.3.7"
 
 [[PaddedViews]]
 deps = ["OffsetArrays"]
-git-tree-sha1 = "0fa5e78929aebc3f6b56e1a88cf505bb00a354c4"
+git-tree-sha1 = "59925f4ae6861cddc2313a47514b93b6740f9b6f"
 uuid = "5432bcbf-9aad-5242-b902-cca2824c8663"
-version = "0.5.8"
+version = "0.5.9"
 
 [[Parameters]]
 deps = ["OrderedCollections", "UnPack"]
@@ -904,9 +943,9 @@ version = "0.12.2"
 
 [[Parsers]]
 deps = ["Dates"]
-git-tree-sha1 = "bfd7d8c7fd87f04543810d9cbd3995972236ba1b"
+git-tree-sha1 = "477bf42b4d1496b454c10cce46645bb5b8a0cf2c"
 uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "1.1.2"
+version = "2.0.2"
 
 [[Pixman_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -1077,9 +1116,9 @@ version = "0.3.0"
 
 [[StaticArrays]]
 deps = ["LinearAlgebra", "Random", "Statistics"]
-git-tree-sha1 = "885838778bb6f0136f8317757d7803e0d81201e4"
+git-tree-sha1 = "b28f39450421d07d89ab5d126fd15e5246350e8a"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.2.9"
+version = "1.2.11"
 
 [[Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -1402,7 +1441,12 @@ version = "0.9.1+5"
 # ╠═67f29fd6-11ed-415f-abc0-2ed3c84fe60f
 # ╟─f33b9315-b2d1-4fab-91c9-ed3b63fb4d41
 # ╠═11702be3-d125-4ea4-b7e9-74d34943a164
-# ╠═d844c02d-41c8-43a8-95dd-742ea6c24f86
+# ╟─d844c02d-41c8-43a8-95dd-742ea6c24f86
 # ╠═e618b2d9-abe8-4e97-aab2-e87c6278378f
+# ╟─7329a0ba-c57c-4d77-99da-2f8f66d5a94e
+# ╠═4bb2fa50-c8f9-4fae-adcd-e6936511b214
+# ╠═a5c9b186-332f-4812-bb07-0bbe288f5091
+# ╠═c4c3fa5c-79bc-4d55-827f-c952b129ab5f
+# ╠═9fc14582-108f-4434-83da-f7b32b676bd3
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
