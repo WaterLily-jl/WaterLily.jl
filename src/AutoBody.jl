@@ -32,10 +32,11 @@ See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
+    sdf = a.σ
+    apply_sdf!(x->body.sdf(x,t), sdf)   # distance to cell center
     for I ∈ inside(a.p)
-        d = body.sdf(loc(0,I),t)  # distance to cell center
-        if abs(d)<ϵ+1             # near interface
-            a.σᵥ[I] = μ₀(d,ϵ)-1
+        if abs(sdf[I])<ϵ+1   # near interface
+            a.σᵥ[I] = μ₀(sdf[I],ϵ)-1
             # measure properties and fill arrays at face (i,I)
             for i ∈ 1:N
                 dᵢ,n,V = measure(body,loc(i,I),t)
@@ -44,13 +45,34 @@ function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
                 a.μ₀[I,i] = μ₀(dᵢ,ϵ)
                 a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
             end
-        elseif d<0                # completely inside body
+        elseif sdf[I]<0      # completely inside body
             a.μ₀[I,:] .= 0
             a.σᵥ[I] = -1
         end
     end
     @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
     BC!(a.μ₀,zeros(SVector{N}))
+end
+
+function apply_sdf!(f,a,margin=2,stride=1)
+    # strided index and signed distance function
+    @inline J(I) = stride*I+oneunit(I)
+    @inline sdf(I) = f(WaterLily.loc(0,J(I)) .- (stride-1)/2)
+
+    # if the strided array is indivisible, fill it using the sdf 
+    dims = (size(a) .-2 ) .÷ stride
+    if sum(mod.(dims,2)) != 0
+        @loop a[J(I)] = sdf(I) over I ∈ CartesianIndices(dims)
+    
+    # if not, fill an array with twice the stride first
+    else    
+        apply_sdf!(f,a,margin,2stride)
+
+    # and only improve the values within a margin of sdf=0
+        tol = stride*√length(dims)+margin
+        @loop (d = @inbounds a[J(I)+stride*CI(mod.(I.I,2))]; 
+               a[J(I)] = abs(d)<tol ? sdf(I) : d) over I ∈ CartesianIndices(dims)
+    end
 end
 
 using ForwardDiff
