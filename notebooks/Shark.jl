@@ -14,7 +14,7 @@ macro bind(def, element)
 end
 
 # ╔═╡ c028100e-f47b-11eb-2547-df779889e265
-using WaterLily, StaticArrays, PlutoUI, Plots, Interpolations, Images
+using WaterLily, StaticArrays, PlutoUI, Interpolations, Plots, Images
 
 # ╔═╡ b0c8df66-1e63-456e-be32-d469e6972e00
 md"""
@@ -49,6 +49,18 @@ md"""
 I digitized a few point of the top view of the image above and fit a spline through it to define the thickness distribution function `thk`.
 """
 
+# ╔═╡ 468825ca-28e2-4447-ad4a-520d06e9d92d
+# Fish topview
+begin
+	xs2 = 0:.1:1
+	ys2 = [0.016,0.055,0.06,0.06,0.059,0.054,0.047,0.037,0.023,0.014,0.007]
+	scatter(xs2, ys2)
+	thk = scale(interpolate(ys2, BSpline(Quadratic(Line(OnGrid())))),xs2)
+	x = 0:0.02:1
+	plot!(x,thk.(x),color=:black)
+	plot!(x,-thk.(x),color=:black,legend=false,ylim=(-0.5,0.5))
+end
+
 # ╔═╡ d830e69e-f085-495e-be2c-8ea44582fa20
 md"""
 We also have a set of video data of swimming dogfish. A general feature of this data is that the motion of the front half of the body has a small amplitude (around 20% of the tail) and that there is almost (but not quite) a full wave along the body. 
@@ -57,7 +69,7 @@ The slider below controls the wave number $k$, where the wavelength $\lambda=2\p
 """
 
 # ╔═╡ 454f7849-2d9b-4250-94bb-9aed4c2f0d54
-@bind k Slider(1.4π : 0.05π : 2π, show_value=true)
+@bind k Slider(1.4π : 0.05π : 2π, show_value=true, default = 5.3)
 
 # ╔═╡ 67f29fd6-11ed-415f-abc0-2ed3c84fe60f
 begin
@@ -65,23 +77,11 @@ begin
 	ys = [0.2,0.21,0.23,0.4,0.88,1.0]
 	scatter(xs, ys)
 	amp = scale(interpolate(ys, BSpline(Quadratic(Line(OnGrid())))),xs)
-	x = 0:0.02:1
 	colors = palette(:cyclic_wrwbw_40_90_c42_n256)
 	for t in 1/12:1/12:1
 		plot!(x,@.(amp(x)*sin(k*x-2π*t)),color=colors[floor(Int,t*256)])
 	end
 	plot!(ylim=(-1.4,1.4),legend=false)
-end
-
-# ╔═╡ 468825ca-28e2-4447-ad4a-520d06e9d92d
-# Fish topview
-begin
-	xs2 = 0:.1:1
-	ys2 = [0.016,0.055,0.06,0.06,0.059,0.054,0.047,0.037,0.023,0.014,0.007]
-	scatter(xs2, ys2)
-	thk = scale(interpolate(ys2, BSpline(Quadratic(Line(OnGrid())))),xs2)
-	plot!(x,thk.(x),color=:black)
-	plot!(x,-thk.(x),color=:black,legend=false,ylim=(-0.5,0.5))
 end
 
 # ╔═╡ f33b9315-b2d1-4fab-91c9-ed3b63fb4d41
@@ -160,16 +160,17 @@ end
 begin
 	function get_force(sim,t)
 		sim_step!(sim,t,remeasure=true)
-		return WaterLily.∮nds(sim.flow.p,sim.body,t)./(0.5*sim.L*sim.U^2)
+		return WaterLily.∮nds(sim.flow.p,sim.body,t*sim.L/sim.U)./(0.5*sim.L*sim.U^2)
 	end
-	t₀,T = sim_time(sim),1
-	forces = [get_force(sim,t) for t ∈ t₀:(T/100):t₀+T]
-	forces = reshape(reinterpret(Float64, forces), (2, length(forces)))'
+	t₀,T = sim_time(sim),0.66
+	time = t₀:0.01:t₀+T
+	forces = [get_force(sim,t) for t ∈ time]
 	"got forces"
 end
 
 # ╔═╡ 9fc14582-108f-4434-83da-f7b32b676bd3
-plot(forces,labels=permutedims(["thrust","side"]), legendtitle="forces")
+scatter(time,[first.(forces),last.(forces)],
+	labels=permutedims(["thrust","side"]), legendtitle="forces")
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -187,7 +188,7 @@ Interpolations = "~0.13.3"
 Plots = "~1.20.0"
 PlutoUI = "~0.7.9"
 StaticArrays = "~1.2.11"
-WaterLily = "~0.2.2"
+WaterLily = "~0.2.3"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -1207,9 +1208,9 @@ uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [[WaterLily]]
 deps = ["Documenter", "ForwardDiff", "LinearAlgebra", "StaticArrays"]
-git-tree-sha1 = "782adb7f8ceebc2247046a10d0cc6a5a93c42bc1"
+git-tree-sha1 = "9d17cfa8a5e12d568bddd18f4332d1919316fc28"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
-version = "0.2.2"
+version = "0.2.3"
 
 [[Wayland_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Pkg", "XML2_jll"]
