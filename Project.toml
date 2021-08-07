@@ -1,7 +1,7 @@
 name = "WaterLily"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 authors = ["Gabriel Weymouth <drweymouth@google.com>"]
-version = "0.2.2"
+version = "0.2.3"
 
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
