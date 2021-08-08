@@ -1,4 +1,4 @@
-using LinearAlgebra: eigvals,norm2,×,⋅
+using LinearAlgebra: eigvals,norm2,×,⋅,normalize
 """
     ke(I::CartesianIndex,u,U=0)
 
@@ -60,7 +60,7 @@ Compute ω⋅θ at the center of cell `I` where θ is the azimuth
 direction around vector `z` passing through `center`.
 """
 function ω_θ(I::CartesianIndex{3},z,center,u)
-    θ = z × (collect(I.I)-center)
+    θ = z × (loc(0,I)-center)
     n = norm2(θ)
     n<=eps(n) ? 0. : θ ⋅ ω(I,u) / n
 end
