@@ -69,7 +69,7 @@ function apply_sdf!(f,a,margin=2,stride=1)
         apply_sdf!(f,a,margin,2stride)
 
     # and only improve the values within a margin of sdf=0
-        tol = stride*√length(dims)+margin
+        tol = stride*(√length(dims)+margin)
         @loop (d = @inbounds a[J(I)+stride*CI(mod.(I.I,2))]; 
                a[J(I)] = abs(d)<tol ? sdf(I) : d) over I ∈ CartesianIndices(dims)
     end
