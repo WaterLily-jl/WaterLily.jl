@@ -20,7 +20,9 @@ using WaterLily, StaticArrays, PlutoUI, Interpolations, Plots, Images
 md"""
 # Simulation of a swimming dogfish shark
 
-We'll use a simple model of the shark based on Lighthill's [seminal paper on the swimming of slender fish](https://doi.org/10.1017/S0022112060001110). It focuses on the "backbone"; defining a thickness distribution for the shape and a lateral ("side-to-side") traveling wave for the motion. [Image credit: Gazzola et al, _Nature_ 2014](https://www.nature.com/articles/nphys3078)
+This post will demonstrate how to set up and simulate a model of a swimming dogfish shark using [Julia](https://julialang.org/) and [WaterLily.jl](https://www.youtube.com/watch?v=YsPkfZqbNSQ). The post is actually a [Pluto notebook](https://www.youtube.com/watch?v=IAF8DjrQSSk) and can be run interactively by clicking on the top right icon.
+
+We'll use a simple model of the shark based on Lighthill's pioneering [paper on the swimming of slender fish](https://doi.org/10.1017/S0022112060001110). It focuses on the "backbone" of the fish; idealizing the shape as a thickness distribution on either side of the centerline, and the motion as a lateral ("side-to-side") traveling wave. Amazingly, this simple approach provides insight across a huge range of a swimming animals as illustrated in the image below. [Image credit: Gazzola et al, _Nature_ 2014](https://www.nature.com/articles/nphys3078)
 """
 
 # ╔═╡ e9384124-9708-44eb-b5e7-75abc5177a69
@@ -44,7 +46,7 @@ fit = y-> scale(interpolate(y, BSpline(Quadratic(Line(OnGrid())))), range(0,1,le
 
 # ╔═╡ ad96bcbe-4482-4486-b817-e788604d1d96
 md"""
-Here is an image of the dogfish shark we're interested in. [Image credit: Shark Trust](file:///C:/Users/admin/Downloads/Spiny%20Dogfish%20ST%20Factsheet.PDF)
+Here is an image of the dogfish shark we will model. [Image credit: Shark Trust](file:///C:/Users/admin/Downloads/Spiny%20Dogfish%20ST%20Factsheet.PDF)
 """
 
 # ╔═╡ 47eb9e3f-5617-417a-8924-5a38d90390e8
@@ -109,11 +111,11 @@ md"""
 
 ### Setting up the simulation
 
-Now we have the thickness and motion defined, but how will we apply these to a fluid simulation? 
+Now the thickness and motion are defined, but how will we apply these to a fluid simulation? `WaterLily`uses an [immersed boundary method](https://eprints.soton.ac.uk/369635/) and [automatic differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation) to embed a body into the flow. The upshot is that we don't need to do any meshing; all we need is a signed distance function (SDF) to the surface.
 
-To immerse a geometry in a `WaterLily` simulation, all we need is a signed distance function (SDF) to the surface. Let's start by defining the SDF to the "backbone", a line segment from $x=0\ldots 1$. [See this great video from Inigo Quilez for a derivation of this sdf.](https://www.youtube.com/watch?v=PMltMdi1Wzg) 
+Let's start by defining the SDF to the "backbone", which is a line segment from $x=0\ldots 1$. [See this great video from Inigo Quilez for a derivation of this sdf.](https://www.youtube.com/watch?v=PMltMdi1Wzg) The plot below shows the sdf and the zero contour, which is ... just a line segment. 
 
-The plot below shows the sdf and the zero contour, which is just a line segment. By adjusting the sliders below you can shift the sdf vertically, and you can add thickness to the geometry. This how we will model the shark.
+Simple adjustments to the SDF give us more control of the shape and position. By shifting the y offset as `y = y-shift`, we can move the body laterally. And by subtracting a thickness from the distance as `sdf = sdf-thickness`, we can give the line some width. This is all we need to model the shark.
 """
 
 # ╔═╡ bfc73784-8c27-4cdb-a8e4-fbcbf9ddb3c2
@@ -124,15 +126,20 @@ md"thickness: $@bind T Slider(0.001:0.25:2, show_value=true)"
 
 # ╔═╡ 839db88c-a477-4718-88bb-796ab0cd6591
 begin
+	function segment_sdf(x,y) 
+		s = clamp(x,0,1)         # distance along the segment
+		y = y-shift              # shift laterally
+		sdf = √sum(abs2,(x-s,y)) # line segment SDF
+		return sdf-T*thk(s)      # subtract thickness
+	end
 	grid = -1:0.05:2
-	segment_sdf(x,y) = (s=clamp(x,0,1); √sum(abs2,(x-s,y-shift))-T*thk(s))
 	contourf(grid,grid,segment_sdf,clim=(-1,2),linewidth=0)
 	contour!(grid,grid,segment_sdf,levels=[0],color=:black) # zero contour
 end
 
 # ╔═╡ f33b9315-b2d1-4fab-91c9-ed3b63fb4d41
 md"""
-With the basic SDF tested out, we're ready to set up the WaterLily simulation using the function `fish` defined below:
+With the basic SDF tested out, we are ready to set up the WaterLily simulation using the function `fish` defined below:
  - The functions `thk` is passed in to create the `sdf` and the function `amp` is passed in to create the traveling wave `map`.
  - The only numerical parameter passed into `fish` is the length of the fish `L` measured in computational cells. This sets the resolution of the simulation and the size of the fluid arrays.
  - The other parameters are the tail amplitude `A` as a fraction of the length, the [Stouhal number](https://en.wikipedia.org/wiki/Strouhal_number) which sets the motion frequency `ω`, and the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number) which sets the fluid viscosity `ν`.
@@ -159,9 +166,11 @@ begin
 		return Simulation((4L+2,2L+2),[U,0.],L;
 							ν=U*L/Re,body=AutoBody(sdf,map))
 	end
+	
 	# Create the swimming shark
 	L,A,St = 3*2^5,0.1,0.3
 	swimmer = fish(thk,amp;L,A,St);
+	
 	# Save a time span for one swimming cycle
 	period = 2A/St
 	cycle = range(0,23/24*period,length=24)
@@ -186,7 +195,7 @@ md"""
 
 That animation of the motion looks great, so we are ready to run the flow simulator! 
 
-The `sim_step!(sim,t,remeasuring=true)` function runs the simulator up to time `t`, remeasuring the body position every time step (this is false by default since it takes a little extra computational time and isn't needed for statics geometries).
+The `sim_step!(sim,t,remeasure=true)` function runs the simulator up to time `t`, remeasuring the body position every time step. (`remeasure=false` by default since it takes a little extra computational time and isn't needed for statics geometries.)
 """
 
 # ╔═╡ 845cbd96-c01b-49f7-94df-15836a68ebba
@@ -200,7 +209,7 @@ end
 md"""
 The simulation has now run forward in time, but there are no visualizations or measurements by default. 
 
-As a first step, lets make a gif of the vorticity `ω=curl(u)` to visualize the vortices in the wake of the shark. This requires simulating a cycle of motion, and computing the `curl` at all the points `@inside` the simulation. 
+To see what is going on, lets make a gif of the vorticity `ω=curl(u)` to visualize the vortices in the wake of the shark. This requires simulating a cycle of motion, and computing the `curl` at all the points `@inside` the simulation. 
 """
 
 # ╔═╡ a5c9b186-332f-4812-bb07-0bbe288f5091
@@ -246,10 +255,10 @@ scatter(cycle./period,[first.(forces),last.(forces)],
 md"""
 We can learn a lot from this simple plot. For example, the side-to-side force has the same frequency as the swimming motion itself while the thrust force has double the frequency, with a peak every time the tail passes through the centerline. 
 
-This is a great start, but this simple model opens up a ton of avenues for improving the shark simulation as well as opening up research questions:
- - The instantaneous net forces should be zero in a free swimming body! We could add reaction motions to our model to achieve this. 
- - We could write a function to measure the power the shark uses and then optimize the motion or geometry to maximize efficiency!
- - Real sharks are 3D (gasp) but this is slower to run. We could add a GPU to accelerate the simulation!
+This simple model is a great start and it opens up a ton of avenues for improving the shark simulation and suggesting questions:
+ - The instantaneous net forces should be zero in a free swimming body! We could add reaction motions to our model to achieve this. Would the motion be stable?
+ - We could write a function to measure the power the shark uses to swim. How close is our model to an efficiency optimum?
+ - Real sharks are 3D (gasp). This takes longer to simulate, but we could use a GPU to accelerate the simulation. How would the answer to our questions above change in 3D?
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
