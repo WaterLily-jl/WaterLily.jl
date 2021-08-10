@@ -20,7 +20,7 @@ using WaterLily, StaticArrays, PlutoUI, Interpolations, Plots, Images
 md"""
 ## Simulation of a swimming dogfish shark
 
-We'll use a simple model of the shark based on Lighthill's [seminal paper on the swimming of slender fish](https://doi.org/10.1017/S0022112060001110). It focuses on the "backbone"; defining a thickness distribution for the shape and a lateral ("side-to-side") traveling wave for the motion. 
+We'll use a simple model of the shark based on Lighthill's [seminal paper on the swimming of slender fish](https://doi.org/10.1017/S0022112060001110). It focuses on the "backbone"; defining a thickness distribution for the shape and a lateral ("side-to-side") traveling wave for the motion. [Image credit: Gazzola et al, _Nature_ 2014](https://www.nature.com/articles/nphys3078)
 """
 
 # ╔═╡ e9384124-9708-44eb-b5e7-75abc5177a69
@@ -33,6 +33,9 @@ end
 
 # ╔═╡ c8293b7b-0585-45b3-8763-8cfa4671b155
 md"""
+
+### Modeling the shark's thickness and motion
+
 We'll define the thickness and motion distributions using `interpolate` to fit splines through a few points.
 """
 
@@ -41,20 +44,20 @@ fit = y-> scale(interpolate(y, BSpline(Quadratic(Line(OnGrid())))), range(0,1,le
 
 # ╔═╡ ad96bcbe-4482-4486-b817-e788604d1d96
 md"""
-Here is an image of the dogfish shark we're interested in.
+Here is an image of the dogfish shark we're interested in. [Image credit: Shark Trust](file:///C:/Users/admin/Downloads/Spiny%20Dogfish%20ST%20Factsheet.PDF)
 """
 
 # ╔═╡ 47eb9e3f-5617-417a-8924-5a38d90390e8
 # Fish shape
 begin
-	url2 = "https://i2.wp.com/animalreader.ru/wp-content/uploads/2015/05/katran-animalreader.ru-001.jpg"
+	url2 = "https://pterosaurheresies.files.wordpress.com/2020/01/squalus-acanthias-invivo588.jpg"
 	filename2 = download(url2)
 	dogfish = load(filename2)
 end
 
 # ╔═╡ 8752bf4d-50e6-42ea-8d43-c41699769f77
 md"""
-Digitizing a few point of the top view of the image above defines the thickness distribution function `thk`.
+The bottom view shows the outline we're interested in, and a few points along the length define the thickness distribution function `thk`.
 """
 
 # ╔═╡ 468825ca-28e2-4447-ad4a-520d06e9d92d
@@ -70,31 +73,68 @@ end
 
 # ╔═╡ d830e69e-f085-495e-be2c-8ea44582fa20
 md"""
-We also have a set of video data of swimming dogfish. A general feature of this data is that the motion of the front half of the body has a small amplitude (around 20% of the tail) and that there is almost (but not quite) a full wave along the body. 
+Looking at [videos of swimming dogfish](https://youtu.be/nMa6lD2CQVI?t=200), we can see a couple general features
+ - The motion of the front half of the body has a small amplitude (around 20% of the tail). This sets the amplitude evelope for the traveling wave.
+"""
 
-The slider below controls the wave number $k$, where the wavelength $\lambda=2\pi/k$. Moving it around changes the plot of the backbone throughout the motion cycle below.
+# ╔═╡ c2b7a082-c05d-41bb-af4c-eb23f6a331bf
+begin
+	envelope = [0.2,0.21,0.23,0.4,0.88,1.0]
+	amp = fit(envelope)
+end
+
+# ╔═╡ ea51f472-7ffc-4062-a45c-1410d26b1c3e
+md"""
+- The wavelength of the traveling wave is a bit longer than the body length. 
+
+The slider below controls the wavelength of the traveling wave λ, which you can adjust to see the impact it has on the backbone over the motion cycle.
 """
 
 # ╔═╡ 454f7849-2d9b-4250-94bb-9aed4c2f0d54
-@bind k Slider(1.4π : 0.05π : 2π, show_value=true, default = 5.3)
+md"λ: $@bind λ Slider(0.5:0.1:2, show_value=true, default = 1.1)"
 
 # ╔═╡ 67f29fd6-11ed-415f-abc0-2ed3c84fe60f
 begin
-	envelope = [0.2,0.21,0.23,0.4,0.88,1.0]
 	scatter(0:0.2:1, envelope)
-	amp = fit(envelope)
 	colors = palette(:cyclic_wrwbw_40_90_c42_n256)
 	for t in 1/12:1/12:1
-		plot!(x,@.(amp(x)*sin(k*x-2π*t)),color=colors[floor(Int,t*256)])
+		plot!(x,@.(amp(x)*sin(2π/λ*x-2π*t)),color=colors[floor(Int,t*256)])
 	end
 	plot!(ylim=(-1.4,1.4),legend=false)
 end
 
+# ╔═╡ db1ed38c-a1aa-4173-bb43-d81afedbfab9
+md"""
+
+### Setting up the simulation
+
+Now we have the thickness and motion defined, but how will we apply these to a fluid simulation? 
+
+To immerse a geometry in a `WaterLily` simulation, all we need is a signed distance function (SDF) to the surface. Let's start by defining the SDF to the "backbone", a line segment from $x=0\ldots 1$. [See this great video from Inigo Quilez for a derivation of this sdf.](https://www.youtube.com/watch?v=PMltMdi1Wzg) 
+
+The plot below shows the sdf and the zero contour, which is just a line segment. By adjusting the sliders below you can shift the sdf vertically, and you can add thickness to the geometry. This how we will model the shark.
+"""
+
+# ╔═╡ bfc73784-8c27-4cdb-a8e4-fbcbf9ddb3c2
+md"shift: $@bind shift Slider(-1:0.5:2, show_value=true, default=0.5)"
+
+# ╔═╡ 76dc572f-3cd2-4f1a-9296-2065c877a6ef
+md"thickness: $@bind T Slider(0.001:0.25:2, show_value=true)"
+
+# ╔═╡ 839db88c-a477-4718-88bb-796ab0cd6591
+begin
+	grid = -1:0.1:2
+	segment_sdf(x,y) = (s=clamp(x,0,1); √sum(abs2,(x-s,y-shift))-T*thk(s))
+	contourf(grid,grid,segment_sdf,clim=(-1,2),linewidth=0)
+	contour!(grid,grid,segment_sdf,levels=[0],color=:black) # zero contour
+end
+
 # ╔═╡ f33b9315-b2d1-4fab-91c9-ed3b63fb4d41
 md"""
-*Suprisingly, we're nearly done with the set-up!*
-
-The function `fish` below sets up the simulation using the functions `thk` and `amp` defined above. The new parameters in the function are the length of the fish `L` measured "pixels", and the tail amplitude `A` as a fraction of the length (see the top image). The other two parameters are the [Stouhal number](https://en.wikipedia.org/wiki/Strouhal_number) which sets the motion frequency `ω` and the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number) which sets the fluid viscosity `ν`.
+With the basic sdf tested out, we're ready to set up the WaterLily simulation using the function `fish` defined below:
+ - The functions `thk` is passed in to create the `sdf` and the function `amp` is passed in to create the traveling wave `map`.
+ - The only numerical parameter passed into `fish` is the length of the fish `L` measured in computational cells. This sets the resolution of the simulation and the size of the fluid arrays.
+ - The other parameters are the tail amplitude `A` as a fraction of the length, the [Stouhal number](https://en.wikipedia.org/wiki/Strouhal_number) which sets the motion frequency `ω`, and the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number) which sets the fluid viscosity `ν`.
 """
 
 # ╔═╡ 11702be3-d125-4ea4-b7e9-74d34943a164
@@ -123,7 +163,7 @@ begin
 	swimmer = fish(thk,amp;L,A,St);
 	# Save a time span for one swimming cycle
 	period = 2A/St
-	time = range(0,23/24*period,length=24)
+	cycle = range(0,23/24*period,length=24)
 end
 
 # ╔═╡ d844c02d-41c8-43a8-95dd-742ea6c24f86
@@ -132,7 +172,7 @@ We can test our geometry by plotting the immersed boundary function `μ₀`; whi
 """
 
 # ╔═╡ e618b2d9-abe8-4e97-aab2-e87c6278378f
-@gif for t ∈ time
+@gif for t ∈ cycle
 	measure!(swimmer,t*swimmer.L/swimmer.U);
 	contour(swimmer.flow.μ₀[:,:,1]',
 		aspect_ratio=:equal,legend=false,border=:none)
@@ -140,14 +180,27 @@ end
 
 # ╔═╡ 7329a0ba-c57c-4d77-99da-2f8f66d5a94e
 md"""
-Looks great, so we are ready to run the flow simulator! 
 
-The `sim_step!(sim,t,remeasuring=true)` function runs the simulator up to time `t`, remeasuring the body position every time step (not required for simulation with static bodies). The gif below plots the vorticity ω to visualize the vortices in the wake of the shark.
+### Running visualizing and measuring the simulation
+
+That animation of the motion looks great, so we are ready to run the flow simulator! 
+
+The `sim_step!(sim,t,remeasuring=true)` function runs the simulator up to time `t`, remeasuring the body position every time step (this is false by default since it takes a little extra computational time and isn't needed for statics geometries).
 """
 
 # ╔═╡ 845cbd96-c01b-49f7-94df-15836a68ebba
-# run the simulation a few cycles (this takes a while)
-sim_step!(swimmer,3,remeasure=true)
+# run the simulation a few cycles (this takes few seconds)
+begin 
+	sim_step!(swimmer,3,remeasure=true)
+	sim_time(swimmer)
+end
+
+# ╔═╡ d5c82801-8387-4ef0-9f34-3279a54603c5
+md"""
+The simulation has now run forward in time, but there are no visualizations or measurements by default. 
+
+As a first step, lets make a gif of the vorticity `ω=curl(u)` to visualize the vortices in the wake of the shark. This requires simulating a cycle of motion, and computing the `curl` at all the points `@inside` the simulation. 
+"""
 
 # ╔═╡ a5c9b186-332f-4812-bb07-0bbe288f5091
 begin
@@ -160,7 +213,7 @@ begin
 	end
 
 	# make a gif over a swimming cycle
-	@gif for t ∈ sim_time(swimmer).+time
+	@gif for t ∈ sim_time(swimmer).+cycle
 		sim_step!(swimmer,t,remeasure=true)
 		plot_vorticity(swimmer)
 	end
@@ -179,12 +232,12 @@ begin
 		sim_step!(sim,t,remeasure=true)
 		return WaterLily.∮nds(sim.flow.p,sim.body,t*sim.L/sim.U)./(0.5*sim.L*sim.U^2)
 	end
-	forces = [get_force(swimmer,t) for t ∈ sim_time(swimmer).+time]
+	forces = [get_force(swimmer,t) for t ∈ sim_time(swimmer).+cycle]
 	"got forces"
 end
 
 # ╔═╡ 9fc14582-108f-4434-83da-f7b32b676bd3
-scatter(time./period,[first.(forces),last.(forces)], 
+scatter(cycle./period,[first.(forces),last.(forces)], 
 	labels=permutedims(["thrust","side"]), 
 	xlabel="scaled time", ylabel="scaled force")
 
@@ -192,10 +245,10 @@ scatter(time./period,[first.(forces),last.(forces)],
 md"""
 We can learn a lot from this simple plot. For example, the side-to-side force has the same frequency as the swimming motion itself while the thrust force has double the frequency, with a peak every time the tail passes through the centerline. 
 
-This is a great start, but this simple model opens up a ton of avenues for improving the shark smulation and open research questions:
- - The instantaneous net forces should be zero in a free swimming body! We could add reaction forces and motions!
- - We could write a function to measure the power the shark uses and then optimize the motion or geometry to maximize efficiency. 
- - Real sharks are 3D (gasp!) but this is slower to run. We could add a GPU to accelerate the simulation!
+This is a great start, but this simple model opens up a ton of avenues for improving the shark simulation as well as opening up research questions:
+ - The instantaneous net forces should be zero in a free swimming body! We could add reaction motions to our model to achieve this. 
+ - We could write a function to measure the power the shark uses and then optimize the motion or geometry to maximize efficiency!
+ - Real sharks are 3D (gasp) but this is slower to run. We could add a GPU to accelerate the simulation!
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -1466,14 +1519,21 @@ version = "0.9.1+5"
 # ╟─8752bf4d-50e6-42ea-8d43-c41699769f77
 # ╠═468825ca-28e2-4447-ad4a-520d06e9d92d
 # ╟─d830e69e-f085-495e-be2c-8ea44582fa20
-# ╠═454f7849-2d9b-4250-94bb-9aed4c2f0d54
+# ╠═c2b7a082-c05d-41bb-af4c-eb23f6a331bf
+# ╟─ea51f472-7ffc-4062-a45c-1410d26b1c3e
+# ╟─454f7849-2d9b-4250-94bb-9aed4c2f0d54
 # ╠═67f29fd6-11ed-415f-abc0-2ed3c84fe60f
+# ╟─db1ed38c-a1aa-4173-bb43-d81afedbfab9
+# ╟─bfc73784-8c27-4cdb-a8e4-fbcbf9ddb3c2
+# ╟─76dc572f-3cd2-4f1a-9296-2065c877a6ef
+# ╠═839db88c-a477-4718-88bb-796ab0cd6591
 # ╟─f33b9315-b2d1-4fab-91c9-ed3b63fb4d41
 # ╠═11702be3-d125-4ea4-b7e9-74d34943a164
 # ╟─d844c02d-41c8-43a8-95dd-742ea6c24f86
 # ╠═e618b2d9-abe8-4e97-aab2-e87c6278378f
 # ╟─7329a0ba-c57c-4d77-99da-2f8f66d5a94e
 # ╠═845cbd96-c01b-49f7-94df-15836a68ebba
+# ╟─d5c82801-8387-4ef0-9f34-3279a54603c5
 # ╠═a5c9b186-332f-4812-bb07-0bbe288f5091
 # ╟─85c555bb-f584-4064-9da7-f7f1e4fd5320
 # ╠═c4c3fa5c-79bc-4d55-827f-c952b129ab5f
