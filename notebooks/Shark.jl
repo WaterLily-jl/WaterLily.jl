@@ -18,7 +18,7 @@ using WaterLily, StaticArrays, PlutoUI, Interpolations, Plots, Images
 
 # ╔═╡ b0c8df66-1e63-456e-be32-d469e6972e00
 md"""
-## Simulation of a swimming dogfish shark
+# Simulation of a swimming dogfish shark
 
 We'll use a simple model of the shark based on Lighthill's [seminal paper on the swimming of slender fish](https://doi.org/10.1017/S0022112060001110). It focuses on the "backbone"; defining a thickness distribution for the shape and a lateral ("side-to-side") traveling wave for the motion. [Image credit: Gazzola et al, _Nature_ 2014](https://www.nature.com/articles/nphys3078)
 """
@@ -57,18 +57,19 @@ end
 
 # ╔═╡ 8752bf4d-50e6-42ea-8d43-c41699769f77
 md"""
-The bottom view shows the outline we're interested in, and a few points along the length define the thickness distribution function `thk`.
+The bottom view shows the outline we're interested in, and adding a few points along the length defines the thickness distribution function `thk`.
 """
 
-# ╔═╡ 468825ca-28e2-4447-ad4a-520d06e9d92d
-# Fish topview
+# ╔═╡ 71c9bc8f-921d-4df4-acc2-7321ce6648e0
 begin
-	profile = [0.016,0.055,0.06,0.06,0.059,0.054,0.047,0.037,0.023,0.014,0.007]
-	scatter(0:0.1:1,profile)
-	thk = fit(profile)
-	x = 0:0.02:1
-	plot!(x,thk.(x),color=:black)
-	plot!(x,-thk.(x),color=:black,legend=false,ylim=(-0.5,0.5))
+	plot(dogfish)
+	nose,len = (30,224),500
+	width = [0.02,0.07,0.06,0.048,0.03,0.019,0.01]
+	scatter!(nose[1].+len.*range(0,1,length=length(width)), 
+		nose[2].-len.*width,color=:blue,legend=false)
+	thk = fit(width)
+	x = 0:0.01:1
+	plot!(nose[1].+len.*x, [nose[2].-len.*thk.(x),nose[2].+len.*thk.(x)],color=:blue)
 end
 
 # ╔═╡ d830e69e-f085-495e-be2c-8ea44582fa20
@@ -98,7 +99,7 @@ begin
 	scatter(0:0.2:1, envelope)
 	colors = palette(:cyclic_wrwbw_40_90_c42_n256)
 	for t in 1/12:1/12:1
-		plot!(x,@.(amp(x)*sin(2π/λ*x-2π*t)),color=colors[floor(Int,t*256)])
+		plot!(x,amp.(x).*sin.(2π/λ*x.-2π*t),color=colors[floor(Int,t*256)])
 	end
 	plot!(ylim=(-1.4,1.4),legend=false)
 end
@@ -123,7 +124,7 @@ md"thickness: $@bind T Slider(0.001:0.25:2, show_value=true)"
 
 # ╔═╡ 839db88c-a477-4718-88bb-796ab0cd6591
 begin
-	grid = -1:0.1:2
+	grid = -1:0.05:2
 	segment_sdf(x,y) = (s=clamp(x,0,1); √sum(abs2,(x-s,y-shift))-T*thk(s))
 	contourf(grid,grid,segment_sdf,clim=(-1,2),linewidth=0)
 	contour!(grid,grid,segment_sdf,levels=[0],color=:black) # zero contour
@@ -131,7 +132,7 @@ end
 
 # ╔═╡ f33b9315-b2d1-4fab-91c9-ed3b63fb4d41
 md"""
-With the basic sdf tested out, we're ready to set up the WaterLily simulation using the function `fish` defined below:
+With the basic SDF tested out, we're ready to set up the WaterLily simulation using the function `fish` defined below:
  - The functions `thk` is passed in to create the `sdf` and the function `amp` is passed in to create the traveling wave `map`.
  - The only numerical parameter passed into `fish` is the length of the fish `L` measured in computational cells. This sets the resolution of the simulation and the size of the fluid arrays.
  - The other parameters are the tail amplitude `A` as a fraction of the length, the [Stouhal number](https://en.wikipedia.org/wiki/Strouhal_number) which sets the motion frequency `ω`, and the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number) which sets the fluid viscosity `ν`.
@@ -1517,7 +1518,7 @@ version = "0.9.1+5"
 # ╟─ad96bcbe-4482-4486-b817-e788604d1d96
 # ╟─47eb9e3f-5617-417a-8924-5a38d90390e8
 # ╟─8752bf4d-50e6-42ea-8d43-c41699769f77
-# ╠═468825ca-28e2-4447-ad4a-520d06e9d92d
+# ╠═71c9bc8f-921d-4df4-acc2-7321ce6648e0
 # ╟─d830e69e-f085-495e-be2c-8ea44582fa20
 # ╠═c2b7a082-c05d-41bb-af4c-eb23f6a331bf
 # ╟─ea51f472-7ffc-4062-a45c-1410d26b1c3e
