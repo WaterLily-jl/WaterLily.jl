@@ -1,4 +1,4 @@
-using LinearAlgebra: eigvals,norm2,×,⋅,normalize
+using LinearAlgebra: eigvals,norm2,×,⋅
 """
     ke(I::CartesianIndex,u,U=0)
 
