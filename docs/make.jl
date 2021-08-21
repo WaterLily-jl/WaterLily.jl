@@ -2,7 +2,7 @@ using Documenter, WaterLily
 
 makedocs(
     modules = [WaterLily],
-    repo="https://github.com/gabrielweymouth/WaterLily.jl",
+    repo="https://github.com/weymouth/WaterLily.jl",
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", nothing) == "true",
         canonical="https:/weymouth.github.io/WaterLily.jl/",
