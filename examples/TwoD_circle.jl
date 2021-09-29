@@ -8,4 +8,4 @@ function circle(radius=8;Re=250,n=10,m=6)
     Simulation((n*radius+2,m*radius+2), [1.,0.], radius; ν, body)
 end
 
-# sim_gif!(circle(20);duration=10,step=0.25)
+sim_gif!(circle(20);duration=100,step=0.25)
