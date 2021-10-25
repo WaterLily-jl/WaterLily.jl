@@ -61,7 +61,7 @@ macro loop(args...)
     op,I,R = itr.args
     @assert op ∈ (:(∈),:(in))
     return quote
-        @inbounds @simd for $I ∈ $R
+        @inbounds Threads.@threads for $I ∈ $R
             $ex
         end
     end |> esc
