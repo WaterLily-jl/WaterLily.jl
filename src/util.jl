@@ -75,12 +75,6 @@ macro loop(args...)
             end
         end |> esc
     end
-
-    return quote
-        @inbounds @simd for $I ∈ $R
-            $ex
-        end
-    end |> esc
 end
 
 function median(a,b,c)
