@@ -1,6 +1,4 @@
 using GLMakie
-using AbstractPlotting
-AbstractPlotting.inline!(true)
 
 function volume_video!(sim,data_func;name="file.mp4",duration=1,step=0.1)
     # Set up viz data and figure
