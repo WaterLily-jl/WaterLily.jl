@@ -22,6 +22,8 @@ GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 AbstractPlotting = "537997a7-5e4e-5d89-9595-2241ea00577e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
+JLD = "4138dd39-2aa7-5051-a626-17a0bb65d9c8"
 
 [targets]
-test = ["Test"]
+test = ["Test", "PerformanceTestTools", "JLD"]
