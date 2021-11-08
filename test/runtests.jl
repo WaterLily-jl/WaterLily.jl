@@ -1,5 +1,4 @@
-include("../src/WaterLily.jl")
-using .WaterLily
+using WaterLily
 using Test
 using PerformanceTestTools
 using JLD2
