@@ -1,6 +1,6 @@
 using WaterLily
 using LinearAlgebra: norm2
-using JLD
+using JLD2
 
 function circle(radius=8;Re=250,n=10,m=6)
     center, ν = radius*m/2, radius/Re
@@ -22,7 +22,7 @@ function sim_integrate!(sim;duration=1,step=0.1,verbose=false,
 
 sim = circle(16)
 runtime = sim_integrate!(sim;duration=1,step=0.25)
-filename_u = string(tempdir(), "\\testing_using_threads#",
+filename_u = string(tempdir(), "/testing_using_threads#",
                     Threads.nthreads(), "_u.jld")
 save(filename_u, "data", sim.flow.u)
 # filename_t = string(tempdir(), "\\testing_using_threads#",
