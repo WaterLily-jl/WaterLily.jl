@@ -1,5 +1,23 @@
 using WaterLily
 using Test
+using PerformanceTestTools
+using JLD
+
+@testset "multithreaded equivalence" begin
+    N_multithread = 4
+    PerformanceTestTools.@include_foreach(
+        "tests_using_threads.jl",
+        [["JULIA_NUM_THREADS" => "1"]],
+    )
+    PerformanceTestTools.@include_foreach(
+        "tests_using_threads.jl",
+        [["JULIA_NUM_THREADS" => string(N_multithread)]],
+    )
+    filebase = string(tempdir(), "\\testing_using_threads#")
+    sim1_u = load(string(filebase, 1, "_u.jld"))["data"]
+    sim2_u = load(string(filebase, N_multithread, "_u.jld"))["data"]
+    @test maximum(broadcast(abs, sim1_u-sim2_u)) < 1e-3
+end
 
 @testset "util.jl" begin
     @test L₂(2ones(4,4)) == 16
