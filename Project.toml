@@ -16,14 +16,14 @@ StaticArrays = "^1.1.0"
 julia = "^1.5"
 
 [extras]
-UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
-Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 AbstractPlotting = "537997a7-5e4e-5d89-9595-2241ea00577e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [targets]
 test = ["Test", "PerformanceTestTools", "JLD2"]
