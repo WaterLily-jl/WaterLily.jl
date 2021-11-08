@@ -1,4 +1,5 @@
-using WaterLily
+include("../src/WaterLily.jl")
+using .WaterLily
 using LinearAlgebra: norm2
 using JLD2
 
@@ -23,7 +24,7 @@ function sim_integrate!(sim;duration=1,step=0.1,verbose=false,
 sim = circle(16)
 runtime = sim_integrate!(sim;duration=1,step=0.25)
 filename_u = string(tempdir(), "/testing_using_threads#",
-                    Threads.nthreads(), "_u.jld")
+                    Threads.nthreads(), "_u.jld2")
 save(filename_u, "data", sim.flow.u)
 # filename_t = string(tempdir(), "\\testing_using_threads#",
 #                     Threads.nthreads(), "_t.jld")

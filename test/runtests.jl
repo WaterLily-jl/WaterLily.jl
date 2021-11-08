@@ -1,4 +1,5 @@
-using WaterLily
+include("../src/WaterLily.jl")
+using .WaterLily
 using Test
 using PerformanceTestTools
 using JLD2
@@ -14,8 +15,8 @@ using JLD2
         [["JULIA_NUM_THREADS" => string(N_multithread)]],
     )
     filebase = string(tempdir(), "/testing_using_threads#")
-    sim1_u = load(string(filebase, 1, "_u.jld"))["data"]
-    sim2_u = load(string(filebase, N_multithread, "_u.jld"))["data"]
+    sim1_u = load(string(filebase, 1, "_u.jld2"))["data"]
+    sim2_u = load(string(filebase, N_multithread, "_u.jld2"))["data"]
     @test maximum(broadcast(abs, sim1_u-sim2_u)) < 1e-3
 end
 
