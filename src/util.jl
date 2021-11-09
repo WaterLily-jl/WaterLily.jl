@@ -56,15 +56,25 @@ macro inside(ex)
         WaterLily.@loop $ex over $I ∈ inside($a)
     end |> esc
 end
+
 macro loop(args...)
     ex,_,itr = args
     op,I,R = itr.args
     @assert op ∈ (:(∈),:(in))
-    return quote
-        @inbounds @simd for $I ∈ $R
-            $ex
-        end
-    end |> esc
+
+    if Threads.nthreads()!=1    #multithread mode
+        return quote
+            @inbounds Threads.@threads for $I ∈ $R
+                $ex
+            end
+        end |> esc
+    else
+        return quote            #single thread mode
+            @inbounds @simd for $I ∈ $R
+                $ex
+            end
+        end |> esc
+    end
 end
 
 function median(a,b,c)

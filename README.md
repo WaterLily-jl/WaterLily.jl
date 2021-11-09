@@ -103,6 +103,33 @@ In this example, the `sdf` function defines a line segment from `-L/2 â‰¤ x[2] â
 
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation since it eliminates allocations at every grid cell and time step.
 
+## Note for parallel CPU usage:
+
+By default, Julia starts up with a single thread of execution. The number of execution threads is controlled either by using the -t/--threads command line argument or by using the JULIA_NUM_THREADS environment variable. When both are specified, then -t/--threads takes precedence.
+
+So, do this when launching Julia if you want multiple threads:
+
+```
+julia -t auto
+```
+
+(automatically uses the number of threads on your CPU)
+
+If you prefer to use the environment variable you can set it as follows in Bash (Linux/macOS):
+
+```
+export JULIA_NUM_THREADS=1024
+```
+C shell on Linux/macOS, CMD on Windows:
+```
+set JULIA_NUM_THREADS=4
+```
+Powershell on Windows:
+```
+$env:JULIA_NUM_THREADS=4
+```
+Note that this must be done before starting Julia.
+
 ## Development goals
  - Immerse obstacles defined by 3D meshes or 2D lines using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl).
  - GPU acceleration with [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl).
