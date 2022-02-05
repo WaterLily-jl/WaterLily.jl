@@ -76,28 +76,22 @@ The velocity field is defined by the vector component `i` and the 3D position ve
 
 You can simulate moving bodies in Waterlily by passing a coordinate `map` to `AutoBody` in addition to the `sdf`. 
 ```julia
-using LinearAlgebra: norm2
 using StaticArrays
-function hover(L=2^5;Re=250,U=1,amp=0,thk=1+√2)
-    # Set viscosity
-    ν=U*L/Re
-    @show L,ν
-
-    # Create dynamic block geometry
+function hover(L=2^5;Re=250,U=1,amp=π/4,ϵ=0.5,thk=2ϵ+√2)
+    # Line segment SDF
     function sdf(x,t)
         y = x .- SVector(0.,clamp(x[2],-L/2,L/2))
-        norm2(y)-thk/2
+        √sum(abs2,y)-thk/2
     end
+    # Oscillating motion and rotation
     function map(x,t)
         α = amp*cos(t*U/L); R = @SMatrix [cos(α) sin(α); -sin(α) cos(α)]
-        R * (x.-SVector(3L+L*sin(t*U/L)+0.01,4L))
+        R * (x.-SVector(3L-L*sin(t*U/L),4L))
     end
-    body = AutoBody(sdf,map)
-
-    Simulation((6L+2,6L+2),zeros(2),L;U,ν,body,ϵ=0.5)
+    Simulation((6L+2,6L+2),zeros(2),L;U,ν=U*L/Re,body=AutoBody(sdf,map),ϵ)
 end
 ```
-How to generate a .gif from this can be seen in the examples folder [TwoD_block.jl](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_block.jl).
+How to generate a .gif from this can be seen in the examples folder [TwoD_block.jl](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_hover.jl).
 
 In this example, the `sdf` function defines a line segment from `-L/2 ≤ x[2] ≤ L/2` with a thickness `thk`. To make the line segment move, we define a coordinate tranformation function `map(x,t)`. In this example, the coordinate `x` is shifted by `(3L,4L)` at time `t=0`, which moves the center of the segment to this point. However, the horizontal shift varies harmonically in time, sweeping the segment left and right during the simulation. The example also rotates the segment using the rotation matrix `R = [cos(α) sin(α); -sin(α) cos(α)]` where the angle `α` is also varied harmonically. The combined result is a thin flapping line, similar to a cross-section of a hovering insect wing.
 
