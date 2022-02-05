@@ -40,7 +40,6 @@ function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
             # measure properties and fill arrays at face (i,I)
             for i ∈ 1:N
                 dᵢ,n,V = measure(body,loc(i,I),t)
-                m = √sum(abs2,n); dᵢ /= m; n /= m
                 a.V[I,i] = V[i]
                 a.μ₀[I,i] = μ₀(dᵢ,ϵ)
                 a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
@@ -82,9 +81,21 @@ using ForwardDiff
 ForwardDiff is used to determine the geometric properties from the `sdf`.
 Note: The velocity is determined _soley_ from the optional `map` function.
 """
-measure(body,x,t) = (body.sdf(x,t),                               # d
-                    ForwardDiff.gradient(x->body.sdf(x,t), x),    # n=∇d
-                    -ForwardDiff.derivative(t->body.map(x,t), t)) # V = -dot(X)
+function measure(body,x,t)
+    # eval d=f(x,t), and n̂ = ∇f
+    d = body.sdf(x,t)
+    n = ForwardDiff.gradient(x->body.sdf(x,t), x)
+
+    # correct general implicit fnc f(x₀)=0 to be a psuedo-sdf 
+    #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
+    m = √sum(abs2,n); d /= m; n /= m
+
+    # The velocity depends on the material change of ξ=m(x,t):
+    #   Dm/Dt=0 → ṁ + (dm/dx)ẋ = 0 ∴  ẋ =-(dm/dx)\ṁ
+    J = ForwardDiff.jacobian(x->body.map(x,t), x)
+    dot = ForwardDiff.derivative(t->body.map(x,t), t)
+    return (d,n,-J\dot)
+end
 
 using LinearAlgebra: tr
 """
