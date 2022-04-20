@@ -46,9 +46,9 @@ Simple macro to automate efficient loops over cells excluding ghosts. For exampl
 
 becomes
 
-    @inbounds @simd for I ∈ inside(p)
-        p[I] = sum(I.I)
-    end
+    @loop p[I] = sum(I.I) over I ∈ inside(p)
+        
+See `inside` and `@loop`.
 """
 macro inside(ex)
     a,I = Meta.parse.(split(string(ex.args[1]),union("[",",","]")))
@@ -57,6 +57,27 @@ macro inside(ex)
     end |> esc
 end
 
+"""
+    @loop <expr> over I ∈ R
+
+Simple macro to automate efficient loops. For example
+
+    @loop r[I] += sum(I.I) over I ∈ CartesianIndex(r)
+
+becomes
+
+    @inbounds @simd for I ∈ CartesianIndex(r)
+        r[I] += sum(I.I)
+    end
+
+when running one thread or 
+                
+    @inbounds Threads.@threads for I ∈ CartesianIndex(r)
+        r[I] += sum(I.I)
+    end
+
+when running multithread.                
+"""
 macro loop(args...)
     ex,_,itr = args
     op,I,R = itr.args
