@@ -2,7 +2,7 @@ using WaterLily
 using LinearAlgebra: norm2
 include("ThreeD_Plots.jl")
 
-function TGV(p=6,Re=1e5)
+function TGV(p=4,Re=1e5)
     # Define vortex size, velocity, viscosity
     L = 2^p; U = 1; ν = U*L/Re
 
@@ -24,4 +24,4 @@ function ω_mag_data(sim)
     return @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
 end
 
-sim,fig = volume_video!(TGV(),ω_mag_data,name="TGV.mp4",duration=10)
+sim,fig = volume_video!(TGV(),ω_mag_data;name="TGV.mp4",duration=10)
