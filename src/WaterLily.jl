@@ -1,5 +1,14 @@
 module WaterLily
 
+_nthread = Threads.nthreads()
+if _nthread==1
+    @warn "WaterLily.jl is running on a single thread.\n
+Launch Julia with multiple threads to enable multithreaded capabilities:\n
+    \$julia -t auto $PROGRAM_FILE"
+else
+    print("WaterLily.jl is running on ", _nthread, " thread(s)\n")
+end
+
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc
 
