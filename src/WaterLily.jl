@@ -25,7 +25,7 @@ include("Body.jl")
 export AbstractBody
 
 include("AutoBody.jl")
-export AutoBody,measure!,measure
+export AutoBody,measure!,measure,apply_sdf!
 
 include("Metrics.jl")
 using LinearAlgebra: norm2
@@ -105,9 +105,6 @@ function measure!(sim::Simulation,t=time(sim))
     update!(sim.pois,sim.flow.μ₀)
 end
 
-@fastmath kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
-μ₀(d,ϵ) = kern₀(clamp(d/ϵ,-1,1))
-
 function offset(Bodies, L)
 	"""Creates a different offset for each of the bodies so that when the general map is computed, there is no problem of
 	body spontaneous generation. This offset is then substracted when the individual map is applied where it needs to be thus
@@ -116,20 +113,20 @@ function offset(Bodies, L)
     sdfList = [ (x,t) -> offsetSdf(x,t,i) for i in 1:length(Bodies)]
     mapList = [ (x,t) -> offsetMap(x,t,i) for i in 1:length(Bodies)]
 
-	function offsetSdf(x,t, i)
+	function offsetSdf(x,t,i)
 		xc = x + [0.,(-1)^i * 100*i * L]
 		return Bodies[i][1](xc,t)
 	end
 
-	function offsetMap(x,t, i)
-		xc = x - [0.,(-1)^i * 100*i * L]
-		return Bodies[i][2](xc,t)
+	function offsetMap(x,t,i)
+        xc = Bodies[i][2](x,t)
+        return xc - [0.,(-1)^i * 100*i * L]
 	end
 
 	return (sdfList, mapList)
 end
 
-function addBody(Bodies::Array{SVector{Function, Function}}, L=100)
+function addBody(Bodies, L=100)
 	"""addBody(Bodies::Array{SVector{Function, Function}}, L=100)
     
         Bodies: array of SVector(sdf, map) for each of the independent bodies to add to the window.
@@ -166,5 +163,5 @@ function addBody(Bodies::Array{SVector{Function, Function}}, L=100)
 	return AutoBody(sdf, map)
 end
 
-export Simulation,sim_step!,sim_time,measure!, addBody
+export Simulation,sim_step!,sim_time,measure!,addBody
 end # module
