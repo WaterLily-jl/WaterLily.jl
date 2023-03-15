@@ -1,22 +1,18 @@
 using WaterLily
 using StaticArrays
 
-function block(L=2^5;Re=250,U=1,amp=0,ϵ=0.5,thk=2ϵ+√2)
-    # Set viscosity
-    ν=U*L/Re
-
-    # Create dynamic block geometry
+function block(L=2^5;Re=250,U=1,amp=π/4,ϵ=0.5,thk=2ϵ+√2)
+    # Line segment SDF
     function sdf(x,t)
         y = x .- SVector(0.,clamp(x[2],-L/2,L/2))
         √sum(abs2,y)-thk/2
     end
+    # Oscillating motion and rotation
     function map(x,t)
         α = amp*cos(t*U/L); R = @SMatrix [cos(α) sin(α); -sin(α) cos(α)]
-        R * (x.-SVector(3L+L*sin(t*U/L)+0.01,4L))
+        R * (x.-SVector(3L-L*sin(t*U/L),4L))
     end
-    body = AutoBody(sdf,map)
-
-    Simulation((6L+2,6L+2),zeros(2),L;U,ν,body,ϵ)
+    Simulation((6L+2,6L+2),zeros(2),L;U,ν=U*L/Re,body=AutoBody(sdf,map),ϵ)
 end
 
 using BenchmarkTools

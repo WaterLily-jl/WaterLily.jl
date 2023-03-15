@@ -46,9 +46,9 @@ Simple macro to automate efficient loops over cells excluding ghosts. For exampl
 
 becomes
 
-    @inbounds @simd for I ∈ inside(p)
-        p[I] = sum(I.I)
-    end
+    @loop p[I] = sum(I.I) over I ∈ inside(p)
+        
+See `inside` and `@loop`.
 """
 macro inside(ex)
     a,I = Meta.parse.(split(string(ex.args[1]),union("[",",","]")))
@@ -56,15 +56,46 @@ macro inside(ex)
         WaterLily.@loop $ex over $I ∈ inside($a)
     end |> esc
 end
+
+"""
+    @loop <expr> over I ∈ R
+
+Simple macro to automate efficient loops. For example
+
+    @loop r[I] += sum(I.I) over I ∈ CartesianIndex(r)
+
+becomes
+
+    @inbounds @simd for I ∈ CartesianIndex(r)
+        r[I] += sum(I.I)
+    end
+
+when running one thread or 
+                
+    @inbounds Threads.@threads for I ∈ CartesianIndex(r)
+        r[I] += sum(I.I)
+    end
+
+when running multithread.                
+"""
 macro loop(args...)
     ex,_,itr = args
     op,I,R = itr.args
     @assert op ∈ (:(∈),:(in))
-    return quote
-        @inbounds @simd for $I ∈ $R
-            $ex
-        end
-    end |> esc
+
+    if Threads.nthreads()!=1    #multithread mode
+        return quote
+            @inbounds Threads.@threads for $I ∈ $R
+                $ex
+            end
+        end |> esc
+    else
+        return quote            #single thread mode
+            @inbounds @simd for $I ∈ $R
+                $ex
+            end
+        end |> esc
+    end
 end
 
 function median(a,b,c)
