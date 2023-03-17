@@ -11,8 +11,8 @@ is composed automatically if provided, ie `sdf(x,t) = sdf(map(x,t),t)`.
 struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
     map::F2
-    function AutoBody(sdf,map=(x,t)->x)
-        comp(x,t) = sdf(map(x,t),t)
+    function AutoBody(sdf, map=(x,t)->x; compose=true)
+        comp(x,t) = compose ? sdf(map(x,t),t) : sdf(x,t)
         new{typeof(comp),typeof(map)}(comp, map)
     end
 end
