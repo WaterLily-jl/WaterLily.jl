@@ -1,18 +1,22 @@
 """
-    AutoBody(sdf,map=(x,t)->x) <: AbstractBody
+    AutoBody(sdf,map=(x,t)->x; compose=true) <: AbstractBody
 
     - sdf(x::AbstractVector,t::Real)::Real: signed distance function
     - map(x::AbstractVector,t::Real)::AbstractVector: coordinate mapping function
+    - compose::Bool: if true, automatically compose the `map`, ie `sdf(x,t) = sdf(map(x,t),t)`
+                        else, `sdf` and `map` remain independent
 
 Define a geometry by its `sdf` and optional coordinate `map`. All other
 properties are determined using Automatic Differentiation. Note: the `map`
-is composed automatically if provided, ie `sdf(x,t) = sdf(map(x,t),t)`.
+is composed automatically if compose is set to `true`, ie `sdf(x,t) = sdf(map(x,t),t)`. 
+Both parameters remain independent otherwise. It can be particularly heplful to set it as 
+false when adding mulitple bodies together to create a more complexe one.
 """
 struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
     map::F2
-    function AutoBody(sdf,map=(x,t)->x)
-        comp(x,t) = sdf(map(x,t),t)
+    function AutoBody(sdf, map=(x,t)->x; compose=true)
+        comp(x,t) = compose ? sdf(map(x,t),t) : sdf(x,t)
         new{typeof(comp),typeof(map)}(comp, map)
     end
 end

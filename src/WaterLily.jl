@@ -25,7 +25,7 @@ include("Body.jl")
 export AbstractBody
 
 include("AutoBody.jl")
-export AutoBody,measure!,measure
+export AutoBody,measure!,measure,apply_sdf!
 
 include("Metrics.jl")
 using LinearAlgebra: norm2
@@ -104,6 +104,30 @@ function measure!(sim::Simulation,t=time(sim))
     measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
     update!(sim.pois,sim.flow.μ₀)
 end
+
+function addBodies(bodies...)
+    map(x,t) = argmin(body->body.sdf(x,t),bodies).map(x,t)
+    sdf(x,t) = minimum(body->body.sdf(x,t),bodies)
+    AutoBody(sdf,map,compose=false)
+end
+
+function intersectBodies(bodies...)
+    map(x,t) = argmin(body->body.sdf(x,t),bodies).map(x,t)
+    sdf(x,t) = maximum(body->body.sdf(x,t),bodies)
+    AutoBody(sdf,map,compose=false)
+end
+
+function morphBodies(A::AutoBody, B::AutoBody, morph)
+    map(x,t) = argmin(body->body.sdf(x,t),[A,B]).map(x,t)
+    sdf(x,t) = morph(A.sdf(x,t),B.sdf(x,t),t)
+    AutoBody(sdf,map,compose=false)
+end
+
+Base.:+(x::AutoBody, y::AutoBody) = addBodies(x,y)
+Base.:∪(x::AutoBody, y::AutoBody) = addBodies(x,y)
+Base.:∩(x::AutoBody, y::AutoBody) = intersectBodies(x,y)
+Base.:-(x::AutoBody) = AutoBody((d,t)->-x.sdf(d,t),x.map,compose=false)
+Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 
 export Simulation,sim_step!,sim_time,measure!
 end # module
