@@ -126,7 +126,8 @@ end
 Base.:+(x::AutoBody, y::AutoBody) = addBodies(x,y)
 Base.:∪(x::AutoBody, y::AutoBody) = addBodies(x,y)
 Base.:∩(x::AutoBody, y::AutoBody) = intersectBodies(x,y)
-Base.:-(x::AutoBody, y::AutoBody) = intersectBodies(x,AutoBody((d,t)->-y.sdf(d,t),y.map,compose=false))
+Base.:-(x::AutoBody) = AutoBody((d,t)->-x.sdf(d,t),x.map,compose=false)
+Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 
 export Simulation,sim_step!,sim_time,measure!
 end # module
