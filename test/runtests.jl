@@ -81,17 +81,25 @@ end
 
 @testset "AutoBody.jl" begin
     using LinearAlgebra: norm2
-    body = AutoBody((x,t)->norm2(x)-2-t)
-    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
-    @test all(measure(body,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.,0.,0.]))
-    body = AutoBody((x,t)->norm2(x)-2,(x,t)->x.+t^2)
-    @test all(measure(body,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
-    @test all(WaterLily.measure(body,[1.,-1.,-1.],1.).≈(0.,[1.,0.,0.],[-2.,-2.,-2.]))
+
+    # test AutoDiff in 2D and 3D
+    body1 = AutoBody((x,t)->norm2(x)-2-t)
+    @test all(measure(body1,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
+    @test all(measure(body1,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.,0.,0.]))
+    body2 = AutoBody((x,t)->norm2(x)-2,(x,t)->x.+t^2)
+    @test all(measure(body2,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
+    @test all(measure(body2,[1.,-1.,-1.],1.).≈(0.,[1.,0.,0.],[-2.,-2.,-2.]))
+
+    #test booleans
+    @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
+    @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+
+    # test fast apply_sdf matches exhaustive sdf
     dims = (2^5,2^5)
     sdf(x) = norm2(x.-2^4)-4π
     a = zeros(dims); WaterLily.apply_sdf!(sdf,a)
     b = zeros(dims); @inside b[I] = sdf(WaterLily.loc(0,I))
-    @test all(@. (a==b) | (abs(b)>2))
+    @test all(@. clamp(a,-2,2)==clamp(b,-2,2))
 end
 
 @testset "Flow.jl" begin

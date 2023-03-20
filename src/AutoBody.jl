@@ -21,6 +21,24 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     end
 end
 
+function addBodies(bodies...)
+    map(x,t) = argmin(body->body.sdf(x,t),bodies).map(x,t)
+    sdf(x,t) = minimum(body->body.sdf(x,t),bodies)
+    AutoBody(sdf,map,compose=false)
+end
+
+function intersectBodies(bodies...)
+    map(x,t) = argmax(body->body.sdf(x,t),bodies).map(x,t)
+    sdf(x,t) = maximum(body->body.sdf(x,t),bodies)
+    AutoBody(sdf,map,compose=false)
+end
+
+Base.:+(x::AutoBody, y::AutoBody) = addBodies(x,y)
+Base.:∪(x::AutoBody, y::AutoBody) = addBodies(x,y)
+Base.:∩(x::AutoBody, y::AutoBody) = intersectBodies(x,y)
+Base.:-(x::AutoBody) = AutoBody((d,t)->-x.sdf(d,t),x.map,compose=false)
+Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
+
 """
     measure!(flow::Flow, body::AutoBody; t=0, ϵ=1)
 
