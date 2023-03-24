@@ -57,6 +57,7 @@ macro inside(ex)
     end |> esc
 end
 
+using Polyester
 """
     @loop <expr> over I ∈ R
 
@@ -66,36 +67,22 @@ Simple macro to automate efficient loops. For example
 
 becomes
 
-    @inbounds @simd for I ∈ CartesianIndex(r)
+    @inbounds Polyester.@batch for I ∈ CartesianIndex(r)
         r[I] += sum(I.I)
     end
 
-when running one thread or 
-                
-    @inbounds Threads.@threads for I ∈ CartesianIndex(r)
-        r[I] += sum(I.I)
-    end
-
-when running multithread.                
+using package Polyester to apply loop vectorization and multithreading.
 """
 macro loop(args...)
     ex,_,itr = args
     op,I,R = itr.args
     @assert op ∈ (:(∈),:(in))
 
-    if Threads.nthreads()!=1    #multithread mode
-        return quote
-            @inbounds Threads.@threads for $I ∈ $R
-                $ex
-            end
-        end |> esc
-    else
-        return quote            #single thread mode
-            @inbounds @simd for $I ∈ $R
-                $ex
-            end
-        end |> esc
-    end
+    return quote
+        @inbounds Polyester.@batch for $I ∈ $R
+            $ex
+        end
+    end |> esc
 end
 
 function median(a,b,c)

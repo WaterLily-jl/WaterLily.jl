@@ -10,10 +10,10 @@ end
 function restrictL!(a,b)
     N,n = size_u(a)
     for i ∈ 1:n
-        @loop a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i)) over I ∈ inside(N)
+        @loop a[I,i] = 0.5sum(@inbounds(b[up(I,i),i])) over I ∈ inside(N)
     end
 end
-restrict!(a,b) = @inside a[I] = sum(@inbounds(b[J]) for J ∈ up(I))
+restrict!(a,b) = @inside a[I] = sum(@inbounds(b[up(I)]))
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(N) = mod(N,2)==0 && N>4
