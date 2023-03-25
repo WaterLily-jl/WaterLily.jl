@@ -120,6 +120,6 @@ function solver!(x,p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
         nᵖ+=1
     end
     x .= p.x
-    push!(p.n,nᵖ)
+    _ENABLE_PUSH && push!(p.n,nᵖ)
     log && return res
 end

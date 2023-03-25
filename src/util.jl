@@ -85,6 +85,10 @@ macro loop(args...)
     end |> esc
 end
 
+_ENABLE_PUSH = true
+DISABLE_PUSH() = (global _ENABLE_PUSH = false)
+ENABLE_PUSH() = (global _ENABLE_PUSH = true)
+
 function median(a,b,c)
     if a>b
         b>=c && return b

@@ -1,19 +1,18 @@
 @inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 @inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
+@fastmath @inline restrict(I::CartesianIndex,b) = sum(@inbounds(b[J]) for J ∈ up(I))
+@fastmath @inline restrictL(I::CartesianIndex,i,b) = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i))
 
 function restrictML(b::AbstractArray{T}) where T
     N,n = size_u(b)
-    a = zeros(T,map(i->1+i÷2,N)...,n)
-    restrictL!(a,b)
+    Na = map(i->1+i÷2,N)
+    a = zeros(T,Na...,n)
+    for i ∈ 1:n
+        @loop a[I,i] = restrictL(I,i,b) over I ∈ inside(Na)
+    end
     Poisson(a)
 end
-function restrictL!(a,b)
-    N,n = size_u(a)
-    for i ∈ 1:n
-        @loop a[I,i] = 0.5sum(@inbounds(b[up(I,i),i])) over I ∈ inside(N)
-    end
-end
-restrict!(a,b) = @inside a[I] = sum(@inbounds(b[up(I)]))
+restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(N) = mod(N,2)==0 && N>4
@@ -74,6 +73,6 @@ function solver!(x,ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
         nᵖ+=1
     end
     x .= p.x
-    push!(ml.n,nᵖ)
+    _ENABLE_PUSH && push!(ml.n,nᵖ)
     log && return res
 end

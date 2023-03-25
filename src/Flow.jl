@@ -99,7 +99,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     conv_diff!(a.f,a.u,ν=a.ν)
     BDIM!(a); BC!(a.u,a.U,2)
     project!(a,b,2); a.u ./= 2; BC!(a.u,a.U)
-    push!(a.Δt,CFL(a))
+    _ENABLE_PUSH && push!(a.Δt,CFL(a))
 end
 
 function CFL(a::Flow{n}) where n
