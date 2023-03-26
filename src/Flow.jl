@@ -6,23 +6,25 @@
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(@inbounds ∂(i,I,u) for i ∈ 1:m)
 
-@fastmath function tracer_transport!(r,f,u;Pe=0.1)
+@fastmath function tracer_transport!(r,f,u,Φ;Pe=0.1)
     N,n = size_u(u)
     for j ∈ 1:n
         @loop r[I] += ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f) over I ∈ slice(N,2,j,2)
-        @loop (Φ = ϕu(j,I,f,u[I,j])-Pe*∂(j,I,f);
-                r[I] += Φ; r[I-δ(j,I)] -= Φ) over I ∈ inside_u(N,j)
+        @loop Φ[I] = ϕu(j,I,f,u[I,j])-Pe*∂(j,I,f) over I ∈ inside_u(N,j)
+        @loop r[I] += Φ[I] over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I)] -= Φ[I] over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I)] -= ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f) over I ∈ slice(N,N[j],j,2)
     end
 end
 
-@fastmath function conv_diff!(r,u;ν=0.1)
+@fastmath function conv_diff!(r,u,Φ;ν=0.1)
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         @loop r[I,i] += ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-        @loop (Φ = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u);
-                r[I,i] += Φ; r[I-δ(j,I),i] -= Φ) over I ∈ inside_u(N,j)
+        @loop Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u) over I ∈ inside_u(N,j)
+        @loop r[I,i] += Φ[I] over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
     end
 end
@@ -92,11 +94,11 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u; a.u .= 0
     # predictor u → u'
-    conv_diff!(a.f,a.u⁰,ν=a.ν)
+    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν)
     BDIM!(a); BC!(a.u,a.U)
     project!(a,b); BC!(a.u,a.U)
     # corrector u → u¹
-    conv_diff!(a.f,a.u,ν=a.ν)
+    conv_diff!(a.f,a.u,a.σ,ν=a.ν)
     BDIM!(a); BC!(a.u,a.U,2)
     project!(a,b,2); a.u ./= 2; BC!(a.u,a.U)
     _ENABLE_PUSH && push!(a.Δt,CFL(a))

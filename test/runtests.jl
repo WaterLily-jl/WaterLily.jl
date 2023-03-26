@@ -2,6 +2,7 @@ using WaterLily
 using Test
 using PerformanceTestTools
 using JLD2
+using Polyester
 
 @testset "multithreaded equivalence" begin
     N_multithread = 2

@@ -161,7 +161,7 @@ Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
 """
 function BC!(a)
     N = size(a)
-    for j ∈ 1:length(N)
+    for j ∈ eachindex(N)
         @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
