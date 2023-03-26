@@ -29,14 +29,35 @@ end
 # end
 
 # Benchmark
-using BenchmarkTools
+using BenchmarkTools,DataFrames,CSV
 function benchmark_sim(sim)
-    sim_step!(sim,1)
+    sim_step!(sim,0.1)
     WaterLily.DISABLE_PUSH()
-    @btime mom_step!(sim2.flow,sim2.pois) setup=(sim2=$sim) seconds=20
+    a = @benchmark mom_step!(sim2.flow,sim2.pois) setup=(sim2=$sim) seconds=20 samples=1000
     WaterLily.ENABLE_PUSH()
+    a = minimum(a)
+    b = Dict(key => getfield(a, key) for key in propertynames(a))
+    b[:n] = length(sim.flow.u)
+    return b
 end
+function create_CSV(N,twoD)
+    df = DataFrame((@show n;benchmark_sim(sphere_example(n,twoD))) for n ∈ N)
+    select!(df,Not([:params]))
+    CSV.write("benchmark\\threads"*string(Threads.nthreads())*"_2D"*string(twoD)*".csv",df)
+end
+create_CSV(2 .^ (3:8),true)
+create_CSV(2 .^ (3:6),false)
+
 begin
-    sim = sphere_example(16,false);
-    benchmark_sim(sim)
+    using Plots
+    plot(xaxis=("length u",:log10), yaxis=("time (ns)",:log10))
+    df = DataFrame(CSV.File("benchmark\\threads1_2Dtrue.csv"))
+    scatter!(df.n,df.time,label="2D, single threaded")
+    df = DataFrame(CSV.File("benchmark\\threads20_2Dtrue.csv"))
+    scatter!(df.n,df.time,label="2D, multi-threaded")
+    df = DataFrame(CSV.File("benchmark\\threads1_2Dfalse.csv"))
+    scatter!(df.n,df.time,label="3D, single threaded")
+    df = DataFrame(CSV.File("benchmark\\threads20_2Dfalse.csv"))
+    scatter!(df.n,df.time,label="3D, multi-threaded")
+    savefig("benchmark\\benchmark.png")
 end

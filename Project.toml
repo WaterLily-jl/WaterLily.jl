@@ -19,6 +19,7 @@ julia = "^1.5"
 [extras]
 AbstractPlotting = "537997a7-5e4e-5d89-9595-2241ea00577e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
