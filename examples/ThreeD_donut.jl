@@ -28,5 +28,5 @@ function body_data(sim)
     @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
 end
 
-sim,center = donut()
-sim,fig = contour_video!(sim,ω_θ_data,body_data,name="donut.mp4",duration=10)
+sim,center = donut();
+sim,fig = contour_video!(sim,ω_θ_data,body_data,name="donut.mp4",duration=10);

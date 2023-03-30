@@ -1,14 +1,12 @@
 using GLMakie
 
-function volume_video!(sim,data_func;name="file.mp4",duration=1,step=0.1; framerate = 30, compression = 20)
+function volume_video!(sim,data_func;name="file.mp4",duration=1,step=0.1,framerate = 30, compression = 20)
     # Set up viz data and figure
     dat = Observable(data_func(sim))
     fig, ax, plt = volume(
         dat,
         colorrange=(π,4π),
-        algorithm=:absorption,
-        axis = (backgroundcolor = RGBf0(0.9, 0.9, 0.9),)
-    )
+        algorithm=:absorption)
 
     # Run simulation and update figure data
     t₀ = round(sim_time(sim))
@@ -21,7 +19,7 @@ function volume_video!(sim,data_func;name="file.mp4",duration=1,step=0.1; framer
     return sim,fig
 end
 
-function contour_video!(sim,data_func,geom_func;name="file.mp4",duration=1,step=0.1; framerate = 30, compression = 20)
+function contour_video!(sim,data_func,geom_func;name="file.mp4",duration=1,step=0.1,framerate = 30, compression = 20)
     # Set up viz data and figure
     fig, ax, plt1 = contour(geom_func(sim), levels=[0.5])
     dat = Observable(data_func(sim))
