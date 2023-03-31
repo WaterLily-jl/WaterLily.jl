@@ -1,10 +1,10 @@
 using KernelAbstractions,CUDA,CUDA.CUDAKernels,Adapt,OffsetArrays
 using OffsetArrays: Origin
 CUDA.allowscalar(false)
-struct Flow{D,D1,T}
+struct Flow{Scal,Vect}
     backend :: Backend
-    u :: AbstractArray{T,D1}
-    σ :: AbstractArray{T,D}
+    u :: Vect
+    σ :: Scal
     function Flow(N::NTuple{D}; backend = CPU(), T = Float32) where D
         ArrayT = (backend == CUDABackend()) ? CuArray : Array
         Nd = (N...,D); Od = (zeros(Int,D)...,1)
@@ -13,7 +13,7 @@ struct Flow{D,D1,T}
 
         u = vect()
         σ = scal()
-        new{D,D+1,T}(backend,u,σ)
+        new{typeof(σ),typeof(u)}(backend,u,σ)
     end
 end
 Base.size(a::Flow) = size(a.σ).-2
@@ -32,9 +32,8 @@ end
     div[I] = div_operator(I,u)
 end
 divergence!(a::Flow) = div_kernel(a.backend,64)(a.σ,a.u,ndrange=size(a))
-divergence!(div,u,backend) = div_kernel(backend,64)(div,u,ndrange=size(div).-2)
-div_serial!(div,u) = @inbounds @simd for I in CartesianIndices(size(div).-2)
-    div[I] = div_operator(I,u)
+div_serial!(a::Flow) = @inbounds @simd for I in CartesianIndices(size(a))
+    a.σ[I] = div_operator(I,a.u)
 end
 
 begin # Test the correctness of the kernels
@@ -42,7 +41,7 @@ begin # Test the correctness of the kernels
     flowGPU = Flow(N; backend=CUDABackend());
     flowCPU = Flow(N); flowCPU.u .= adapt(Array,flowGPU.u);
 
-    div_serial!(flowCPU.σ,flowCPU.u)
+    div_serial!(flowCPU)
     σ = copy(flowCPU.σ); 
     fill!(flowCPU.σ,0);
 
@@ -59,7 +58,7 @@ begin
     flowGPU = Flow(N; backend=CUDABackend());
     flowCPU = Flow(N; backend=CPU());
 
-    @btime div_serial!($flowCPU.σ,$flowCPU.u) # 200.900 μs (0 allocations: 0 bytes)
-    @btime divergence!($flowCPU.σ,$flowCPU.u,$flowCPU.backend) # 121.100 μs (209 allocations: 18.23 KiB)
-    @btime divergence!($flowGPU.σ,$flowGPU.u,$flowGPU.backend) #   2.987 μs (64 allocations: 3.14 KiB)
+    @btime div_serial!($flowCPU) # 200.900 μs (0 allocations: 0 bytes)
+    @btime divergence!($flowCPU) # 104.000 μs (206 allocations: 17.94 KiB)
+    @btime divergence!($flowGPU) #   2.600 μs (61 allocations: 3.06 KiB)
 end
