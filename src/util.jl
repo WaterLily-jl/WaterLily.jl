@@ -8,6 +8,24 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 @inline δ(i,N::Int) = CI(ntuple(j -> j==i ? 1 : 0, N))
 @inline δ(i,I::CartesianIndex{N}) where {N} = δ(i,N)
 
+# """
+#     O(D=0, d=1)
+
+# Returns the Offset.Origin function for a D-dimensional array.
+# O() returns Origin(0).
+# O(D) returns the origin for a vector field array: O(2) = Origin(0, 0, 1), where the
+# last dimension has no offset since it refers to the vector dimensions.
+# O(D, d) same as O(D) but with repeated ones in the last dimensions: O(2, 2) = Origin(0, 0, 1, 1).
+# """
+# O(D=0, d=1) = OffsetArrays.Origin(D > 0 ? (zeros(Int, D)..., ones(Int, d)...) : 0)
+
+# """
+#     ArrayT
+
+# Alias for CPU Array or GPU CuArray depending on the backend.
+# """
+# ArrayT = (backend == CPU()) ? Array : CuArray
+
 """
     inside(dims)
     inside(a) = inside(size(a))
@@ -47,12 +65,12 @@ Simple macro to automate efficient loops over cells excluding ghosts. For exampl
 becomes
 
     @loop p[I] = sum(I.I) over I ∈ inside(p)
-        
+
 See `inside` and `@loop`.
 """
 macro inside(ex)
     a,I = Meta.parse.(split(string(ex.args[1]),union("[",",","]")))
-    return quote 
+    return quote
         WaterLily.@loop $ex over $I ∈ inside($a)
     end |> esc
 end
@@ -122,14 +140,14 @@ function apply!(f,c)
 end
 
 """
-    slice(dims,i,j,low=1)
+    slice(dims,i,j,low=1,trim=0)
 
 Return `CartesianIndices` range slicing through an array of size `dims` in
 dimension `j` at index `i`. `low` optionally sets the lower extent of the range
-in the other dimensions.
+in the other dimensions. `trim` removes elements from the back indices.
 """
-function slice(dims::NTuple{N},i,j,low=1) where N
-    CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
+function slice(dims::NTuple{N}, i, j, low = 1, trim = 0) where N
+    CartesianIndices(ntuple(k-> k == j ? (i:i) : (low:dims[k] - trim), N))
 end
 
 """
@@ -153,6 +171,21 @@ function BC!(a,A,f=1)
         end
     end
 end
+# function BC!(u, U, bc, f = 1.0)
+#     _BC!(backend, 64)(u, U, bc, f, ndrange=size(bc))
+# end
+# @kernel function _BC!(u, @Const(U), @Const(bc), @Const(f))
+#     i = @index(Global, Linear)
+#     ghostI, donorI, di = bc[i][1], bc[i][2], bc[i][3]
+#     _, D = size_u(u)
+#     for d ∈ 1:D
+#         if d == di
+#             u[ghostI, d] = f * U[d]
+#         else
+#             u[ghostI, d] = u[donorI, d]
+#         end
+#     end
+# end
 
 """
     BC!(a)
@@ -166,3 +199,11 @@ function BC!(a)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
 end
+# function BC!(u, bc)
+#     _BC!(backend, 64)(u, bc, ndrange=size(bc))
+# end
+# @kernel function _BC!(u, @Const(bc))
+#     i = @index(Global, Linear)
+#     ghostI, donorI = bc[i][1], bc[i][2]
+#     u[ghostI] = u[donorI]
+# end
