@@ -22,22 +22,22 @@ end
 @inline δ(i,I::CartesianIndex{N}) where {N} = δ(i,N)
 adapt!(u) = backend == CPU() ? u : adapt(CuArray, u)
 
-struct Flow{N, M, P, T}
+struct Flow{D, V, S, F, B, T}
     # Fluid fields
-    u :: AbstractArray{T, M} # velocity vector
-    u⁰:: AbstractArray{T, M} # previous velocity
-    f :: AbstractArray{T, M} # force vector
-    p :: AbstractArray{T, N} # pressure scalar
-    σ :: AbstractArray{T, N} # divergence scalar
+    u :: V # velocity vector
+    u⁰:: V # previous velocity
+    f :: V # force vector
+    p :: S # pressure scalar
+    σ :: S # divergence scalar
     # BDIM fields
-    V :: AbstractArray{T, M} # body velocity vector
-    σᵥ:: AbstractArray{T, N} # body velocity divergence
-    μ₀:: AbstractArray{T, M} # zeroth-moment on faces
-    μ₁:: AbstractArray{T, P} # first-moment vector on faces
+    V :: V # body velocity vector
+    σᵥ:: S # body velocity divergence
+    μ₀:: V # zeroth-moment on faces
+    μ₁:: F # first-moment vector on faces
     # Non-fields
-    bc:: AbstractVector{Tuple{CartesianIndex{N}, CartesianIndex{N}, Int}}
-    U :: NTuple{N, T}  # domain boundary values
-    Δt:: AbstractVector{T}  # time step
+    bc:: B
+    U :: NTuple{D, T}  # domain boundary values
+    Δt:: Vector{T}  # time step
     ν :: T                  # kinematic viscosity
     function Flow(N::NTuple{D}, U; Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64) where D
         Ng = N .+ 2
@@ -66,7 +66,7 @@ struct Flow{N, M, P, T}
         BC!(μ₀, tuple(zeros(T, D)...), bc)
         μ₁ = zeros(T, Ng..., D, D) |> O(D, 2) |> adapt!
 
-        new{D,D+1,D+2,T}(u,u⁰,f,p,σ,V,σᵥ,μ₀,μ₁,bc,U,T[Δt]|>adapt!,ν)
+        new{D,typeof(u),typeof(p),typeof(μ₁),typeof(bc),T}(u,u⁰,f,p,σ,V,σᵥ,μ₀,μ₁,bc,U,T[Δt],ν)
     end
 end
 
