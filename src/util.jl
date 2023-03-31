@@ -15,8 +15,7 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _scalar_ array `a` with `dims=size(a)`.
 """
-@inline inside(dims::NTuple{N}) where {N} = CartesianIndices(ntuple(i-> 2:dims[i]-1,N))
-@inline inside(a::AbstractArray) = inside(size(a))
+@inline inside(a::AbstractArray) = CartesianIndices(map(ax->first(ax)+1:last(ax)-1,axes(a)))
 
 """
     inside_u(dims,j)

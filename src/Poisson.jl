@@ -18,25 +18,25 @@ To help iteratively solve the system above, the Poisson structure holds
 helper arrays for inv(D), the error ϵ, and residual r=b-Ax. An iterative
 solution method then estimates the error ϵ=̃A⁻¹r and increments x+=ϵ, r-=Aϵ.
 """
-abstract type AbstractPoisson{N,M,T} end
-struct Poisson{N,M,T} <: AbstractPoisson{N,M,T}
-    L :: Array{T,M} # Lower diagonal coefficients
-    D :: Array{T,N} # Diagonal coefficients
-    iD :: Array{T,N} # 1/Diagonal
-    x :: Array{T,N} # approximate solution
-    ϵ :: Array{T,N} # increment/error
-    r :: Array{T,N} # residual
+abstract type AbstractPoisson{T,S,V} end
+struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+    L :: V # Lower diagonal coefficients
+    D :: S # Diagonal coefficients
+    iD :: S # 1/Diagonal
+    x :: S # approximate solution
+    ϵ :: S # increment/error
+    r :: S # residual
     n :: Vector{Int16}    # pressure solver iterations
-    function Poisson(L::AbstractArray{T}) where T
-        N,n = size_u(L)
-        x,ϵ,r,D,iD = zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N),zeros(T,N)
+    function Poisson(x::AbstractArray{T},L::AbstractArray{T}) where T
+        @assert axes(x) == axes(L)[1:end-1] 
+        @assert axes(L)[end] == Base.OneTo(length(axes(x)))
+        r = similar(x); fill!(r,0)
+        ϵ,D,iD = copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
-        new{n,n+1,T}(L,D,iD,x,ϵ,r,[])
+        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,[])
     end
 end
 
-@fastmath @inline diag(I::CartesianIndex{d},L) where {d} =
-    -sum(@inbounds(L[I,i]+L[I+δ(i,I),i]) for i ∈ 1:d)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
     @inside iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
@@ -44,10 +44,27 @@ end
 set_diag!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 update!(p::Poisson,L) = (p.L .= L; set_diag!(p))
 
-@fastmath @inline multL(I::CartesianIndex{d},L,x) where {d} =
-    sum(@inbounds(x[I-δ(a,I)]*L[I,a]) for a ∈ 1:d)
-@fastmath @inline multU(I::CartesianIndex{d},L,x) where {d} =
-    sum(@inbounds(x[I+δ(a,I)]*L[I+δ(a,I),a]) for a ∈ 1:d)
+@fastmath @inline function diag(I::CartesianIndex{d},L) where {d}
+    s = zero(eltype(L))
+    for i in 1:d
+        s -= @inbounds(L[I,i]+L[I+δ(i,I),i])
+    end
+    return s
+end
+@fastmath @inline function multL(I::CartesianIndex{d},L,x) where {d}
+    s = zero(eltype(L))
+    for i in 1:d
+        s = @inbounds(x[I-δ(i,I)]*L[I,i])
+    end
+    return s
+end
+@fastmath @inline function multU(I::CartesianIndex{d},L,x) where {d}
+    s = zero(eltype(L))
+    for i in 1:d
+        s = @inbounds(x[I+δ(i,I)]*L[I+δ(i,I),i])
+    end
+    return s
+end
 @fastmath @inline mult(I,L,D,x) = @inbounds(x[I]*D[I])+multL(I,L,x)+multU(I,L,x)
 
 """
@@ -58,7 +75,7 @@ Efficient function for Poisson matrix-vector multiplication. Allocates and retur
 """
 function mult(p::Poisson,x)
     @assert size(p.x)==size(x)
-    b = zeros(size(p.x))
+    b = similar(x); fill!(b,0)
     @inside b[I] = mult(I,p.L,p.D,x)
     return b
 end
@@ -108,9 +125,8 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
     `tol`: Convergence tolerance on the `L₂`-norm residual.
     'itmx': Maximum number of iterations
 """
-function solver!(x,p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
-    @assert size(p.x)==size(x)
-    p.x .= x
+function solver!(p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
+    @assert size(p.x)==size(b)
     residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])
     nᵖ=0
@@ -119,7 +135,6 @@ function solver!(x,p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
         log && push!(res,r₂)
         nᵖ+=1
     end
-    x .= p.x
     _ENABLE_PUSH && push!(p.n,nᵖ)
     log && return res
 end
