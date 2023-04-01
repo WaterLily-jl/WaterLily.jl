@@ -74,7 +74,6 @@ macro inside(ex)
     end |> esc
 end
 
-using Polyester
 """
     @loop <expr> over I ∈ R
 
@@ -96,7 +95,7 @@ macro loop(args...)
     @assert op ∈ (:(∈),:(in))
 
     return quote
-        @inbounds Polyester.@batch for $I ∈ $R
+        @inbounds @simd for $I ∈ $R
             $ex
         end
     end |> esc
