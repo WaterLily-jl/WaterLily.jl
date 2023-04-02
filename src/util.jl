@@ -148,6 +148,28 @@ function slice(dims::NTuple{N}, i, j, low = 1, trim = 0) where N
     CartesianIndices(ntuple(k-> k == j ? (i:i) : (low:dims[k] - trim), N))
 end
 
+# """
+#     bc_indices(Ng)
+
+# Given an array size Ng = (N, M, ...), that includes the ghost cells, it returns a
+# Vector of Tuple(s) in which each Tuple is composed of a ghost cell CartesianIndex,
+# its respective donor cell CartesianIndex, and the normal direction between them:
+# [Tuple{CartesianIndex, CartesianIndex, Int}, ...]
+# """
+# function bc_indices(Ng)
+#     D = length(Ng)
+#     bc_list = Tuple{CartesianIndex, CartesianIndex, Int}[]
+#     for d ∈ 1:D
+#         slice_ghost_start = slice(Ng, 0, d, 1, 2)
+#         slice_donor_start = slice_ghost_start .+ δ(d, D)
+#         slice_ghost_end = slice(Ng, Ng[d] - 1, d, 1, 2)
+#         slice_donor_end = slice_ghost_end .- δ(d, D)
+#         push!(bc_list, zip(slice_ghost_start, slice_donor_start, ntuple(x -> d, length(slice_ghost_start)))...,
+#             zip(slice_ghost_end, slice_donor_end, ntuple(x -> d, length(slice_ghost_end)))...)
+#     end
+#     return Tuple.(bc_list)
+# end
+
 """
     BC!(a,A,f=1)
 
