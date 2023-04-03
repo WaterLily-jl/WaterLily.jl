@@ -25,4 +25,3 @@ function ω_mag_data(sim)
 end
 
 sim,fig = volume_video!(TGV(),ω_mag_data,name="TGV.mp4",duration=10);
-sim,fig = contour_video!(TGV(),ω_mag_data,name="TGV.mp4",duration=2);
