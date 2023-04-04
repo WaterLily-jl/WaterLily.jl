@@ -1,7 +1,6 @@
 using WaterLily
 using Test
-using CUDA
-CUDA.allowscalar(true) # need for tests
+using CUDA: cu, @allowscalar, allowscalar
 
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -26,7 +25,7 @@ CUDA.allowscalar(true) # need for tests
     for f ∈ [identity, cu]
         u = zeros(5,5,2) |> OA(2) |> f
         apply!((i,x)->x[i],u)
-        @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
+        @allowscalar @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
 
         Ng, D, U = (4, 4), 2, (1.0, 0.5) # (2, 2) with ghost cells, 2 dimensions
         u = rand(Ng..., D) |> OA(D) |> f # vector
@@ -34,9 +33,11 @@ CUDA.allowscalar(true) # need for tests
         bc = WaterLily.bc_indices(Ng) |> f # bcs list
         BC!(u, U, bc)
         BC!(σ, bc)
-        @test u[0, 1, 1] == U[1] && u[3, 1, 1] == U[1] && u[1, 0, 1] == u[1, 1, 1] && u[1, 3, 1] == u[1, 2, 1] # test 1st dimension
-        @test u[0, 1, 2] == u[1, 1, 2] && u[3, 1, 2] == u[2, 1, 2] && u[1, 0, 2] == U[2] && u[1, 3, 2] == U[2] # test 2nd dimension
-        @test σ[0, 1] == σ[1, 1] && σ[3, 1] == σ[2, 1] && σ[1, 0] == σ[1, 1] && σ[1, 3] == σ[1, 2]
+        allowscalar() do
+            @test u[0, 1, 1] == U[1] && u[3, 1, 1] == U[1] && u[1, 0, 1] == u[1, 1, 1] && u[1, 3, 1] == u[1, 2, 1] # test 1st dimension
+            @test u[0, 1, 2] == u[1, 1, 2] && u[3, 1, 2] == u[2, 1, 2] && u[1, 0, 2] == U[2] && u[1, 3, 2] == U[2] # test 2nd dimension
+            @test σ[0, 1] == σ[1, 1] && σ[3, 1] == σ[2, 1] && σ[1, 0] == σ[1, 1] && σ[1, 3] == σ[1, 2]
+        end
     end
 end
 
