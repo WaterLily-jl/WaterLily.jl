@@ -1,4 +1,5 @@
 using WaterLily
+using KernelAbstractions, CUDA
 using Test
 
 @testset "util.jl" begin
@@ -8,7 +9,6 @@ using Test
 
     p = Float64[i+j  for i ∈ 1:4, j ∈ 1:5]
     @test inside(p) == CartesianIndices((2:3,2:4))
-    @show p
     @test L₂(p) == 187
 
     p = p|>OA()
@@ -22,6 +22,20 @@ using Test
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5)
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...)
+
+    using WaterLily: bc_indices, BC!
+    Ng, D, U = (4, 4), 2, (1.0, 0.5) # (2, 2) with ghost cells, 2 dimensions
+    for f ∈ [identity, cu]
+        u = rand(Ng..., D) |> OA(D) |> f # vector
+        σ = rand(Ng...) |> OA() |> f  # scalar
+        bc = bc_indices(Ng) |> f # bcs list
+        BC!(u, U, bc)
+        BC!(σ, bc)
+        KernelAbstractions.get_backend(u) !== CPU() ? CUDA.allowscalar(true) : CUDA.allowscalar(false)
+        @test u[0, 1, 1] == U[1] && u[3, 1, 1] == U[1] && u[1, 0, 1] == u[1, 1, 1] && u[1, 3, 1] == u[1, 2, 1] # test 1st dimension
+        @test u[0, 1, 2] == u[1, 1, 2] && u[3, 1, 2] == u[2, 1, 2] && u[1, 0, 2] == U[2] && u[1, 3, 2] == U[2] # test 2nd dimension
+        @test σ[0, 1] == σ[1, 1] && σ[3, 1] == σ[2, 1] && σ[1, 0] == σ[1, 1] && σ[1, 3] == σ[1, 2]
+    end
 
     # BC!(a,[0. 0.])
     # @test a == cat([0. 0. 0. 0.
