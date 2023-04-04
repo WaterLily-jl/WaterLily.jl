@@ -1,7 +1,7 @@
 module WaterLily
 
 include("util.jl")
-export backend,L₂,adapt!,inside,δ,OA,loc,BC!,bc_indices#,apply!,@inside
+export L₂,BC!,@inside,inside,δ,apply!,loc,OA
 
 # include("Poisson.jl")
 # export AbstractPoisson,Poisson,solver!,mult

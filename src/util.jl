@@ -1,13 +1,3 @@
-using KernelAbstractions, Adapt, CUDA, CUDA.CUDAKernels
-
-if Base.find_package("CUDA") !== nothing
-    using CUDA.CUDAKernels
-    const backend = CUDABackend()
-    CUDA.allowscalar(false)
-else
-    const backend = CPU()
-end
-
 @inline CI(a...) = CartesianIndex(a...)
 """
     δ(i,N::Int)
@@ -55,97 +45,70 @@ L₂ norm of array `a` excluding ghosts.
 L₂(a) = sum(@inbounds(abs2(a[I])) for I ∈ inside(a))
 
 """
-    adapt!(u)
-Adapt an array `u` to a CPU or CUDA `backend`
+    @inside <expr>
+
+Simple macro to automate efficient loops over cells excluding ghosts. For example
+
+    @inside p[I] = sum(I.I)
+
+becomes
+
+    @loop p[I] = sum(I.I) over I ∈ size(p).-2
+
+See `@loop`.
 """
-adapt!(u) = backend == CPU() ? adapt(Array, u) : adapt(CuArray, u) # outer scope (general) backend
-adapt!(u, b) = b == CPU() ? adapt(Array, u) : adapt(CuArray, u)
-
-# """
-#     ArrayT
-
-# Alias for CPU Array or GPU CuArray depending on the backend.
-# """
-# ArrayT = (backend == CPU()) ? Array : CuArray
-#
-# """
-#     @inside <expr>
-
-# Simple macro to automate efficient loops over cells excluding ghosts. For example
-
-#     @inside p[I] = sum(I.I)
-
-# becomes
-
-#     @loop p[I] = sum(I.I) over I ∈ size(p).-2
-
-# See `@loop`.
-# """
-# macro inside(ex)
-#     # Make sure its a single assignment
-#     @assert ex.head == :(=) && ex.args[1].head == :(ref)
-#     a,I = ex.args[1].args[1:2]
-#     return quote # loop over the size of the reference
-#         @loop $ex over $I ∈ size($a).-2
-#     end |> esc
-# end
-
-# """
-#     @loop <expr> over I ∈ ndrange
-
-# Simple macro to automate kernel. For example
-
-#     @loop r[I] += sum(I.I) over I ∈ size(r).-2
-
-# becomes
-
-#     @kernel function f(r)
-#         I ∈ @index(Global,Cartesian)
-#         r[I] += sum(I.I)
-#     end
-#     f(backend(r),64)(r,ndrange=size(r).-2)
-
-# using package KernelAbstractions to run on CPUs or GPUs.
-# """
-# macro loop(args...)
-#     ex,_,itr = args
-#     _,I,R = itr.args; sym = []
-#     grab!(sym,ex)     # get arguments and replace composites in `ex`
-#     setdiff!(sym,[I]) # don't want to pass I as an argument
-#     return quote
-#         @kernel function f($(rep.(sym)...)) # replace composite arguments
-#             $I = @index(Global, Cartesian)
-#             $ex
-#         end
-#         f(KernelAbstractions.get_backend($(sym[1])),64)($(sym...),ndrange=$R)
-#         return nothing
-#     end |> esc
-# end
-# function grab!(sym,ex::Expr)
-#     ex.head == :. && return union!(sym,[ex])    # keep composited names without recursion
-#     start = ex.head==:(call) ? 2 : 1            # don't grab function names
-#     foreach(a->grab!(sym,a),ex.args[start:end]) # recurse
-#     ex.args .= rep.(ex.args)                    # replace composite names with value
-# end
-# grab!(sym,ex::Symbol) = union!(sym,[ex])        # keep symbol names
-# grab!(sym,ex) = nothing
-# rep(ex) = ex
-# rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
-
-_ENABLE_PUSH = true
-DISABLE_PUSH() = (global _ENABLE_PUSH = false)
-ENABLE_PUSH() = (global _ENABLE_PUSH = true)
-
-function median(a,b,c)
-    if a>b
-        b>=c && return b
-        a>c && return c
-    else
-        b<=c && return b
-        a<c && return c
-    end
-    return a
+macro inside(ex)
+    # Make sure its a single assignment
+    @assert ex.head == :(=) && ex.args[1].head == :(ref)
+    a,I = ex.args[1].args[1:2]
+    return quote # loop over the size of the reference
+        @loop $ex over $I ∈ size($a).-2
+    end |> esc
 end
+
+using KernelAbstractions,CUDA,CUDA.CUDAKernels
+using KernelAbstractions: get_backend
+"""
+    @loop <expr> over I ∈ ndrange
+
+Simple macro to automate kernel. For example
+
+    @loop r[I] += sum(I.I) over I ∈ size(r).-2
+
+becomes
+
+    @kernel function f(r)
+        I ∈ @index(Global,Cartesian)
+        r[I] += sum(I.I)
+    end
+    f(backend(r),64)(r,ndrange=size(r).-2)
+
+using package KernelAbstractions to run on CPUs or GPUs.
+"""
+macro loop(args...)
+    ex,_,itr = args
+    _,I,R = itr.args; sym = []
+    grab!(sym,ex)     # get arguments and replace composites in `ex`
+    setdiff!(sym,[I]) # don't want to pass I as an argument
+    return quote
+        @kernel function kern($(rep.(sym)...)) # replace composite arguments
+            $I = @index(Global, Cartesian)
+            $ex
+        end
+        kern(get_backend($(sym[1])),64)($(sym...),ndrange=$R)
+        return nothing
+    end |> esc
+end
+function grab!(sym,ex::Expr)
+    ex.head == :. && return union!(sym,[ex])    # keep composited names without recursion
+    start = ex.head==:(call) ? 2 : 1            # don't grab function names
+    foreach(a->grab!(sym,a),ex.args[start:end]) # recurse
+    ex.args .= rep.(ex.args)                    # replace composite names with value
+end
+grab!(sym,ex::Symbol) = union!(sym,[ex])        # keep symbol names
+grab!(sym,ex) = nothing
+rep(ex) = ex
+rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
@@ -156,27 +119,17 @@ Using `i=0` returns the cell center s.t. `loc = I`.
 """
 @inline loc(i,I) = SVector(I.I .- 0.5 .* δ(i,I).I)
 
-# """
-#     apply!(f, c)
+"""
+    apply!(f, c)
 
-# Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
-# """
-# function apply!(f,c)
-#     N,n = size_u(c)
-#     for i ∈ 1:n
-#         @loop c[I,i] = f(i,loc(i,I)) over I ∈ CartesianIndices(N)
-#     end
-# end
-# function apply!(c, f) # swapped arguments since the exclamation mark is supposed to modify the front arguments
-#     _apply!(KernelAbstractions.get_backend(c), 64)(c, f, ndrange=Base.front(size(c)))
-# end
-# @kernel function _apply!(c, @Const(f))
-#     I = @index(Global, Cartesian)
-#     _, D = size_u(c)
-#     for d ∈ 1:D
-#         c[I, d] = f(d, loc(d, I))
-#     end
-# end
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
+"""
+function apply!(f,c)
+    N,n = size_u(c)
+    for i ∈ 1:n
+        @loop c[I,i] = f(i,loc(i,I)) over I ∈ N .- 2
+    end
+end
 
 """
     slice(dims,i,j,low=1,trim=0)
@@ -219,21 +172,8 @@ condition `a[I,i]=f*A[i]` is applied to the vector component _normal_ to the dom
 boundary. For example `aₓ(x)=f*Aₓ ∀ x ∈ minmax(X)`. A zero Nuemann condition
 is applied to the tangential components.
 """
-# function BC!(a,A,f=1)
-#     N,n = size_u(a)
-#     for j ∈ 1:n, i ∈ 1:n
-#         if i==j # Normal direction, Dirichlet
-#             for s ∈ (1,2,N[j])
-#                 @loop a[I,i] = f*A[i] over I ∈ slice(N,s,j)
-#             end
-#         else    # Tangential directions, Neumann
-#             @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
-#             @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
-#         end
-#     end
-# end
 function BC!(u, U, bc, f = 1.0)
-    _BC!(KernelAbstractions.get_backend(u), 64)(u, U, bc, f, ndrange=size(bc))
+    _BC!(get_backend(u), 64)(u, U, bc, f, ndrange=size(bc))
 end
 @kernel function _BC!(u, @Const(U), @Const(bc), @Const(f))
     i = @index(Global, Linear)
@@ -253,15 +193,8 @@ end
 
 Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
 """
-# function BC!(a)
-#     N = size(a)
-#     for j ∈ eachindex(N)
-#         @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
-#         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
-#     end
-# end
 function BC!(u, bc)
-    _BC!(KernelAbstractions.get_backend(u), 64)(u, bc, ndrange=size(bc))
+    _BC!(get_backend(u), 64)(u, bc, ndrange=size(bc))
 end
 @kernel function _BC!(u, @Const(bc))
     i = @index(Global, Linear)

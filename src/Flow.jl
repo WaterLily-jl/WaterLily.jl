@@ -5,6 +5,16 @@
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(@inbounds ∂(i,I,u) for i ∈ 1:m)
+function median(a,b,c)
+    if a>b
+        b>=c && return b
+        a>c && return c
+    else
+        b<=c && return b
+        a<c && return c
+    end
+    return a
+end
 
 @fastmath function tracer_transport!(r,f,u,Φ;Pe=0.1)
     N,n = size_u(u)
