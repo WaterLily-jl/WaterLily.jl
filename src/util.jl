@@ -59,6 +59,7 @@ L₂(a) = sum(@inbounds(abs2(a[I])) for I ∈ inside(a))
 Adapt an array `u` to a CPU or CUDA `backend`
 """
 adapt!(u) = backend == CPU() ? adapt(Array, u) : adapt(CuArray, u) # outer scope (general) backend
+adapt!(u, b) = b == CPU() ? adapt(Array, u) : adapt(CuArray, u)
 
 # """
 #     ArrayT
@@ -260,7 +261,7 @@ Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
 #     end
 # end
 function BC!(u, bc)
-    _BC!(backend, 64)(u, bc, ndrange=size(bc))
+    _BC!(KernelAbstractions.get_backend(u), 64)(u, bc, ndrange=size(bc))
 end
 @kernel function _BC!(u, @Const(bc))
     i = @index(Global, Linear)

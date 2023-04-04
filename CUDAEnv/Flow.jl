@@ -1,4 +1,4 @@
-using KernelAbstractions, Adapt, OffsetArrays, BenchmarkTools, OutMacro
+using KernelAbstractions, Adapt, OffsetArrays, BenchmarkTools
 
 if Base.find_package("CUDA") !== nothing
     using CUDA

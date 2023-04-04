@@ -27,11 +27,10 @@ CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
-OutMacro = "0ae4d431-9932-4135-a8f1-51ee5e017775"
 PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [targets]
-test = ["Test", "PerformanceTestTools", "JLD2", "OutMacro"]
+test = ["Test", "PerformanceTestTools", "JLD2"]
