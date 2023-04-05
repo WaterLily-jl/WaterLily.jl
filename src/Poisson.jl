@@ -54,14 +54,14 @@ end
 @fastmath @inline function multL(I::CartesianIndex{d},L,x) where {d}
     s = zero(eltype(L))
     for i in 1:d
-        s = @inbounds(x[I-δ(i,I)]*L[I,i])
+        s += @inbounds(x[I-δ(i,I)]*L[I,i])
     end
     return s
 end
 @fastmath @inline function multU(I::CartesianIndex{d},L,x) where {d}
     s = zero(eltype(L))
     for i in 1:d
-        s = @inbounds(x[I+δ(i,I)]*L[I+δ(i,I),i])
+        s += @inbounds(x[I+δ(i,I)]*L[I+δ(i,I),i])
     end
     return s
 end
@@ -74,7 +74,7 @@ Efficient function for Poisson matrix-vector multiplication. Allocates and retur
 `b = Ax` with `b=0` in the ghost cells.
 """
 function mult(p::Poisson,x)
-    @assert size(p.x)==size(x)
+    @assert axes(p.x)==axes(x)
     b = similar(x); fill!(b,0)
     @inside b[I] = mult(I,p.L,p.D,x)
     return b
@@ -135,6 +135,6 @@ function solver!(p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
         log && push!(res,r₂)
         nᵖ+=1
     end
-    _ENABLE_PUSH && push!(p.n,nᵖ)
+    push!(p.n,nᵖ)
     log && return res
 end

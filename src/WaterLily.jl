@@ -3,8 +3,8 @@ module WaterLily
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc,OA
 
-# include("Poisson.jl")
-# export AbstractPoisson,Poisson,solver!,mult
+include("Poisson.jl")
+export AbstractPoisson,Poisson,solver!,mult
 
 # include("MultiLevelPoisson.jl")
 # export MultiLevelPoisson,solver!,mult

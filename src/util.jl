@@ -90,20 +90,19 @@ macro loop(args...)
     _,I,R = itr.args; sym = []
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
+    @gensym kern
     return quote
-        @kernel function kern($(rep.(sym)...)) # replace composite arguments
+        @kernel function $kern($(rep.(sym)...)) # replace composite arguments
             $I = @index(Global, Cartesian)
             $ex
         end
-        kern(get_backend($(sym[1])),64)($(sym...),ndrange=$R)
-        return nothing
+        $kern(get_backend($(sym[1])),64)($(sym...),ndrange=$R)
     end |> esc
 end
 function grab!(sym,ex::Expr)
     ex.head == :. && return union!(sym,[ex])    # keep composited names without recursion
     start = ex.head==:(call) ? 2 : 1            # don't grab function names
-    foreach(a->grab!(sym,a),ex.args[start:end]) # recurse
-    ex.args .= rep.(ex.args)                    # replace composite names with value
+    foreach(a->(grab!(sym,a); a=rep(a)),ex.args[start:end]) # recurse
 end
 grab!(sym,ex::Symbol) = union!(sym,[ex])        # keep symbol names
 grab!(sym,ex) = nothing

@@ -1,7 +1,6 @@
 using WaterLily
 using Test
 using CUDA
-CUDA.allowscalar(true) # need for tests
 
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -23,48 +22,46 @@ CUDA.allowscalar(true) # need for tests
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...)
 
-    for f ∈ [identity, cu]
-        u = zeros(5,5,2) |> OA(2) |> f
-        apply!((i,x)->x[i],u)
-        @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
+    CUDA.allowscalar() do
+        for f ∈ [identity, cu]
+            u = zeros(5,5,2) |> OA(2) |> f
+            apply!((i,x)->x[i],u)
+            @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
 
-        Ng, D, U = (4, 4), 2, (1.0, 0.5) # (2, 2) with ghost cells, 2 dimensions
-        u = rand(Ng..., D) |> OA(D) |> f # vector
-        σ = rand(Ng...) |> OA() |> f  # scalar
-        bc = WaterLily.bc_indices(Ng) |> f # bcs list
-        BC!(u, U, bc)
-        BC!(σ, bc)
-        @test u[0, 1, 1] == U[1] && u[3, 1, 1] == U[1] && u[1, 0, 1] == u[1, 1, 1] && u[1, 3, 1] == u[1, 2, 1] # test 1st dimension
-        @test u[0, 1, 2] == u[1, 1, 2] && u[3, 1, 2] == u[2, 1, 2] && u[1, 0, 2] == U[2] && u[1, 3, 2] == U[2] # test 2nd dimension
-        @test σ[0, 1] == σ[1, 1] && σ[3, 1] == σ[2, 1] && σ[1, 0] == σ[1, 1] && σ[1, 3] == σ[1, 2]
+            Ng, D, U = (4, 4), 2, (1.0, 0.5) # (2, 2) with ghost cells, 2 dimensions
+            u = rand(Ng..., D) |> OA(D) |> f # vector
+            σ = rand(Ng...) |> OA() |> f  # scalar
+            bc = WaterLily.bc_indices(Ng) |> f # bcs list
+            BC!(u, U, bc)
+            BC!(σ, bc)
+            @test u[0, 1, 1] == U[1] && u[3, 1, 1] == U[1] && u[1, 0, 1] == u[1, 1, 1] && u[1, 3, 1] == u[1, 2, 1] # test 1st dimension
+            @test u[0, 1, 2] == u[1, 1, 2] && u[3, 1, 2] == u[2, 1, 2] && u[1, 0, 2] == U[2] && u[1, 3, 2] == U[2] # test 2nd dimension
+            @test σ[0, 1] == σ[1, 1] && σ[3, 1] == σ[2, 1] && σ[1, 0] == σ[1, 1] && σ[1, 3] == σ[1, 2]
+        end
     end
 end
 
-# function Poisson_test_2D(f,n)
-#     c = ones(n+2,n+2,2); BC!(c,[0. 0.])
-#     p = f(c)
-#     soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2]
-#     b = mult(p,soln)
-#     x = zeros(n+2,n+2)
-#     solver!(x,p,b)
-#     x .-= (x[2,2]-soln[2,2])
-#     return L₂(x.-soln)/L₂(soln)
-# end
-# function Poisson_test_3D(f,n)
-#     c = ones(n+2,n+2,n+2,3); BC!(c,[0. 0. 0.])
-#     p = f(c)
-#     soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2, k ∈ 1:n+2]
-#     b = mult(p,soln)
-#     x = zeros(n+2,n+2,n+2)
-#     solver!(x,p,b,tol=1e-5)
-#     x .-= (x[2,2,2]-soln[2,2,2])
-#     return L₂(x.-soln)/L₂(soln)
-# end
+function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
+    c = ones(T,N...,D) |> f|> OA(D)
+    c[0,:,1] .= c[1,:,1] .= c[end,:,1] .= 0 
+    c[:,0,2] .= c[:,1,2] .= c[:,end,2] .= 0
+    x = zeros(T,N) |> f |> OA()
+    pois = poisson(x,c)
+    soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f |> OA()
+    solver!(pois,mult(pois,soln))
+    @. x -= soln+(x[2,2]-soln[2,2])
+    return L₂(pois.x)/L₂(soln),pois
+end
 
-# @testset "Poisson.jl" begin
-#     @test Poisson_test_2D(Poisson,2^6) < 1e-5
-#     @test Poisson_test_3D(Poisson,2^4) < 1e-5
-# end
+@testset "Poisson.jl" begin
+    err,pois = Poisson_setup(Poisson,(5,5))
+    @test parent(pois.D)==Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0]
+    @test parent(pois.iD)≈Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0]
+    @test err < 1e-6
+    err,_ = Poisson_setup(Poisson,(2^6+2,2^6+2))
+    @test err < 1e-5
+end
+
 # @testset "MultiLevelPoisson.jl" begin
 #     I = CartesianIndex(4,3,2)
 #     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
