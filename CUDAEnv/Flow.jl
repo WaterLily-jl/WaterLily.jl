@@ -1,6 +1,6 @@
 using WaterLily
 using WaterLily: OA, δ, slice, apply!, BC!
-using CUDA
+using CUDA: cu
 
 @inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
 @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
@@ -46,5 +46,4 @@ end
 
 # main
 N = (3, 4)
-flow = Flow(N, (1.0, 0.0); f = identity, T = Float64);
-return nothing
+flow = Flow(N, (1.0, 1.0); f = cu, T = Float64);

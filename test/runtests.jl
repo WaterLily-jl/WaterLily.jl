@@ -27,16 +27,19 @@ using CUDA: cu, @allowscalar, allowscalar
         apply!((i,x)->x[i],u)
         @allowscalar @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
 
-        Ng, D, U = (4, 4), 2, (1.0, 0.5) # (2, 2) with ghost cells, 2 dimensions
+        Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> OA(D) |> f # vector
         σ = rand(Ng...) |> OA() |> f  # scalar
         bc = WaterLily.bc_indices(Ng) |> f # bcs list
         BC!(u, U, bc)
         BC!(σ, bc)
         allowscalar() do
-            @test u[0, 1, 1] == U[1] && u[3, 1, 1] == U[1] && u[1, 0, 1] == u[1, 1, 1] && u[1, 3, 1] == u[1, 2, 1] # test 1st dimension
-            @test u[0, 1, 2] == u[1, 1, 2] && u[3, 1, 2] == u[2, 1, 2] && u[1, 0, 2] == U[2] && u[1, 3, 2] == U[2] # test 2nd dimension
-            @test σ[0, 1] == σ[1, 1] && σ[3, 1] == σ[2, 1] && σ[1, 0] == σ[1, 1] && σ[1, 3] == σ[1, 2]
+            @test all(u[0, :, 1] .== U[1]) && all(u[1, :, 1] .== U[1]) &&
+                all(u[3:end-1, 0, 1] .== u[3:end-1, 1, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end, 1])
+            @test all(u[:, 0, 2] .== U[2]) && all(u[:, 1, 2] .== U[2]) &&
+                all(u[0, 3:end-1, 2] .== u[1, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end, 3:end-1, 2])
+            @test all(σ[0, 1:end-1] .== σ[1, 1:end-1]) && all(σ[end, 1:end-1] .== σ[end-1, 1:end-1]) &&
+                all(σ[1:end-1, 0] .== σ[1:end-1, 0]) && all(σ[1:end-1, end] .== σ[1:end-1, end-1])
         end
     end
 end
