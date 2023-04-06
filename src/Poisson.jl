@@ -54,14 +54,14 @@ end
 @fastmath @inline function multL(I::CartesianIndex{d},L,x) where {d}
     s = zero(eltype(L))
     for i in 1:d
-        s = @inbounds(x[I-δ(i,I)]*L[I,i])
+        s += @inbounds(x[I-δ(i,I)]*L[I,i])
     end
     return s
 end
 @fastmath @inline function multU(I::CartesianIndex{d},L,x) where {d}
     s = zero(eltype(L))
     for i in 1:d
-        s = @inbounds(x[I+δ(i,I)]*L[I+δ(i,I),i])
+        s += @inbounds(x[I+δ(i,I)]*L[I+δ(i,I),i])
     end
     return s
 end
@@ -74,7 +74,7 @@ Efficient function for Poisson matrix-vector multiplication. Allocates and retur
 `b = Ax` with `b=0` in the ghost cells.
 """
 function mult(p::Poisson,x)
-    @assert size(p.x)==size(x)
+    @assert axes(p.x)==axes(x)
     b = similar(x); fill!(b,0)
     @inside b[I] = mult(I,p.L,p.D,x)
     return b
@@ -86,19 +86,6 @@ end
 @fastmath function increment!(p::Poisson)
     @inside p.x[I] = p.x[I]+p.ϵ[I]
     @inside p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ)
-end
-"""
-    SOR!(p::Poisson;ω=1.5)
-
-Successive Over Relaxation preconditioner. The routine uses backsubstitution
-to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
-"""
-@fastmath function SOR!(p::Poisson; ω=1.5)
-    @inbounds for I ∈ inside(p.r) # order matters here
-        σ = p.r[I]-multL(I,p.L,p.ϵ)
-        p.ϵ[I] = ω*σ*p.iD[I]
-    end
-    increment!(p)
 end
 """
     GS!(p::Poisson;it=0)
@@ -131,10 +118,10 @@ function solver!(p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
     log && (res = [r₂])
     nᵖ=0
     while r₂>tol && nᵖ<itmx
-        SOR!(p,ω=1.8); r₂ = L₂(p.r)
+        GS!(p,it=5); r₂ = L₂(p.r)
         log && push!(res,r₂)
         nᵖ+=1
     end
-    _ENABLE_PUSH && push!(p.n,nᵖ)
+    push!(p.n,nᵖ)
     log && return res
 end

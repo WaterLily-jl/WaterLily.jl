@@ -62,7 +62,7 @@ macro inside(ex)
     @assert ex.head == :(=) && ex.args[1].head == :(ref)
     a,I = ex.args[1].args[1:2]
     return quote # loop over the size of the reference
-        @loop $ex over $I ∈ size($a).-2
+        WaterLily.@loop $ex over $I ∈ size($a).-2
     end |> esc
 end
 
@@ -90,22 +90,22 @@ macro loop(args...)
     _,I,R = itr.args; sym = []
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
+    @gensym kern
     return quote
-        @kernel function kern($(rep.(sym)...)) # replace composite arguments
+        @kernel function $kern($(rep.(sym)...)) # replace composite arguments
             $I = @index(Global, Cartesian)
             $ex
         end
-        kern(get_backend($(sym[1])),64)($(sym...),ndrange=$R)
-        return nothing
+        $kern(get_backend($(sym[1])),64)($(sym...),ndrange=$R)
     end |> esc
 end
 function grab!(sym,ex::Expr)
-    ex.head == :. && return union!(sym,[ex])    # keep composited names without recursion
-    start = ex.head==:(call) ? 2 : 1            # don't grab function names
-    foreach(a->grab!(sym,a),ex.args[start:end]) # recurse
-    ex.args .= rep.(ex.args)                    # replace composite names with value
+    ex.head == :. && return union!(sym,[ex])      # grab composite name and return
+    start = ex.head==:(call) ? 2 : 1              # don't grab function names
+    foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
+    ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
 end
-grab!(sym,ex::Symbol) = union!(sym,[ex])        # keep symbol names
+grab!(sym,ex::Symbol) = union!(sym,[ex])        # grab symbol name
 grab!(sym,ex) = nothing
 rep(ex) = ex
 rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex

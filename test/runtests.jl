@@ -22,6 +22,11 @@ using CUDA: cu, @allowscalar, allowscalar
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...)
 
+    ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
+    WaterLily.grab!(sym,ex)
+    @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
+    @test sym == [:a, :I, :i, :(p.b), :q]
+
     for f ∈ [identity, cu]
         u = zeros(5,5,2) |> OA(2) |> f
         apply!((i,x)->x[i],u)
@@ -44,31 +49,29 @@ using CUDA: cu, @allowscalar, allowscalar
     end
 end
 
-# function Poisson_test_2D(f,n)
-#     c = ones(n+2,n+2,2); BC!(c,[0. 0.])
-#     p = f(c)
-#     soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2]
-#     b = mult(p,soln)
-#     x = zeros(n+2,n+2)
-#     solver!(x,p,b)
-#     x .-= (x[2,2]-soln[2,2])
-#     return L₂(x.-soln)/L₂(soln)
-# end
-# function Poisson_test_3D(f,n)
-#     c = ones(n+2,n+2,n+2,3); BC!(c,[0. 0. 0.])
-#     p = f(c)
-#     soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2, k ∈ 1:n+2]
-#     b = mult(p,soln)
-#     x = zeros(n+2,n+2,n+2)
-#     solver!(x,p,b,tol=1e-5)
-#     x .-= (x[2,2,2]-soln[2,2,2])
-#     return L₂(x.-soln)/L₂(soln)
-# end
+function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
+    c = ones(T,N...,D) |> f|> OA(D)
+    @allowscalar c[0,:,1] .= c[1,:,1] .= c[end,:,1] .= 0 # to be substituted by BC!
+    @allowscalar c[:,0,2] .= c[:,1,2] .= c[:,end,2] .= 0 # to be substituted by BC!
+    x = zeros(T,N) |> f |> OA()
+    pois = poisson(x,c)
+    soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f |> OA()
+    solver!(pois,mult(pois,soln))
+    @. x -= soln+(x[2,2]-soln[2,2])
+    return L₂(pois.x)/L₂(soln),pois
+end
 
-# @testset "Poisson.jl" begin
-#     @test Poisson_test_2D(Poisson,2^6) < 1e-5
-#     @test Poisson_test_3D(Poisson,2^4) < 1e-5
-# end
+@testset "Poisson.jl" begin
+    for f ∈ [identity,cu]
+        err,pois = Poisson_setup(Poisson,(5,5);f)
+        @test @allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
+        @test @allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
+        @test err < 1e-6
+        err,_ = Poisson_setup(Poisson,(2^6+2,2^6+2))
+        @test err < 1e-5
+    end
+end
+
 # @testset "MultiLevelPoisson.jl" begin
 #     I = CartesianIndex(4,3,2)
 #     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
