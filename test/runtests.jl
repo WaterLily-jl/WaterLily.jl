@@ -53,9 +53,9 @@ function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
     x = zeros(T,N) |> f |> OA()
     pois = poisson(x,c)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f |> OA()
-    solver!(pois,mult(pois,soln))
+    println(solver!(pois,mult(pois,soln),log=true))
     @. x -= soln+(x[2,2]-soln[2,2])
-    return L₂(pois.x)/L₂(soln),pois
+    return L₂(x)/L₂(soln),pois
 end
 
 @testset "Poisson.jl" begin
@@ -69,15 +69,23 @@ end
     end
 end
 
-# @testset "MultiLevelPoisson.jl" begin
-#     I = CartesianIndex(4,3,2)
-#     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
-#     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_2D(MultiLevelPoisson,67)
-#     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_3D(MultiLevelPoisson,3^4)
-#     @test Poisson_test_2D(MultiLevelPoisson,2^6) < 1e-5
-#     @test Poisson_test_3D(MultiLevelPoisson,2^4) < 1e-5
-# end
+# @macroexpand1 WaterLily.@loop for i in 1:n
+#     aL[I,i] = restrictL(I,i,b.L) 
+# end over I ∈ Na.-2
 
+@testset "MultiLevelPoisson.jl" begin
+    I = CartesianIndex(4,3,2)
+    @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
+    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
+    err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
+    @test L₂(pois.levels[2].D) == 4sum(abs2,[-2,-3,-3,-4])
+    @test err < 1e-5
+    # err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2))
+    # @show pois.levels |> length
+    # @show pois.n
+    # @test err < 1e-5
+end
+1
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
 #     @test WaterLily.μ₀(0,1)==0.5

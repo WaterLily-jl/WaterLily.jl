@@ -3,14 +3,15 @@
 @fastmath @inline restrict(I::CartesianIndex,b) = sum(@inbounds(b[J]) for J ∈ up(I))
 @fastmath @inline restrictL(I::CartesianIndex,i,b) = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i))
 
-function restrictML(b::AbstractArray{T}) where T
-    N,n = size_u(b)
+function restrictML(b::Poisson)
+    N,n = size(b.x),length(axes(b.x))
     Na = map(i->1+i÷2,N)
-    a = zeros(T,Na...,n)
+    aL = similar(b.L,(Na...,n)) |> OA(n); fill!(aL,0)
+    ax = similar(b.x,Na) |> OA(); fill!(ax,0)
     for i ∈ 1:n
-        @loop a[I,i] = restrictL(I,i,b) over I ∈ inside(Na)
+        @loop aL[I,i] = restrictL(I,i,b.L) over I ∈ Na.-2
     end
-    Poisson(a)
+    Poisson(ax,aL)
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
@@ -22,17 +23,17 @@ prolongate!(a,b) = @inside a[I] = b[down(I)]
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
 The only variable is `levels`, a vector of nested `Poisson` systems.
 """
-struct MultiLevelPoisson{N,M,T} <: AbstractPoisson{N,M,T}
-    levels :: Vector{Poisson{N,M,T}}
+struct MultiLevelPoisson{T,S,V} <: AbstractPoisson{T,S,V}
+    levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
-    function MultiLevelPoisson(L::AbstractArray{T,n}) where {T,n}
-        levels = [Poisson(L)]
+    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T}) where T
+        levels = Poisson[Poisson(x,L)]
         while all(size(levels[end].x) .|> divisible)
-            push!(levels,restrictML(levels[end].L))
+            push!(levels,restrictML(levels[end]))
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2"
         @assert (length(levels)>2 && all(size(levels[end].x).<31)) text
-        new{n-1,n,T}(levels,[])
+        new{T,typeof(x),typeof(L)}(levels,[])
     end
 end
 function update!(ml::MultiLevelPoisson,L)
@@ -59,10 +60,9 @@ end
 
 mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
 
-function solver!(x,ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
+function solver!(ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
     p = ml.levels[1]
-    @assert size(p.x)==size(x)
-    p.x .= x
+    @assert axes(p.x)==axes(b)
     residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])
     nᵖ=0
@@ -72,7 +72,6 @@ function solver!(x,ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
         log && push!(res,r₂)
         nᵖ+=1
     end
-    x .= p.x
-    _ENABLE_PUSH && push!(ml.n,nᵖ)
+    push!(ml.n,nᵖ)
     log && return res
 end
