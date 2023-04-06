@@ -88,19 +88,6 @@ end
     @inside p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ)
 end
 """
-    SOR!(p::Poisson;ω=1.5)
-
-Successive Over Relaxation preconditioner. The routine uses backsubstitution
-to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
-"""
-@fastmath function SOR!(p::Poisson; ω=1.5)
-    @inbounds for I ∈ inside(p.r) # order matters here
-        σ = p.r[I]-multL(I,p.L,p.ϵ)
-        p.ϵ[I] = ω*σ*p.iD[I]
-    end
-    increment!(p)
-end
-"""
     GS!(p::Poisson;it=0)
 
 Gauss-Sidel smoother. When it=0, the function serves as a Jacobi preconditioner.
@@ -131,7 +118,7 @@ function solver!(p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
     log && (res = [r₂])
     nᵖ=0
     while r₂>tol && nᵖ<itmx
-        SOR!(p,ω=1.8); r₂ = L₂(p.r)
+        GS!(p,it=5); r₂ = L₂(p.r)
         log && push!(res,r₂)
         nᵖ+=1
     end

@@ -22,6 +22,11 @@ using CUDA
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...)
 
+    ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
+    WaterLily.grab!(sym,ex)
+    @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
+    @test sym == [:a, :I, :i, :(p.b), :q]
+
     CUDA.allowscalar() do
         for f ∈ [identity, cu]
             u = zeros(5,5,2) |> OA(2) |> f
@@ -54,12 +59,14 @@ function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
 end
 
 @testset "Poisson.jl" begin
-    err,pois = Poisson_setup(Poisson,(5,5))
-    @test parent(pois.D)==Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0]
-    @test parent(pois.iD)≈Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0]
-    @test err < 1e-6
-    err,_ = Poisson_setup(Poisson,(2^6+2,2^6+2))
-    @test err < 1e-5
+    for f ∈ [identity,cu]
+        err,pois = Poisson_setup(Poisson,(5,5);f)
+        @test parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
+        @test parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
+        @test err < 1e-6
+        err,_ = Poisson_setup(Poisson,(2^6+2,2^6+2))
+        @test err < 1e-5
+    end
 end
 
 # @testset "MultiLevelPoisson.jl" begin
