@@ -47,12 +47,12 @@ end
 function Vcycle!(ml::MultiLevelPoisson;l=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
-    GS!(fine,it=0)
+    Jacobi!(fine)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
-    GS!(coarse,it=2)
+    Jacobi!(coarse,it=3)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
     increment!(fine)
@@ -68,7 +68,7 @@ function solver!(ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
-        GS!(p,it=2); r₂ = L₂(p.r)
+        Jacobi!(p,it=3); r₂ = L₂(p.r)
         log && push!(res,r₂)
         nᵖ+=1
     end
