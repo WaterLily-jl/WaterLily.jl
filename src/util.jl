@@ -154,11 +154,12 @@ function bc_indices(Ng)
     D = length(Ng)
     bc_list = Tuple{CartesianIndex, CartesianIndex, Int}[]
     for d ∈ 1:D
-        slice_ghost_start = slice(Ng, 0, d, 1, 2)
+        slice_ghost_start = slice(Ng, 0, d, 0, 1)
         slice_donor_start = slice_ghost_start .+ δ(d, D)
-        slice_ghost_end = slice(Ng, Ng[d] - 1, d, 1, 2)
+        slice_ghost_end = slice(Ng, Ng[d] - 1, d, 0, 1)
         slice_donor_end = slice_ghost_end .- δ(d, D)
-        push!(bc_list, zip(slice_ghost_start, slice_donor_start, ntuple(x -> d, length(slice_ghost_start)))...,
+        push!(bc_list,
+            zip(slice_ghost_start, slice_donor_start, ntuple(x -> d, length(slice_ghost_start)))...,
             zip(slice_ghost_end, slice_donor_end, ntuple(x -> d, length(slice_ghost_end)))...)
     end
     return Tuple.(bc_list)
@@ -178,11 +179,14 @@ end
 @kernel function _BC!(u, @Const(U), @Const(bc), @Const(f))
     i = @index(Global, Linear)
     ghostI, donorI, di = bc[i][1], bc[i][2], bc[i][3]
-    _, D = size_u(u)
+    D = length(U)
     for d ∈ 1:D
         if d == di
             u[ghostI, d] = f * U[d]
-        else
+            if ghostI[d] == 0
+                u[ghostI + δ(d, D), d] = f * U[d]
+            end
+        elseif ghostI[d] > 1
             u[ghostI, d] = u[donorI, d]
         end
     end
