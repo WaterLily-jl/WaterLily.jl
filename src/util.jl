@@ -42,8 +42,8 @@ size_u(u) = splitn(size(u))
 
 L₂ norm of array `a` excluding ghosts.
 """
-L₂(a) = sum(@inbounds(abs2(a[I])) for I ∈ inside(a))
-
+L₂(a) = mapreduce(abs2,+,@inbounds a[inside(a)])
+L₂(a::OffsetArray) = L₂(parent(a))
 """
     @inside <expr>
 

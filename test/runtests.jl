@@ -1,6 +1,7 @@
 using WaterLily
 using Test
 using CUDA: cu, @allowscalar, allowscalar
+allowscalar(false)
 
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -10,8 +11,11 @@ using CUDA: cu, @allowscalar, allowscalar
     @test inside(p) == CartesianIndices((2:3,2:4))
     @test L₂(p) == 187
 
-    p = p|>OA()
+    p = p |> OA()
     @test inside(p) == CartesianIndices((1:2,1:3))
+    @test L₂(p) == 187 # unchanged!
+
+    p = p |> cu
     @test L₂(p) == 187 # unchanged!
 
     u = Float64[i+j+k  for i ∈ 1:4, j ∈ 1:4, k ∈ 1:2] |> OA(2)
@@ -56,8 +60,8 @@ function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
     x = zeros(T,N) |> f |> OA()
     pois = poisson(x,c)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f |> OA()
-    println(solver!(pois,mult(pois,soln),log=true))
-    @. x -= soln+(x[2,2]-soln[2,2])
+    solver!(pois,mult(pois,soln))
+    @allowscalar @. x -= soln+(x[2,2]-soln[2,2])
     return L₂(x)/L₂(soln),pois
 end
 
@@ -72,10 +76,6 @@ end
     end
 end
 
-# @macroexpand1 WaterLily.@loop for i in 1:n
-#     aL[I,i] = restrictL(I,i,b.L) 
-# end over I ∈ Na.-2
-
 @testset "MultiLevelPoisson.jl" begin
     I = CartesianIndex(4,3,2)
     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
@@ -88,7 +88,7 @@ end
     # @show pois.n
     # @test err < 1e-5
 end
-1
+
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
 #     @test WaterLily.μ₀(0,1)==0.5
