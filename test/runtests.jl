@@ -80,13 +80,17 @@ end
     I = CartesianIndex(4,3,2)
     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
+
     err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
-    @test L₂(pois.levels[2].D) == 4sum(abs2,[-2,-3,-3,-4])
-    # @test err < 1e-5
-    # err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2))
-    # @show pois.levels |> length
-    # @show pois.n
-    # @test err < 1e-5
+    @test parent(pois.levels[3].D) == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
+    @test err < 1e-5
+
+    pois.levels[1].L[4:5,:,1].=0
+    WaterLily.update!(pois)
+    @test parent(pois.levels[3].D) == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
+
+    err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2))
+    @test err < 1e-5
 end
 
 # @testset "Body.jl" begin

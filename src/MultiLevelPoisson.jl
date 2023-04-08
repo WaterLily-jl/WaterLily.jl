@@ -1,17 +1,21 @@
-@inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
-@inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
+@inline up(I::CartesianIndex,a=0) = (2I-oneunit(I)):(2I-δ(a,I))
+@inline down(I::CartesianIndex) = CI((I+oneunit(I)).I .÷2)
 @fastmath @inline restrict(I::CartesianIndex,b) = sum(@inbounds(b[J]) for J ∈ up(I))
 @fastmath @inline restrictL(I::CartesianIndex,i,b) = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i))
 
 function restrictML(b::Poisson)
-    N,n = size(b.x),length(axes(b.x))
+    N,n = size_u(b.L)
     Na = map(i->1+i÷2,N)
     aL = similar(b.L,(Na...,n)) |> OA(n); fill!(aL,0)
     ax = similar(b.x,Na) |> OA(); fill!(ax,0)
-    for i ∈ 1:n
-        @loop aL[I,i] = restrictL(I,i,b.L) over I ∈ Na.-2
-    end
+    restrictL!(aL,b.L)
     Poisson(ax,aL)
+end
+function restrictL!(a,b)
+    Na,n = size_u(a)
+    for i ∈ 1:n
+        @loop a[I,i] = restrictL(I,i,b) over I ∈ Na.-2
+    end
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
@@ -27,6 +31,7 @@ struct MultiLevelPoisson{T,S,V} <: AbstractPoisson{T,S,V}
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T}) where T
+        @assert all(first.(axes(x)).==0) # up/down require fixed indexing
         levels = Poisson[Poisson(x,L)]
         while all(size(levels[end].x) .|> divisible)
             push!(levels,restrictML(levels[end]))
@@ -36,11 +41,11 @@ struct MultiLevelPoisson{T,S,V} <: AbstractPoisson{T,S,V}
         new{T,typeof(x),typeof(L)}(levels,[])
     end
 end
-function update!(ml::MultiLevelPoisson,L)
-    update!(ml.levels[1],L)
+function update!(ml::MultiLevelPoisson)
+    update!(ml.levels[1])
     for l ∈ 2:length(ml.levels)
         restrictL!(ml.levels[l].L,ml.levels[l-1].L)
-        set_diag!(ml.levels[l])
+        update!(ml.levels[l])
     end
 end
 
@@ -52,7 +57,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
-    Jacobi!(coarse,it=3)
+    SOR!(coarse);SOR!(coarse);SOR!(coarse)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
     increment!(fine)
@@ -68,7 +73,7 @@ function solver!(ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
-        Jacobi!(p,it=3); r₂ = L₂(p.r)
+        SOR!(p);SOR!(p);SOR!(p); r₂ = L₂(p.r)
         log && push!(res,r₂)
         nᵖ+=1
     end

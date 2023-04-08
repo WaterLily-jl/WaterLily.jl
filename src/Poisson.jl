@@ -28,8 +28,8 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     r :: S # residual
     n :: Vector{Int16}    # pressure solver iterations
     function Poisson(x::AbstractArray{T},L::AbstractArray{T}) where T
-        @assert axes(x) == axes(L)[1:end-1] 
-        @assert axes(L)[end] == Base.OneTo(length(axes(x)))
+        @assert axes(x) == Base.front(axes(L))
+        @assert last(axes(L)) == Base.OneTo(length(axes(x)))
         r = similar(x); fill!(r,0)
         ϵ,D,iD = copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
@@ -41,8 +41,7 @@ function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
     @inside iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
 end
-set_diag!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
-update!(p::Poisson,L) = (p.L .= L; set_diag!(p))
+update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
 @fastmath @inline function diag(I::CartesianIndex{d},L) where {d}
     s = zero(eltype(L))
@@ -103,7 +102,8 @@ end
 """
     Jacobi!(p::Poisson;it=1)
 
-Jacobi smoother run `it` times. This runs for general backends, but is _very_ slow to converge.
+Jacobi smoother run `it` times. 
+Note: This runs for general backends, but is _very_ slow to converge.
 """
 @fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
