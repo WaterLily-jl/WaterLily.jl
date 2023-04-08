@@ -89,10 +89,12 @@ end
     WaterLily.update!(pois)
     @test parent(pois.levels[3].D) == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
-    err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2))
-    @test err < 1e-5
+    for f ∈ [identity,cu]    
+        err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
+        @test err < 1e-5
+    end
 end
-
+1
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
 #     @test WaterLily.μ₀(0,1)==0.5

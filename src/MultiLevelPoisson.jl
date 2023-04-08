@@ -1,7 +1,19 @@
 @inline up(I::CartesianIndex,a=0) = (2I-oneunit(I)):(2I-δ(a,I))
 @inline down(I::CartesianIndex) = CI((I+oneunit(I)).I .÷2)
-@fastmath @inline restrict(I::CartesianIndex,b) = sum(@inbounds(b[J]) for J ∈ up(I))
-@fastmath @inline restrictL(I::CartesianIndex,i,b) = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i))
+@fastmath @inline function restrict(I::CartesianIndex,b)
+    s = zero(eltype(b))
+    for J ∈ up(I)
+     s += @inbounds(b[J])
+    end
+    return s
+end
+@fastmath @inline function restrictL(I::CartesianIndex,i,b)
+    s = zero(eltype(b))
+    for J ∈ up(I,i)
+     s += @inbounds(b[J,i])
+    end
+    return 0.5s
+end
 
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
@@ -57,7 +69,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
-    SOR!(coarse);SOR!(coarse);SOR!(coarse)
+    Jacobi!(coarse,it=10)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
     increment!(fine)
@@ -73,7 +85,7 @@ function solver!(ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
-        SOR!(p);SOR!(p);SOR!(p); r₂ = L₂(p.r)
+        Jacobi!(p,it=10); r₂ = L₂(p.r)
         log && push!(res,r₂)
         nᵖ+=1
     end
