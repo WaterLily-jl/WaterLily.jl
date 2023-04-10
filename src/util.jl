@@ -37,12 +37,14 @@ Return CartesianIndices range excluding the a single cell of ghosts on all bound
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
+using CUDA
 """
     L₂(a)
 
 L₂ norm of array `a` excluding ghosts.
 """
-L₂(a) = mapreduce(abs2,+,@inbounds a[inside(a)])
+L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+L₂(a::CuArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
 L₂(a::OffsetArray) = L₂(parent(a))
 """
     @inside <expr>
