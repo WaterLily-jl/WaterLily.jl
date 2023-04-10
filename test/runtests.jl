@@ -55,13 +55,13 @@ end
 
 function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
     c = ones(T,N...,D) |> f|> OA(D)
-    @allowscalar c[0,:,1] .= c[1,:,1] .= c[end,:,1] .= 0 # to be substituted by BC!
-    @allowscalar c[:,0,2] .= c[:,1,2] .= c[:,end,2] .= 0 # to be substituted by BC!
+    BC!(c, ntuple(zero,D), WaterLily.bc_indices(N) |> f)
     x = zeros(T,N) |> f |> OA()
     pois = poisson(x,c)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f |> OA()
     solver!(pois,mult(pois,soln))
-    @allowscalar @. x -= soln+(x[2,2]-soln[2,2])
+    I = CartesianIndex(ntuple(one,D))
+    @allowscalar @. x -= soln+(x[I]-soln[I])
     return L₂(x)/L₂(soln),pois
 end
 
@@ -70,9 +70,13 @@ end
         err,pois = Poisson_setup(Poisson,(5,5);f)
         @test @allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
         @test @allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
-        @test err < 1e-6
-        err,_ = Poisson_setup(Poisson,(2^6+2,2^6+2))
         @test err < 1e-5
+        err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
+        @test err < 1e-5
+        @test pois.n[] < 512 # [511,458]
+        err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
+        @test err < 1e-5
+        @test pois.n[] < 57 # [56,51]
     end
 end
 
@@ -92,9 +96,23 @@ end
     for f ∈ [identity,cu]    
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-5
+        @test pois.n[] < 33 # [7,32]
+
+        err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
+        @test err < 1e-5
+        @show pois.n[] < 12 # [6,11]
     end
 end
-1
+
+# @testset "Flow.jl" begin
+#     # Impulsive flow in a box
+#     U = [2/3,-1/3]
+#     a = Flow((14,10),U)
+#     mom_step!(a,MultiLevelPoisson(a.μ₀))
+#     @test L₂(a.u[:,:,1].-U[1]) < 2e-5
+#     @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+# end
+
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
 #     @test WaterLily.μ₀(0,1)==0.5
@@ -124,7 +142,7 @@ end
 #     @test all(@. clamp(a,-2,2)==clamp(b,-2,2))
 # end
 
-# @testset "Flow.jl" begin
+# @testset "Flow.jl with Body.jl" begin
 #     # Horizontally moving body
 #     using LinearAlgebra: norm2
 #     a = Flow((20,20),[1.,0.])
@@ -132,13 +150,6 @@ end
 #     measure!(a,AutoBody((x,t)->norm2(x.-center)-5,(x,t)->x.-[t,0.]))
 #     mom_step!(a,Poisson(a.μ₀))
 #     @test sum(abs2,a.u[:,5,1].-1) < 2e-5
-
-#     # Impulsive flow in a box
-#     U = [2/3,-1/3]
-#     a = Flow((14,10),U)
-#     mom_step!(a,MultiLevelPoisson(a.μ₀))
-#     @test L₂(a.u[:,:,1].-U[1]) < 2e-5
-#     @test L₂(a.u[:,:,2].-U[2]) < 1e-5
 # end
 
 # @testset "Metrics.jl" begin

@@ -87,12 +87,12 @@ end
     @inside p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ)
 end
 """
-    SOR!(p::Poisson;ω=1.5)
+    SOR!(p::Poisson; ω=1.5, it=3)
 Successive Over Relaxation preconditioner. The routine uses backsubstitution
 to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
 Note: This can't be run on GPUs or multi-threaded.
 """
-@fastmath function SOR!(p::Poisson; ω=1.5)
+@fastmath SOR!(p::Poisson; ω=1.5, it=3) = for _ in 1:it
     @inbounds for I ∈ inside(p.r) # order matters here
         σ = p.r[I]-multL(I,p.L,p.ϵ)
         p.ϵ[I] = ω*σ*p.iD[I]
@@ -100,7 +100,7 @@ Note: This can't be run on GPUs or multi-threaded.
     increment!(p)
 end
 """
-    Jacobi!(p::Poisson;it=1)
+    Jacobi!(p::Poisson; it=1)
 
 Jacobi smoother run `it` times. 
 Note: This runs for general backends, but is _very_ slow to converge.
@@ -109,6 +109,8 @@ Note: This runs for general backends, but is _very_ slow to converge.
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
     increment!(p)
 end
+
+smooth!(p) = get_backend(p.r)==CPU() ? SOR!(p,it=3) : Jacobi!(p,it=20)
 
 """
     solver!(x,A::AbstractPoisson,b;log,tol,itmx)
@@ -127,7 +129,6 @@ function solver!(p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
     residual!(p,b); r₂ = L₂(p.r)
     log && (res = [r₂])
     nᵖ=0
-    smooth!(p) = get_backend(p.r)==CPU() ? SOR!(p,ω=1.8) : Jacobi!(p,it=20)
     while r₂>tol && nᵖ<itmx
         smooth!(p); r₂ = L₂(p.r)
         log && push!(res,r₂)
