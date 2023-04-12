@@ -4,7 +4,15 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(@inbounds ∂(i,I,u) for i ∈ 1:m)
+# @fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(@inbounds ∂(i,I,u) for i ∈ 1:m)
+@fastmath @inline div(I::CartesianIndex{m},u) where {m} = mapreduce(identity, +, ∂(i,I,u) for i ∈ 1:m)
+@fastmath @inline function div_operator(I::CartesianIndex{m},u) where {m}
+    init=zero(eltype(u))
+    for i in 1:m
+     init += @inbounds ∂(i,I,u)
+    end
+    return init
+end
 function median(a,b,c)
     if a>b
         b>=c && return b
@@ -31,13 +39,19 @@ end
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
-        @loop r[I,i] += ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
+        @loop r[I,i] = r[I,i] + ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
         @loop Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u) over I ∈ inside_u(N,j)
-        @loop r[I,i] += Φ[I] over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] -= ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+        @loop r[I,i] = r[I,i] + Φ[I] over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] = r[I-δ(j,I),i] - Φ[I] over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] = r[I-δ(j,I),i] - ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
     end
 end
+
+# @loop r[I,i] = r[I,i] + ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
+# @inside Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u) # over I ∈ inside_u(N,j)
+# @inside r[I,i] = r[I,i] + Φ[I] # over I ∈ inside_u(N,j)
+# @inside r[I,i] = -r[I,i] + Φ[I+δ(j,I)] # over I ∈ inside_u(N,j)
+# @loop r[I,i] = -r[I,i] + ϕ(j,CI(I+δ(j,I),i),u)*ϕ(i,CI(I+δ(j,I),j),u)-ν*∂(j,CI(I+δ(j,I),i),u) over I ∈ slice(N,N[j],j,2)
 
 """
     Flow{D, V, S, F, B, T}
@@ -65,7 +79,7 @@ struct Flow{D, V, S, F, T}
     U :: NTuple{D, T} # domain boundary values
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    function Flow(N::NTuple{D}, U::NTuple{D}; Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., f=identity, T=Float64) where D
+    function Flow(N::NTuple{D}, U::NTuple{D}; f=identity, Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         @assert length(U) == D
@@ -86,17 +100,18 @@ end
 @fastmath function BDIM!(a::Flow{n}) where n
     @. a.f = a.u⁰+a.Δt[end]*a.f-a.V
     for j ∈ 1:n, i ∈ 1:n
-        @loop a.u[I,i] += μddn(j,CI(I,i),a.μ₁,a.f) over I ∈ inside(a.p)
+        @loop a.u[I,i] = a.u[I,i] + μddn(j,CI(I,i),a.μ₁,a.f) over I ∈ inside(a.p)
     end
     @. a.u += a.V+a.μ₀*a.f
 end
 @inline μddn(j,I::CartesianIndex,μ,f) = @inbounds 0.5μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
 
-@fastmath function project!(a::Flow{n},b::AbstractPoisson{n},w=1) where n
-    @inside a.σ[I] = (div(I,a.u)+w*a.σᵥ[I])/a.Δt[end]
-    solver!(a.p,b,a.σ)
+@fastmath function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
+    dt = a.Δt[end]
+    @inside a.σ[I] = (div_operator(I,a.u)+w*a.σᵥ[I])/dt
+    solver!(b,a.σ)
     for i ∈ 1:n
-        @loop a.u[I,i] -= a.Δt[end]*a.μ₀[I,i]*∂(i,I,a.p) over I ∈ inside(a.σ)
+        @loop a.u[I,i] = a.u[I,i] - dt*a.μ₀[I,i]*∂(i,I,a.p) over I ∈ inside(a.σ)
     end
 end
 
@@ -116,7 +131,8 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     conv_diff!(a.f,a.u,a.σ,ν=a.ν)
     BDIM!(a); BC!(a.u,a.U,2)
     project!(a,b,2); a.u ./= 2; BC!(a.u,a.U)
-    _ENABLE_PUSH && push!(a.Δt,CFL(a))
+    # _ENABLE_PUSH && push!(a.Δt,CFL(a))
+    push!(a.Δt,CFL(a))
 end
 
 function CFL(a::Flow{n}) where n

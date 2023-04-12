@@ -21,9 +21,9 @@ Return CartesianIndices range excluding a single layer of cells on all boundarie
 # Return CartesianIndices range excluding the ghost-cells on the boundaries of
 # a _vector_ array on face `j` with size `dims`.
 # """
-# function inside_u(dims::NTuple{N},j) where {N}
-    # CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
-# end
+function inside_u(dims::NTuple{N},j) where {N}
+    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
+end
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
