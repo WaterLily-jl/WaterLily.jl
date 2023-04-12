@@ -11,15 +11,8 @@ allowscalar(false)
     @test inside(p) == CartesianIndices((2:3,2:4))
     @test L₂(p) == 187
 
-    p = p |> OA()
-    @test inside(p) == CartesianIndices((1:2,1:3))
-    @test L₂(p) == 187 # unchanged!
-
     p = p |> cu
     @test L₂(p) == 187 # unchanged!
-
-    u = Float64[i+j+k  for i ∈ 1:4, j ∈ 1:4, k ∈ 1:2] |> OA(2)
-    @test first.(axes(u)) == (0,0,1)
 
     using StaticArrays
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5)
@@ -32,23 +25,22 @@ allowscalar(false)
     @test sym == [:a, :I, :i, :(p.b), :q]
 
     for f ∈ [identity, cu]
-        u = zeros(5,5,2) |> OA(2) |> f
+        u = zeros(5,5,2) |> f
         apply!((i,x)->x[i],u)
         @allowscalar @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
 
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
-        u = rand(Ng..., D) |> OA(D) |> f # vector
-        σ = rand(Ng...) |> OA() |> f  # scalar
-        bc = WaterLily.bc_indices(Ng) |> f # bcs list
-        BC!(u, U, bc)
-        BC!(σ, bc)
+        u = rand(Ng..., D) |> f # vector
+        σ = rand(Ng...) |> f  # scalar
+        BC!(u, U)
+        BC!(σ)
         allowscalar() do
-            @test all(u[0, :, 1] .== U[1]) && all(u[1, :, 1] .== U[1]) &&
-                all(u[3:end-1, 0, 1] .== u[3:end-1, 1, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end, 1])
-            @test all(u[:, 0, 2] .== U[2]) && all(u[:, 1, 2] .== U[2]) &&
-                all(u[0, 3:end-1, 2] .== u[1, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end, 3:end-1, 2])
-            @test all(σ[0, 1:end-1] .== σ[1, 1:end-1]) && all(σ[end, 1:end-1] .== σ[end-1, 1:end-1]) &&
-                all(σ[1:end-1, 0] .== σ[1:end-1, 0]) && all(σ[1:end-1, end] .== σ[1:end-1, end-1])
+            @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) &&
+                all(u[2:end-1, 1, 1] .== u[2:end-1, 2, 1]) && all(u[2:end-1, end-1, 1] .== u[2:end-1, end, 1])
+            @test all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) &&
+                all(u[1, 2:end-1, 2] .== u[2, 2:end-1, 2]) && all(u[end-1, 2:end-1, 2] .== u[end, 2:end-1, 2])
+            @test all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
+                all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
         end
     end
 end
