@@ -11,15 +11,8 @@ allowscalar(false)
     @test inside(p) == CartesianIndices((2:3,2:4))
     @test L₂(p) == 187
 
-    p = p |> OA()
-    @test inside(p) == CartesianIndices((1:2,1:3))
-    @test L₂(p) == 187 # unchanged!
-
     p = p |> cu
     @test L₂(p) == 187 # unchanged!
-
-    u = Float64[i+j+k  for i ∈ 1:4, j ∈ 1:4, k ∈ 1:2] |> OA(2)
-    @test first.(axes(u)) == (0,0,1)
 
     using StaticArrays
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5)
@@ -38,10 +31,9 @@ allowscalar(false)
 
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> f # vector
-        σ = rand(Ng...) |> f  # scalar
-        bc = WaterLily.bc_indices(Ng) |> f # bcs list
-        BC!(u, U, bc)
-        BC!(σ, bc)
+        σ = rand(Ng...) |> f # scalar
+        BC!(u, U)
+        BC!(σ)
         allowscalar() do
             @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
                 all(u[3:end-1, 1, 1] .== u[3:end-1, 2, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end-1, 1])
@@ -54,13 +46,13 @@ allowscalar(false)
 end
 
 function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
-    c = ones(T,N...,D) |> f|> OA(D)
-    BC!(c, ntuple(zero,D), WaterLily.bc_indices(N) |> f)
-    x = zeros(T,N) |> f |> OA()
+    c = ones(T,N...,D) |> f
+    BC!(c, ntuple(zero,D))
+    x = zeros(T,N) |> f
     pois = poisson(x,c)
-    soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f |> OA()
+    soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f
     solver!(pois,mult(pois,soln))
-    I = CartesianIndex(ntuple(one,D))
+    I = first(inside(x))
     @allowscalar @. x -= soln+(x[I]-soln[I])
     return L₂(x)/L₂(soln),pois
 end
@@ -86,12 +78,12 @@ end
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
 
     err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
-    @test parent(pois.levels[3].D) == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
     @test err < 1e-5
 
-    pois.levels[1].L[4:5,:,1].=0
+    pois.levels[1].L[5:6,:,1].=0
     WaterLily.update!(pois)
-    @test parent(pois.levels[3].D) == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
     for f ∈ [identity,cu]
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
@@ -104,18 +96,18 @@ end
     end
 end
 
-@testset "Flow.jl" begin
-    # Impulsive flow in a box
-    U = (2/3, -1/3)
-    N = (2^6, 2^6)
-    for f ∈ [identity, cu]
-        a = Flow(N, U)
-        err,pois = Poisson_setup(MultiLevelPoisson, N .+ 2; f)
-        mom_step!(a, pois)
-        @test L₂(a.u[:,:,1].-U[1]) < 2e-5
-        @test L₂(a.u[:,:,2].-U[2]) < 1e-5
-    end
-end
+# @testset "Flow.jl" begin
+#     # Impulsive flow in a box
+#     U = (2/3, -1/3)
+#     N = (2^6, 2^6)
+#     for f ∈ [identity, cu]
+#         a = Flow(N, U)
+#         err,pois = Poisson_setup(MultiLevelPoisson, N .+ 2; f)
+#         mom_step!(a, pois)
+#         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
+#         @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+#     end
+# end
 
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)

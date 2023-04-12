@@ -49,7 +49,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `N`)
 and the velocity vector field `u` (an array of dimension `M=N+1`).
 """
-struct Flow{D, V, S, F, B, T}
+struct Flow{D, V, S, F, T}
     # Fluid fields
     u :: V # velocity vector
     u⁰:: V # previous velocity
@@ -62,7 +62,6 @@ struct Flow{D, V, S, F, B, T}
     μ₀:: V # zeroth-moment on faces
     μ₁:: F # first-moment vector on faces
     # Non-fields
-    bc:: B # ghost-donor boundary cell indices
     U :: NTuple{D, T} # domain boundary values
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
@@ -72,18 +71,15 @@ struct Flow{D, V, S, F, B, T}
         @assert length(U) == D
         u = Array{T}(undef, Nd...) |> f
         apply!(uλ, u)
-
-        bc = WaterLily.bc_indices(Ng) |> f
-        BC!(u, U, bc)
+        BC!(u, U)
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, σᵥ = zeros(T, Nd) |> f, zeros(T, Ng) |> f
-
         μ₀ = ones(T, Nd) |> f
-        BC!(μ₀, tuple(zeros(T, D)...), bc)
+        BC!(μ₀, tuple(zeros(T, D)...))
         μ₁ = zeros(T, Ng..., D, D) |> f
 
-        new{D,typeof(u),typeof(p),typeof(μ₁),typeof(bc),T}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,bc,U,T[Δt],ν)
+        new{D,typeof(u),typeof(p),typeof(μ₁),T}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν)
     end
 end
 

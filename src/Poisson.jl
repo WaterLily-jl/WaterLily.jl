@@ -28,8 +28,7 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     r :: S # residual
     n :: Vector{Int16}    # pressure solver iterations
     function Poisson(x::AbstractArray{T},L::AbstractArray{T}) where T
-        @assert axes(x) == Base.front(axes(L))
-        @assert last(axes(L)) == Base.OneTo(length(axes(x)))
+        @assert axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r = similar(x); fill!(r,0)
         ϵ,D,iD = copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
