@@ -156,9 +156,9 @@ function bc_indices(Ng)
     D = length(Ng)
     bc_list = Tuple{CartesianIndex, CartesianIndex, Int}[]
     for d ∈ 1:D
-        slice_ghost_start = slice(Ng, 0, d, 0, 1)
+        slice_ghost_start = slice(Ng, 1, d)
         slice_donor_start = slice_ghost_start .+ δ(d, D)
-        slice_ghost_end = slice(Ng, Ng[d] - 1, d, 0, 1)
+        slice_ghost_end = slice(Ng, Ng[d], d)
         slice_donor_end = slice_ghost_end .- δ(d, D)
         push!(bc_list,
             zip(slice_ghost_start, slice_donor_start, ntuple(x -> d, length(slice_ghost_start)))...,
@@ -185,10 +185,10 @@ end
     for d ∈ 1:D
         if d == di
             u[ghostI, d] = f * U[d]
-            if ghostI[d] == 0
+            if ghostI[d] == 1
                 u[ghostI + δ(d, D), d] = f * U[d]
             end
-        elseif ghostI[d] > 1
+        elseif ghostI[d] > 2
             u[ghostI, d] = u[donorI, d]
         end
     end
