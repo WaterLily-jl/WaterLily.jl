@@ -93,25 +93,29 @@ end
     WaterLily.update!(pois)
     @test parent(pois.levels[3].D) == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
-    for f ∈ [identity,cu]    
+    for f ∈ [identity,cu]
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-5
         @test pois.n[] < 33 # [7,32]
 
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-5
-        @show pois.n[] < 12 # [6,11]
+        @test pois.n[] < 12 # [6,11]
     end
 end
 
-# @testset "Flow.jl" begin
-#     # Impulsive flow in a box
-#     U = [2/3,-1/3]
-#     a = Flow((14,10),U)
-#     mom_step!(a,MultiLevelPoisson(a.μ₀))
-#     @test L₂(a.u[:,:,1].-U[1]) < 2e-5
-#     @test L₂(a.u[:,:,2].-U[2]) < 1e-5
-# end
+@testset "Flow.jl" begin
+    # Impulsive flow in a box
+    U = (2/3, -1/3)
+    N = (2^6, 2^6)
+    for f ∈ [identity, cu]
+        a = Flow(N, U)
+        err,pois = Poisson_setup(MultiLevelPoisson, N .+ 2; f)
+        mom_step!(a, pois)
+        @test L₂(a.u[:,:,1].-U[1]) < 2e-5
+        @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+    end
+end
 
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)

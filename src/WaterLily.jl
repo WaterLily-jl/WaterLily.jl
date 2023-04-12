@@ -9,8 +9,8 @@ export AbstractPoisson,Poisson,solver!,mult
 include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult
 
-# include("Flow.jl")
-# export Flow,mom_step!
+include("Flow.jl")
+export Flow,mom_step!
 
 # include("Body.jl")
 # export AbstractBody

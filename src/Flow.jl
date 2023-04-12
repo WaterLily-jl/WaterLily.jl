@@ -40,7 +40,7 @@ end
 end
 
 """
-    Flow{N,M,P}
+    Flow{D, V, S, F, B, T}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
@@ -49,32 +49,41 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `N`)
 and the velocity vector field `u` (an array of dimension `M=N+1`).
 """
-struct Flow{N,M,P,T}
+struct Flow{D, V, S, F, B, T}
     # Fluid fields
-    u :: Array{T,M} # velocity vector
-    u⁰:: Array{T,M} # previous velocity
-    f :: Array{T,M} # force vector
-    p :: Array{T,N} # pressure scalar
-    σ :: Array{T,N} # divergence scalar
+    u :: V # velocity vector
+    u⁰:: V # previous velocity
+    f :: V # force vector
+    p :: S # pressure scalar
+    σ :: S # divergence scalar
     # BDIM fields
-    V :: Array{T,M} # body velocity vector
-    σᵥ:: Array{T,N} # body velocity divergence
-    μ₀:: Array{T,M} # zeroth-moment on faces
-    μ₁:: Array{T,P} # first-moment vector on faces
+    V :: V # body velocity vector
+    σᵥ:: S # body velocity divergence
+    μ₀:: V # zeroth-moment on faces
+    μ₁:: F # first-moment vector on faces
     # Non-fields
-    U :: Vector{T}  # domain boundary values
-    Δt:: Vector{T}  # time step
-    ν :: T          # kinematic viscosity
-    function Flow(N::Tuple,U::Vector;Δt=0.25,ν=0.,uλ::Function=(i,x)->0.,T=Float64)
-        d = length(N); Nd = (N...,d)
-        @assert length(U)==d
-        u = Array{T}(undef,Nd...); apply!(uλ,u); BC!(u,U)
+    bc:: B # ghost-donor boundary cell indices
+    U :: NTuple{D, T} # domain boundary values
+    Δt:: Vector{T} # time step (stored in CPU memory)
+    ν :: T # kinematic viscosity
+    function Flow(N::NTuple{D}, U::NTuple{D}; Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., f=identity, T=Float64) where D
+        Ng = N .+ 2
+        Nd = (Ng..., D)
+        @assert length(U) == D
+        u = Array{T}(undef, Nd...) |> OA(D) |> f
+        apply!(uλ, u)
+
+        bc = WaterLily.bc_indices(Ng) |> f
+        BC!(u, U, bc)
         u⁰ = copy(u)
-        f,p,σ = zeros(T,Nd),zeros(T,N),zeros(T,N)
-        V,σᵥ = zeros(T,Nd),zeros(T,N)
-        μ₀ = ones(T,Nd); BC!(μ₀,zeros(T,d))
-        μ₁ = zeros(T,N...,d,d)
-        new{d,d+1,d+2,T}(u,u⁰,f,p,σ,V,σᵥ,μ₀,μ₁,U,[Δt],ν)
+        fv, p, σ = zeros(T, Nd) |> OA(D) |> f, zeros(T, Ng) |> OA() |> f, zeros(T, Ng) |> OA() |> f
+        V, σᵥ = zeros(T, Nd) |> OA(D) |> f, zeros(T, Ng) |> OA() |> f
+
+        μ₀ = ones(T, Nd) |> OA(D) |> f
+        BC!(μ₀, tuple(zeros(T, D)...), bc)
+        μ₁ = zeros(T, Ng..., D, D) |> OA(D, 2) |> f
+
+        new{D,typeof(u),typeof(p),typeof(μ₁),typeof(bc),T}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,bc,U,T[Δt],ν)
     end
 end
 
