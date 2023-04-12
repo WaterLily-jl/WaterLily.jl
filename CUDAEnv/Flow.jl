@@ -30,7 +30,6 @@ struct Flow{D, V, S, F, B, T}
         apply!(uλ, u)
 
         bc = WaterLily.bc_indices(Ng) |> f
-
         BC!(u, U, bc)
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f

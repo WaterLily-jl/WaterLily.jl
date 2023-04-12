@@ -70,18 +70,18 @@ struct Flow{D, V, S, F, B, T}
         Ng = N .+ 2
         Nd = (Ng..., D)
         @assert length(U) == D
-        u = Array{T}(undef, Nd...) |> OA(D) |> f
+        u = Array{T}(undef, Nd...) |> f
         apply!(uλ, u)
 
         bc = WaterLily.bc_indices(Ng) |> f
         BC!(u, U, bc)
         u⁰ = copy(u)
-        fv, p, σ = zeros(T, Nd) |> OA(D) |> f, zeros(T, Ng) |> OA() |> f, zeros(T, Ng) |> OA() |> f
-        V, σᵥ = zeros(T, Nd) |> OA(D) |> f, zeros(T, Ng) |> OA() |> f
+        fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
+        V, σᵥ = zeros(T, Nd) |> f, zeros(T, Ng) |> f
 
-        μ₀ = ones(T, Nd) |> OA(D) |> f
+        μ₀ = ones(T, Nd) |> f
         BC!(μ₀, tuple(zeros(T, D)...), bc)
-        μ₁ = zeros(T, Ng..., D, D) |> OA(D, 2) |> f
+        μ₁ = zeros(T, Ng..., D, D) |> f
 
         new{D,typeof(u),typeof(p),typeof(μ₁),typeof(bc),T}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,bc,U,T[Δt],ν)
     end
