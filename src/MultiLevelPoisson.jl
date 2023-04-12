@@ -1,5 +1,5 @@
-@inline up(I::CartesianIndex,a=0) = (2I-oneunit(I)):(2I-δ(a,I))
-@inline down(I::CartesianIndex) = CI((I+oneunit(I)).I .÷2)
+@inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
+@inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
 @fastmath @inline function restrict(I::CartesianIndex,b)
     s = zero(eltype(b))
     for J ∈ up(I)
@@ -18,15 +18,15 @@ end
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
     Na = map(i->1+i÷2,N)
-    aL = similar(b.L,(Na...,n)) |> OA(n); fill!(aL,0)
-    ax = similar(b.x,Na) |> OA(); fill!(ax,0)
+    aL = similar(b.L,(Na...,n)); fill!(aL,0)
+    ax = similar(b.x,Na); fill!(ax,0)
     restrictL!(aL,b.L)
     Poisson(ax,aL)
 end
 function restrictL!(a,b)
     Na,n = size_u(a)
     for i ∈ 1:n
-        @loop a[I,i] = restrictL(I,i,b) over I ∈ Na.-2
+        @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
@@ -43,7 +43,6 @@ struct MultiLevelPoisson{T,S,V} <: AbstractPoisson{T,S,V}
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T}) where T
-        @assert all(first.(axes(x)).==0) # up/down require fixed indexing
         levels = Poisson[Poisson(x,L)]
         while all(size(levels[end].x) .|> divisible)
             push!(levels,restrictML(levels[end]))
