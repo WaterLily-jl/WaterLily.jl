@@ -31,14 +31,14 @@ allowscalar(false)
 
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> f # vector
-        σ = rand(Ng...) |> f  # scalar
+        σ = rand(Ng...) |> f # scalar
         BC!(u, U)
         BC!(σ)
         allowscalar() do
-            @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) &&
-                all(u[2:end-1, 1, 1] .== u[2:end-1, 2, 1]) && all(u[2:end-1, end-1, 1] .== u[2:end-1, end, 1])
-            @test all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) &&
-                all(u[1, 2:end-1, 2] .== u[2, 2:end-1, 2]) && all(u[end-1, 2:end-1, 2] .== u[end, 2:end-1, 2])
+            @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
+                all(u[3:end-1, 1, 1] .== u[3:end-1, 2, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end-1, 1])
+            @test all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
+                all(u[1, 3:end-1, 2] .== u[2, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end-1, 3:end-1, 2])
             @test all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
                 all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
         end
@@ -48,7 +48,7 @@ end
 function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
     c = ones(T,N...,D) |> f
     BC!(c, ntuple(zero,D))
-    x = zeros(T,N) |> f 
+    x = zeros(T,N) |> f
     pois = poisson(x,c)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f
     solver!(pois,mult(pois,soln))
@@ -85,7 +85,7 @@ end
     WaterLily.update!(pois)
     @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
-    for f ∈ [identity,cu]    
+    for f ∈ [identity,cu]
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-5
         @test pois.n[] < 33 # [7,32]
@@ -96,14 +96,17 @@ end
     end
 end
 
-# @testset "Flow.jl" begin
-#     # Impulsive flow in a box
-#     U = [2/3,-1/3]
-#     a = Flow((14,10),U)
-#     mom_step!(a,MultiLevelPoisson(a.μ₀))
-#     @test L₂(a.u[:,:,1].-U[1]) < 2e-5
-#     @test L₂(a.u[:,:,2].-U[2]) < 1e-5
-# end
+@testset "Flow.jl" begin
+    # Impulsive flow in a box
+    U = (2/3, -1/3) 
+    N = (2^4, 2^4)
+    for f ∈ [identity, cu]
+        a = Flow(N, U; f, T=Float32)
+        mom_step!(a, MultiLevelPoisson(a.p,a.μ₀))
+        @test L₂(a.u[:,:,1].-U[1]) < 2e-5
+        @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+    end
+end
 
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
