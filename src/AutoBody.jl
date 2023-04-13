@@ -54,31 +54,32 @@ See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
-    sdf = a.σ
-    apply_sdf!(x->body.sdf(x,t), sdf)   # distance to cell center
-    for I ∈ inside(a.p)
-        if abs(sdf[I])<ϵ+1   # near interface
-            a.σᵥ[I] = μ₀(sdf[I],ϵ)-1
-            # measure properties and fill arrays at face (i,I)
-            for i ∈ 1:N
-                dᵢ,n,V = measure(body,loc(i,I),t)
-                a.V[I,i] = V[i]
-                a.μ₀[I,i] = μ₀(dᵢ,ϵ)
-                a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
-            end
-        elseif sdf[I]<0      # completely inside body
-            a.μ₀[I,:] .= 0
-            a.σᵥ[I] = -1
+    apply_sdf!(x->body.sdf(x,t), a.σ)                 # distance to cell center
+    @loop measure!(a,body,I,t,ϵ) over I ∈ inside(a.p) # measure properties
+    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)              # scaled divergence
+    BC!(a.μ₀,zeros(SVector{N}))                       # fill BCs
+end
+function measure!(a::Flow{N},body::AutoBody,I,t,ϵ) where N
+    if abs(a.σ[I])<ϵ+1   # near interface
+        a.σᵥ[I] = μ₀(a.σ[I],ϵ)-1
+        # measure properties and fill arrays at face (i,I)
+        for i ∈ 1:N
+            dᵢ,n,V = measure(body,loc(i,I),t)
+            a.V[I,i] = V[i]
+            a.μ₀[I,i] = μ₀(dᵢ,ϵ)
+            a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
         end
+    elseif a.σ[I]<0      # completely inside body
+        a.μ₀[I,:] .= 0
+        a.σᵥ[I] = -1
     end
-    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
-    BC!(a.μ₀,zeros(SVector{N}))
 end
 
 function apply_sdf!(f,a,margin=2,stride=1)
     # strided index and signed distance function
     @inline J(I) = stride*I+oneunit(I)
     @inline sdf(I) = f(WaterLily.loc(0,J(I)) .- (stride-1)/2)
+    @inline mod2(I) = CI(mod.(I.I,2))
 
     # if the strided array is indivisible, fill it using the sdf 
     dims = (size(a) .-2 ) .÷ stride
@@ -88,11 +89,11 @@ function apply_sdf!(f,a,margin=2,stride=1)
     # if not, fill an array with twice the stride first
     else    
         apply_sdf!(f,a,margin,2stride)
+        @loop a[J(I)] = a[J(I)+stride*mod2(I)] over I ∈ CartesianIndices(dims)
 
     # and only improve the values within a margin of sdf=0
         tol = stride*(√length(dims)+margin)
-        @loop (d = @inbounds a[J(I)+stride*CI(mod.(I.I,2))]; 
-               a[J(I)] = abs(d)<tol ? sdf(I) : d) over I ∈ CartesianIndices(dims)
+        @loop a[J(I)] = abs(a[J(I)])<tol ? sdf(I) : a[J(I)] over I ∈ CartesianIndices(dims)
     end
 end
 

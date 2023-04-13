@@ -12,11 +12,11 @@ export MultiLevelPoisson,solver!,mult
 include("Flow.jl")
 export Flow,mom_step!
 
-# include("Body.jl")
-# export AbstractBody
+include("Body.jl")
+export AbstractBody
 
-# include("AutoBody.jl")
-# export AutoBody,measure!,measure,+,-
+include("AutoBody.jl")
+export AutoBody,measure!,measure,+,-
 
 # include("Metrics.jl")
 # using LinearAlgebra: norm2

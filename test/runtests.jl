@@ -108,44 +108,55 @@ end
     end
 end
 
-# @testset "Body.jl" begin
-#     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
-#     @test WaterLily.μ₀(0,1)==0.5
-#     @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
-# end
+@testset "Body.jl" begin
+    @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
+    @test WaterLily.μ₀(0,1)==0.5
+    @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
+end
 
-# @testset "AutoBody.jl" begin
-#     using LinearAlgebra: norm2
+using KernelAbstractions
+@testset "AutoBody.jl" begin
+    using LinearAlgebra: norm2
 
-#     # test AutoDiff in 2D and 3D
-#     body1 = AutoBody((x,t)->norm2(x)-2-t)
-#     @test all(measure(body1,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
-#     @test all(measure(body1,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.,0.,0.]))
-#     body2 = AutoBody((x,t)->norm2(x)-2,(x,t)->x.+t^2)
-#     @test all(measure(body2,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
-#     @test all(measure(body2,[1.,-1.,-1.],1.).≈(0.,[1.,0.,0.],[-2.,-2.,-2.]))
+    # test AutoDiff in 2D and 3D
+    body1 = AutoBody((x,t)->norm2(x)-2-t)
+    @test all(measure(body1,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
+    @test all(measure(body1,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.,0.,0.]))
+    body2 = AutoBody((x,t)->norm2(x)-2,(x,t)->x.+t^2)
+    @test all(measure(body2,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
+    @test all(measure(body2,[1.,-1.,-1.],1.).≈(0.,[1.,0.,0.],[-2.,-2.,-2.]))
 
-#     #test booleans
-#     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
-#     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+    #test booleans
+    @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
+    @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
 
-#     # test fast apply_sdf matches exhaustive sdf
-#     dims = (2^5,2^5)
-#     sdf(x) = norm2(x.-2^4)-4π
-#     a = zeros(dims); WaterLily.apply_sdf!(sdf,a)
-#     b = zeros(dims); @inside b[I] = sdf(WaterLily.loc(0,I))
-#     @test all(@. clamp(a,-2,2)==clamp(b,-2,2))
-# end
+    # test fast apply_sdf matches exhaustive sdf
+    dims = (2^5,2^5)
+    sdf(x) = norm2(x.-2^4)-4π
+    a = zeros(dims); WaterLily.apply_sdf!(sdf,a); BC!(a)
+    b = zeros(dims); @inside b[I] = sdf(WaterLily.loc(0,I)); BC!(b)
+    @test all(@. clamp(a,-2,2)==clamp(b,-2,2))
+end
 
-# @testset "Flow.jl with Body.jl" begin
-#     # Horizontally moving body
-#     using LinearAlgebra: norm2
-#     a = Flow((20,20),[1.,0.])
-#     center = [10.58,10.65] # worst case - not sure why
-#     measure!(a,AutoBody((x,t)->norm2(x.-center)-5,(x,t)->x.-[t,0.]))
-#     mom_step!(a,Poisson(a.μ₀))
-#     @test sum(abs2,a.u[:,5,1].-1) < 2e-5
-# end
+using LinearAlgebra: norm2
+function get_flow(N,f)
+    a = Flow((N,N),(1.,0.);f,T=Float32);
+    measure!(a,AutoBody((x,t)->norm2(x.-N÷2)-N÷4,(x,t)->x.-[t,0.]))
+    return a
+end
+
+@testset "Flow.jl with Body.jl" begin
+    # Horizontally moving body
+    # for f ∈ [identity,cu]
+    f = identity
+        a = get_flow(20,f)
+        @test @allowscalar all(@. abs(a.μ₀[3:end-1,2:end-1,1]-0.5)==0.5 || a.V[3:end-1,2:end-1,1] == 1)
+        @test @allowscalar all(a.V[:,:,2] .== 0)
+        mom_step!(a,Poisson(a.p,a.μ₀))
+        a.u
+        @test mapreduce(abs2,+,a.u[:,5,1].-1) < 2e-5
+    # end
+end
 
 # @testset "Metrics.jl" begin
 #     I = CartesianIndex(2,3,4)

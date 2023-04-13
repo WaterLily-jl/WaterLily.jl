@@ -88,6 +88,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν)
     end
 end
+KernelAbstractions.get_backend(a::Flow) = get_backend(a.p)
 
 @fastmath function BDIM!(a::Flow{n}) where n
     @. a.f = a.u⁰+a.Δt[end]*a.f-a.V
