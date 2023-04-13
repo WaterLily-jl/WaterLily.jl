@@ -96,18 +96,17 @@ end
     end
 end
 
-# @testset "Flow.jl" begin
-#     # Impulsive flow in a box
-#     U = (2/3, -1/3)
-#     N = (2^6, 2^6)
-#     for f ∈ [identity, cu]
-#         a = Flow(N, U)
-#         err,pois = Poisson_setup(MultiLevelPoisson, N .+ 2; f)
-#         mom_step!(a, pois)
-#         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
-#         @test L₂(a.u[:,:,2].-U[2]) < 1e-5
-#     end
-# end
+@testset "Flow.jl" begin
+    # Impulsive flow in a box
+    U = (2/3, -1/3) 
+    N = (2^4, 2^4)
+    for f ∈ [identity, cu]
+        a = Flow(N, U; f, T=Float32)
+        mom_step!(a, MultiLevelPoisson(a.p,a.μ₀))
+        @test L₂(a.u[:,:,1].-U[1]) < 2e-5
+        @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+    end
+end
 
 # @testset "Body.jl" begin
 #     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)

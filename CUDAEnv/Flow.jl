@@ -1,37 +1,38 @@
 using WaterLily
-using CUDA: cu, @allowscalar
 using BenchmarkTools
+using CUDA: cu, @allowscalar, allowscalar
+allowscalar(false)
 
 @fastmath function mom_step_benchmark!(a::Flow,b::AbstractPoisson)
-    a.u⁰ .= a.u
-    a.u .= 0
-    # predictor u → u'
-    @btime conv_diff!($a.f,$a.u⁰,$a.σ,ν=$a.ν) # CPU: 10.308 ms (2730 allocations: 195.81 KiB). GPU: 177.927 μs (1287 allocations: 56.44 KiB)
-    @btime BDIM!($a) # CPU: 11.231 ms (541 allocations: 39.53 KiB). GPU: 50.584 μs (360 allocations: 26.66 KiB)
-    @btime BC!($a.u,$a.U) # CPU: 139.339 μs (1356 allocations: 97.41 KiB). GPU: 67.421 μs (611 allocations: 26.11 KiB)
-    @btime project!($a,$b) # CPU: 9.187 ms (550 allocations: 39.72 KiB). GPU: 435.650 ms (1285003 allocations: 56.93 MiB)
-    @btime BC!($a.u,$a.U) # CPU: 138.663 μs (1355 allocations: 97.38 KiB). GPU: 68.190 μs (611 allocations: 26.11 KiB)
-    # corrector u → u¹
-    @btime conv_diff!($a.f,$a.u,$a.σ,ν=$a.ν) # CPU: 11.308 ms (2728 allocations: 195.75 KiB). GPU: 181.429 μs (1287 allocations: 56.44 KiB)
-    @btime BDIM!($a) # CPU: 11.354 ms (542 allocations: 39.56 KiB). GPU: 57.634 μs (360 allocations: 26.66 KiB)
-    @btime BC!($a.u,$a.U,2) # CPU: 137.151 μs (1355 allocations: 97.38 KiB). GPU:  68.276 μs (611 allocations: 26.11 KiB)
-    @btime project!($a,$b,2) # CPU: 8.200 ms (550 allocations: 39.72 KiB). GPU: 424.575 ms (1285013 allocations: 56.93 MiB)
-    a.u ./= 2
-    @btime BC!($a.u,$a.U) # CPU: 137.820 μs (1356 allocations: 97.41 KiB). GPU: 68.100 μs (611 allocations: 26.11 KiB)
-    @btime push!($a.Δt,CFL($a)) # CPU: 4.298 ms (9 allocations: 528 bytes). GPU: N/A
+    @btime WaterLily.conv_diff!($a.f,$a.u⁰,$a.σ,ν=$a.ν) 
+    @btime WaterLily.BDIM!($a) 
+    @btime BC!($a.u,$a.U) 
+    @btime WaterLily.project!($a,$b) 
+    @btime WaterLily.CFL($a)
 end
 
-U, N = (2/3, -1/3), (2^10, 2^10)
-flowCPU = Flow(N, U)
-flowGPU = Flow(N, U; f=cu)
+U, N = (0, 0), (2^10, 2^10)
+flowCPU = Flow(N, U, T=Float32);
+flowGPU = Flow(N, U; f=cu, T=Float32);
 
+## SERIAL BASELINE using @inbounds @simd instead of @kernel
 # mom_step_benchmark!(flowCPU, MultiLevelPoisson(flowCPU.p, flowCPU.μ₀))
-# mom_step_benchmark!(flowGPU, MultiLevelPoisson(flowGPU.p, flowGPU.μ₀))
+# 18.359 ms (0 allocations: 0 bytes)
+# 3.456 ms (0 allocations: 0 bytes)
+# 7.600 μs (0 allocations: 0 bytes)
+# 2.219 ms (0 allocations: 0 bytes)
+# 1.021 ms (0 allocations: 0 bytes)
 
-mom_step!(flowCPU, MultiLevelPoisson(flowCPU.p, flowCPU.μ₀))
-mom_step!(flowGPU, MultiLevelPoisson(flowGPU.p, flowGPU.μ₀))
+mom_step_benchmark!(flowCPU, MultiLevelPoisson(flowCPU.p, flowCPU.μ₀))
+# 2.789 ms (4052 allocations: 348.88 KiB) # 6.5x speed-up of the most expensive routine !!
+# 3.910 ms (829 allocations: 72.53 KiB)  
+# 136.800 μs (1941 allocations: 164.52 KiB) # 18x slower !!
+# 2.090 ms (834 allocations: 72.59 KiB)
+# 852.300 μs (207 allocations: 17.16 KiB)
 
-println(L₂(flowCPU.u[:,:,1].-U[1]) < 2e-5) # true
-println(L₂(flowCPU.u[:,:,2].-U[2]) < 1e-5) # true
-@allowscalar println(L₂(flowGPU.u[:,:,1].-U[1]) < 2e-5) # false
-@allowscalar println(L₂(flowGPU.u[:,:,2].-U[2]) < 1e-5) # false
+mom_step_benchmark!(flowGPU, MultiLevelPoisson(flowGPU.p, flowGPU.μ₀))
+# 74.500 μs (1287 allocations: 56.44 KiB) # 250x
+# 22.200 μs (360 allocations: 26.66 KiB)  # 150x
+# 33.900 μs (611 allocations: 25.17 KiB)  # 224x
+# 720.600 μs (399 allocations: 18.22 KiB) # 3x
+# 260.900 μs (149 allocations: 6.73 KiB)  # 4x

@@ -56,18 +56,18 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `N`)
 and the velocity vector field `u` (an array of dimension `M=N+1`).
 """
-struct Flow{D, V, S, F, T}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}}
     # Fluid fields
-    u :: V # velocity vector
-    u⁰:: V # previous velocity
-    f :: V # force vector
-    p :: S # pressure scalar
-    σ :: S # divergence scalar
+    u :: Vf # velocity vector field
+    u⁰:: Vf # previous velocity
+    f :: Vf # force vector
+    p :: Sf # pressure scalar field
+    σ :: Sf # divergence scalar
     # BDIM fields
-    V :: V # body velocity vector
-    σᵥ:: S # body velocity divergence
-    μ₀:: V # zeroth-moment on faces
-    μ₁:: F # first-moment vector on faces
+    V :: Vf # body velocity vector
+    σᵥ:: Sf # body velocity divergence
+    μ₀:: Vf # zeroth-moment vector
+    μ₁:: Tf # first-moment tensor field
     # Non-fields
     U :: NTuple{D, T} # domain boundary values
     Δt:: Vector{T} # time step (stored in CPU memory)
@@ -85,7 +85,7 @@ struct Flow{D, V, S, F, T}
         μ₀ = ones(T, Nd) |> f
         BC!(μ₀, tuple(zeros(T, D)...))
         μ₁ = zeros(T, Ng..., D, D) |> f
-        new{D,typeof(u),typeof(p),typeof(μ₁),T}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν)
     end
 end
 
@@ -126,9 +126,14 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     push!(a.Δt,CFL(a))
 end
 
-function CFL(a::Flow{n}) where n
-    @inside a.σ[I] = fout(I,a.u)
+function CFL(a::Flow)
+    @inside a.σ[I] = flux_out(I,a.u)
     min(10.,inv(maximum(a.σ)+5a.ν))
 end
-@fastmath @inline fout(I::CartesianIndex{d},u) where {d} =
-    sum(@inbounds(max(0.,u[I+δ(a,I),a])+max(0.,-u[I,a])) for a ∈ 1:d)
+@fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
+    s = zero(eltype(u))
+    for i in 1:d
+        s += @inbounds(max(0.,u[I+δ(i,I),i])+max(0.,-u[I,i]))
+    end
+    return s
+end
