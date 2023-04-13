@@ -15,12 +15,12 @@ Return CartesianIndices range excluding a single layer of cells on all boundarie
 """
 @inline inside(a::AbstractArray) = CartesianIndices(map(ax->first(ax)+1:last(ax)-1,axes(a)))
 
-# """
-#     inside_u(dims,j)
+"""
+    inside_u(dims,j)
 
-# Return CartesianIndices range excluding the ghost-cells on the boundaries of
-# a _vector_ array on face `j` with size `dims`.
-# """
+Return CartesianIndices range excluding the ghost-cells on the boundaries of
+a _vector_ array on face `j` with size `dims`.
+"""
 function inside_u(dims::NTuple{N},j) where {N}
     CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
 end

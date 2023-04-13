@@ -10,7 +10,7 @@ include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult
 
 include("Flow.jl")
-export Flow,mom_step!
+export Flow,mom_step!,conv_diff!,BDIM!,project!,BC!,CFL
 
 # include("Body.jl")
 # export AbstractBody
