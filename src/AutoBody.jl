@@ -54,28 +54,30 @@ See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
-    apply_sdf!(x->body.sdf(x,t), a.σ)                 # distance to cell center
-    @loop measure!(a,body,I,t,ϵ) over I ∈ inside(a.p) # measure properties
+    fast_sdf!(x->body.sdf(x,t), a.σ) # distance to cell center
+    function fill!(μ₀,μ₁,V,σᵥ,d,I)
+        σᵥ[I] = WaterLily.μ₀(d[I],ϵ)-1 # cell-center array
+        if abs(d[I])<1+ϵ
+            for i ∈ 1:N
+                dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I),t)
+                V[I,i] = Vᵢ[i]
+                μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
+                for j ∈ 1:N
+                    μ₁[I,i,j] = WaterLily.μ₁(dᵢ,ϵ)*nᵢ[j]
+                end
+            end
+        elseif d[I]<0
+            for i ∈ 1:N
+                μ₀[I,i] = 0.
+            end
+        end
+    end
+    @loop fill!(a.μ₀,a.μ₁,a.V,a.σᵥ,a.σ,I) over I ∈ inside(a.p)
     @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)              # scaled divergence
     BC!(a.μ₀,zeros(SVector{N}))                       # fill BCs
 end
-function measure!(a::Flow{N},body::AutoBody,I,t,ϵ) where N
-    if abs(a.σ[I])<ϵ+1   # near interface
-        a.σᵥ[I] = μ₀(a.σ[I],ϵ)-1
-        # measure properties and fill arrays at face (i,I)
-        for i ∈ 1:N
-            dᵢ,n,V = measure(body,loc(i,I),t)
-            a.V[I,i] = V[i]
-            a.μ₀[I,i] = μ₀(dᵢ,ϵ)
-            a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
-        end
-    elseif a.σ[I]<0      # completely inside body
-        a.μ₀[I,:] .= 0
-        a.σᵥ[I] = -1
-    end
-end
 
-function apply_sdf!(f,a,margin=2,stride=1)
+function fast_sdf!(f,a,margin=2,stride=1)
     # strided index and signed distance function
     @inline J(I) = stride*I+oneunit(I)
     @inline sdf(I) = f(WaterLily.loc(0,J(I)) .- (stride-1)/2)
@@ -88,7 +90,7 @@ function apply_sdf!(f,a,margin=2,stride=1)
     
     # if not, fill an array with twice the stride first
     else    
-        apply_sdf!(f,a,margin,2stride)
+        fast_sdf!(f,a,margin,2stride)
         @loop a[J(I)] = a[J(I)+stride*mod2(I)] over I ∈ CartesianIndices(dims)
 
     # and only improve the values within a margin of sdf=0

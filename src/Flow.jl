@@ -4,8 +4,7 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@fastmath @inline div(I::CartesianIndex{m},u) where {m} = sum(@inbounds ∂(i,I,u) for i ∈ 1:m)
-@fastmath @inline function div_operator(I::CartesianIndex{m},u) where {m}
+@fastmath @inline function div(I::CartesianIndex{m},u) where {m}
     init=zero(eltype(u))
     for i in 1:m
      init += @inbounds ∂(i,I,u)
@@ -88,7 +87,6 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν)
     end
 end
-KernelAbstractions.get_backend(a::Flow) = get_backend(a.p)
 
 @fastmath function BDIM!(a::Flow{n}) where n
     @. a.f = a.u⁰+a.Δt[end]*a.f-a.V
@@ -101,7 +99,7 @@ end
 
 @fastmath function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = a.Δt[end]
-    @inside a.σ[I] = (div_operator(I,a.u)+w*a.σᵥ[I])/dt
+    @inside a.σ[I] = (div(I,a.u)+w*a.σᵥ[I])/dt
     solver!(b,a.σ)
     for i ∈ 1:n
         @loop a.u[I,i] = a.u[I,i] - dt*a.μ₀[I,i]*∂(i,I,a.p) over I ∈ inside(a.σ)

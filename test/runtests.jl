@@ -116,8 +116,7 @@ end
 
 using KernelAbstractions
 @testset "AutoBody.jl" begin
-    using LinearAlgebra: norm2
-
+    norm2(x) = √sum(abs2,x)
     # test AutoDiff in 2D and 3D
     body1 = AutoBody((x,t)->norm2(x)-2-t)
     @test all(measure(body1,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
@@ -130,32 +129,32 @@ using KernelAbstractions
     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
 
-    # test fast apply_sdf matches exhaustive sdf
+    # test fast_sdf matches exhaustive sdf
     dims = (2^5,2^5)
     sdf(x) = norm2(x.-2^4)-4π
-    a = zeros(dims); WaterLily.apply_sdf!(sdf,a); BC!(a)
+    a = zeros(dims); WaterLily.fast_sdf!(sdf,a); BC!(a)
     b = zeros(dims); @inside b[I] = sdf(WaterLily.loc(0,I)); BC!(b)
     @test all(@. clamp(a,-2,2)==clamp(b,-2,2))
 end
 
-using LinearAlgebra: norm2
+using StaticArrays
 function get_flow(N,f)
     a = Flow((N,N),(1.,0.);f,T=Float32);
-    measure!(a,AutoBody((x,t)->norm2(x.-N÷2)-N÷4,(x,t)->x.-[t,0.]))
+    sdf(x,t) = √sum(abs2,x.-N÷2)-N÷4
+    map(x,t) = x.-SVector(t,0)
+    WaterLily.measure!(a,AutoBody(sdf,map))
     return a
 end
 
 @testset "Flow.jl with Body.jl" begin
     # Horizontally moving body
-    # for f ∈ [identity,cu]
-    f = identity
+    for f ∈ [identity,cu]
         a = get_flow(20,f)
         @test @allowscalar all(@. abs(a.μ₀[3:end-1,2:end-1,1]-0.5)==0.5 || a.V[3:end-1,2:end-1,1] == 1)
         @test @allowscalar all(a.V[:,:,2] .== 0)
         mom_step!(a,Poisson(a.p,a.μ₀))
-        a.u
         @test mapreduce(abs2,+,a.u[:,5,1].-1) < 2e-5
-    # end
+    end
 end
 
 # @testset "Metrics.jl" begin
