@@ -1,11 +1,11 @@
 using WaterLily
 
 # Set-up and quick sim check
-function sphere_sim(radius = 8; Re = 250, T=Float64, domain = (6,4))
+function sphere_sim(radius = 8; Re = 250, T=Float32, mem=Array, domain::NTuple{N} = (6,4)) where N
     body = AutoBody((x,t)-> √sum(abs2,x .- 2radius) - radius)
-    n = map(d->d*radius+2, domain)
-    U = zeros(T,length(domain)); U[1] = 1
-    return Simulation(n,U,radius; body, ν=U[1]*radius/Re,T)
+    n = map(d->d*radius, domain)
+    U = δ(1,N).I
+    return Simulation(n,U,radius; body, ν=radius/Re, T, mem)
 end
 function sphere_example(radius=8,twoD=true)
     domain = twoD ? (6,4) : (6,2,2)

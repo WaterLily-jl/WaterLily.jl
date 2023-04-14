@@ -182,3 +182,18 @@ end
         @test sum(abs2,force/(π*(N÷4)^2) - [0,1]) < 1e-5
     end
 end
+
+function sphere_sim(radius = 8; Re = 250, T=Float32, mem=Array, domain::NTuple{N} = (6,4)) where N
+    body = AutoBody((x,t)-> √sum(abs2,x .- 2radius) - radius)
+    n = map(d->d*radius, domain)
+    U = δ(1,N).I
+    return Simulation(n,U,radius; body, ν=radius/Re, T, mem)
+end
+@testset "WaterLily.jl" begin
+    for mem ∈ [Array,CuArray]
+        sim = sphere_sim(32,mem=CuArray);
+        @test sim_time(sim) == 0
+        sim_step!(sim,0.1,remeasure=false)
+        @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2==12    
+    end
+end

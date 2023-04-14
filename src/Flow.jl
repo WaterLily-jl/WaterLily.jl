@@ -74,15 +74,12 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
-        @assert length(U) == D
-        u = Array{T}(undef, Nd...) |> f
-        apply!(uλ, u)
-        BC!(u, U)
+        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u); BC!(u, U)
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, σᵥ = zeros(T, Nd) |> f, zeros(T, Ng) |> f
         μ₀ = ones(T, Nd) |> f
-        BC!(μ₀, tuple(zeros(T, D)...))
+        BC!(μ₀,ntuple(zero, D))
         μ₁ = zeros(T, Ng..., D, D) |> f
         new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν)
     end
