@@ -2,6 +2,7 @@ using WaterLily
 using Test
 using CUDA: cu, @allowscalar, allowscalar
 allowscalar(false)
+using KernelAbstractions
 
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -114,7 +115,6 @@ end
     @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
 end
 
-using KernelAbstractions
 @testset "AutoBody.jl" begin
     norm2(x) = √sum(abs2,x)
     # test AutoDiff in 2D and 3D
@@ -139,17 +139,19 @@ end
 
 using StaticArrays
 function get_flow(N,f)
-    a = Flow((N,N),(1.,0.);f,T=Float32);
+    a = Flow((N,N),(1.,0.);f,T=Float32)
+    @inside a.p[I] = loc(0, I)[2]
     sdf(x,t) = √sum(abs2,x.-N÷2)-N÷4
     map(x,t) = x.-SVector(t,0)
-    WaterLily.measure!(a,AutoBody(sdf,map))
-    return a
+    body = AutoBody(sdf,map)
+    WaterLily.measure!(a,body)
+    return a,body
 end
 
 @testset "Flow.jl with Body.jl" begin
     # Horizontally moving body
     for f ∈ [identity,cu]
-        a = get_flow(20,f)
+        a,_ = get_flow(20,f)
         @test @allowscalar all(@. abs(a.μ₀[3:end-1,2:end-1,1]-0.5)==0.5 || a.V[3:end-1,2:end-1,1] == 1)
         @test @allowscalar all(a.V[:,:,2] .== 0)
         mom_step!(a,Poisson(a.p,a.μ₀))
@@ -157,24 +159,26 @@ end
     end
 end
 
-# @testset "Metrics.jl" begin
-#     I = CartesianIndex(2,3,4)
-#     u = zeros(3,4,5,3); apply!((i,x)->x[i]+prod(x),u)
-#     @test WaterLily.ke(I,u)==0.5*(26^2+27^2+28^2)
-#     @test WaterLily.ke(I,u,[2,3,4])===1.5*24^2
-#     @test [WaterLily.∂(i,j,I,u)
-#             for i in 1:3, j in 1:3] == [13 8 6; 12 9 6; 12 8 7]
-#     @test WaterLily.λ₂(I,u)≈1
-#     ω = [8-6,6-12,12-8]
-#     @test WaterLily.curl(2,I,u)==ω[2]
-#     @test WaterLily.ω(I,u)==ω
-#     @test WaterLily.ω_mag(I,u)==sqrt(sum(abs2,ω))
-#     @test WaterLily.ω_θ(I,[0,0,1],[2,2,2],u)==-ω[1]
+@testset "Metrics.jl" begin
+    I = CartesianIndex(2,3,4)
+    u = zeros(3,4,5,3); apply!((i,x)->x[i]+prod(x),u)
+    @test WaterLily.ke(I,u)==0.5*(26^2+27^2+28^2)
+    @test WaterLily.ke(I,u,[2,3,4])===1.5*24^2
+    @test [WaterLily.∂(i,j,I,u)
+            for i in 1:3, j in 1:3] == [13 8 6; 12 9 6; 12 8 7]
+    @test WaterLily.λ₂(I,u)≈1
+    ω = [8-6,6-12,12-8]
+    @test WaterLily.curl(2,I,u)==ω[2]
+    @test WaterLily.ω(I,u)==ω
+    @test WaterLily.ω_mag(I,u)==sqrt(sum(abs2,ω))
+    @test WaterLily.ω_θ(I,[0,0,1],[2,2,2],u)==-ω[1]
 
-#     body = AutoBody((x,t)->√sum(abs2,x .- 2^6) - 2^5)
-#     p = ones(2^7,2^7)
-#     @inside p[I] = sum(I.I[2])
-#     @test sum(abs2,WaterLily.∮nds(p,body)/(π*2^10).-(0,1))<1e-6
-#     @inside p[I] = cos(atan(reverse(loc(0,I) .- 2^6)...))
-#     @test sum(abs2,WaterLily.∮nds(p,body)/(π*2^5).-(1,0))<1e-6
-# end
+    N = 20
+    for f  ∈ [identity,cu]
+        a,body = get_flow(N,f)
+        WaterLily.nds!(a.V,body)
+        @test sum(a.V) < 1e-6
+        force = WaterLily.∮nds(a.p,a.V,body)
+        @test sum(abs2,force/(π*(N÷4)^2) - [0,1]) < 1e-5
+    end
+end

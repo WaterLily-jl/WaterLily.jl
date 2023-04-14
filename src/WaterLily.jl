@@ -18,8 +18,7 @@ export AbstractBody
 include("AutoBody.jl")
 export AutoBody,measure!,measure,+,-
 
-# include("Metrics.jl")
-# using LinearAlgebra: norm2
+include("Metrics.jl")
 
 # """
 #     Simulation(dims::Tuple, u_BC::Vector, L::Number;

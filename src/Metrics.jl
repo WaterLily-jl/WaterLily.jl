@@ -69,13 +69,15 @@ end
 
 Surface normal integral of field `p` over the `body`.
 """
-function ∮nds(p::Array{T,N},body::AutoBody,t=0) where {T,N}
-    s = zeros(SVector{N,T})
-    n = x -> ForwardDiff.gradient(y -> body.sdf(y,t), x)
-    for I ∈ inside(p)
-        x = loc(0,I)
-        d = body.sdf(x,t)::Float64
-        abs(d) ≤ 1 && (s += n(x).*p[I]*WaterLily.kern(d))
+function ∮nds(p::AbstractArray{T,N},df::AbstractArray{T},body::AutoBody,t=0) where {T,N}
+    nds!(df,body,t)
+    for i in 1:N
+        @loop df[I,i] = df[I,i]*p[I] over I ∈ inside(p)
     end
-    return s
+    reshape(sum(df,dims=1:N),N) |> Array
+end
+nds!(a,body,t=0) = apply!(a) do i,x
+    d = body.sdf(x,t)
+    n = ForwardDiff.gradient(y -> body.sdf(y,t), x)
+    n[i]*WaterLily.kern(clamp(d,-1,1))
 end
