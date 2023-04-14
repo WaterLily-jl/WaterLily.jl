@@ -71,7 +71,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     U :: NTuple{D, T} # domain boundary values
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    function Flow(N::NTuple{D}, U::NTuple{D}; f=identity, Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64) where D
+    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         @assert length(U) == D

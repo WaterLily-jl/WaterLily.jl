@@ -1,6 +1,6 @@
 using WaterLily
 using Test
-using CUDA: cu, @allowscalar, allowscalar
+using CUDA: @allowscalar, allowscalar, CuArray
 allowscalar(false)
 using KernelAbstractions
 
@@ -12,7 +12,7 @@ using KernelAbstractions
     @test inside(p) == CartesianIndices((2:3,2:4))
     @test L₂(p) == 187
 
-    p = p |> cu
+    p = p |> CuArray
     @test L₂(p) == 187 # unchanged!
 
     using StaticArrays
@@ -25,7 +25,7 @@ using KernelAbstractions
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
 
-    for f ∈ [identity, cu]
+    for f ∈ [Array, CuArray]
         u = zeros(5,5,2) |> f
         apply!((i,x)->x[i],u)
         @allowscalar @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
@@ -46,7 +46,7 @@ using KernelAbstractions
     end
 end
 
-function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
+function Poisson_setup(poisson,N;f=Array,T=Float32,D=length(N))
     c = ones(T,N...,D) |> f
     BC!(c, ntuple(zero,D))
     x = zeros(T,N) |> f
@@ -59,7 +59,7 @@ function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
 end
 
 @testset "Poisson.jl" begin
-    for f ∈ [identity,cu]
+    for f ∈ [Array, CuArray]
         err,pois = Poisson_setup(Poisson,(5,5);f)
         @test @allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
         @test @allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
@@ -86,7 +86,7 @@ end
     WaterLily.update!(pois)
     @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
-    for f ∈ [identity,cu]
+    for f ∈ [Array, CuArray]
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-5
         @test pois.n[] < 33 # [7,32]
@@ -99,9 +99,9 @@ end
 
 @testset "Flow.jl" begin
     # Impulsive flow in a box
-    U = (2/3, -1/3) 
+    U = (2/3, -1/3)
     N = (2^4, 2^4)
-    for f ∈ [identity, cu]
+    for f ∈ [Array, CuArray]
         a = Flow(N, U; f, T=Float32)
         mom_step!(a, MultiLevelPoisson(a.p,a.μ₀))
         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
@@ -150,7 +150,7 @@ end
 
 @testset "Flow.jl with Body.jl" begin
     # Horizontally moving body
-    for f ∈ [identity,cu]
+    for f ∈ [Array, CuArray]
         a,_ = get_flow(20,f)
         @test @allowscalar all(@. abs(a.μ₀[3:end-1,2:end-1,1]-0.5)==0.5 || a.V[3:end-1,2:end-1,1] == 1)
         @test @allowscalar all(a.V[:,:,2] .== 0)
@@ -174,7 +174,7 @@ end
     @test WaterLily.ω_θ(I,[0,0,1],[2,2,2],u)==-ω[1]
 
     N = 20
-    for f  ∈ [identity,cu]
+    for f ∈ [Array, CuArray]
         a,body = get_flow(N,f)
         WaterLily.nds!(a.V,body)
         @test sum(a.V) < 1e-6

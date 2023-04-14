@@ -2,14 +2,14 @@ using WaterLily
 using BenchmarkTools
 using CUDA
 
-function Poisson_setup(poisson,N;f=identity,T=Float32,D=length(N))
+function Poisson_setup(poisson,N;f=Array,T=Float32,D=length(N))
     c = ones(T,N...,D) |> f|> OA(D)
     BC!(c, ntuple(zero,D), WaterLily.bc_indices(N) |> f)
     x = zeros(T,N) |> f |> OA()
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f |> OA()
     return poisson(x,c),soln
 end
-pois,soln = Poisson_setup(Poisson,(2^10+2,2^10+2)); 
+pois,soln = Poisson_setup(Poisson,(2^10+2,2^10+2));
 b = mult(pois,soln);
 # 653.800 μs (0 allocations: 0 bytes) # 636.200 μs (215 allocations: 21.38 KiB) # 4.200 μs (83 allocations: 4.66 KiB)
 @btime WaterLily.residual!($pois,$b);
