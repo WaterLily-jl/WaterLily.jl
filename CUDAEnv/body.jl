@@ -1,6 +1,6 @@
 using WaterLily
 using BenchmarkTools
-using CUDA: CuArray
+using CUDA: CuArray,@sync
 
 using StaticArrays
 function get_flow(N,f)
@@ -13,8 +13,8 @@ end
 
 # SERIAL BASELINE: 14.901 ms (0 allocations: 0 bytes)
 a,body = get_flow(2^10,Array);
-@btime measure!($a,$body) 
-# 4.490 ms (5998 allocations: 490.53 KiB) 3x speed-up
+@btime @sync measure!($a,$body) 
+# 4.093 ms (5998 allocations: 490.53 KiB) 4x speed-up
 a,body = get_flow(2^10,CuArray);
-@btime measure!($a,$body) 
-# 167.300 μs (2721 allocations: 116.97 KiB) 90x speed-up
+@btime @sync measure!($a,$body) 
+# 1.469 ms (2770 allocations: 120.28 KiB) 10x speed-up

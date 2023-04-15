@@ -98,12 +98,12 @@ function BDIM!(a::Flow{n}) where n
     @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
 
-@fastmath function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
+function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = a.Δt[end]
     @inside a.σ[I] = (div(I,a.u)+w*a.σᵥ[I])/dt
     solver!(b,a.σ)
     for i ∈ 1:n
-        @loop a.u[I,i] = a.u[I,i] - dt*a.μ₀[I,i]*∂(i,I,a.p) over I ∈ inside(a.σ)
+        @loop a.u[I,i] -= dt*a.μ₀[I,i]*∂(i,I,a.p) over I ∈ inside(a.σ)
     end
 end
 

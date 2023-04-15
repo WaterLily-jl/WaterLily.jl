@@ -55,7 +55,7 @@ See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
     fast_sdf!(x->body.sdf(x,t), a.σ) # distance to cell center
-    function fill!(μ₀,μ₁,V,σᵥ,d,I)
+    @fastmath @inline function fill!(μ₀,μ₁,V,σᵥ,d,I)
         σᵥ[I] = WaterLily.μ₀(d[I],ϵ)-1 # cell-center array
         if abs(d[I])<1+ϵ
             for i ∈ 1:N
