@@ -26,13 +26,14 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     x :: S # approximate solution
     ϵ :: S # increment/error
     r :: S # residual
+    z :: S # scrap 
     n :: Vector{Int16}    # pressure solver iterations
     function Poisson(x::AbstractArray{T},L::AbstractArray{T}) where T
         @assert axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r = similar(x); fill!(r,0)
-        ϵ,D,iD = copy(r),copy(r),copy(r)
+        ϵ,D,iD,z = copy(r),copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
-        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,[])
+        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[])
     end
 end
 
@@ -109,20 +110,26 @@ Note: This runs for general backends, but is _very_ slow to converge.
     increment!(p)
 end
 
+using LinearAlgebra: ⋅
+"""
+    pcg!(p::Poisson; it=6)
+
+Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations, 
+but will exit early if the Gram-Smit update parameter |α|<1% or |rD⁻¹r|<1e-8.
+Note: This runs for general backends and is the default smoother.
+"""
 function pcg!(p;it=6)
-    x,r,ϵ = p.x,p.r,p.ϵ
-    @inside ϵ[I] = r[I]*p.iD[I]
-    z = copy(ϵ); s = similar(z); fill!(s,0)
-    inner(a,b) = (@inside s[I] = a[I]*b[I]; sum(s))
-    rho = inner(r,z)
+    x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
+    @inside z[I] = r[I]*p.iD[I]; ϵ.=z
+    rho = r⋅z
     for i in 1:it
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/inner(z,ϵ)
+        alpha = rho/(z⋅ϵ)
         @inside x[I] = x[I]+alpha*ϵ[I]
         @inside r[I] = r[I]-alpha*z[I]
         (i==it || abs(alpha)<1e-2) && return
         @inside z[I] = r[I]*p.iD[I]
-        rho2 = inner(r,z)
+        rho2 = r⋅z
         abs(rho2)<1e-8 && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
@@ -131,6 +138,8 @@ function pcg!(p;it=6)
 end
 smooth!(p) = pcg!(p)
 # smooth!(p) = get_backend(p.r)==CPU() ? SOR!(p,it=3) : Jacobi!(p,it=20)
+
+L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 
 """
     solver!(x,A::AbstractPoisson,b;log,tol,itmx)
@@ -146,11 +155,11 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 """
 function solver!(p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
     @assert size(p.x)==size(b)
-    residual!(p,b); r₂ = L₂(p.r)
+    residual!(p,b); r₂ = L₂(p)
     log && (res = [r₂])
     nᵖ=0
     while r₂>tol && nᵖ<itmx
-        smooth!(p); r₂ = L₂(p.r)
+        smooth!(p); r₂ = L₂(p)
         log && push!(res,r₂)
         nᵖ+=1
     end

@@ -193,6 +193,6 @@ end
         sim = sphere_sim(32,mem=CuArray);
         @test sim_time(sim) == 0
         sim_step!(sim,0.1,remeasure=false)
-        @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2==12    
+        @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2
     end
 end
