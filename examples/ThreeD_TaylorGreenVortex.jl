@@ -24,4 +24,4 @@ function ω_mag_data(sim)
     return @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
 end
 
-sim,fig = volume_video!(TGV(),ω_mag_data,name="TGV.mp4",duration=10)
+sim,fig = volume_video!(TGV(),ω_mag_data,name="TGV.mp4",duration=10);
