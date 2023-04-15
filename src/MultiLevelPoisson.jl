@@ -21,7 +21,7 @@ function restrictML(b::Poisson)
     aL = similar(b.L,(Na...,n)); fill!(aL,0)
     ax = similar(b.x,Na); fill!(ax,0)
     restrictL!(aL,b.L)
-    Poisson(ax,aL)
+    Poisson(ax,aL,copy(ax))
 end
 function restrictL!(a,b)
     Na,n = size_u(a)
@@ -39,17 +39,20 @@ prolongate!(a,b) = @inside a[I] = b[down(I)]
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
 The only variable is `levels`, a vector of nested `Poisson` systems.
 """
-struct MultiLevelPoisson{T,S,V} <: AbstractPoisson{T,S,V}
+struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+    x::S
+    L::V
+    z::S
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
-    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},maxlevels=4) where T
-        levels = Poisson[Poisson(x,L)]
+    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T},maxlevels=4) where T
+        levels = Poisson[Poisson(x,L,z)]
         while all(size(levels[end].x) .|> divisible) && length(levels) <= maxlevels
             push!(levels,restrictML(levels[end]))
         end
-        text = "MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2"
+        text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(levels,[])
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[])
     end
 end
 function update!(ml::MultiLevelPoisson)
@@ -74,13 +77,12 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     increment!(fine)
 end
 
-mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
+mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
+function solver!(ml::MultiLevelPoisson;log=false,tol=1e-3,itmx=32)
     p = ml.levels[1]
-    @assert axes(p.x)==axes(b)
-    residual!(p,b); r₂ = L₂(p)
+    residual!(p); r₂ = L₂(p)
     log && (res = [r₂])
     nᵖ=0
     while r₂>tol && nᵖ<itmx

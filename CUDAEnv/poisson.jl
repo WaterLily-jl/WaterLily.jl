@@ -4,10 +4,11 @@ using CUDA: CuArray,@sync
 
 function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
     c = ones(T,N...,D) |> f; BC!(c,ntuple(zero,D))
-    x = zeros(T,N) |> f
-    p = poisson(x,c)
+    x = zeros(T,N) |> f; z = copy(x)
+    p = poisson(x,c,z)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f
-    WaterLily.residual!(p,mult(p,soln))
+    z = mult!(p,soln)
+    WaterLily.residual!(p)
     return p
 end
 

@@ -100,10 +100,10 @@ end
 
 function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = a.Δt[end]
-    @inside a.σ[I] = (div(I,a.u)+w*a.σᵥ[I])/dt
-    solver!(b,a.σ)
-    for i ∈ 1:n
-        @loop a.u[I,i] -= dt*a.μ₀[I,i]*∂(i,I,a.p) over I ∈ inside(a.σ)
+    @inside b.z[I] = (div(I,a.u)+w*a.σᵥ[I])/dt # divergence source term
+    solver!(b)
+    for i ∈ 1:n  # apply pressure solution b.x
+        @loop a.u[I,i] -= dt*b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
 end
 

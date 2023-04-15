@@ -48,12 +48,13 @@ end
 
 function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
     c = ones(T,N...,D) |> f; BC!(c, ntuple(zero,D))
-    x = zeros(T,N) |> f
-    pois = poisson(x,c)
+    x = zeros(T,N) |> f; z = copy(x)
+    pois = poisson(x,c,z)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f
     I = first(inside(x))
     @allowscalar @. soln -= soln[I]
-    solver!(pois,mult(pois,soln))
+    z = mult!(pois,soln)
+    solver!(pois)
     @allowscalar @. x -= x[I]
     return L₂(x-soln)/L₂(soln),pois
 end
@@ -76,7 +77,7 @@ end
 @testset "MultiLevelPoisson.jl" begin
     I = CartesianIndex(4,3,2)
     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
-    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
+    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
 
     err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
     @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
@@ -102,7 +103,7 @@ end
     N = (2^4, 2^4)
     for f ∈ [Array, CuArray]
         a = Flow(N, U; f, T=Float32)
-        mom_step!(a, MultiLevelPoisson(a.p,a.μ₀))
+        mom_step!(a, MultiLevelPoisson(a.p,a.μ₀,a.σ))
         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
         @test L₂(a.u[:,:,2].-U[2]) < 1e-5
     end
@@ -153,7 +154,7 @@ end
         a,_ = get_flow(20,f)
         @test @allowscalar all(@. abs(a.μ₀[3:end-1,2:end-1,1]-0.5)==0.5 || a.V[3:end-1,2:end-1,1] == 1)
         @test @allowscalar all(a.V[:,:,2] .== 0)
-        mom_step!(a,Poisson(a.p,a.μ₀))
+        mom_step!(a,Poisson(a.p,a.μ₀,a.σ))
         @test mapreduce(abs2,+,a.u[:,5,1].-1) < 2e-5
     end
 end

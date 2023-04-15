@@ -4,10 +4,10 @@ include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc
 
 include("Poisson.jl")
-export AbstractPoisson,Poisson,solver!,mult
+export AbstractPoisson,Poisson,solver!,mult!
 
 include("MultiLevelPoisson.jl")
-export MultiLevelPoisson,solver!,mult
+export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
 export Flow,mom_step!
@@ -56,7 +56,7 @@ struct Simulation
                         body::AbstractBody=NoBody(),T=Float32,mem=Array) where N
         flow = Flow(dims,u_BC;uλ,Δt,ν,T,f=mem)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀))
+        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ))
     end
 end
 

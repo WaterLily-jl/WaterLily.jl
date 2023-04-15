@@ -7,15 +7,14 @@ Composite type for conservative variable coefficient Poisson equations:
 
 The resulting linear system is
 
-    Ax = [L+D+L']x = b
+    Ax = [L+D+L']x = z
 
-where A is symmetric, block-tridiagonal and extremely sparse. Implemented on a
-structured grid of dimension N, then L has dimension M=N+1 and size(L,M)=N.
-Moreover, D[I]=-∑ᵢ(L[I,i]+L'[I,i]). This means matrix storage, multiplication,
+where A is symmetric, block-tridiagonal and extremely sparse. Moreover, 
+D[I]=-∑ᵢ(L[I,i]+L'[I,i]). This means matrix storage, multiplication,
 ect can be easily implemented and optimized without external libraries.
 
 To help iteratively solve the system above, the Poisson structure holds
-helper arrays for inv(D), the error ϵ, and residual r=b-Ax. An iterative
+helper arrays for inv(D), the error ϵ, and residual r=z-Ax. An iterative
 solution method then estimates the error ϵ=̃A⁻¹r and increments x+=ϵ, r-=Aϵ.
 """
 abstract type AbstractPoisson{T,S,V} end
@@ -26,12 +25,12 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     x :: S # approximate solution
     ϵ :: S # increment/error
     r :: S # residual
-    z :: S # scrap 
-    n :: Vector{Int16}    # pressure solver iterations
-    function Poisson(x::AbstractArray{T},L::AbstractArray{T}) where T
-        @assert axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
+    z :: S # source
+    n :: Vector{Int16} # pressure solver iterations
+    function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T}) where T
+        @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r = similar(x); fill!(r,0)
-        ϵ,D,iD,z = copy(r),copy(r),copy(r),copy(r)
+        ϵ,D,iD = copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
         new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[])
     end
@@ -67,20 +66,20 @@ end
 @fastmath @inline mult(I,L,D,x) = @inbounds(x[I]*D[I])+multL(I,L,x)+multU(I,L,x)
 
 """
-    mult(A::AbstractPoisson,x)
+    mult!(p::Poisson,x)
 
-Efficient function for Poisson matrix-vector multiplication. Allocates and returns
-`b = Ax` with `b=0` in the ghost cells.
+Efficient function for Poisson matrix-vector multiplication. 
+Fills `p.z = p.A x` with 0 in the ghost cells.
 """
-function mult(p::Poisson,x)
-    @assert axes(p.x)==axes(x)
-    b = similar(x); fill!(b,0)
-    @inside b[I] = mult(I,p.L,p.D,x)
-    return b
+function mult!(p::Poisson,x)
+    @assert axes(p.z)==axes(x)
+    fill!(p.z,0)
+    @inside p.z[I] = mult(I,p.L,p.D,x)
+    return p.z
 end
 
-@fastmath residual!(p::Poisson,b) =
-    @inside p.r[I] = b[I]-mult(I,p.L,p.D,p.x)
+@fastmath residual!(p::Poisson) =
+    @inside p.r[I] = p.z[I]-mult(I,p.L,p.D,p.x)
 
 @fastmath function increment!(p::Poisson)
     @inside p.x[I] = p.x[I]+p.ϵ[I]
@@ -142,20 +141,20 @@ smooth!(p) = pcg!(p)
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 
 """
-    solver!(x,A::AbstractPoisson,b;log,tol,itmx)
+    solver!(A::Poisson;log,tol,itmx)
 
 Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 
-    `x`: Initial-solution vector mutated by `solver!`
-    `A`: Poisson matrix
-    `b`: Right-Hand-Side vector
+    `A`: Poisson matrix with working arrays
+    `A.x`: Solution vector. Can start with an initial guess.
+    `A.z`: Right-Hand-Side vector. Will be overwritten! 
+    `A.n[end]`: stores the number of iterations performed.
     `log`: If `true`, this function returns a vector holding the `L₂`-norm of the residual at each iteration.
     `tol`: Convergence tolerance on the `L₂`-norm residual.
     'itmx': Maximum number of iterations
 """
-function solver!(p::Poisson,b;log=false,tol=1e-4,itmx=1e3)
-    @assert size(p.x)==size(b)
-    residual!(p,b); r₂ = L₂(p)
+function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
+    residual!(p); r₂ = L₂(p)
     log && (res = [r₂])
     nᵖ=0
     while r₂>tol && nᵖ<itmx
