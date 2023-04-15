@@ -109,7 +109,28 @@ Note: This runs for general backends, but is _very_ slow to converge.
     increment!(p)
 end
 
-smooth!(p) = get_backend(p.r)==CPU() ? SOR!(p,it=3) : Jacobi!(p,it=20)
+function pcg!(p;it=6)
+    x,r,ϵ = p.x,p.r,p.ϵ
+    @inside ϵ[I] = r[I]*p.iD[I]
+    z = copy(ϵ); s = similar(z); fill!(s,0)
+    inner(a,b) = (@inside s[I] = a[I]*b[I]; sum(s))
+    rho = inner(r,z)
+    for i in 1:it
+        @inside z[I] = mult(I,p.L,p.D,ϵ)
+        alpha = rho/inner(z,ϵ)
+        @inside x[I] = x[I]+alpha*ϵ[I]
+        @inside r[I] = r[I]-alpha*z[I]
+        (i==it || abs(alpha)<1e-2) && return
+        @inside z[I] = r[I]*p.iD[I]
+        rho2 = inner(r,z)
+        abs(rho2)<1e-8 && return
+        beta = rho2/rho
+        @inside ϵ[I] = beta*ϵ[I]+z[I]
+        rho = rho2        
+    end
+end
+smooth!(p) = pcg!(p)
+# smooth!(p) = get_backend(p.r)==CPU() ? SOR!(p,it=3) : Jacobi!(p,it=20)
 
 """
     solver!(x,A::AbstractPoisson,b;log,tol,itmx)

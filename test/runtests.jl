@@ -46,16 +46,16 @@ using KernelAbstractions
     end
 end
 
-function Poisson_setup(poisson,N;f=Array,T=Float32,D=length(N))
-    c = ones(T,N...,D) |> f
-    BC!(c, ntuple(zero,D))
+function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
+    c = ones(T,N...,D) |> f; BC!(c, ntuple(zero,D))
     x = zeros(T,N) |> f
     pois = poisson(x,c)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f
-    solver!(pois,mult(pois,soln))
     I = first(inside(x))
-    @allowscalar @. x -= soln+(x[I]-soln[I])
-    return L₂(x)/L₂(soln),pois
+    @allowscalar @. soln -= soln[I]
+    solver!(pois,mult(pois,soln))
+    @allowscalar @. x -= x[I]
+    return L₂(x-soln)/L₂(soln),pois
 end
 
 @testset "Poisson.jl" begin
@@ -65,11 +65,11 @@ end
         @test @allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
         @test err < 1e-5
         err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
-        @test err < 1e-5
-        @test pois.n[] < 512 # [511,458]
+        @test err < 1e-6
+        @test pois.n[] < 310
         err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
-        @test err < 1e-5
-        @test pois.n[] < 57 # [56,51]
+        @test err < 1e-6
+        @test pois.n[] < 35
     end
 end
 
@@ -88,12 +88,11 @@ end
 
     for f ∈ [Array, CuArray]
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
-        @test err < 1e-5
-        @test pois.n[] < 33 # [7,32]
-
+        @test err < 1e-6
+        @test pois.n[] < 3
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
-        @test err < 1e-5
-        @test pois.n[] < 12 # [6,11]
+        @test err < 1e-6
+        @test pois.n[] < 3
     end
 end
 
