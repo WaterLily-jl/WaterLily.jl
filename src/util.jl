@@ -86,7 +86,7 @@ macro loop(args...)
         @kernel function $kern($(rep.(sym)...),@Const(I0)) # replace composite arguments
             $I = @index(Global,Cartesian)
             $I += I0
-            $ex
+            @fastmath @inbounds $ex
         end
         $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
     end |> esc
