@@ -11,6 +11,13 @@
     end
     return init
 end
+@fastmath @inline function μddn(I::CartesianIndex{np1},μ,f) where np1
+    s = zero(eltype(f))
+    for j ∈ 1:np1-1
+        s+= @inbounds μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
+    end
+    return 0.5s
+end
 function median(a,b,c)
     if a>b
         b>=c && return b
@@ -33,15 +40,15 @@ end
     end
 end
 
-@fastmath function conv_diff!(r,u,Φ;ν=0.1)
+function conv_diff!(r,u,Φ;ν=0.1)
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
-        @loop r[I,i] = r[I,i] + ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-        @loop Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u) over I ∈ inside_u(N,j)
-        @loop r[I,i] = r[I,i] + Φ[I] over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] = r[I-δ(j,I),i] - Φ[I] over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] = r[I-δ(j,I),i] - ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+        @loop r[I,i] += ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u);
+               r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] += - ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
     end
 end
 
@@ -85,14 +92,11 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     end
 end
 
-@fastmath function BDIM!(a::Flow{n}) where n
-    @. a.f = a.u⁰+a.Δt[end]*a.f-a.V
-    for j ∈ 1:n, i ∈ 1:n
-        @loop a.u[I,i] = a.u[I,i] + μddn(j,CI(I,i),a.μ₁,a.f) over I ∈ inside(a.p)
-    end
-    @. a.u += a.V+a.μ₀*a.f
+function BDIM!(a::Flow{n}) where n
+    dt = a.Δt[end]
+    @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
+    @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
-@inline μddn(j,I::CartesianIndex,μ,f) = @inbounds 0.5μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
 
 @fastmath function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = a.Δt[end]

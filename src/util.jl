@@ -24,6 +24,7 @@ a _vector_ array on face `j` with size `dims`.
 function inside_u(dims::NTuple{N},j) where {N}
     CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
 end
+@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
