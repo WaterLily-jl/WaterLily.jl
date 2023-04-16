@@ -94,13 +94,23 @@ end
 
 # Plots
 # using Plots, LaTeXStrings
-# p1 = plot(size=(600,600), xlabel=L"\log_2(N)", ylabel="conv_diff! "* L"[ms]", yscale=:log10, legend=:top)
-# plot!([n for n ∈ repr.(log2N.*3)], btimes_conv_diff[:serial], label="serial", marker=4, color=:red)
-# plot!([n for n ∈ repr.(log2N.*3)], btimes_conv_diff[:CPU], label="CPU", marker=4, color=:blue)
-# plot!([n for n ∈ repr.(log2N.*3)], btimes_conv_diff[:GPU], label="GPU", marker=4, color=:green)
+# p1 = plot(size=(600,600), xlabel=L"\log_2(N)", ylabel="TGV conv_diff! "* L"[ms]",
+#     yscale=:log10, legend=:bottomright, foreground_color_legend=nothing, legendfontsize=12,
+#     yticks=[10.0^n for n in 0:3])
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_conv_diff[:serial], label="serial", marker=4, color=:red, markerstrokewidth=0.25)
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_conv_diff[:CPU], label="CPU", marker=4, color=:blue, markerstrokewidth=0.25)
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_conv_diff[:GPU], label="GPU", marker=4, color=:green, markerstrokewidth=0.25)
+# Plots.scalefontsizes(1.5)
+# savefig("benchmark/mom_step/benchmark_tgv_conv_diff.pdf");
+# Plots.scalefontsizes()
 
-# p2 = plot(size=(600,600), xlabel=L"\log_2(N)", ylabel="project! "* L"[ms]", yscale=:log10, legend=:top)
-# plot!([n for n ∈ repr.(log2N.*3)], btimes_project[:serial], label="serial", marker=4, color=:red)
-# plot!([n for n ∈ repr.(log2N.*3)], btimes_project[:CPU], label="CPU", marker=4, color=:blue)
-# plot!([n for n ∈ repr.(log2N.*3)], btimes_project[:GPU], label="GPU", marker=4, color=:green)
+# p1 = plot(size=(600,600), xlabel=L"\log_2(N)", ylabel="TGV project! "* L"[ms]",
+#     yscale=:log10, legend=:bottomright, foreground_color_legend=nothing, legendfontsize=12,
+#     yticks=[10.0^n for n in 0:3])
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_project[:serial], label="serial", marker=4, color=:red, markerstrokewidth=0.25)
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_project[:CPU], label="CPU", marker=4, color=:blue, markerstrokewidth=0.25)
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_project[:GPU], label="GPU", marker=4, color=:green, markerstrokewidth=0.25)
+# Plots.scalefontsizes(1.5)
+# savefig("benchmark/mom_step/benchmark_tgv_project.pdf");
+# Plots.scalefontsizes()
 

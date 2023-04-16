@@ -2,8 +2,9 @@
 *.png
 *.gif
 *.mp4
+*.dat
+*.pdf
 Manifest.toml
 /docs/build/
 .vscode/
 CUDAEnv/test*.jl
-*.dat
