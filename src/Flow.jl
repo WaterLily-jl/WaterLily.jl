@@ -4,19 +4,9 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@fastmath @inline function div(I::CartesianIndex{m},u) where {m}
-    init=zero(eltype(u))
-    for i in 1:m
-     init += @inbounds ∂(i,I,u)
-    end
-    return init
-end
-@fastmath @inline function μddn(I::CartesianIndex{np1},μ,f) where np1
-    s = zero(eltype(f))
-    for j ∈ 1:np1-1
-        s+= @inbounds μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
-    end
-    return 0.5s
+@inline div(I::CartesianIndex{m},u) where {m} = fsum(i->@inbounds(∂(i,I,u)),m)
+@inline μddn(I::CartesianIndex{np1},μ,f) where np1 = 0.5fsum(np1-1) do j
+    @inbounds μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
 end
 function median(a,b,c)
     if a>b
@@ -27,17 +17,6 @@ function median(a,b,c)
         a<c && return c
     end
     return a
-end
-
-@fastmath function tracer_transport!(r,f,u,Φ;Pe=0.1)
-    N,n = size_u(u)
-    for j ∈ 1:n
-        @loop r[I] += ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f) over I ∈ slice(N,2,j,2)
-        @loop Φ[I] = ϕu(j,I,f,u[I,j])-Pe*∂(j,I,f) over I ∈ inside_u(N,j)
-        @loop r[I] += Φ[I] over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I)] -= Φ[I] over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I)] -= ϕ(j,I,f)*u[I,j]-Pe*∂(j,I,f) over I ∈ slice(N,N[j],j,2)
-    end
 end
 
 function conv_diff!(r,u,Φ;ν=0.1)

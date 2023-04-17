@@ -36,19 +36,14 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     end
 end
 
+@fastmath @inline diag(I::CartesianIndex{d},L) where {d} = 
+        -fsum(i->@inbounds(L[I,i]+L[I+δ(i,I),i]),d)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
     @inside iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
-@fastmath @inline function diag(I::CartesianIndex{d},L) where {d}
-    s = zero(eltype(L))
-    for i in 1:d
-        s -= @inbounds(L[I,i]+L[I+δ(i,I),i])
-    end
-    return s
-end
 @fastmath @inline function multL(I::CartesianIndex{d},L,x) where {d}
     s = zero(eltype(L))
     for i in 1:d
@@ -78,26 +73,10 @@ function mult!(p::Poisson,x)
     return p.z
 end
 
-@fastmath residual!(p::Poisson) =
-    @inside p.r[I] = p.z[I]-mult(I,p.L,p.D,p.x)
+residual!(p::Poisson) = @inside p.r[I] = p.z[I]-mult(I,p.L,p.D,p.x)
 
-@fastmath function increment!(p::Poisson)
-    @inside p.x[I] = p.x[I]+p.ϵ[I]
-    @inside p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ)
-end
-"""
-    SOR!(p::Poisson; ω=1.5, it=3)
-Successive Over Relaxation preconditioner. The routine uses backsubstitution
-to compute ϵ=̃A⁻¹r, where ̃A=[D/ω+L], and then increments x,r.
-Note: This can't be run on GPUs or multi-threaded.
-"""
-@fastmath SOR!(p::Poisson; ω=1.5, it=3) = for _ in 1:it
-    @inbounds for I ∈ inside(p.r) # order matters here
-        σ = p.r[I]-multL(I,p.L,p.ϵ)
-        p.ϵ[I] = ω*σ*p.iD[I]
-    end
-    increment!(p)
-end
+increment!(p::Poisson) = @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
+                                p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)
 """
     Jacobi!(p::Poisson; it=1)
 

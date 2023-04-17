@@ -9,6 +9,13 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 @inline δ(i,I::CartesianIndex{N}) where {N} = δ(i,N)
 
 """
+    fsum(f,n) = sum(ntuple(f,n))
+
+Replacement for sum(f(i) for i ∈ 1:n) that doesn't allocate for small `n` and runs on GPUs.
+"""
+@inline @fastmath fsum(f,n) = sum(ntuple(f,n))
+
+"""
     inside(a)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
@@ -166,17 +173,4 @@ function BC!(a)
         @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
-end
-
-"""
-    get_byte_size(x)
-Returns the size of an object in bytes.
-"""
-function get_byte_size(x)
-    total = 0
-    field_names = fieldnames(typeof(x))
-    for field_name in field_names
-        total += sizeof(getfield(x, field_name))
-    end
-    return total
 end

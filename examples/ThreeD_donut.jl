@@ -51,5 +51,5 @@ for _ in 1:100
 end
 
 # using BenchmarkTools
-# @btime sim_step!($sim,sim_time($sim)+0.05,remeasure=false); # 64.772 ms (103213 allocations: 5.21 MiB)
+# @btime sim_step!($sim,sim_time($sim)+0.05,remeasure=false); # 57.095 ms (74183 allocations: 3.77 MiB)
 # @btime ω_θ!($dat,$d,$sim,$center); # 5.148 ms (2695 allocations: 2.11 MiB) W00T!
