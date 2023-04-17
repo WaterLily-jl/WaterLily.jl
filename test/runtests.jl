@@ -1,7 +1,7 @@
 using WaterLily
 using Test
-using CUDA: @allowscalar, CuArray
-CUDA.allowscalar(false)
+using CUDA: @allowscalar, CuArray, allowscalar
+allowscalar(false)
 using KernelAbstractions
 
 @testset "util.jl" begin

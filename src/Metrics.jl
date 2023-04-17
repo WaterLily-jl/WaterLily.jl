@@ -2,7 +2,6 @@ using StaticArrays
 
 # utilities
 @inline fSV(f,n) = SA[ntuple(f,n)...]
-@inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
 @fastmath function permute(f,i)
     j,k = i%3+1,(i+1)%3+1
@@ -25,7 +24,7 @@ end
 Compute ∂uᵢ/∂xⱼ at center of cell `I`. Cross terms are computed
 less accurately than inline terms because of the staggered grid.
 """
-@fastmath @inline ∂(i,j,I,u) = ifelse(i==j,∂(i,I,u),
+@fastmath @inline ∂(i,j,I,u) = (i==j ? ∂(i,I,u) :
         @inbounds(u[I+δ(j,I),i]+u[I+δ(j,I)+δ(i,I),i]
                  -u[I-δ(j,I),i]-u[I-δ(j,I)+δ(i,I),i])/4)
 
