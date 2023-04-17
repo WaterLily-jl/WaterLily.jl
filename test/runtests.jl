@@ -1,7 +1,7 @@
 using WaterLily
 using Test
-using CUDA: @allowscalar, allowscalar, CuArray
-allowscalar(false)
+using CUDA: @allowscalar, CuArray
+CUDA.allowscalar(false)
 using KernelAbstractions
 
 @testset "util.jl" begin
@@ -160,21 +160,26 @@ end
 end
 
 @testset "Metrics.jl" begin
-    I = CartesianIndex(2,3,4)
-    u = zeros(3,4,5,3); apply!((i,x)->x[i]+prod(x),u)
-    @test WaterLily.ke(I,u)==0.5*(26^2+27^2+28^2)
-    @test WaterLily.ke(I,u,[2,3,4])===1.5*24^2
-    @test [WaterLily.∂(i,j,I,u)
-            for i in 1:3, j in 1:3] == [13 8 6; 12 9 6; 12 8 7]
-    @test WaterLily.λ₂(I,u)≈1
-    ω = [8-6,6-12,12-8]
-    @test WaterLily.curl(2,I,u)==ω[2]
-    @test WaterLily.ω(I,u)==ω
-    @test WaterLily.ω_mag(I,u)==sqrt(sum(abs2,ω))
-    @test WaterLily.ω_θ(I,[0,0,1],[2,2,2],u)==-ω[1]
-
-    N = 20
+    J = CartesianIndex(2,3,4)
     for f ∈ [Array, CuArray]
+        u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
+        p = zeros(3,4,5) |> f
+        @inside p[I] = WaterLily.ke(I,u)
+        @test @allowscalar p[J]==0.5*(26^2+27^2+28^2)
+        @inside p[I] = WaterLily.ke(I,u,(2,3,4))
+        @test @allowscalar p[J]===1.5*24^2
+        @inside p[I] = WaterLily.λ₂(I,u)
+        @test @allowscalar p[J]≈1
+        ω = [8-6,6-12,12-8]
+        @inside p[I] = WaterLily.curl(2,I,u)
+        @test @allowscalar p[J]==ω[2]
+        f==Array && @test WaterLily.ω(J,u)==ω
+        @inside p[I] = WaterLily.ω_mag(I,u)
+        @test @allowscalar p[J]==sqrt(sum(abs2,ω))
+        @inside p[I] = WaterLily.ω_θ(I,(0,0,1),(2,2,2),u)
+        @test @allowscalar p[J]==-ω[1]
+
+        N = 20
         a,body = get_flow(N,f)
         WaterLily.nds!(a.V,body)
         @test sum(a.V) < 1e-6
