@@ -167,3 +167,16 @@ function BC!(a)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
 end
+
+"""
+    get_byte_size(x)
+Returns the size of an object in bytes.
+"""
+function get_byte_size(x)
+    total = 0
+    field_names = fieldnames(typeof(x))
+    for field_name in field_names
+        total += sizeof(getfield(x, field_name))
+    end
+    return total
+end

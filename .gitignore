@@ -2,6 +2,8 @@
 *.png
 *.gif
 *.mp4
+*.dat
+*.pdf
 Manifest.toml
 /docs/build/
 .vscode/
