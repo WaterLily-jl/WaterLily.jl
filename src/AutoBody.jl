@@ -70,6 +70,7 @@ function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     end
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σᵥ,a.σ,I) over I ∈ inside(a.p)
     @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)              # scaled divergence
+    correct_div!(a.σᵥ)
     BC!(a.μ₀,zeros(SVector{N}))                       # fill BCs
 end
 

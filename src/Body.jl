@@ -33,3 +33,9 @@ Use for a simulation without a body
 """
 struct NoBody <: AbstractBody end
 function measure!(a::Flow,body::NoBody;t=0,ϵ=1) end
+
+function correct_div!(σ)
+    s = sum(σ)/length(inside(σ))
+    abs(s) <= 2eps(eltype(s)) && return
+    @inside σ[I] = σ[I]-s
+end
