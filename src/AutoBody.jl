@@ -21,21 +21,17 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     end
 end
 
-function addBodies(bodies...)
-    map(x,t) = argmin(body->body.sdf(x,t),bodies).map(x,t)
-    sdf(x,t) = minimum(body->body.sdf(x,t),bodies)
+function Base.:+(a::AutoBody, b::AutoBody)
+    map(x,t) = ifelse(a.sdf(x,t)<b.sdf(x,t),a.map(x,t),b.map(x,t))
+    sdf(x,t) = min(a.sdf(x,t),b.sdf(x,t))
     AutoBody(sdf,map,compose=false)
 end
-
-function intersectBodies(bodies...)
-    map(x,t) = argmax(body->body.sdf(x,t),bodies).map(x,t)
-    sdf(x,t) = maximum(body->body.sdf(x,t),bodies)
+function Base.:∩(a::AutoBody, b::AutoBody)
+    map(x,t) = ifelse(a.sdf(x,t)>b.sdf(x,t),a.map(x,t),b.map(x,t))
+    sdf(x,t) = max(a.sdf(x,t),b.sdf(x,t))
     AutoBody(sdf,map,compose=false)
 end
-
-Base.:+(x::AutoBody, y::AutoBody) = addBodies(x,y)
-Base.:∪(x::AutoBody, y::AutoBody) = addBodies(x,y)
-Base.:∩(x::AutoBody, y::AutoBody) = intersectBodies(x,y)
+Base.:∪(x::AutoBody, y::AutoBody) = x+y
 Base.:-(x::AutoBody) = AutoBody((d,t)->-x.sdf(d,t),x.map,compose=false)
 Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 
@@ -54,7 +50,7 @@ See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
-    fast_sdf!(x->body.sdf(x,t), a.σ) # distance to cell center
+    fast_sdf!(a.σ,body,t) # distance to cell center
     @fastmath @inline function fill!(μ₀,μ₁,V,σᵥ,d,I)
         σᵥ[I] = WaterLily.μ₀(d[I],ϵ)-1 # cell-center array
         if abs(d[I])<1+ϵ
@@ -77,10 +73,11 @@ function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     BC!(a.μ₀,zeros(SVector{N}))                       # fill BCs
 end
 
-function fast_sdf!(f,a,margin=2,stride=1)
+fast_sdf!(a::AbstractArray,body::AutoBody,t) = fast_sdf!(x->body.sdf(x,t),a)
+function fast_sdf!(f::Function,a::AbstractArray,margin=2,stride=1)
     # strided index and signed distance function
     @inline J(I) = stride*I+oneunit(I)
-    @inline sdf(I) = f(WaterLily.loc(0,J(I)) .- (stride-1)/2)
+    @inline sdf(I) = f(loc(0,J(I)) .- (stride-1)/2)
     @inline mod2(I) = CI(mod.(I.I,2))
 
     # if the strided array is indivisible, fill it using the sdf 
