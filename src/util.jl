@@ -9,13 +9,6 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 @inline δ(i,I::CartesianIndex{N}) where {N} = δ(i,N)
 
 """
-    fsum(f,n) = sum(ntuple(f,n))
-
-Replacement for sum(f(i) for i ∈ 1:n) that doesn't allocate for small `n` and runs on GPUs.
-"""
-@inline @fastmath fsum(f,n) = sum(ntuple(f,n))
-
-"""
     inside(a)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.

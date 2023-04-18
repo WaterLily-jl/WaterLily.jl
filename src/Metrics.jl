@@ -2,6 +2,7 @@ using StaticArrays
 
 # utilities
 @inline fSV(f,n) = SA[ntuple(f,n)...]
+@inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
 @fastmath function permute(f,i)
     j,k = i%3+1,(i+1)%3+1

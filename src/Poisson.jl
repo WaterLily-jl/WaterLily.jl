@@ -36,14 +36,19 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     end
 end
 
-@fastmath @inline diag(I::CartesianIndex{d},L) where {d} = 
-        -fsum(i->@inbounds(L[I,i]+L[I+δ(i,I),i]),d)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
     @inside iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
+@fastmath @inline function diag(I::CartesianIndex{d},L) where {d}
+    s = zero(eltype(L))
+    for i in 1:d
+        s -= @inbounds(L[I,i]+L[I+δ(i,I),i])
+    end
+    return s
+end
 @fastmath @inline function multL(I::CartesianIndex{d},L,x) where {d}
     s = zero(eltype(L))
     for i in 1:d
