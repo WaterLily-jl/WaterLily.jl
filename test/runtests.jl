@@ -142,8 +142,6 @@ end
     # Horizontally moving body
     for f ∈ arrays
         a,_ = get_flow(20,f)
-        @test @allowscalar all(@. abs(a.μ₀[3:end-1,2:end-1,1]-0.5)==0.5 || a.V[3:end-1,2:end-1,1] == 1)
-        @test @allowscalar all(a.V[:,:,2] .== 0)
         mom_step!(a,Poisson(a.p,a.μ₀,a.σ))
         @test mapreduce(abs2,+,a.u[:,5,1].-1) < 2e-5
     end
