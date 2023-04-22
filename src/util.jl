@@ -41,11 +41,11 @@ L₂(a::CuArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]
 
 Simple macro to automate efficient loops over cells excluding ghosts. For example
 
-    @inside p[I] = sum(I.I)
+    @inside p[I] = sum(loc(0,I))
 
 becomes
 
-    @loop p[I] = sum(I.I) over I ∈ inside(p)
+    @loop p[I] = sum(loc(0,I)) over I ∈ inside(p)
 
 See `@loop`.
 """
@@ -61,28 +61,32 @@ end
 using KernelAbstractions,CUDA,CUDA.CUDAKernels
 using KernelAbstractions: get_backend
 """
-    @loop <expr> over I ∈ ndrange
+    @loop <expr> over <I ∈ R>
 
-Simple macro to automate kernel. For example
+Macro to automate fast CPU or GPU loops using KernelAbstractions.jl.
+The macro creates a kernel function from the expression <expr> and 
+evaluates that function over the CartesianIndices `I ∈ R`.
 
-    @loop a[I] += sum(I.I) over I ∈ R
+For example
+
+    @loop a[I,i] += sum(loc(i,I)) over I ∈ R
 
 becomes
 
-    @kernel function f(a)
-        I ∈ @index(Global,Cartesian)+R[1]-oneunit(R[1])
-        a[I] += sum(I.I)
+    @kernel function kern(a,i,@Const(I0))
+        I ∈ @index(Global,Cartesian)+I0
+        a[I,i] += sum(loc(i,I))
     end
-    f(backend(a),64)(a,ndrange=size(R))
+    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
 
-using package KernelAbstractions to run on CPUs or GPUs.
+where `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 """
 macro loop(args...)
     ex,_,itr = args
     _,I,R = itr.args; sym = []
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
-    @gensym kern
+    @gensym kern      # generate unique kernel function name
     return quote
         @kernel function $kern($(rep.(sym)...),@Const(I0)) # replace composite arguments
             $I = @index(Global,Cartesian)
@@ -129,10 +133,10 @@ end
 
 Return `CartesianIndices` range slicing through an array of size `dims` in
 dimension `j` at index `i`. `low` optionally sets the lower extent of the range
-in the other dimensions. `trim` removes elements from the back indices.
+in the other dimensions.
 """
-function slice(dims::NTuple{N}, i, j, low = 1, trim = 0) where N
-    CartesianIndices(ntuple(k-> k == j ? (i:i) : (low:dims[k] - trim), N))
+function slice(dims::NTuple{N},i,j,low=1) where N
+    CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
 end
 
 """
