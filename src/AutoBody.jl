@@ -50,8 +50,8 @@ See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
-    fast_sdf!(a.σ,body,t) # distance to cell center
     @fastmath @inline function fill!(μ₀,μ₁,V,σᵥ,d,I)
+        d[I] = body.sdf(loc(0,I),t)
         σᵥ[I] = WaterLily.μ₀(d[I],ϵ)-1 # cell-center array
         if abs(d[I])<1+ϵ
             for i ∈ 1:N
@@ -74,28 +74,12 @@ function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     BC!(a.μ₀,zeros(SVector{N}))                       # fill BCs
 end
 
-fast_sdf!(a::AbstractArray,body::AutoBody,t) = fast_sdf!(x->body.sdf(x,t),a)
-function fast_sdf!(f::Function,a::AbstractArray,margin=2,stride=1)
-    # strided index and signed distance function
-    @inline J(I) = stride*I+oneunit(I)
-    @inline sdf(I) = f(loc(0,J(I)) .- (stride-1)/2)
-    @inline mod2(I) = CI(mod.(I.I,2))
+"""
+    measure_sdf!(a::AbstractArray, body::AutoBody, t=0)
 
-    # if the strided array is indivisible, fill it using the sdf 
-    dims = (size(a) .-2 ) .÷ stride
-    if sum(mod.(dims,2)) != 0
-        @loop a[J(I)] = sdf(I) over I ∈ CartesianIndices(dims)
-    
-    # if not, fill an array with twice the stride first
-    else    
-        fast_sdf!(f,a,margin,2stride)
-        @loop a[J(I)] = a[J(I)+stride*mod2(I)] over I ∈ CartesianIndices(dims)
-
-    # and only improve the values within a margin of sdf=0
-        tol = stride*(√length(dims)+margin)
-        @loop a[J(I)] = abs(a[J(I)])<tol ? sdf(I) : a[J(I)] over I ∈ CartesianIndices(dims)
-    end
-end
+Uses `body.sdf(x,t)` to fill `a`.
+"""
+measure_sdf!(a::AbstractArray,body::AutoBody,t) = @inside a[I] = body.sdf(loc(0,I),t)
 
 using ForwardDiff
 """
