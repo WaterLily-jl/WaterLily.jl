@@ -1,8 +1,22 @@
 using WaterLily
 using Test
 using CUDA: CUDA, @allowscalar
-CUDA.allowscalar(false)
-arrays = CUDA.functional() ? [Array, CUDA.CuArray] : [Array]
+using AMDGPU: AMDGPU
+
+function setup_backends()
+    arrays = [Array]
+    if CUDA.functional()
+        CUDA.allowscalar(false)
+        push!(arrays, CUDA.CuArray)
+    end
+    if AMDGPU.functional()
+        AMDGPU.allowscalar(false)
+        push!(arrays, AMDGPU.ROCArray)
+    end
+    return arrays
+end
+
+arrays = setup_backends()
 
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -22,7 +36,7 @@ arrays = CUDA.functional() ? [Array, CUDA.CuArray] : [Array]
         p = Float64[i+j  for i ∈ 1:4, j ∈ 1:5] |> f
         @test inside(p) == CartesianIndices((2:3,2:4))
         @test L₂(p) == 187
-        
+
         u = zeros(5,5,2) |> f
         apply!((i,x)->x[i],u)
         @allowscalar @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
