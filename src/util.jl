@@ -1,3 +1,8 @@
+using KernelAbstractions: get_backend, @index, @kernel
+using CUDA: CuArray
+using AMDGPU: ROCArray
+GPUArray = Union{CuArray,ROCArray}
+
 @inline CI(a...) = CartesianIndex(a...)
 """
     δ(i,N::Int)
@@ -28,14 +33,14 @@ end
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
-using CUDA
 """
     L₂(a)
 
 L₂ norm of array `a` excluding ghosts.
 """
 L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
-L₂(a::CuArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
+L₂(a::GPUArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
+
 """
     @inside <expr>
 
@@ -58,13 +63,11 @@ macro inside(ex)
     end |> esc
 end
 
-using KernelAbstractions,CUDA,CUDA.CUDAKernels
-using KernelAbstractions: get_backend
 """
     @loop <expr> over <I ∈ R>
 
 Macro to automate fast CPU or GPU loops using KernelAbstractions.jl.
-The macro creates a kernel function from the expression <expr> and 
+The macro creates a kernel function from the expression <expr> and
 evaluates that function over the CartesianIndices `I ∈ R`.
 
 For example
