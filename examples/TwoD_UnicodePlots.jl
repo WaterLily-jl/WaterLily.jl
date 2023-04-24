@@ -1,26 +1,18 @@
-using WaterLily
-using LinearAlgebra: norm2
-
-function circle(radius=8;Re=250,n=12,m=6)
-    center, ν = radius*m/2, radius/Re
-    body = AutoBody((x,t)->norm2(x .- center) - radius)
-    Simulation((n*radius+2,m*radius+2), [1.,0.], radius; ν, body)
-end
-
 using UnicodePlots,SparseArrays
 function flood!(canvas,bitarray,color)
     x,y,_ = findnz(sparse(bitarray))
-    points!(canvas,x,y,color)
+    UnicodePlots.points!(canvas,x,y;color)
 end
 function ascii_vort(sim,lines=10,body=false)
-    a = sim.flow.σ; width,height = size(a)
-    canvas = AsciiCanvas((2*lines*width)÷height,lines,width=width,height=height)
+    a = sim.flow.σ; b = @view(a[inside(a)])
+    width,height = size(b)
+    canvas = AsciiCanvas(lines,(2*lines*width)÷height,width=width,height=height)
     @inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-    flood!(canvas,a.<-1,:red)
-    flood!(canvas,a.>1,:blue)
+    flood!(canvas,b.<-1,:red)
+    flood!(canvas,b.>1,:blue)
     !body && return canvas
-    @inside a[I] = sum(WaterLily.ϕ(i,CartesianIndex(I,i),sim.flow.μ₀) for i ∈ 1:2)/2
-    flood!(canvas,a.<0.25,:white)
+    WaterLily.measure_sdf!(a,sim.body,WaterLily.time(sim))
+    flood!(canvas,b.<0,:white)
     return canvas
 end
 
@@ -37,3 +29,11 @@ function sim_ascii!(sim;duration=10,step=0.25,remeasure=false,lines=10,body=fals
     end
     print(ansi_enablecursor)
 end
+
+using WaterLily
+function circle(radius=12;Re=250,n=(12,6),U=1)
+    center = radius*n[2]/2
+    body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
+    Simulation(radius .* n, (U,0), radius; ν=U*radius/Re, body)
+end
+sim = circle(); sim_ascii!(sim,lines=12,duration=20,body=true)
