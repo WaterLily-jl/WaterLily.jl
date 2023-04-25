@@ -17,39 +17,19 @@ function donut(p=6;Re=1e3,mem=Array,U=1)
     Simulation((2n,n,n),(U,0,0),R;ν,body,mem),center
 end
 
-using KernelAbstractions
-using CUDA
-CUDA.allowscalar(false)
-using GLMakie
-begin
-    # Set-up GPU simulation
-    sim,center = donut(mem=CuArray);
+import CUDA
+@assert CUDA.functional()
+sim,center = donut(mem=CUDA.CuArray);
+#sim,center = donut(mem=Array); # if you don't have a CUDA GPU
 
-    # Plot donut surface contour from CPU
-    d = sim.flow.σ |> Array;
-    fig, ax, plt1 = contour(d[inside(d)], levels=[0.5])
-
-    # Set up observable and fill it with ω_θ
-    dat = d[inside(d)] |> Observable;
-    function ω_θ!(dat,d,sim,center)
-        dt = sim.L/sim.U
-        @inside sim.flow.σ[I] = WaterLily.ω_θ(I,(1,0,0),center,sim.flow.u)*dt
-        copyto!(d,sim.flow.σ); # copy to CPU
-        dat[] = d[inside(d)];  # update Observable
-    end
-
-    # Plot ω_θ contours
-    ω_θ!(dat,d,sim,center)
-    contour!(dat, levels=[-5,5], colormap=:balance)
-    fig
+dat = sim.flow.σ[inside(sim.flow.σ)] |> Array;
+function ω_θ!(dat,sim,center=center)
+    dt, a = sim.L/sim.U, sim.flow.σ
+    @inside a[I] = WaterLily.ω_θ(I,(1,0,0),center,sim.flow.u)*dt
+    copyto!(dat,a[inside(a)]) 
 end
 
-# Loop in time
-for _ in 1:100
-    sim_step!(sim,sim_time(sim)+0.05,remeasure=false)
-    ω_θ!(dat,d,sim,center)
+include("ThreeD_Plots.jl")
+@time makie_video!(sim,dat,ω_θ!,name="donut.mp4",duration=10,step=0.25) do obs
+    contour(obs, levels=[-5,5], colormap=:balance)
 end
-
-# using BenchmarkTools
-# @btime sim_step!($sim,sim_time($sim)+0.05,remeasure=false); # 57.095 ms (74183 allocations: 3.77 MiB)
-# @btime ω_θ!($dat,$d,$sim,$center); # 5.148 ms (2695 allocations: 2.11 MiB) W00T!
