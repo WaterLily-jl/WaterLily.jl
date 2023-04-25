@@ -21,7 +21,7 @@ WaterLily.jl solves the unsteady incompressible 2D or 3D [Navier-Stokes equation
 The user can set the boundary conditions, the initial velocity field, the fluid viscosity (which determines the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number)), and immerse solid obstacles using a signed distance function. These examples and others are found in the [examples](examples).
 
 ### Flow over a circle
-We define the size of the simulation domain as `n`x`m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U=1,0)` and Reynolds number is `Re=U*radius/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid. 
+We define the size of the simulation domain as `n`x`m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U=1,0)` and Reynolds number is `Re=U*radius/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid.
 ```julia
 using WaterLily
 function circle(n,m;Re=250,U=1)
@@ -61,18 +61,19 @@ function TGV(; pow=6, Re=1e5, T=Float64, mem=Array)
     return Simulation((L, L, L), (0, 0, 0), L; U, uλ, ν, T, mem)
 end
 ```
-This example also demonstrates the floating point type (`T=Float64`) and array memory type (`mem=Array`) options. For example, to run on an NVidia GPU we only need to import the [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl) library and initialize the `Simulation` memory on that device.
+This example also demonstrates the floating point type (`T=Float64`) and array memory type (`mem=Array`) options. For example, to run on an NVIDIA GPU we only need to import the [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl) library and initialize the `Simulation` memory on that device.
 ```julia
 import CUDA
 @assert CUDA.functional()
 vortex = TGV(T=Float32,mem=CUDA.CuArray)
 sim_step!(vortex,t_end=1)
 ```
+For an AMD GPU, use `import AMDGPU` and `mem=AMDGPU.ROCArray`. Note that Julia 1.9 is required for AMD GPUs.
 
 ### Moving bodies
 ![Flapping line segment flow](examples/hover.gif)
 
-You can simulate moving bodies in Waterlily by passing a coordinate `map` to `AutoBody` in addition to the `sdf`. 
+You can simulate moving bodies in Waterlily by passing a coordinate `map` to `AutoBody` in addition to the `sdf`.
 ```julia
 using StaticArrays
 function hover(L=2^5;Re=250,U=1,amp=π/4,ϵ=0.5,thk=2ϵ+√2)
@@ -107,4 +108,4 @@ Finally, KernelAbstractions does incur some CPU allocations for every loop, but 
  - Add free-surface physics with Volume-of-Fluid or Level-Set.
  - Add external potential-flow domain boundary conditions.
 
-If you have other suggestions or want to help, please raise an issue on github. 
+If you have other suggestions or want to help, please raise an issue on github.
