@@ -13,15 +13,19 @@ function TGV(; pow=6, Re=1e5, T=Float32, mem=Array)
     return Simulation((L, L, L), (0, 0, 0), L; U, uλ, ν, T, mem)
 end
 
+# Initialize CUDA simulation
 using CUDA: CUDA
 @assert CUDA.functional()
 sim = TGV(mem=CUDA.CuArray);
 
-include("ThreeD_Plots.jl")
+# Create a video using Makie
 dat = sim.flow.σ[inside(sim.flow.σ)] |> Array; # CPU buffer array
-function ω_mag!(dat,sim)      # compute |ω|
+function λ₂!(dat,sim)                          # compute log10(-λ₂)
     a = sim.flow.σ
-    @inside a[I] = WaterLily.ω_mag(I,sim.flow.u)*sim.L/sim.U
-    copyto!(dat,a[inside(a)]) # copy to CPU
+    @inside a[I] = log10(max(1e-6,-WaterLily.λ₂(I,sim.flow.u)*sim.L/sim.U))
+    copyto!(dat,a[inside(a)])                  # copy to CPU
 end
-@time volume_video!(sim,dat,ω_mag!,name="TGV.mp4",duration=5);
+include("ThreeD_Plots.jl")
+@time makie_video!(sim,dat,λ₂!,name="TGV.mp4",duration=5) do obs
+    contour(obs,levels=[-3,-2,-1,0],alpha=0.1,isorange=0.5)
+end
