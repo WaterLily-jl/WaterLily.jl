@@ -20,19 +20,18 @@ function jelly(p=5;Re=5e2,mem=Array,U=1)
     Simulation((n,n,4n),(0,0,-U),R;ν,body,mem,T=Float32)
 end
 
-function geom!(geom,md,d,sim,t=WaterLily.time(sim))
-    WaterLily.measure_sdf!(sim.flow.σ,sim.body,t)
-    copyto!(d,sim.flow.σ)      # copy to CPU
-    mirrorto!(md,d[inside(d)]) # mirror quadrant
-    geom[] = md;               # update Observable
+function geom!(md,d,sim,t=WaterLily.time(sim))
+    a = sim.flow.σ
+    WaterLily.measure_sdf!(a,sim.body,t)
+    copyto!(d,a[inside(a)]) # copy to CPU
+    mirrorto!(md,d)         # mirror quadrant
 end
 
-function ω!(ω,md,d,sim)
-    dt = sim.L/sim.U
-    @inside sim.flow.σ[I] = WaterLily.ω_mag(I,sim.flow.u)*dt
-    copyto!(d,sim.flow.σ)      # copy to CPU
-    mirrorto!(md,d[inside(d)]) # mirror quadrant
-    ω[] = md;                  # update Observable
+function ω!(md,d,sim)
+    a,dt = sim.flow.σ,sim.L/sim.U
+    @inside a[I] = WaterLily.ω_mag(I,sim.flow.u)*dt
+    copyto!(d,a[inside(a)]) # copy to CPU
+    mirrorto!(md,d)         # mirror quadrant
 end
 
 function mirrorto!(a,b)
@@ -40,29 +39,26 @@ function mirrorto!(a,b)
     a[reverse(1:n),reverse(1:n),:].=b
     a[reverse(n+1:2n),1:n,:].=a[1:n,1:n,:]
     a[:,reverse(n+1:2n),:].=a[:,1:n,:]
-    return
+    return a
 end
 
-using CUDA: CUDA
+import CUDA
 using GLMakie
 begin
     # Define geometry and motion on GPU
     sim = jelly(mem=CUDA.CuArray);
 
     # Create CPU buffer arrays for geometry flow viz 
-    d = sim.flow.σ |> Array               # one quadrant
-    md = zeros((2,2,1).*size(inside(d)))  # hold mirrored data
+    a = sim.flow.σ
+    d = similar(a,size(inside(a))) |> Array; # one quadrant
+    md = similar(d,(2,2,1).*size(d))  # hold mirrored data
 
     # Set up geometry viz
-    geom = md |> Observable;
-    geom!(geom,md,d,sim);
-    fig, ax, _ = contour(geom, levels=[-1], alpha=0.01,
-            axis = (; type = Axis3, aspect = :data))
-    hidedecorations!(ax, grid = false)
+    geom = geom!(md,d,sim) |> Observable;
+    fig, _, _ = contour(geom, levels=[0], alpha=0.01)
 
     #Set up flow viz
-    ω = md |> Observable;
-    ω!(ω,md,d,sim);
+    ω = ω!(md,d,sim) |> Observable;
     volume!(ω, algorithm=:mip, colormap=:algae, colorrange=(1,10))
     fig
 end
@@ -72,7 +68,6 @@ end
 foreach(1:100) do frame
     @show frame
     sim_step!(sim,sim_time(sim)+0.05);
-    geom!(geom,md,d,sim);
-    ω!(ω,md,d,sim);
-    ax.azimuth[] = pi + 0.3sin(2pi * frame / 120)
+    geom[] = geom!(md,d,sim);
+    ω[] = ω!(md,d,sim);
 end
