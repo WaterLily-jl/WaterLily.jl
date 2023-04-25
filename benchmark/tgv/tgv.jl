@@ -91,14 +91,14 @@ for n ∈ repr.(log2N)
 end
 
 # Plots
-using Plots, LaTeXStrings
-p1 = plot(size=(600,600), xlabel=L"\log_2(N)", ylabel="TGV sim_step! "* L"[s]",
-    yscale=:log10, legend=:bottomright, foreground_color_legend=nothing, legendfontsize=12,
-    yticks=[10.0^n for n in -1:2], markerstrokewidth=0)
-plot!([n for n ∈ repr.(log2N.*3)], btimes_sim_step[:serial], label="serial", marker=4, color=:red, markerstrokewidth=0.25)
-plot!([n for n ∈ repr.(log2N.*3)], btimes_sim_step[:CPU], label="CPU", marker=4, color=:blue, markerstrokewidth=0.25)
-plot!([n for n ∈ repr.(log2N.*3)], btimes_sim_step[:GPU], label="GPU", marker=4, color=:green, markerstrokewidth=0.25)
+# using Plots, LaTeXStrings
+# p1 = plot(size=(600,600), xlabel=L"\log_2(N)", ylabel="TGV sim_step! "* L"[s]",
+#     yscale=:log10, legend=:bottomright, foreground_color_legend=nothing, legendfontsize=12,
+#     yticks=[10.0^n for n in -1:2], markerstrokewidth=0)
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_sim_step[:serial], label="serial", marker=4, color=:red, markerstrokewidth=0.25)
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_sim_step[:CPU], label="CPU", marker=4, color=:blue, markerstrokewidth=0.25)
+# plot!([n for n ∈ repr.(log2N.*3)], btimes_sim_step[:GPU], label="GPU", marker=4, color=:green, markerstrokewidth=0.25)
 
-Plots.scalefontsizes(1.5)
-savefig("benchmark/tgv/tgv_benchmark.pdf");
-Plots.scalefontsizes()
+# Plots.scalefontsizes(1.5)
+# savefig("benchmark/tgv/tgv_benchmark.pdf");
+# Plots.scalefontsizes()
