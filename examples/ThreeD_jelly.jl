@@ -16,7 +16,7 @@ function jelly(p=5;Re=5e2,mem=Array,U=1)
     plane = AutoBody((x,t)->x[3]-h,(x,t)->x+C(t))
     body =  sphere-plane
 
-    # Initialize simulation and return center for flow viz
+    # Return initialized simulation
     Simulation((n,n,4n),(0,0,-U),R;ν,body,mem,T=Float32)
 end
 

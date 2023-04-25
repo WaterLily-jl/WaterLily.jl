@@ -7,4 +7,3 @@
 Manifest.toml
 /docs/build/
 .vscode/
-CUDAEnv/test*.jl
