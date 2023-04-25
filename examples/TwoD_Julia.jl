@@ -24,11 +24,10 @@ function TwoD_julia_video(;p=6,Re=250,stop=60.)
         println("tU/L=",round(tᵢ,digits=4))
         sim_step!(sim,tᵢ)
         @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*R/U
-        flood(sim.flow.σ,shift=(-0.5,-0.5),clims=(-5,5.05),
+        flood(sim.flow.σ,shift=(-0.5,-0.5),clims=(-5,5),
             cfill=:Blues,legend=false,border=:none)
         for (center,color) ∈ zip(centers,colors)
             addbody(real(z.+center),imag(z.+center),c=color)
         end
     end
-    return sim
 end

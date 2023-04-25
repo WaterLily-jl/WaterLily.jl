@@ -19,5 +19,5 @@ sim_step!(sim,π)
 include("TwoD_plots.jl")
 a = sim.flow.σ;
 @inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-flood(a[inside(a)],clims=(-5,5.05))
+flood(a[inside(a)],clims=(-5,5))
 body_plot!(sim)
