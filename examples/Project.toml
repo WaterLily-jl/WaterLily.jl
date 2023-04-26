@@ -1,3 +1,7 @@
 [deps]
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+GR = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
+WaterLily = "ed894a53-35f9-47f1-b17f-85db9237eebd"
