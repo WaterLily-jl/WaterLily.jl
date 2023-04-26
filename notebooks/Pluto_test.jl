@@ -56,7 +56,7 @@ body = AutoBody() do x,t
 end;
 
 # ╔═╡ 9a7c1caa-9248-11eb-284c-ef6bec18bf65
-sim = Simulation((n+2,m+2),[1.,0.],L; body, ν=L/100.);
+sim = Simulation((n,m),(1,0),L; body, ν=L/100.);
 
 # ╔═╡ b8e4b74e-8a3a-11eb-27a0-87eea85497d9
 begin

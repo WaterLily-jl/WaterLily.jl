@@ -1,3 +1,8 @@
+using KernelAbstractions: get_backend, @index, @kernel
+using CUDA: CuArray
+using AMDGPU: ROCArray
+GPUArray = Union{CuArray,ROCArray}
+
 @inline CI(a...) = CartesianIndex(a...)
 """
     δ(i,N::Int)
@@ -9,14 +14,11 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 @inline δ(i,I::CartesianIndex{N}) where {N} = δ(i,N)
 
 """
-    inside(dims)
-    inside(a) = inside(size(a))
+    inside(a)
 
-Return CartesianIndices range excluding the ghost-cells on the boundaries of
-a _scalar_ array `a` with `dims=size(a)`.
+Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
-@inline inside(dims::NTuple{N}) where {N} = CartesianIndices(ntuple(i-> 2:dims[i]-1,N))
-@inline inside(a::AbstractArray) = inside(size(a))
+@inline inside(a::AbstractArray) = CartesianIndices(map(ax->first(ax)+1:last(ax)-1,axes(a)))
 
 """
     inside_u(dims,j)
@@ -27,7 +29,8 @@ a _vector_ array on face `j` with size `dims`.
 function inside_u(dims::NTuple{N},j) where {N}
     CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
 end
-splitn(n) = Base.front(n),n[end]
+@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
+splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
 """
@@ -35,79 +38,77 @@ size_u(u) = splitn(size(u))
 
 L₂ norm of array `a` excluding ghosts.
 """
-L₂(a) = sum(@inbounds(abs2(a[I])) for I ∈ inside(a))
+L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+L₂(a::GPUArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
 
 """
     @inside <expr>
 
 Simple macro to automate efficient loops over cells excluding ghosts. For example
 
-    @inside p[I] = sum(I.I)
+    @inside p[I] = sum(loc(0,I))
 
 becomes
 
-    @loop p[I] = sum(I.I) over I ∈ inside(p)
-        
-See `inside` and `@loop`.
+    @loop p[I] = sum(loc(0,I)) over I ∈ inside(p)
+
+See `@loop`.
 """
 macro inside(ex)
-    a,I = Meta.parse.(split(string(ex.args[1]),union("[",",","]")))
-    return quote 
+    # Make sure its a single assignment
+    @assert ex.head == :(=) && ex.args[1].head == :(ref)
+    a,I = ex.args[1].args[1:2]
+    return quote # loop over the size of the reference
         WaterLily.@loop $ex over $I ∈ inside($a)
     end |> esc
 end
 
 """
-    @loop <expr> over I ∈ R
+    @loop <expr> over <I ∈ R>
 
-Simple macro to automate efficient loops. For example
+Macro to automate fast CPU or GPU loops using KernelAbstractions.jl.
+The macro creates a kernel function from the expression <expr> and
+evaluates that function over the CartesianIndices `I ∈ R`.
 
-    @loop r[I] += sum(I.I) over I ∈ CartesianIndex(r)
+For example
+
+    @loop a[I,i] += sum(loc(i,I)) over I ∈ R
 
 becomes
 
-    @inbounds @simd for I ∈ CartesianIndex(r)
-        r[I] += sum(I.I)
+    @kernel function kern(a,i,@Const(I0))
+        I ∈ @index(Global,Cartesian)+I0
+        a[I,i] += sum(loc(i,I))
     end
+    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
 
-when running one thread or 
-                
-    @inbounds Threads.@threads for I ∈ CartesianIndex(r)
-        r[I] += sum(I.I)
-    end
-
-when running multithread.                
+where `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 """
 macro loop(args...)
     ex,_,itr = args
-    op,I,R = itr.args
-    @assert op ∈ (:(∈),:(in))
-
-    if Threads.nthreads()!=1    #multithread mode
-        return quote
-            @inbounds Threads.@threads for $I ∈ $R
-                $ex
-            end
-        end |> esc
-    else
-        return quote            #single thread mode
-            @inbounds @simd for $I ∈ $R
-                $ex
-            end
-        end |> esc
-    end
+    _,I,R = itr.args; sym = []
+    grab!(sym,ex)     # get arguments and replace composites in `ex`
+    setdiff!(sym,[I]) # don't want to pass I as an argument
+    @gensym kern      # generate unique kernel function name
+    return quote
+        @kernel function $kern($(rep.(sym)...),@Const(I0)) # replace composite arguments
+            $I = @index(Global,Cartesian)
+            $I += I0
+            @fastmath @inbounds $ex
+        end
+        $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+    end |> esc
 end
-
-function median(a,b,c)
-    if a>b
-        b>=c && return b
-        a>c && return c
-    else
-        b<=c && return b
-        a<c && return c
-    end
-    return a
+function grab!(sym,ex::Expr)
+    ex.head == :. && return union!(sym,[ex])      # grab composite name and return
+    start = ex.head==:(call) ? 2 : 1              # don't grab function names
+    foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
+    ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
 end
+grab!(sym,ex::Symbol) = union!(sym,[ex])        # grab symbol name
+grab!(sym,ex) = nothing
+rep(ex) = ex
+rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
@@ -131,7 +132,7 @@ function apply!(f,c)
 end
 
 """
-    slice(dims,i,j,low=1)
+    slice(dims,i,j,low=1,trim=0)
 
 Return `CartesianIndices` range slicing through an array of size `dims` in
 dimension `j` at index `i`. `low` optionally sets the lower extent of the range
@@ -143,7 +144,6 @@ end
 
 """
     BC!(a,A,f=1)
-
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
 condition `a[I,i]=f*A[i]` is applied to the vector component _normal_ to the domain
 boundary. For example `aₓ(x)=f*Aₓ ∀ x ∈ minmax(X)`. A zero Nuemann condition
@@ -165,12 +165,11 @@ end
 
 """
     BC!(a)
-
 Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
 """
 function BC!(a)
     N = size(a)
-    for j ∈ 1:length(N)
+    for j ∈ eachindex(N)
         @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end

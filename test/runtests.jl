@@ -1,76 +1,123 @@
 using WaterLily
 using Test
-using PerformanceTestTools
-using JLD2
+using CUDA: CUDA, @allowscalar
+using AMDGPU: AMDGPU
 
-@testset "multithreaded equivalence" begin
-    N_multithread = 2
-    PerformanceTestTools.@include_foreach(
-        "tests_using_threads.jl",
-        [["JULIA_NUM_THREADS" => "1"]],
-    )
-    PerformanceTestTools.@include_foreach(
-        "tests_using_threads.jl",
-        [["JULIA_NUM_THREADS" => string(N_multithread)]],
-    )
-    filebase = string(tempdir(), "/testing_using_threads#")
-    sim1_u = load(string(filebase, 1, "_u.jld2"))["data"]
-    sim2_u = load(string(filebase, N_multithread, "_u.jld2"))["data"]
-    @test maximum(broadcast(abs, sim1_u-sim2_u)) < 1e-3
+function setup_backends()
+    arrays = [Array]
+    if CUDA.functional()
+        CUDA.allowscalar(false)
+        push!(arrays, CUDA.CuArray)
+    end
+    if AMDGPU.functional()
+        AMDGPU.allowscalar(false)
+        push!(arrays, AMDGPU.ROCArray)
+    end
+    return arrays
 end
 
+arrays = setup_backends()
+
 @testset "util.jl" begin
-    @test L₂(2ones(4,4)) == 16
-    a = Float64[i+j+k  for i ∈ 1:4, j ∈ 1:4, k ∈ 1:2]
-    BC!(a,[0. 0.])
-    @test a == cat([0. 0. 0. 0.
-                    0. 0. 0. 0.
-                    6. 6. 7. 7.
-                    0. 0. 0. 0.],
-                   [0. 0. 7. 0.
-                    0. 0. 7. 0.
-                    0. 0. 8. 0.
-                    0. 0. 8. 0.],dims=3)
-    u = zeros(4,4,2); apply!((i,x)->x[i],u)
-    @test [u[i,j,1].-(i-0.5) for i in 1:4, j in 1:4]==zeros(4,4)
+    I = CartesianIndex(1,2,3,4)
+    @test I+δ(3,I) == CartesianIndex(1,2,4,4)
+
     using StaticArrays
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5)
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...)
+
+    ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
+    WaterLily.grab!(sym,ex)
+    @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
+    @test sym == [:a, :I, :i, :(p.b), :q]
+
+    for f ∈ arrays
+        p = Float64[i+j  for i ∈ 1:4, j ∈ 1:5] |> f
+        @test inside(p) == CartesianIndices((2:3,2:4))
+        @test L₂(p) == 187
+
+        u = zeros(5,5,2) |> f
+        apply!((i,x)->x[i],u)
+        @allowscalar @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
+
+        Ng, D, U = (6, 6), 2, (1.0, 0.5)
+        u = rand(Ng..., D) |> f # vector
+        σ = rand(Ng...) |> f # scalar
+        BC!(u, U)
+        BC!(σ)
+        @allowscalar() do
+            @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
+                all(u[3:end-1, 1, 1] .== u[3:end-1, 2, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end-1, 1])
+            @test all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
+                all(u[1, 3:end-1, 2] .== u[2, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end-1, 3:end-1, 2])
+            @test all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
+                all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
+        end
+    end
 end
 
-function Poisson_test_2D(f,n)
-    c = ones(n+2,n+2,2); BC!(c,[0. 0.])
-    p = f(c)
-    soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2]
-    b = mult(p,soln)
-    x = zeros(n+2,n+2)
-    solver!(x,p,b)
-    x .-= (x[2,2]-soln[2,2])
-    return L₂(x.-soln)/L₂(soln)
-end
-function Poisson_test_3D(f,n)
-    c = ones(n+2,n+2,n+2,3); BC!(c,[0. 0. 0.])
-    p = f(c)
-    soln = Float64[ i for i ∈ 1:n+2, j ∈ 1:n+2, k ∈ 1:n+2]
-    b = mult(p,soln)
-    x = zeros(n+2,n+2,n+2)
-    solver!(x,p,b,tol=1e-5)
-    x .-= (x[2,2,2]-soln[2,2,2])
-    return L₂(x.-soln)/L₂(soln)
+function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
+    c = ones(T,N...,D) |> f; BC!(c, ntuple(zero,D))
+    x = zeros(T,N) |> f; z = copy(x)
+    pois = poisson(x,c,z)
+    soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f
+    I = first(inside(x))
+    @allowscalar @. soln -= soln[I]
+    z = mult!(pois,soln)
+    solver!(pois)
+    @allowscalar @. x -= x[I]
+    return L₂(x-soln)/L₂(soln),pois
 end
 
 @testset "Poisson.jl" begin
-    @test Poisson_test_2D(Poisson,2^6) < 1e-5
-    @test Poisson_test_3D(Poisson,2^4) < 1e-5
+    for f ∈ arrays
+        err,pois = Poisson_setup(Poisson,(5,5);f)
+        @test @allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
+        @test @allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
+        @test err < 1e-5
+        err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
+        @test err < 1e-6
+        @test pois.n[] < 310
+        err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
+        @test err < 1e-6
+        @test pois.n[] < 35
+    end
 end
+
 @testset "MultiLevelPoisson.jl" begin
     I = CartesianIndex(4,3,2)
     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
-    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_2D(MultiLevelPoisson,67)
-    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2") Poisson_test_3D(MultiLevelPoisson,3^4)
-    @test Poisson_test_2D(MultiLevelPoisson,2^6) < 1e-5
-    @test Poisson_test_3D(MultiLevelPoisson,2^4) < 1e-5
+    @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
+
+    err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
+    @test err < 1e-5
+
+    pois.levels[1].L[5:6,:,1].=0
+    WaterLily.update!(pois)
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
+
+    for f ∈ arrays
+        err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
+        @test err < 1e-6
+        @test pois.n[] < 3
+        err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
+        @test err < 1e-6
+        @test pois.n[] < 3
+    end
+end
+
+@testset "Flow.jl" begin
+    # Impulsive flow in a box
+    U = (2/3, -1/3)
+    N = (2^4, 2^4)
+    for f ∈ arrays
+        a = Flow(N, U; f, T=Float32)
+        mom_step!(a, MultiLevelPoisson(a.p,a.μ₀,a.σ))
+        @test L₂(a.u[:,:,1].-U[1]) < 2e-5
+        @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+    end
 end
 
 @testset "Body.jl" begin
@@ -80,8 +127,7 @@ end
 end
 
 @testset "AutoBody.jl" begin
-    using LinearAlgebra: norm2
-
+    norm2(x) = √sum(abs2,x)
     # test AutoDiff in 2D and 3D
     body1 = AutoBody((x,t)->norm2(x)-2-t)
     @test all(measure(body1,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
@@ -93,50 +139,66 @@ end
     #test booleans
     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
-
-    # test fast apply_sdf matches exhaustive sdf
-    dims = (2^5,2^5)
-    sdf(x) = norm2(x.-2^4)-4π
-    a = zeros(dims); WaterLily.apply_sdf!(sdf,a)
-    b = zeros(dims); @inside b[I] = sdf(WaterLily.loc(0,I))
-    @test all(@. clamp(a,-2,2)==clamp(b,-2,2))
 end
 
-@testset "Flow.jl" begin
-    # Horizontally moving body
-    using LinearAlgebra: norm2
-    a = Flow((20,20),[1.,0.])
-    center = [10.58,10.65] # worst case - not sure why
-    measure!(a,AutoBody((x,t)->norm2(x.-center)-5,(x,t)->x.-[t,0.]))
-    mom_step!(a,Poisson(a.μ₀))
-    @test sum(abs2,a.u[:,5,1].-1) < 2e-5
+using StaticArrays
+function get_flow(N,f)
+    a = Flow((N,N),(1.,0.);f,T=Float32)
+    @inside a.p[I] = loc(0, I)[2]
+    sdf(x,t) = √sum(abs2,x.-N÷2)-N÷4
+    map(x,t) = x.-SVector(t,0)
+    body = AutoBody(sdf,map)
+    WaterLily.measure!(a,body)
+    return a,body
+end
 
-    # Impulsive flow in a box
-    U = [2/3,-1/3]
-    a = Flow((14,10),U)
-    mom_step!(a,MultiLevelPoisson(a.μ₀))
-    @test L₂(a.u[:,:,1].-U[1]) < 2e-5
-    @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+@testset "Flow.jl with Body.jl" begin
+    # Horizontally moving body
+    for f ∈ arrays
+        a,_ = get_flow(20,f)
+        mom_step!(a,Poisson(a.p,a.μ₀,a.σ))
+        @test mapreduce(abs2,+,a.u[:,5,1].-1) < 2e-5
+    end
 end
 
 @testset "Metrics.jl" begin
-    I = CartesianIndex(2,3,4)
-    u = zeros(3,4,5,3); apply!((i,x)->x[i]+prod(x),u)
-    @test WaterLily.ke(I,u)==0.5*(26^2+27^2+28^2)
-    @test WaterLily.ke(I,u,[2,3,4])===1.5*24^2
-    @test [WaterLily.∂(i,j,I,u)
-            for i in 1:3, j in 1:3] == [13 8 6; 12 9 6; 12 8 7]
-    @test WaterLily.λ₂(I,u)≈1
-    ω = [8-6,6-12,12-8]
-    @test WaterLily.curl(2,I,u)==ω[2]
-    @test WaterLily.ω(I,u)==ω
-    @test WaterLily.ω_mag(I,u)==sqrt(sum(abs2,ω))
-    @test WaterLily.ω_θ(I,[0,0,1],[2,2,2],u)==-ω[1]
+    J = CartesianIndex(2,3,4)
+    for f ∈ arrays
+        u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
+        p = zeros(3,4,5) |> f
+        @inside p[I] = WaterLily.ke(I,u)
+        @test @allowscalar p[J]==0.5*(26^2+27^2+28^2)
+        @inside p[I] = WaterLily.ke(I,u,(2,3,4))
+        @test @allowscalar p[J]==1.5*24^2
+        @inside p[I] = WaterLily.λ₂(I,u)
+        @test @allowscalar p[J]≈1
+        ω = [8-6,6-12,12-8]
+        @inside p[I] = WaterLily.curl(2,I,u)
+        @test @allowscalar p[J]==ω[2]
+        f==Array && @test WaterLily.ω(J,u)==ω
+        @inside p[I] = WaterLily.ω_mag(I,u)
+        @test @allowscalar p[J]==sqrt(sum(abs2,ω))
+        @inside p[I] = WaterLily.ω_θ(I,(0,0,1),(2,2,2),u)
+        @test @allowscalar p[J]==-ω[1]
 
-    body = AutoBody((x,t)->√sum(abs2,x .- 2^6) - 2^5)
-    p = ones(2^7,2^7)
-    @inside p[I] = sum(I.I[2])
-    @test sum(abs2,WaterLily.∮nds(p,body)/(π*2^10).-(0,1))<1e-6
-    @inside p[I] = cos(atan(reverse(loc(0,I) .- 2^6)...))
-    @test sum(abs2,WaterLily.∮nds(p,body)/(π*2^5).-(1,0))<1e-6
+        N = 20
+        a,body = get_flow(N,f)
+        WaterLily.nds!(a.V,body)
+        @test sum(a.V) < 1e-6
+        force = WaterLily.∮nds(a.p,a.V,body)
+        @test sum(abs2,force/(π*(N÷4)^2) - [0,1]) < 1e-5
+    end
+end
+
+function sphere_sim(radius = 8; mem=Array)
+    body = AutoBody((x,t)-> √sum(abs2,x .- 2radius) - radius)
+    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem)
+end
+@testset "WaterLily.jl" begin
+    for mem ∈ arrays
+        sim = sphere_sim(32;mem);
+        @test sim_time(sim) == 0
+        sim_step!(sim,0.1,remeasure=false)
+        @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2
+    end
 end

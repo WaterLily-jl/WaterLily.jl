@@ -1,22 +1,16 @@
 module WaterLily
 
-_nthread = Threads.nthreads()
-if _nthread==1
-    @warn "WaterLily.jl is running on a single thread.\n
-Launch Julia with multiple threads to enable multithreaded capabilities:\n
-    \$julia -t auto $PROGRAM_FILE"
-else
-    print("WaterLily.jl is running on ", _nthread, " thread(s)\n")
-end
-
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc
 
+using Reexport
+@reexport using KernelAbstractions: @kernel,@index,get_backend
+
 include("Poisson.jl")
-export AbstractPoisson,Poisson,solver!,mult
+export AbstractPoisson,Poisson,solver!,mult!
 
 include("MultiLevelPoisson.jl")
-export MultiLevelPoisson,solver!,mult
+export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
 export Flow,mom_step!
@@ -28,25 +22,27 @@ include("AutoBody.jl")
 export AutoBody,measure!,measure,+,-
 
 include("Metrics.jl")
-using LinearAlgebra: norm2
 
 """
-    Simulation(dims::Tuple, u_BC::Vector, L::Number;
+    Simulation(dims::NTuple, u_BC::NTuple, L::Number;
                U=norm2(u_BC), Δt=0.25, ν=0., ϵ = 1,
                uλ::Function=(i,x)->u_BC[i],
-               body::AbstractBody=NoBody())
+               body::AbstractBody=NoBody(),
+               T=Float32, mem = Array)
 
 Constructor for a WaterLily.jl simulation:
 
     `dims`: Simulation domain dimensions.
-    `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=1,2...`.
+    `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=eachindex(dims)`.
     `L`: Simulation length scale.
     `U`: Simulation velocity scale.
-    `ϵ`: BDIM kernel width.
     `Δt`: Initial time step.
-    `ν`: Scaled viscosity (`Re=UL/ν`)
+    `ν`: Scaled viscosity (`Re=UL/ν`).
+    `ϵ`: BDIM kernel width.
     `uλ`: Function to generate the initial velocity field.
-    `body`: Immersed geometry
+    `body`: Immersed geometry.
+    `T`: Array element type.
+    `mem`: memory location. `Array` and `CuArray` run on CPU and CUDA backends, respectively.
 
 See files in `examples` folder for examples.
 """
@@ -57,13 +53,13 @@ struct Simulation
     flow :: Flow
     body :: AbstractBody
     pois :: AbstractPoisson
-    function Simulation(dims::Tuple, u_BC::Vector, L::Number;
-                        Δt=0.25, ν=0., U=norm2(u_BC), ϵ = 1,
+    function Simulation(dims::NTuple{N}, u_BC::NTuple{N}, L::Number;
+                        Δt=0.25, ν=0., U=√sum(abs2,u_BC), ϵ = 1,
                         uλ::Function=(i,x)->u_BC[i],
-                        body::AbstractBody=NoBody(),T=Float64)
-        flow = Flow(dims,u_BC;uλ,Δt,ν,T)
+                        body::AbstractBody=NoBody(),T=Float32,mem=Array) where N
+        flow = Flow(dims,u_BC;uλ,Δt,ν,T,f=mem)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.μ₀))
+        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ))
     end
 end
 
@@ -78,13 +74,13 @@ scales.
 sim_time(sim::Simulation) = time(sim)*sim.U/sim.L
 
 """
-    sim_step!(sim::Simulation,t_end;verbose=false)
+    sim_step!(sim::Simulation,t_end;remeasure=true,verbose=false)
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
-If `verbose=true` the time `tU/L` and adaptive time step `Δt` are
-printed every time step.
+If `remeasure=true`, the body is remeasured at every time step. 
+Can be set to `false` for static geometries to speed up simulation.
 """
-function sim_step!(sim::Simulation,t_end;verbose=false,remeasure=false)
+function sim_step!(sim::Simulation,t_end;verbose=false,remeasure=true)
     t = time(sim)
     while t < t_end*sim.L/sim.U
         remeasure && measure!(sim,t)
@@ -102,7 +98,7 @@ Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
 function measure!(sim::Simulation,t=time(sim))
     measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
-    update!(sim.pois,sim.flow.μ₀)
+    update!(sim.pois)
 end
 
 export Simulation,sim_step!,sim_time,measure!

@@ -21,21 +21,17 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     end
 end
 
-function addBodies(bodies...)
-    map(x,t) = argmin(body->body.sdf(x,t),bodies).map(x,t)
-    sdf(x,t) = minimum(body->body.sdf(x,t),bodies)
+function Base.:+(a::AutoBody, b::AutoBody)
+    map(x,t) = ifelse(a.sdf(x,t)<b.sdf(x,t),a.map(x,t),b.map(x,t))
+    sdf(x,t) = min(a.sdf(x,t),b.sdf(x,t))
     AutoBody(sdf,map,compose=false)
 end
-
-function intersectBodies(bodies...)
-    map(x,t) = argmax(body->body.sdf(x,t),bodies).map(x,t)
-    sdf(x,t) = maximum(body->body.sdf(x,t),bodies)
+function Base.:∩(a::AutoBody, b::AutoBody)
+    map(x,t) = ifelse(a.sdf(x,t)>b.sdf(x,t),a.map(x,t),b.map(x,t))
+    sdf(x,t) = max(a.sdf(x,t),b.sdf(x,t))
     AutoBody(sdf,map,compose=false)
 end
-
-Base.:+(x::AutoBody, y::AutoBody) = addBodies(x,y)
-Base.:∪(x::AutoBody, y::AutoBody) = addBodies(x,y)
-Base.:∩(x::AutoBody, y::AutoBody) = intersectBodies(x,y)
+Base.:∪(x::AutoBody, y::AutoBody) = x+y
 Base.:-(x::AutoBody) = AutoBody((d,t)->-x.sdf(d,t),x.map,compose=false)
 Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 
@@ -54,47 +50,36 @@ See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
 """
 function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
-    sdf = a.σ
-    apply_sdf!(x->body.sdf(x,t), sdf)   # distance to cell center
-    for I ∈ inside(a.p)
-        if abs(sdf[I])<ϵ+1   # near interface
-            a.σᵥ[I] = μ₀(sdf[I],ϵ)-1
-            # measure properties and fill arrays at face (i,I)
+    @fastmath @inline function fill!(μ₀,μ₁,V,σᵥ,d,I)
+        d[I] = body.sdf(loc(0,I),t)
+        σᵥ[I] = WaterLily.μ₀(d[I],ϵ)-1 # cell-center array
+        if abs(d[I])<1+ϵ
             for i ∈ 1:N
-                dᵢ,n,V = measure(body,loc(i,I),t)
-                a.V[I,i] = V[i]
-                a.μ₀[I,i] = μ₀(dᵢ,ϵ)
-                a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
+                dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I),t)
+                V[I,i] = Vᵢ[i]
+                μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
+                for j ∈ 1:N
+                    μ₁[I,i,j] = WaterLily.μ₁(dᵢ,ϵ)*nᵢ[j]
+                end
             end
-        elseif sdf[I]<0      # completely inside body
-            a.μ₀[I,:] .= 0
-            a.σᵥ[I] = -1
+        elseif d[I]<0
+            for i ∈ 1:N
+                μ₀[I,i] = 0.
+            end
         end
     end
-    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
-    BC!(a.μ₀,zeros(SVector{N}))
+    @loop fill!(a.μ₀,a.μ₁,a.V,a.σᵥ,a.σ,I) over I ∈ inside(a.p)
+    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)              # scaled divergence
+    correct_div!(a.σᵥ)
+    BC!(a.μ₀,zeros(SVector{N}))                       # fill BCs
 end
 
-function apply_sdf!(f,a,margin=2,stride=1)
-    # strided index and signed distance function
-    @inline J(I) = stride*I+oneunit(I)
-    @inline sdf(I) = f(WaterLily.loc(0,J(I)) .- (stride-1)/2)
+"""
+    measure_sdf!(a::AbstractArray, body::AutoBody, t=0)
 
-    # if the strided array is indivisible, fill it using the sdf 
-    dims = (size(a) .-2 ) .÷ stride
-    if sum(mod.(dims,2)) != 0
-        @loop a[J(I)] = sdf(I) over I ∈ CartesianIndices(dims)
-    
-    # if not, fill an array with twice the stride first
-    else    
-        apply_sdf!(f,a,margin,2stride)
-
-    # and only improve the values within a margin of sdf=0
-        tol = stride*(√length(dims)+margin)
-        @loop (d = @inbounds a[J(I)+stride*CI(mod.(I.I,2))]; 
-               a[J(I)] = abs(d)<tol ? sdf(I) : d) over I ∈ CartesianIndices(dims)
-    end
-end
+Uses `body.sdf(x,t)` to fill `a`.
+"""
+measure_sdf!(a::AbstractArray,body::AutoBody,t) = @inside a[I] = body.sdf(loc(0,I),t)
 
 using ForwardDiff
 """
