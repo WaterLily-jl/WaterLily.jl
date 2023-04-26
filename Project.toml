@@ -15,9 +15,12 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
+AMDGPU = "^0.4.13"
+CUDA = "^4.1.4"
 Documenter = "0.19 - 0.28"
 ForwardDiff = "^0.10.18"
 KernelAbstractions = "^0.9.1"
+Reexport = "^1.2.2"
 StaticArrays = "^1.1.0"
 julia = "1.6"
 
