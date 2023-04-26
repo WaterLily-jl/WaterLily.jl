@@ -32,10 +32,11 @@ end
 ```
 The second to last line defines the circle geometry using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameter automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](examples/ThreeD_donut.jl) or the [Julia logo](examples/TwoD_Julia.jl). Finally, the last line defines the `Simulation` by passing in parameters we've defined.
 
-Now we can create a simulation (first line) and run it forward in time (second line)
+Now we can create a simulation (first line) and run it forward in time (third line)
 ```julia
 circ = circle(3*2^6,2^7)
-sim_step!(circ,t_end=10)
+t_end = 10
+sim_step!(circ,t_end)
 ```
 Note we've set `n,m` to be multiples of powers of 2, which is important when using the (very fast) Multi-Grid solver. We can now access and plot whatever variables we like. For example, we could print the velocity at `I::CartesianIndex` using `println(circ.flow.u[I])` or plot the whole pressure field using
 ```julia
