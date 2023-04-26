@@ -67,7 +67,7 @@ This example also demonstrates the floating point type (`T=Float64`) and array m
 import CUDA
 @assert CUDA.functional()
 vortex = TGV(T=Float32,mem=CUDA.CuArray)
-sim_step!(vortex,t_end=1)
+sim_step!(vortex,1)
 ```
 For an AMD GPU, use `import AMDGPU` and `mem=AMDGPU.ROCArray`. Note that Julia 1.9 is required for AMD GPUs.
 
