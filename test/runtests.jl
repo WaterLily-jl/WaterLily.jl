@@ -169,7 +169,7 @@ end
         @inside p[I] = WaterLily.ke(I,u)
         @test @allowscalar p[J]==0.5*(26^2+27^2+28^2)
         @inside p[I] = WaterLily.ke(I,u,(2,3,4))
-        @test @allowscalar p[J]===1.5*24^2
+        @test @allowscalar p[J]==1.5*24^2
         @inside p[I] = WaterLily.λ₂(I,u)
         @test @allowscalar p[J]≈1
         ω = [8-6,6-12,12-8]

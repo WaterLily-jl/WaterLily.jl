@@ -15,32 +15,15 @@ macro add_benchmark(args...)
     end |> esc
 end
 
-# function TGV(p, backend; Re=1e5, T=Float32)
-#     # Define vortex size, velocity, viscosity
-#     L = 2^p; U = 1; ν = U*L/Re
-#     # Taylor-Green-Vortex initial velocity field
-#     function uλ(i,vx)
-#         x,y,z = @. (vx-1.5)*π/L                # scaled coordinates
-#         i==1 && return -U*sin(x)*cos(y)*cos(z) # u_x
-#         i==2 && return  U*cos(x)*sin(y)*cos(z) # u_y
-#         return 0.                              # u_z
-#     end
-#     # Initialize simulation
-#     return Simulation((L, L, L), (0, 0, 0), L; U=U, uλ=uλ, ν=ν, T=T, mem=backend)
-# end
-
 function donut(p, backend; Re=1e3, T=Float32)
     # Define simulation size, geometry dimensions, viscosity
     n = 2^p
     center,R,r = (n/2,n/2,n/2), n/4, n/16
     ν = R/Re
     # Apply signed distance function for a torus
-    # sdf(x,t) = norm2((x[1]-center[1], norm2((x[2]-center[2],x[3]-center[3]))-R))-r
-    # sdf(x,t) = √sum(abs2,(x[1], √sum(abs2, (x[2], x[3])) - R))
-    # body = AutoBody(sdf)
     body = AutoBody() do xyz, t
         x,y,z = xyz .- center
-        √sum(abs2,(x, √sum(abs2, (y, z)) - R)) # norm2([x,norm2([y,z])-R])-r
+        √sum(abs2,(x, √sum(abs2, (y, z)) - R))
     end
     # Initialize simulation
     Simulation((2n, n, n), (1, 0, 0), R; ν=ν, body=body, T=T, mem=backend)
