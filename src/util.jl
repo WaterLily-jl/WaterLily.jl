@@ -10,8 +10,8 @@ GPUArray = Union{CuArray,ROCArray}
 
 Return a CartesianIndex of dimension `N` which is one at index `i` and zero elsewhere.
 """
-@inline δ(i,N::Int) = CI(ntuple(j -> j==i ? 1 : 0, N))
-@inline δ(i,I::CartesianIndex{N}) where {N} = δ(i,N)
+δ(i,::Val{N}) where N = CI(ntuple(j -> j==i ? 1 : 0, N))
+δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
     inside(a)
