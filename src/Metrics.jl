@@ -93,38 +93,21 @@ nds!(a,body,t=0) = apply!(a) do i,x
     n[i]*WaterLily.kern(clamp(d,-1,1))
 end
 
-function flowInterp2d(xi, arr)
+function interp(x, arr)
     """
-    Interpolates values from a 2D array arr using the coordinates xi.
-
-    Arguments
-        xi: A 2-element vector specifying the coordinates for interpolation.
-        arr: A 2D array of values to interpolate from.
-    Returns
-        The interpolated value at the given coordinates xi.
-
-    The function performs bilinear interpolation to compute the value at
-    the coordinates xi within the arr array. The interpolation is based
-    on the nearest grid points surrounding xi in arr.
+    Linear interpolation from array `arr` at coordinate `x`.
 
     Example call:
         pos = [120.1, 51.5]
         ui = flowInterp2d(pos, circ.flow.u[:, :, 1])
     """
 
-    # Index below the interpolation coordinate.
-    ii = [
-        max(1, min(size(arr, 1)-1, Int(floor(xi[1])))),
-        max(1, min(size(arr, 2)-1, Int(floor(xi[2]))))]
+    # Index below the interpolation coordinate and the difference
+    i = floor.(Int,x); y = x.-i
+    
+    # CartesianIndices around x 
+    I = CartesianIndex(i...); R = I:I+oneunit(I)
 
-    # Local coordinate system <0, 1>. delta is 1 in both directions
-    a = 1. / ((2 - 1) * (2 - 1))
-    xx = [ii[1]+1 - xi[1], xi[1] - ii[1]]
-    yy = [ii[2]+1 - xi[2], xi[2] - ii[2]]
-
-    # Interp
-    data = arr[ii[1]:ii[1]+1, ii[2]:ii[2]+1]
-    b = data*yy
-    res = a*(transpose(xx)*b)
-    return res
+    # Linearly weighted sum over arr[R]
+    sum(arr[J]*prod(@. ifelse(J.I==I.I,1-y,y)) for J ∈ R)
 end
