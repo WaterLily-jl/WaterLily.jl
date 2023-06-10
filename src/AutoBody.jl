@@ -3,11 +3,9 @@
 
     - sdf(x::AbstractVector,t::Real)::Real: signed distance function
     - map(x::AbstractVector,t::Real)::AbstractVector: coordinate mapping function
-    - compose::Bool: if true, automatically compose the `map`, ie `sdf(x,t) = sdf(map(x,t),t)`
-                        else, `sdf` and `map` remain independent
+    - compose::Bool=true: Flag for composing sdf=sdf∘map
 
-Define a geometry by its `sdf` and optional coordinate `map`. All other
-properties are determined using Automatic Differentiation. Note: the `map`
+Implicitly define a geometry by its `sdf` and optional coordinate `map`. Note: the `map`
 is composed automatically if compose is set to `true`, ie `sdf(x,t) = sdf(map(x,t),t)`. 
 Both parameters remain independent otherwise. It can be particularly heplful to set it as 
 false when adding mulitple bodies together to create a more complexe one.
@@ -36,59 +34,19 @@ Base.:-(x::AutoBody) = AutoBody((d,t)->-x.sdf(d,t),x.map,compose=false)
 Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 
 """
-    measure!(flow::Flow, body::AutoBody; t=0, ϵ=1)
-
-Uses `body.sdf` and `body.map` to fill the arrays:
-
-    `flow.μ₀`, Zeroth kernel moment
-    `flow.μ₁`, First kernel moment scaled by the body normal
-    `flow.V`,  Body velocity
-    `flow.σᵥ`,  Body velocity divergence scaled by `μ₀-1`
-
-at time `t` using an immersion kernel of size `ϵ`.
-See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
+    d = sdf(body::AutoBody,x,t) = body.sdf(x,t)
 """
-function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
-    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
-    @fastmath @inline function fill!(μ₀,μ₁,V,σᵥ,d,I)
-        d[I] = body.sdf(loc(0,I),t)
-        σᵥ[I] = WaterLily.μ₀(d[I],ϵ)-1 # cell-center array
-        if abs(d[I])<1+ϵ
-            for i ∈ 1:N
-                dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I),t)
-                V[I,i] = Vᵢ[i]
-                μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
-                for j ∈ 1:N
-                    μ₁[I,i,j] = WaterLily.μ₁(dᵢ,ϵ)*nᵢ[j]
-                end
-            end
-        elseif d[I]<0
-            for i ∈ 1:N
-                μ₀[I,i] = 0.
-            end
-        end
-    end
-    @loop fill!(a.μ₀,a.μ₁,a.V,a.σᵥ,a.σ,I) over I ∈ inside(a.p)
-    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V)              # scaled divergence
-    correct_div!(a.σᵥ)
-    BC!(a.μ₀,zeros(SVector{N}))                       # fill BCs
-end
-
-"""
-    measure_sdf!(a::AbstractArray, body::AutoBody, t=0)
-
-Uses `body.sdf(x,t)` to fill `a`.
-"""
-measure_sdf!(a::AbstractArray,body::AutoBody,t) = @inside a[I] = body.sdf(loc(0,I),t)
+sdf(body::AutoBody,x,t) = body.sdf(x,t)
 
 using ForwardDiff
 """
-    measure(body::AutoBody,x,t)
+    d,n,V = measure(body::AutoBody,x,t)
 
-ForwardDiff is used to determine the geometric properties from the `sdf`.
-Note: The velocity is determined _soley_ from the optional `map` function.
+Determine the implicit geometric properties from the `sdf` and `map`.
+The gradient of `d=sdf(map(x,t))` is used to improve `d` for psuedo-sdfs. 
+The velocity is determined _soley_ from the optional `map` function.
 """
-function measure(body,x,t)
+function measure(body::AutoBody,x,t)
     # eval d=f(x,t), and n̂ = ∇f
     d = body.sdf(x,t)
     n = ForwardDiff.gradient(x->body.sdf(x,t), x)
