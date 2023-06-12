@@ -16,10 +16,10 @@ include("Flow.jl")
 export Flow,mom_step!
 
 include("Body.jl")
-export AbstractBody
+export AbstractBody,measure!
 
 include("AutoBody.jl")
-export AutoBody,measure!,measure,+,-
+export AutoBody,measure,sdf,+,-
 
 include("Metrics.jl")
 

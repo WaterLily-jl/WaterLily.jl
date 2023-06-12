@@ -36,7 +36,7 @@ Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 """
     d = sdf(body::AutoBody,x,t) = body.sdf(x,t)
 """
-sdf(body::AutoBody,x,t) = body.sdf(x,t)
+function sdf(body::AutoBody,x,t) body.sdf(x,t) end
 
 using ForwardDiff
 """
