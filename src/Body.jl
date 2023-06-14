@@ -24,14 +24,14 @@ Queries the body geometry to fill the arrays:
 at time `t` using an immersion kernel of size `ϵ`.
 See Maertens & Weymouth, https://doi.org/10.1016/j.cma.2014.09.007
 """
-function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
+function measure!(a::Flow{N,T},body::AbstractBody;t=T(0),ϵ=1) where {N,T}
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
     @fastmath @inline function fill!(μ₀,μ₁,V,σᵥ,d,I)
-        d[I] = sdf(body,loc(0,I),t)
+        d[I] = sdf(body,loc(0,I,T),t)
         σᵥ[I] = WaterLily.μ₀(d[I],ϵ)-1 # cell-center array
         if abs(d[I])<2+ϵ
             for i ∈ 1:N
-                dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I),t)
+                dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I,T),t)
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
                 for j ∈ 1:N
@@ -47,7 +47,7 @@ function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where N
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σᵥ,a.σ,I) over I ∈ inside(a.p)
     @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
     correct_div!(a.σᵥ)
-    BC!(a.μ₀,zeros(SVector{N}))          # fill BCs
+    BC!(a.μ₀,zeros(SVector{N,T}))          # fill BCs
 end
 
 # Convolution kernel and its moments
