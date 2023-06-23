@@ -15,7 +15,7 @@ and `n` & `V` are the normal and velocity vectors implied at `x`.
 """
 abstract type AbstractBody end
 """
-    `measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)`
+    measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)
 
 Queries the body geometry to fill the arrays:
 

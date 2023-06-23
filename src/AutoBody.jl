@@ -6,9 +6,9 @@
   - `compose::Bool=true`: Flag for composing `sdf=sdf∘map`
 
 Implicitly define a geometry by its `sdf` and optional coordinate `map`. Note: the `map`
-is composed automatically if compose is set to `true`, ie `sdf(x,t) = sdf(map(x,t),t)`. 
-Both parameters remain independent otherwise. It can be particularly heplful to set it as 
-false when adding mulitple bodies together to create a more complexe one.
+is composed automatically if `compose=true`, i.e. `sdf(x,t) = sdf(map(x,t),t)`.
+Both parameters remain independent otherwise. It can be particularly heplful to set
+`compose=false` when adding mulitple bodies together to create a more complex one.
 """
 struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
@@ -44,7 +44,7 @@ using ForwardDiff
 
 Determine the implicit geometric properties from the `sdf` and `map`.
 The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
-The velocity is determined _soley_ from the optional `map` function.
+The velocity is determined _solely_ from the optional `map` function.
 """
 function measure(body::AutoBody,x,t)
     # eval d=f(x,t), and n̂ = ∇f
@@ -67,7 +67,7 @@ using LinearAlgebra: tr
     curvature(A::AbstractMatrix)
 
 Return `H,K` the mean and Gaussian curvature from `A=hessian(sdf)`.
-K=tr(minor(A)) in 3D and K=0 in 2D.
+`K=tr(minor(A))` in 3D and `K=0` in 2D.
 """
 function curvature(A::AbstractMatrix)
     H,K = 0.5*tr(A),0

@@ -25,10 +25,10 @@ include("Metrics.jl")
 
 """
     Simulation(dims::NTuple, u_BC::NTuple, L::Number;
-               U=norm2(u_BC), Δt=0.25, ν=0., ϵ = 1,
+               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1,
                uλ::Function=(i,x)->u_BC[i],
                body::AbstractBody=NoBody(),
-               T=Float32, mem = Array)
+               T=Float32, mem=Array)
 
 Constructor for a WaterLily.jl simulation:
 
@@ -54,7 +54,7 @@ struct Simulation
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, u_BC::NTuple{N}, L::Number;
-                        Δt=0.25, ν=0., U=√sum(abs2,u_BC), ϵ = 1,
+                        Δt=0.25, ν=0., U=√sum(abs2,u_BC), ϵ=1,
                         uλ::Function=(i,x)->u_BC[i],
                         body::AbstractBody=NoBody(),T=Float32,mem=Array) where N
         flow = Flow(dims,u_BC;uλ,Δt,ν,T,f=mem)

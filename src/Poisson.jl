@@ -14,8 +14,8 @@ where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 ect can be easily implemented and optimized without external libraries.
 
 To help iteratively solve the system above, the Poisson structure holds
-helper arrays for `inv(D)`, the error ϵ, and residual r=z-Ax. An iterative
-solution method then estimates the error ϵ=̃A⁻¹r and increments x+=ϵ, r-=Aϵ.
+helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
+solution method then estimates the error `ϵ=̃A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
 """
 abstract type AbstractPoisson{T,S,V} end
 struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
@@ -135,7 +135,7 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `A.n[end]`: stores the number of iterations performed.
   - `log`: If `true`, this function returns a vector holding the `L₂`-norm of the residual at each iteration.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
-  - 'itmx': Maximum number of iterations.
+  - `itmx`: Maximum number of iterations.
 """
 function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)
