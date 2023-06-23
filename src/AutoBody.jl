@@ -1,9 +1,9 @@
 """
     AutoBody(sdf,map=(x,t)->x; compose=true) <: AbstractBody
 
-    - sdf(x::AbstractVector,t::Real)::Real: signed distance function
-    - map(x::AbstractVector,t::Real)::AbstractVector: coordinate mapping function
-    - compose::Bool=true: Flag for composing sdf=sdf∘map
+  - `sdf(x::AbstractVector,t::Real)::Real`: signed distance function
+  - `map(x::AbstractVector,t::Real)::AbstractVector`: coordinate mapping function
+  - `compose::Bool=true`: Flag for composing `sdf=sdf∘map`
 
 Implicitly define a geometry by its `sdf` and optional coordinate `map`. Note: the `map`
 is composed automatically if compose is set to `true`, ie `sdf(x,t) = sdf(map(x,t),t)`. 
@@ -43,7 +43,7 @@ using ForwardDiff
     d,n,V = measure(body::AutoBody,x,t)
 
 Determine the implicit geometric properties from the `sdf` and `map`.
-The gradient of `d=sdf(map(x,t))` is used to improve `d` for psuedo-sdfs. 
+The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
 The velocity is determined _soley_ from the optional `map` function.
 """
 function measure(body::AutoBody,x,t)
@@ -51,7 +51,7 @@ function measure(body::AutoBody,x,t)
     d = body.sdf(x,t)
     n = ForwardDiff.gradient(x->body.sdf(x,t), x)
 
-    # correct general implicit fnc f(x₀)=0 to be a psuedo-sdf 
+    # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
     #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
     m = √sum(abs2,n); d /= m; n /= m
 

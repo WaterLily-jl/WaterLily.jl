@@ -32,17 +32,17 @@ include("Metrics.jl")
 
 Constructor for a WaterLily.jl simulation:
 
-    `dims`: Simulation domain dimensions.
-    `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=eachindex(dims)`.
-    `L`: Simulation length scale.
-    `U`: Simulation velocity scale.
-    `Δt`: Initial time step.
-    `ν`: Scaled viscosity (`Re=UL/ν`).
-    `ϵ`: BDIM kernel width.
-    `uλ`: Function to generate the initial velocity field.
-    `body`: Immersed geometry.
-    `T`: Array element type.
-    `mem`: memory location. `Array` and `CuArray` run on CPU and CUDA backends, respectively.
+  - `dims`: Simulation domain dimensions.
+  - `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=eachindex(dims)`.
+  - `L`: Simulation length scale.
+  - `U`: Simulation velocity scale.
+  - `Δt`: Initial time step.
+  - `ν`: Scaled viscosity (`Re=UL/ν`).
+  - `ϵ`: BDIM kernel width.
+  - `uλ`: Function to generate the initial velocity field.
+  - `body`: Immersed geometry.
+  - `T`: Array element type.
+  - `mem`: memory location. `Array` and `CuArray` run on CPU and CUDA backends, respectively.
 
 See files in `examples` folder for examples.
 """

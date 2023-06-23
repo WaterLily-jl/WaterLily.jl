@@ -52,7 +52,7 @@ becomes
 
     @loop p[I] = sum(loc(0,I)) over I ∈ inside(p)
 
-See `@loop`.
+See [`@loop`](@ref).
 """
 macro inside(ex)
     # Make sure its a single assignment
@@ -67,7 +67,7 @@ end
     @loop <expr> over <I ∈ R>
 
 Macro to automate fast CPU or GPU loops using KernelAbstractions.jl.
-The macro creates a kernel function from the expression <expr> and
+The macro creates a kernel function from the expression `<expr>` and
 evaluates that function over the CartesianIndices `I ∈ R`.
 
 For example
