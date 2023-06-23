@@ -10,11 +10,11 @@ The resulting linear system is
     Ax = [L+D+L']x = z
 
 where A is symmetric, block-tridiagonal and extremely sparse. Moreover, 
-D[I]=-∑ᵢ(L[I,i]+L'[I,i]). This means matrix storage, multiplication,
+`D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
 ect can be easily implemented and optimized without external libraries.
 
 To help iteratively solve the system above, the Poisson structure holds
-helper arrays for inv(D), the error ϵ, and residual r=z-Ax. An iterative
+helper arrays for `inv(D)`, the error ϵ, and residual r=z-Ax. An iterative
 solution method then estimates the error ϵ=̃A⁻¹r and increments x+=ϵ, r-=Aϵ.
 """
 abstract type AbstractPoisson{T,S,V} end
@@ -129,13 +129,13 @@ L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 
 Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 
-    `A`: Poisson matrix with working arrays
-    `A.x`: Solution vector. Can start with an initial guess.
-    `A.z`: Right-Hand-Side vector. Will be overwritten! 
-    `A.n[end]`: stores the number of iterations performed.
-    `log`: If `true`, this function returns a vector holding the `L₂`-norm of the residual at each iteration.
-    `tol`: Convergence tolerance on the `L₂`-norm residual.
-    'itmx': Maximum number of iterations
+  - `A`: Poisson matrix with working arrays.
+  - `A.x`: Solution vector. Can start with an initial guess.
+  - `A.z`: Right-Hand-Side vector. Will be overwritten!
+  - `A.n[end]`: stores the number of iterations performed.
+  - `log`: If `true`, this function returns a vector holding the `L₂`-norm of the residual at each iteration.
+  - `tol`: Convergence tolerance on the `L₂`-norm residual.
+  - 'itmx': Maximum number of iterations.
 """
 function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)
