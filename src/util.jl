@@ -166,7 +166,7 @@ end
 
 """
     BC!(a)
-Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
+Apply zero Neumann boundary conditions to the ghost cells of a _scalar_ field.
 """
 function BC!(a)
     N = size(a)

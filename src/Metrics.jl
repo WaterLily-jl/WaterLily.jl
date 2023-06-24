@@ -13,7 +13,7 @@ end
 """
     ke(I::CartesianIndex,u,U=0)
 
-Compute ``½|𝐮-𝐔|²`` at center of cell `I` where `U` can be used
+Compute ``½∥𝐮-𝐔∥²`` at center of cell `I` where `U` can be used
 to subtract a background flow (by default, `U=0`).
 """
 ke(I::CartesianIndex{m},u,U=fSV(zero,m)) where m = 0.125fsum(m) do i
@@ -61,7 +61,7 @@ Compute 3-vector ``𝛚=𝛁×𝐮`` at the center of cell `I`.
 """
     ω_mag(I::CartesianIndex{3},u)
 
-Compute ``|𝛚|`` at the center of cell `I`.
+Compute ``∥𝛚∥`` at the center of cell `I`.
 """
 ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
 """

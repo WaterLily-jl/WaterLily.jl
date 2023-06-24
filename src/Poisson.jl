@@ -98,7 +98,7 @@ using LinearAlgebra: ⋅
     pcg!(p::Poisson; it=6)
 
 Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations, 
-but will exit early if the Gram-Smit update parameter |α|<1% or |rD⁻¹r|<1e-8.
+but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
 function pcg!(p::Poisson;it=6)
