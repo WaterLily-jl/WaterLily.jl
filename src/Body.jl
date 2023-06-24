@@ -15,7 +15,7 @@ and `n` & `V` are the normal and velocity vectors implied at `x`.
 """
 abstract type AbstractBody end
 """
-    `measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)`
+    measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)
 
 Queries the body geometry to fill the arrays:
 
@@ -25,6 +25,7 @@ Queries the body geometry to fill the arrays:
 - `flow.σᵥ`, Body velocity divergence scaled by `μ₀-1`
 
 at time `t` using an immersion kernel of size `ϵ`.
+
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
 function measure!(a::Flow{N,T},body::AbstractBody;t=T(0),ϵ=1) where {N,T}

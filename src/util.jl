@@ -44,7 +44,7 @@ L₂(a::GPUArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R
 """
     @inside <expr>
 
-Simple macro to automate efficient loops over cells excluding ghosts. For example
+Simple macro to automate efficient loops over cells excluding ghosts. For example,
 
     @inside p[I] = sum(loc(0,I))
 
@@ -55,7 +55,7 @@ becomes
 See [`@loop`](@ref).
 """
 macro inside(ex)
-    # Make sure its a single assignment
+    # Make sure it's a single assignment
     @assert ex.head == :(=) && ex.args[1].head == :(ref)
     a,I = ex.args[1].args[1:2]
     return quote # loop over the size of the reference
@@ -144,9 +144,10 @@ end
 
 """
     BC!(a,A,f=1)
+
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
 condition `a[I,i]=f*A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=f*Aₓ ∀ x ∈ minmax(X)`. A zero Nuemann condition
+boundary. For example `aₓ(x)=f*Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
 function BC!(a,A,f=1)
@@ -165,7 +166,7 @@ end
 
 """
     BC!(a)
-Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
+Apply zero Neumann boundary conditions to the ghost cells of a _scalar_ field.
 """
 function BC!(a)
     N = size(a)
