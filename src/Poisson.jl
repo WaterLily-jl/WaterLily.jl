@@ -1,5 +1,5 @@
 """
-    Poisson{N,M}
+    Poisson
 
 Composite type for conservative variable coefficient Poisson equations:
 
