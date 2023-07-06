@@ -64,12 +64,15 @@ if run_benchmarks
     suite = create_suite()
     r["CPU"] = run(suite["CPU"], samples = samples, evals = evals, seconds = 1e6, verbose = verbose)
     r["GPU"] = run(suite["GPU"], samples = samples, evals = evals,  seconds = 1e6, verbose = verbose)
-    save_benchmark && save_object("benchmark/tgv/sim_step_CUDA_3D_5678.dat", r)
+    # save_benchmark && save_object("benchmark/tgv/sim_step_5678_update_mult_1.9.2.dat", r)
+    save_benchmark && save_object("benchmark/tgv/sim_step_5678_master_1.9.2.dat", r)
 else
-    r = load_object("benchmark/tgv/sim_step_CUDA_3D_5678.dat")
+    # r = load_object("benchmark/tgv/sim_step_5678_update_mult_1.9.2.dat")
+    r = load_object("benchmark/tgv/sim_step_5678_master_1.9.2.dat")
 end
 # Serial (master) benchmarks
-r["serial"] = load_object("benchmark/tgv/sim_step_master_3D_5678.dat")
+# r["serial"] = load_object("benchmark/tgv/sim_step_5678_serial_1.8_old.dat")
+r["serial"] = load_object("benchmark/tgv/sim_step_5678_serial_1.8.5.dat")
 
 # Postprocess results
 push!(backends_str, "serial")

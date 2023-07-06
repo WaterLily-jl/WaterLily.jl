@@ -62,12 +62,14 @@ if run_benchmarks
     suite = create_suite()
     r["CPU"] = run(suite["CPU"], samples = samples, seconds = 1e6, verbose = verbose)
     r["GPU"] = run(suite["GPU"], samples = samples, seconds = 1e6, verbose = verbose)
-    save_benchmark && save_object("benchmark/mom_step/mom_step_CUDA_3D_5678.dat", r)
+    # save_benchmark && save_object("benchmark/mom_step/mom_step_5678_master.dat", r)
+    save_benchmark && save_object("benchmark/mom_step/mom_step_5678_update_mult.dat", r)
 else
-    r = load_object("benchmark/mom_step/mom_step_CUDA_3D_5678.dat")
+    # r = load_object("benchmark/mom_step/mom_step_5678_master.dat")
+    r = load_object("benchmark/mom_step/mom_step_5678_update_mult.dat")
 end
 # Serial (master) benchmarks
-r["serial"] = load_object("benchmark/mom_step/mom_step_master_3D_5678.dat")
+r["serial"] = load_object("benchmark/mom_step/mom_step_5678_serial_1.8.dat")
 
 # Postprocess results
 routines = ["conv_diff!", "BDIM!", "BC!", "project!", "CFL"]

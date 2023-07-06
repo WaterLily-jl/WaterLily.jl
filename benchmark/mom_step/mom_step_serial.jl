@@ -36,4 +36,4 @@ end
 samples = 100 # Use >1 since timings reported are min(samples), and the first run always compiles
 verbose = true
 r = run(suite, samples = samples, seconds = 1e6, verbose = verbose)
-save_object("benchmark/mom_step/mom_step_master_3D_5678.dat", r)
+save_object("benchmark/mom_step/mom_step_5678_serial.dat", r)
