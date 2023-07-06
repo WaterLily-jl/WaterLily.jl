@@ -86,9 +86,9 @@ btimes_project = (serial = T[btimes["serial"][n]["project!"] for n ∈ repr.(log
 
 # speedups
 using Printf
-println("\nSpeedups: n | routine | CPU | GPU")
+println("\nSpeedups:\n n  |   routine  |  CPU   |  GPU\n----------------------------------")
 for n ∈ repr.(log2N), f ∈ routines
-    @printf("\nn=%s | %10s |  %4.2f | %4.2f",
+    @printf("n=%s | %10s | %06.2f | %06.2f\n",
         n, f, btimes["serial"][n][f]/btimes["CPU"][n][f], btimes["serial"][n][f]/btimes["GPU"][n][f])
 end
 

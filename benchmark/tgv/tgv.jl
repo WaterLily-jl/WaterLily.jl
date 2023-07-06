@@ -84,9 +84,9 @@ btimes_sim_step = (serial = T[btimes["serial"][n] for n ∈ repr.(log2N)],
 
 # speedups
 using Printf
-println("\nSpeedups: n | routine | CPU | GPU")
+println("\nSpeedups:\n n  |   routine  |  CPU   |  GPU\n----------------------------------")
 for n ∈ repr.(log2N)
-    @printf("\nn=%s | %10s |  %4.2f | %4.2f",
+    @printf("n=%s | %10s | %06.2f | %06.2f\n",
         n, "sim_step!", btimes["serial"][n]/btimes["CPU"][n], btimes["serial"][n]/btimes["GPU"][n])
 end
 
