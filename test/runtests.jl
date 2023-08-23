@@ -114,12 +114,12 @@ end
     ϕu = WaterLily.ϕu
     # inlet, must do CD on the left
     @test ϕu∂(1,CartesianIndex(2),[0.,1.,2.],1)==0.5
-    # outlet, here QUICK on the right boundary (note the -1!)
+    # outlet, here QUICK on the right boundary (note the -1 flux, ϕu∂ uses inward flux!)
     @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-1.5
     # on a linear profile, QUICK must be CD 
     @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-ϕu∂(1,CartesianIndex(3),[0.,1.,2.],1)
-    # this must correspond to a normal QUCIK scheme here
-    # note the difference in flux sign!
+    # this must correspond to a normal QUICK scheme here
+    # note the difference in flux sign, ϕu∂ uses inward flux!
     @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-ϕu(1,CartesianIndex(3),[0.,1.,2.],1)
 
     # Impulsive flow in a box
