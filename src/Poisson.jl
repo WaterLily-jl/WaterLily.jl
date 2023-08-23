@@ -1,5 +1,5 @@
 """
-    Poisson{N,M}
+    Poisson
 
 Composite type for conservative variable coefficient Poisson equations:
 
@@ -49,21 +49,6 @@ update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
     end
     return s
 end
-@fastmath @inline function multL(I::CartesianIndex{d},L,x) where {d}
-    s = zero(eltype(L))
-    for i in 1:d
-        s += @inbounds(x[I-δ(i,I)]*L[I,i])
-    end
-    return s
-end
-@fastmath @inline function multU(I::CartesianIndex{d},L,x) where {d}
-    s = zero(eltype(L))
-    for i in 1:d
-        s += @inbounds(x[I+δ(i,I)]*L[I+δ(i,I),i])
-    end
-    return s
-end
-@fastmath @inline mult(I,L,D,x) = @inbounds(x[I]*D[I])+multL(I,L,x)+multU(I,L,x)
 
 """
     mult!(p::Poisson,x)
@@ -76,6 +61,13 @@ function mult!(p::Poisson,x)
     fill!(p.z,0)
     @inside p.z[I] = mult(I,p.L,p.D,x)
     return p.z
+end
+@fastmath @inline function mult(I::CartesianIndex{d},L,D,x) where {d}
+    s = @inbounds(x[I]*D[I])
+    for i in 1:d
+        s += @inbounds(x[I-δ(i,I)]*L[I,i]+x[I+δ(i,I)]*L[I+δ(i,I),i])
+    end
+    return s
 end
 
 residual!(p::Poisson) = @inside p.r[I] = p.z[I]-mult(I,p.L,p.D,p.x)
@@ -120,7 +112,6 @@ function pcg!(p::Poisson;it=6)
     end
 end
 smooth!(p) = pcg!(p)
-# smooth!(p) = get_backend(p.r)==CPU() ? SOR!(p,it=3) : Jacobi!(p,it=20)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 

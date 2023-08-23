@@ -62,12 +62,14 @@ if run_benchmarks
     suite = create_suite()
     r["CPU"] = run(suite["CPU"], samples = samples, seconds = 1e6, verbose = verbose)
     r["GPU"] = run(suite["GPU"], samples = samples, seconds = 1e6, verbose = verbose)
-    save_benchmark && save_object("benchmark/mom_step/mom_step_CUDA_3D_5678.dat", r)
+    # save_benchmark && save_object("benchmark/mom_step/mom_step_5678_master.dat", r)
+    save_benchmark && save_object("benchmark/mom_step/mom_step_5678_update_mult.dat", r)
 else
-    r = load_object("benchmark/mom_step/mom_step_CUDA_3D_5678.dat")
+    # r = load_object("benchmark/mom_step/mom_step_5678_master.dat")
+    r = load_object("benchmark/mom_step/mom_step_5678_update_mult.dat")
 end
 # Serial (master) benchmarks
-r["serial"] = load_object("benchmark/mom_step/mom_step_master_3D_5678.dat")
+r["serial"] = load_object("benchmark/mom_step/mom_step_5678_serial_1.8.dat")
 
 # Postprocess results
 routines = ["conv_diff!", "BDIM!", "BC!", "project!", "CFL"]
@@ -86,9 +88,9 @@ btimes_project = (serial = T[btimes["serial"][n]["project!"] for n ∈ repr.(log
 
 # speedups
 using Printf
-println("\nSpeedups: n | routine | CPU | GPU")
+println("\nSpeedups:\n n  |   routine  |  CPU   |  GPU\n----------------------------------")
 for n ∈ repr.(log2N), f ∈ routines
-    @printf("\nn=%s | %10s |  %4.2f | %4.2f",
+    @printf("n=%s | %10s | %06.2f | %06.2f\n",
         n, f, btimes["serial"][n][f]/btimes["CPU"][n][f], btimes["serial"][n][f]/btimes["GPU"][n][f])
 end
 

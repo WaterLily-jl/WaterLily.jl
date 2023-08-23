@@ -64,12 +64,15 @@ if run_benchmarks
     suite = create_suite()
     r["CPU"] = run(suite["CPU"], samples = samples, evals = evals, seconds = 1e6, verbose = verbose)
     r["GPU"] = run(suite["GPU"], samples = samples, evals = evals,  seconds = 1e6, verbose = verbose)
-    save_benchmark && save_object("benchmark/donut/sim_step_CUDA_3D_5678.dat", r)
+    # save_benchmark && save_object("benchmark/donut/sim_step_4567_update_mult_1.9.2.dat", r)
+    save_benchmark && save_object("benchmark/donut/sim_step_4567_master_1.9.2.dat", r)
 else
-    r = load_object("benchmark/donut/sim_step_CUDA_3D_5678.dat")
+    # r = load_object("benchmark/donut/sim_step_4567_update_mult_1.9.2.dat")
+    r = load_object("benchmark/donut/sim_step_4567_master_1.9.2.dat")
 end
 # Serial (master) benchmarks
-r["serial"] = load_object("benchmark/donut/sim_step_master_3D_5678.dat")
+r["serial"] = load_object("benchmark/donut/sim_step_4567_serial_1.8.5.dat")
+# r["serial"] = load_object("benchmark/donut/sim_step_4567_serial_1.8_old.dat")
 
 # Postprocess results
 push!(backends_str, "serial")
@@ -84,9 +87,9 @@ btimes_sim_step = (serial = T[btimes["serial"][n] for n ∈ repr.(log2N)],
 
 # speedups
 using Printf
-println("\nSpeedups: n | routine | CPU | GPU")
+println("\nSpeedups:\n n  |   routine  |  CPU   |  GPU\n----------------------------------")
 for n ∈ repr.(log2N)
-    @printf("\nn=%s | %10s |  %4.2f | %4.2f",
+    @printf("n=%s | %10s | %06.2f | %06.2f\n",
         n, "sim_step!", btimes["serial"][n]/btimes["CPU"][n], btimes["serial"][n]/btimes["GPU"][n])
 end
 
