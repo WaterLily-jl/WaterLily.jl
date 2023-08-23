@@ -118,9 +118,9 @@ end
     @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-1.5
     # on a linear profile, QUICK must be CD 
     @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-ϕu∂(1,CartesianIndex(3),[0.,1.,2.],1)
-    # this must correspond to a normal QUICK scheme here
+    # boundary QUICK must correspond to a normal QUICK scheme, for a nonlinear profile
     # note the difference in flux sign, ϕu∂ uses inward flux!
-    @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-ϕu(1,CartesianIndex(3),[0.,1.,2.],1)
+    @test ϕu∂(1,CartesianIndex(3),[0.,.5,2.],-1)==-ϕu(1,CartesianIndex(3),[0.,.5,2.],1)
 
     # Impulsive flow in a box
     U = (2/3, -1/3)
