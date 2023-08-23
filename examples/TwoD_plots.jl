@@ -12,7 +12,7 @@ function flood(f::Array;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,kv...)
         aspect_ratio=:equal; kv...)
 end
 
-addbody(x,y;c=:black) = Plots.plot!(Shape(x.-1.5,y.-1.5), c=c, legend=false)
+addbody(x,y;c=:black) = Plots.plot!(Shape(x,y), c=c, legend=false)
 function body_plot!(sim;levels=[0],lines=:black,R=inside(sim.flow.p))
     WaterLily.measure_sdf!(sim.flow.σ,sim.body,WaterLily.time(sim))
     contour!(sim.flow.σ[R]';levels,lines)
