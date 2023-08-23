@@ -109,6 +109,19 @@ end
 end
 
 @testset "Flow.jl" begin
+    # Check QUICK scheme on boundary
+    ϕu∂ = WaterLily.ϕu∂
+    ϕu = WaterLily.ϕu
+    # inlet, must do CD on the left
+    @test ϕu∂(1,CartesianIndex(2),[0.,1.,2.],1)==0.5
+    # outlet, here QUICK on the right boundary (note the -1!)
+    @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-1.5
+    # on a linear profile, QUICK must be CD 
+    @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-ϕu∂(1,CartesianIndex(3),[0.,1.,2.],1)
+    # this must correspond to a normal QUCIK scheme here
+    # note the difference in flux sign!
+    @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-ϕu(1,CartesianIndex(3),[0.,1.,2.],1)
+
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
