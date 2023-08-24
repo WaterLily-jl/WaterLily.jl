@@ -4,7 +4,16 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕu∂(a,I,f,u,λ=quick) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+# @inline ϕu∂(a,I,f,u,d=1,λ=quick) = u>0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+
+function ϕu∂(a,I,f,u)
+    if 1==1
+        return u*ϕ(a,I,f)
+    else
+        return ϕu(a,I,f,u)
+    end
+end
+
 @fastmath @inline function div(I::CartesianIndex{m},u) where {m}
     init=zero(eltype(u))
     for i in 1:m
