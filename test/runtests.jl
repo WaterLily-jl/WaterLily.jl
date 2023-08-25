@@ -110,17 +110,19 @@ end
 
 @testset "Flow.jl" begin
     # Check QUICK scheme on boundary
-    ϕu∂ = WaterLily.ϕu∂
-    ϕu = WaterLily.ϕu
-    # inlet, must do CD on the left
-    @test ϕu∂(1,CartesianIndex(2),[0.,1.,2.],1)==0.5
-    # outlet, here QUICK on the right boundary (note the -1 flux, ϕu∂ uses inward flux!)
-    @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-1.5
-    # on a linear profile, QUICK must be CD 
-    @test ϕu∂(1,CartesianIndex(3),[0.,1.,2.],-1)==-ϕu∂(1,CartesianIndex(3),[0.,1.,2.],1)
-    # boundary QUICK must correspond to a normal QUICK scheme, for a nonlinear profile
-    # note the difference in flux sign, ϕu∂ uses inward flux!
-    @test ϕu∂(1,CartesianIndex(3),[0.,.5,2.],-1)==-ϕu(1,CartesianIndex(3),[0.,.5,2.],1)
+    ϕuL = WaterLily.ϕuL
+    ϕuR = WaterLily.ϕuR
+    quick = WaterLily.quick
+    ϕ = WaterLily.ϕ
+    
+    # inlet with positive flux -> CD
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
+    # inlet negative flux -> backward QUICK
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1)==-quick(2.0,0.5,0.0)
+    # outlet, positive flux -> standard QUICK
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
+    # outlet, negative flux -> backward CD
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
 
     # Impulsive flow in a box
     U = (2/3, -1/3)
