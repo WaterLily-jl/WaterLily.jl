@@ -109,6 +109,21 @@ end
 end
 
 @testset "Flow.jl" begin
+    # Check QUICK scheme on boundary
+    ϕuL = WaterLily.ϕuL
+    ϕuR = WaterLily.ϕuR
+    quick = WaterLily.quick
+    ϕ = WaterLily.ϕ
+    
+    # inlet with positive flux -> CD
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
+    # inlet negative flux -> backward QUICK
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1)==-quick(2.0,0.5,0.0)
+    # outlet, positive flux -> standard QUICK
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
+    # outlet, negative flux -> backward CD
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
