@@ -45,6 +45,8 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     z::S
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
+    res0 :: Vector{T} 
+    res :: Vector{T} 
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T},maxlevels=4) where T
         levels = Poisson[Poisson(x,L,z)]
         while all(size(levels[end].x) .|> divisible) && length(levels) <= maxlevels
@@ -52,7 +54,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[])
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],[],[])
     end
 end
 function update!(ml::MultiLevelPoisson)
@@ -80,10 +82,11 @@ end
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(ml::MultiLevelPoisson;log=false,tol=1e-3,itmx=32)
+function solver!(ml::MultiLevelPoisson;log=false,tol=1e-6,itmx=32)
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p)
-    log && (res = [r₂])
+    # log && (res = [r₂])
+    push!(ml.res0,r₂)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
@@ -92,5 +95,6 @@ function solver!(ml::MultiLevelPoisson;log=false,tol=1e-3,itmx=32)
         nᵖ+=1
     end
     push!(ml.n,nᵖ)
-    log && return res
+    push!(ml.res,r₂)
+    # log && return res
 end
