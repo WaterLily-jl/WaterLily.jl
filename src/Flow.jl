@@ -92,8 +92,7 @@ end
 
 function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = a.Δt[end]/w
-    @inside b.z[I] = div(I,a.u);  b.x .*= dt # set source term & solution IC
-    
+    @inside b.z[I] = div(I,a.u)+a.σᵥ[I]; b.x .*= dt # set source term & solution IC
     solver!(b)
     for i ∈ 1:n  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
