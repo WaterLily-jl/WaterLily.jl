@@ -84,19 +84,21 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     end
 end
 
-function BDIM!(a::Flow{n}) where n
+function BDIM!(a::Flow)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
     @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
 
 function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
-    dt = a.Δt[end]
-    @inside b.z[I] = (div(I,a.u)+w*a.σᵥ[I])/dt # divergence source term
+    dt = a.Δt[end]/w
+    @inside b.z[I] = div(I,a.u);  b.x .*= dt # set source term & solution IC
+    
     solver!(b)
-    for i ∈ 1:n  # apply pressure solution b.x
-        @loop a.u[I,i] -= dt*b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
+    for i ∈ 1:n  # apply solution and unscale to recover pressure
+        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
+    b.x ./= dt
 end
 
 """
@@ -113,8 +115,8 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     project!(a,b); BC!(a.u,a.U)
     # corrector u → u¹
     conv_diff!(a.f,a.u,a.σ,ν=a.ν)
-    BDIM!(a); BC!(a.u,a.U,2)
-    project!(a,b,2); a.u ./= 2; BC!(a.u,a.U)
+    BDIM!(a); a.u ./= 2; BC!(a.u,a.U)
+    project!(a,b,2); BC!(a.u,a.U)
     push!(a.Δt,CFL(a))
 end
 

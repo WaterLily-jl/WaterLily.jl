@@ -143,19 +143,19 @@ function slice(dims::NTuple{N},i,j,low=1) where N
 end
 
 """
-    BC!(a,A,f=1)
+    BC!(a,A)
 
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=f*A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=f*Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
+condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
+boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A,f=1)
+function BC!(a,A)
     N,n = size_u(a)
     for j ∈ 1:n, i ∈ 1:n
         if i==j # Normal direction, Dirichlet
             for s ∈ (1,2,N[j])
-                @loop a[I,i] = f*A[i] over I ∈ slice(N,s,j)
+                @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
             end
         else    # Tangential directions, Neumann
             @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
