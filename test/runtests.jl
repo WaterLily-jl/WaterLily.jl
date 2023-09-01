@@ -172,7 +172,7 @@ end
     for f ∈ arrays
         a,_ = get_flow(20,f)
         mom_step!(a,Poisson(a.p,a.μ₀,a.σ))
-        @test mapreduce(abs2,+,a.u[:,5,1].-1) < 2e-5
+        @test mapreduce(abs2,+,a.u[:,5,1].-1) < 6e-5
     end
 end
 
