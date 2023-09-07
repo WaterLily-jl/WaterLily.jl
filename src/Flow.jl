@@ -110,12 +110,12 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     a.u⁰ .= a.u; a.u .= 0
     # predictor u → u'
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν)
-    BDIM!(a); BC!(a.u,a.U)
-    project!(a,b); BC!(a.u,a.U)
+    BDIM!(a); BCΔt!(a.u,a.U;Δt=a.Δt[end]) # convective exit
+    project!(a,b); BCΔt!(a.u,a.U)
     # corrector u → u¹
     conv_diff!(a.f,a.u,a.σ,ν=a.ν)
-    BDIM!(a); a.u ./= 2; BC!(a.u,a.U)
-    project!(a,b,2); BC!(a.u,a.U)
+    BDIM!(a); a.u ./= 2; BCΔt!(a.u,a.U)
+    project!(a,b,2); BCΔt!(a.u,a.U)
     push!(a.Δt,CFL(a))
 end
 

@@ -175,3 +175,56 @@ function BC!(a)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
 end
+
+"""
+    BCΔt!(a,A;Δt=-1)
+Apply the boundary condition on a field `a` where time integration of the 1D convection
+equation is used for the exit in the i==j==1 direction. Time integration is performed 
+if Δt>0. Other Boundary conditions are applied as in `BC!(a,A)`. A global mass flux 
+check is performed in the 1-direction to ensure global mass conservation (not required 
+for the other direction).
+"""
+function BCΔt!(a,A;Δt=-1)
+    N,n = size_u(a)
+    area = ntuple(i->prod(N.-2)/(N[i]-2),n) # are of domain (without ghosts)
+    for j ∈ 1:n, i ∈ 1:n
+        if i==j # Normal direction, Dirichlet
+            for s ∈ (1,2)
+                @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
+            end
+            if i==1 && Δt > 0 # convective exit
+                @loop a[I,i] = a[I,i]-Δt*(a[I,i]-a[I-δ(j,I),i])*A[i] over I ∈ slice(N,N[j],j)
+            end
+            # other direction, standard exit
+            i!=1 && @loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)
+            # check flux
+            if i==1
+                ∮u = (∮(a,j)-A[j]*area[j])/∮(ones((N...,j)),j) # mass flux imbalance in domain
+                @loop a[I,i] -= ∮u over I ∈ slice(N,N[j],j)    # correct flux
+            end
+        else # Tangential directions, Neumann
+            @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
+        end
+    end
+end
+
+"""
+    Integrate the flux of `a` in the normal direction `j` over the exit
+    in that direction.
+"""
+function ∮(a::AbstractArray{T},j) where T
+    N,n = size_u(a)
+    return ∮(a,N,N[j],j)
+end
+"""
+    Integrate the flux of `a` in the normal direction `j` over a slice located
+    at `s``. This excluded ghosts cells.
+"""
+function ∮(a,N,s,j) 
+    sm = 0.0
+    for I ∈ slice(N.-1,s,j,2) # remove ghosts
+        sm += a[I,j] 
+    end
+    return sm
+end
