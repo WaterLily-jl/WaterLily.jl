@@ -50,6 +50,7 @@ function measure(body::AutoBody,x,t)
     # eval d=f(x,t), and n̂ = ∇f
     d = body.sdf(x,t)
     n = ForwardDiff.gradient(x->body.sdf(x,t), x)
+    any(isnan.(n)) && return (d,zero(x),zero(x))
 
     # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
     #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
