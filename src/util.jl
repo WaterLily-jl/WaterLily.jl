@@ -112,27 +112,23 @@ rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
-    loc(i,I)
+    loc(i,I) = loc(Ii)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
 @inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 0.5 .* δ(i,I).I)
-
+@inline loc(Ii::CartesianIndex,T=Float64) = loc(last(Ii),Base.front(Ii),T)
+Base.last(I::CartesianIndex) = last(I.I)
+Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
     apply!(f, c)
 
 Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 """
-function apply!(f,c)
-    N,n = size_u(c)
-    for i ∈ 1:n
-        @loop c[I,i] = f(i,loc(i,I)) over I ∈ CartesianIndices(N)
-    end
-end
-
+apply!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii)) over Ii ∈ CartesianIndices(c)
 """
-    slice(dims,i,j,low=1,trim=0)
+    slice(dims,i,j,low=1)
 
 Return `CartesianIndices` range slicing through an array of size `dims` in
 dimension `j` at index `i`. `low` optionally sets the lower extent of the range
@@ -150,18 +146,27 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A)
+function BC!(a,A,saveexit=false)
     N,n = size_u(a)
     for j ∈ 1:n, i ∈ 1:n
         if i==j # Normal direction, Dirichlet
-            for s ∈ (1,2,N[j])
+            for s ∈ (1,2)
                 @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
             end
+            (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
         else    # Tangential directions, Neumann
             @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
             @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
         end
     end
+end
+
+function exitBC!(u,u⁰,U,Δt)
+    N,_ = size_u(u)
+    exit = slice(N.-1,N[1],1,2)               # exit slice excluding ghosts
+    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exit
+    ∮u = sum(u[exit,1])/length(exit)-U[1]     # mass flux imbalance
+    @loop u[I,1] -= ∮u over I ∈ exit          # correct flux
 end
 
 """
@@ -174,57 +179,4 @@ function BC!(a)
         @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
-end
-
-"""
-    BCΔt!(a,A;Δt=-1)
-Apply the boundary condition on a field `a` where time integration of the 1D convection
-equation is used for the exit in the i==j==1 direction. Time integration is performed 
-if Δt>0. Other Boundary conditions are applied as in `BC!(a,A)`. A global mass flux 
-check is performed in the 1-direction to ensure global mass conservation (not required 
-for the other direction).
-"""
-function BCΔt!(a,A;Δt=-1)
-    N,n = size_u(a)
-    area = ntuple(i->prod(N.-2)/(N[i]-2),n) # are of domain (without ghosts)
-    for j ∈ 1:n, i ∈ 1:n
-        if i==j # Normal direction, Dirichlet
-            for s ∈ (1,2)
-                @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
-            end
-            if i==1 && Δt > 0 # convective exit
-                @loop a[I,i] = a[I,i]-Δt*(a[I,i]-a[I-δ(j,I),i])*A[i] over I ∈ slice(N,N[j],j)
-            end
-            # other direction, standard exit
-            i!=1 && @loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)
-            # check flux
-            if i==1
-                ∮u = (∮(a,j)-A[j]*area[j])/∮(ones((N...,j)),j) # mass flux imbalance in domain
-                @loop a[I,i] -= ∮u over I ∈ slice(N,N[j],j)    # correct flux
-            end
-        else # Tangential directions, Neumann
-            @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
-        end
-    end
-end
-
-"""
-    Integrate the flux of `a` in the normal direction `j` over the exit
-    in that direction.
-"""
-function ∮(a::AbstractArray{T},j) where T
-    N,n = size_u(a)
-    return ∮(a,N,N[j],j)
-end
-"""
-    Integrate the flux of `a` in the normal direction `j` over a slice located
-    at `s``. This excluded ghosts cells.
-"""
-function ∮(a,N,s,j) 
-    sm = 0.0
-    for I ∈ slice(N.-1,s,j,2) # remove ghosts
-        sm += a[I,j] 
-    end
-    return sm
 end
