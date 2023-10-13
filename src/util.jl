@@ -163,10 +163,10 @@ end
 
 function exitBC!(u,u⁰,U,Δt)
     N,_ = size_u(u)
-    exit = slice(N.-1,N[1],1,2)               # exit slice excluding ghosts
-    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exit
-    ∮u = sum(u[exit,1])/length(exit)-U[1]     # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exit          # correct flux
+    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
+    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
 end
 
 """

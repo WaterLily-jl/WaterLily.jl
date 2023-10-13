@@ -211,13 +211,13 @@ end
     end
 end
 
-function sphere_sim(radius = 8; mem=Array, exit=false)
+function sphere_sim(radius = 8; mem=Array, exitBC=false)
     body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
-    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exit)
+    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
 @testset "WaterLily.jl" begin
-    for mem ∈ arrays, exit ∈ (true,false)
-        sim = sphere_sim(;mem,exit);
+    for mem ∈ arrays, exitBC ∈ (true,false)
+        sim = sphere_sim(;mem,exitBC);
         @test sim_time(sim) == 0
         sim_step!(sim,0.1,remeasure=false)
         @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2
