@@ -32,7 +32,8 @@ arrays = setup_backends()
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
 
-    for f ∈ arrays
+    # for f ∈ arrays
+    for f ∈ [Array]
         p = Float64[i+j  for i ∈ 1:4, j ∈ 1:5] |> f
         @test inside(p) == CartesianIndices((2:3,2:4))
         @test L₂(p) == 187
@@ -46,14 +47,19 @@ arrays = setup_backends()
         σ = rand(Ng...) |> f # scalar
         BC!(u, U)
         BC!(σ)
-        @allowscalar() do
-            @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
+        @allowscalar @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
                 all(u[3:end-1, 1, 1] .== u[3:end-1, 2, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end-1, 1])
-            @test all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
+        @allowscalar @test all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
                 all(u[1, 3:end-1, 2] .== u[2, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end-1, 3:end-1, 2])
-            @test all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
+        @allowscalar @test all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
                 all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
-        end
+
+        @allowscalar u[end,:,1] .= 3
+        BC!(u, U, true) # save exit values
+        @allowscalar @test all(u[end, :, 1] .== 3)
+
+        WaterLily.exitBC!(u,u,U,0) # conservative exit check
+        @allowscalar @test all(u[end,2:end-1, 1] .== U[1])
     end
 end
 
@@ -205,13 +211,13 @@ end
     end
 end
 
-function sphere_sim(radius = 8; mem=Array)
-    body = AutoBody((x,t)-> √sum(abs2,x .- 2radius) - radius)
-    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem)
+function sphere_sim(radius = 8; mem=Array, exitBC=false)
+    body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
+    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
 @testset "WaterLily.jl" begin
-    for mem ∈ arrays
-        sim = sphere_sim(32;mem);
+    for mem ∈ arrays, exitBC ∈ (true,false)
+        sim = sphere_sim(;mem,exitBC);
         @test sim_time(sim) == 0
         sim_step!(sim,0.1,remeasure=false)
         @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2

@@ -112,27 +112,23 @@ rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
-    loc(i,I)
+    loc(i,I) = loc(Ii)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
 @inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 0.5 .* δ(i,I).I)
-
+@inline loc(Ii::CartesianIndex,T=Float64) = loc(last(Ii),Base.front(Ii),T)
+Base.last(I::CartesianIndex) = last(I.I)
+Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
     apply!(f, c)
 
 Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 """
-function apply!(f,c)
-    N,n = size_u(c)
-    for i ∈ 1:n
-        @loop c[I,i] = f(i,loc(i,I)) over I ∈ CartesianIndices(N)
-    end
-end
-
+apply!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii)) over Ii ∈ CartesianIndices(c)
 """
-    slice(dims,i,j,low=1,trim=0)
+    slice(dims,i,j,low=1)
 
 Return `CartesianIndices` range slicing through an array of size `dims` in
 dimension `j` at index `i`. `low` optionally sets the lower extent of the range
@@ -150,18 +146,27 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A)
+function BC!(a,A,saveexit=false)
     N,n = size_u(a)
     for j ∈ 1:n, i ∈ 1:n
         if i==j # Normal direction, Dirichlet
-            for s ∈ (1,2,N[j])
+            for s ∈ (1,2)
                 @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
             end
+            (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
         else    # Tangential directions, Neumann
             @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
             @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
         end
     end
+end
+
+function exitBC!(u,u⁰,U,Δt)
+    N,_ = size_u(u)
+    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
+    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
 end
 
 """
