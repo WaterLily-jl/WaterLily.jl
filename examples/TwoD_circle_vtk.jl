@@ -1,25 +1,32 @@
 using WaterLily
+using StaticArrays
+function circle(p=4;Re=250,mem=Array,U=1)
+    # Define simulation size, geometry dimensions, viscosity
+    L=2^p
+    center,r = SA[3L,3L,0], L/2
+    ν = U*L/Re
 
-# parameters
-L=2^4
-Re=250
-U =1
+    # make a body
+    norm2(x) = √sum(abs2,x)
+    body = AutoBody() do xyz,t
+        x,y,z = xyz - center
+        norm2(SA[x,y,0])-r
+    end
 
-# make a body
-radius, center = L/2, 3L
-Body = AutoBody((x,t)->√sum(abs2, [x[1],x[2],0.0] .- [center,center,0.0]) - radius)
-# 2D
-sim = Simulation((8L,6L),(U,0),L;U,ν=U*L/Re,body=Body,T=Float64)
-# 3D
-# sim = Simulation((8L,6L,16),(U,0,0),L;U,ν=U*L/Re,body=Body,T=Float64)
+    Simulation((8L,6L,16),(U,0,0),L;ν,body,mem)
+end
+
+import CUDA
+@assert CUDA.functional()
+sim = circle(mem=CUDA.CuArray);
 
 # make a writer with some attributes
-velocity(a::Simulation) = a.flow.u
-pressure(a::Simulation) = a.flow.p
-body(a::Simulation) = a.flow.μ₀
+velocity(a::Simulation) = a.flow.u |> Array;
+pressure(a::Simulation) = a.flow.p |> Array;
+body(a::Simulation) = a.flow.μ₀ |> Array;
 vorticity(a::Simulation) = (@inside a.flow.σ[I] = 
                             WaterLily.curl(3,I,a.flow.u)*a.L/a.U;
-                            a.flow.σ)
+                            a.flow.σ |> Array;)
 custom_attrib = Dict(
     "Velocity" => velocity,
     "Pressure" => pressure,

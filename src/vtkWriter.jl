@@ -23,8 +23,8 @@ return a `Dict` containing the name and bound funtion for the default attributes
 The name is used as the key in the `vtk` file and the function generates the data
 to put in the file. With this approach, any variable can be save to the vtk file.
 """
-_velocity(a::Simulation) = a.flow.u
-_pressure(a::Simulation) = a.flow.p
+_velocity(a::Simulation) = a.flow.u |> Array;
+_pressure(a::Simulation) = a.flow.p |> Array;
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 """
     write!(w::vtkWriter, sim::Simulation)
@@ -54,7 +54,7 @@ Base.close(w::vtkWriter)=(vtk_save(w.collection);nothing)
 Permute the dimensions such that the i,j(,k) indices are the first dimensions and not the last
 this is reqired for the vtk file.
 """
-function Base.permutedims(a::Array)
+function Base.permutedims(a::AbstractArray)
     N=length(size(a)); p=[N,1:N-1...]
     return permutedims(a,p)
 end
