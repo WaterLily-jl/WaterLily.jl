@@ -37,7 +37,7 @@ function write!(w::vtkWriter, sim::Simulation)
     vtk = vtk_grid(@sprintf("%s_%02i", w.fname, k), [1:n for n in N]...)
     for (name,func) in w.output_attrib
         # this seems bad, but I @benchmark it and it's the same as just calling func()
-        vtk[name] = size(func(sim))==N ? func(sim) : permutedims(func(sim))
+        vtk[name] = size(func(sim))==N ? func(sim) : components_first(func(sim))
     end
     vtk_save(vtk); w.count[1]=k+1
     w.collection[round(sim_time(sim),digits=4)]=vtk
@@ -49,12 +49,12 @@ closes the `vtkWriter`, this is required to write the collection file.
 """
 Base.close(w::vtkWriter)=(vtk_save(w.collection);nothing)
 """
-    permutedims(a::Array)
+    components_first(a::Array)
 
-Permute the dimensions such that the i,j(,k) indices are the first dimensions and not the last
+Permute the dimensions such that the u₁,u₂,(u₃) components of a vector field are the first dimensions and not the last
 this is reqired for the vtk file.
 """
-function Base.permutedims(a::AbstractArray)
+function components_first(a::Array)
     N=length(size(a)); p=[N,1:N-1...]
     return permutedims(a,p)
 end
