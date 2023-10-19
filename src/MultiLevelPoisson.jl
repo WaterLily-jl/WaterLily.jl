@@ -44,15 +44,16 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     L::V
     z::S
     levels :: Vector{Poisson{T,S,V}}
+    maxdepth :: Int
     n :: Vector{Int16}
-    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T},maxlevels=4) where T
+    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T},maxdepth=4) where T
         levels = Poisson[Poisson(x,L,z)]
-        while all(size(levels[end].x) .|> divisible) && length(levels) <= maxlevels
+        while all(size(levels[end].x) .|> divisible)
             push!(levels,restrictML(levels[end]))
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[])
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,min(maxdepth,length(levels)),[])
     end
 end
 function update!(ml::MultiLevelPoisson)
@@ -70,7 +71,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
-    l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
+    l+1<ml.maxdepth && Vcycle!(ml,l=l+1)
     smooth!(coarse)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
