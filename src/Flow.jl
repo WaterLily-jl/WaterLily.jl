@@ -140,8 +140,11 @@ function ml_ω!(ml::MultiLevelPoisson,a::Flow)
     end
 end
 
-@inline @fastmath biotsavart(x,j,ω,I,dx) = (p = x-dx*(SA[Tuple(I)...] .-0.5); ω[I]*p[j]/(p'*p))
-
+@inline @fastmath function biotsavart(x,j,ω,I,dx,ϵ=1e-8)
+    r = x-dx*(SA[Tuple(I)...] .-0.5); i=j%2+1
+    # the 2π is for 2D flows! In 3D it should be 4π 
+    sign(i-j)*ω[I]*r[j]/(2π*r'*r+ϵ^2) # the curl introduces a sign change
+end
 function u_ω(i,x,ml)
     # initialize at coarsest level
     ui = zero(eltype(x)); j = i%2+1
