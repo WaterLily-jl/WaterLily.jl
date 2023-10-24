@@ -9,11 +9,13 @@ Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keywo
 """
 struct vtkWriter
     fname::String
+    dir_name :: String
     collection::WriteVTK.CollectionFile
     output_attrib::Dict{String,Function}
     count::Vector{Int}
-    function vtkWriter(fname="WaterLily";attrib=default_attrib(),T=Float32)
-        new(fname,paraview_collection(fname),attrib,[0])
+    function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32)
+        !isdir(dir) && mkdir(dir)
+        new(fname,dir,paraview_collection(fname),attrib,[0])
     end
 end
 """
@@ -34,7 +36,7 @@ to the collection file.
 """
 function write!(w::vtkWriter, sim::Simulation)
     k = w.count[1]; N=size(sim.flow.p)
-    vtk = vtk_grid(@sprintf("%s_%02i", w.fname, k), [1:n for n in N]...)
+    vtk = vtk_grid(w.dir_name*@sprintf("/%s_%02i", w.fname, k), [1:n for n in N]...)
     for (name,func) in w.output_attrib
         # this seems bad, but I @benchmark it and it's the same as just calling func()
         vtk[name] = size(func(sim))==N ? func(sim) : components_first(func(sim))

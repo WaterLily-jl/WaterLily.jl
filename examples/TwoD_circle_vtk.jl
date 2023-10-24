@@ -23,7 +23,8 @@ sim = circle(mem=CUDA.CuArray);
 # make a writer with some attributes
 velocity(a::Simulation) = a.flow.u |> Array;
 pressure(a::Simulation) = a.flow.p |> Array;
-body(a::Simulation) = a.flow.μ₀ |> Array;
+body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body); 
+                       a.flow.σ |> Array;)
 vorticity(a::Simulation) = (@inside a.flow.σ[I] = 
                             WaterLily.curl(3,I,a.flow.u)*a.L/a.U;
                             a.flow.σ |> Array;)
