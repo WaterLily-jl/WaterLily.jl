@@ -4,6 +4,10 @@ using StaticArrays
 @inline fSV(f,n) = SA[ntuple(f,n)...]
 @inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
+@fastmath function permute(f,i)
+    j,k = i%3+1,(i+1)%3+1
+    f(j,k)-f(k,j)
+end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
 
 """

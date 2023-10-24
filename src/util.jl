@@ -175,9 +175,3 @@ function BC!(a)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
 end
-
-@fastmath function permute(f,i)
-    j,k = i%3+1,(i+1)%3+1
-    f(j,k)-f(k,j)
-end
-curl(i,I,u) = permute((j,k)->∂(j,CI(I,k),u), i)
