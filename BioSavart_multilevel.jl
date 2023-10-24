@@ -1,4 +1,6 @@
-using WaterLily
+using WaterLily,StaticArrays
+
+# 2D Multi-level Biot-Savart functions 
 function MLArray(x)
     levels = [x]
     N = size(x)
@@ -19,11 +21,11 @@ function ml_ω!(ml,a::Flow)
     end
 end
 
-@inline @fastmath function biotsavart(x,j,ω,I,dx,ϵ=1e-8)
-    r = x-dx*(SA[Tuple(I)...] .-0.5); i=j%2+1
-    # the 2π is for 2D flows! In 3D it should be 4π 
-    sign(i-j)*ω[I]*r[j]/(2π*r'*r+ϵ^2) # the curl introduces a sign change
+@inline @fastmath function biotsavart(x,j,ω,I,dx)
+    r = x-dx*(WaterLily.loc(I)-0.5); s = 3-2j
+    s*ω[I]*r[j]/(2π*r'*r)
 end
+
 function u_ω(i,x,ml)
     # initialize at coarsest level
     ui = zero(eltype(x)); j = i%2+1
@@ -44,10 +46,32 @@ function u_ω(i,x,ml)
         end
 
         # move "up" one level near Imax
-        l=l-1
+        l -= 1
         R = up(Imax)
     end
 
     # add Imax contribution
     return ui + biotsavart(x,j,ω,Imax,dx)
 end
+
+using SpecialFunctions,ForwardDiff
+function lamb_dipole(N;D=N/3,U=1)
+    β = 2.4394π/D
+    C = -2U/(β*besselj0(β*D/2))
+    function ψ(x,y)
+        r = √(x^2+y^2)
+        ifelse(r ≥ D/2, U*((D/2r)^2-1)*y, C*besselj1(β*r)*y/r)
+    end
+    center = SA[N/2,N/2] .+ 1
+    function uλ(i,xy)
+        x,y = xy-center
+        ifelse(i==1,ForwardDiff.derivative(y->ψ(x,y),y)+1+U,-ForwardDiff.derivative(x->ψ(x,y),x))
+    end
+    Simulation((N, N), (1,0), D; uλ)
+end
+
+include("examples/TwoD_plots.jl")
+sim = lamb_dipole(64,D=48);
+σ = sim.flow.σ;
+@inside σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+flood(σ[inside(σ)],clims=(-20,20))
