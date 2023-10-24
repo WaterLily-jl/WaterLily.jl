@@ -22,15 +22,13 @@ function ml_ω!(ml,a::Flow)
 end
 ω(I::CartesianIndex{2},u) = WaterLily.permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
-@inline @fastmath function biotsavart(x,j,ω,I,dx)
-    r = x-dx*WaterLily.loc(0,I); s = 3-2j
-    s*ω[I]*r[j]/(2π*r'*r)
-end
+biotsavart(r,j) = (3-2j)*r[j]/(2π*r'*r)
+r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5*(dx-1)
 
 function u_ω(i,x,ml)
     # initialize at coarsest level
     ui = zero(eltype(x)); j = i%2+1
-    l = 1 #lastindex(ml.levels)
+    l = lastindex(ml)
     R = inside(ml[l])
     Imax,dx,ω = 0,0,0
 
@@ -39,11 +37,11 @@ function u_ω(i,x,ml)
         # set grid scale and index nearest to x
         ω = ml[l]
         dx = 2^(l-1)
-        Imax = CartesianIndex(round.(Int,x/dx .+0.5)...)
+        Imax = argmin(I->sum(abs2,r(x,I,dx)),R)
 
         # get contributions other than Imax
         for I in R
-            I != Imax && (ui += biotsavart(x,j,ω,I,dx))
+            I != Imax && (ui += ω[I]*biotsavart(r(x,I,dx),j))
         end
 
         # move "up" one level near Imax
@@ -52,16 +50,16 @@ function u_ω(i,x,ml)
     end
 
     # add Imax contribution
-    return ui + biotsavart(x,j,ω,Imax,dx)
+    return ui + ω[Imax]*biotsavart(r(x,Imax,dx),j)
 end
 
-function biotBC!(u,ml)
+function biotBC!(u,U,ml)
     N,n = WaterLily.size_u(u)
     for j ∈ 1:n, i ∈ 1:n
         for s ∈ (1,2,N[j])
             for I ∈ WaterLily.slice(N,s,j)
                 x = WaterLily.loc(i,I)
-                u[I,i] = u_ω(i,x,ml)+sim.flow.U[i]
+                u[I,i] = u_ω(i,x,ml)+U[i]
             end
         end
     end
@@ -84,7 +82,7 @@ function lamb_dipole(N;D=3N/4,U=1)
 end
 
 include("examples/TwoD_plots.jl")
-sim = lamb_dipole(64);σ = sim.flow.σ;
+sim = lamb_dipole(16);σ = sim.flow.σ;
 @inside σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
 flood(σ[2:end,2:end],clims=(-20,20))
 flood(sim.flow.u[2:end,:,1])
@@ -94,9 +92,12 @@ ml = MLArray(σ); ml_ω!(ml,sim.flow);
 flood(ml[1],clims=(-5,5))
 flood(ml[2],clims=(-5,5))
 flood(ml[3],clims=(-5,5))
+flood(ml[4],clims=(-5,5))
 
 u = sim.flow.u;
 WaterLily.BC!(u,sim.flow.U);
 sum(abs2,u-sim.flow.u⁰) # Around N[1]/2!
-biotBC!(u,ml);
+biotBC!(u,sim.flow.U,ml);
 sum(abs2,u-sim.flow.u⁰) # Like 1/N[1]^3?!?
+flood(u[2:end,:,1])
+flood(u[:,2:end,2])
