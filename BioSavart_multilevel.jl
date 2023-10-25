@@ -25,44 +25,58 @@ end
 biotsavart(r,j) = (3-2j)*r[j]/(2π*r'*r)
 r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5*(dx-1)
 
-function u_ω(i,x,ml)
+function u_ω(i,x,ml,dis=10)
     # initialize at coarsest level
     ui = zero(eltype(x)); j = i%2+1
     l = lastindex(ml)
-    R = inside(ml[l])
+    R = collect(inside(ml[l]))
     Imax,dx,ω = 0,0,0
+    n = 0
 
     # loop levels
-    while l>=1
-        # set grid scale and index nearest to x
+    while true
+        # set grid scale
         ω = ml[l]
         dx = 2^(l-1)
-        Imax = argmin(I->sum(abs2,r(x,I,dx)),R)
 
-        # get contributions other than Imax
-        for I in R
-            I != Imax && (ui += ω[I]*biotsavart(r(x,I,dx),j))
+        # find Region close to x
+        l==1 && break
+        Rclose = filter(I->sum(abs2,r(x,I,dx))<dis*(dx^2),R)
+
+        # get contributions outside Rclose
+        for I ∈ setdiff(R,Rclose)
+            n+=1
+            ui += ω[I]*biotsavart(r(x,I,dx),j)
         end
 
-        # move "up" one level near Imax
+        # move "up" one level near 
         l -= 1
-        R = WaterLily.up(Imax)
+        R = mapreduce(I->collect(WaterLily.up(I)),hcat,Rclose)
     end
 
     # add Imax contribution
-    return ui + ω[Imax]*biotsavart(r(x,Imax,dx),j)
+    for I ∈ R
+        n+=1
+        ui += ω[I]*biotsavart(r(x,I,dx),j)
+    end
+    return ui,n
 end
 
 function biotBC!(u,U,ml)
     N,n = WaterLily.size_u(u)
+    ci=bn=0
     for j ∈ 1:n, i ∈ 1:n
         for s ∈ (1,2,N[j])
             for I ∈ WaterLily.slice(N,s,j)
                 x = WaterLily.loc(i,I)
-                u[I,i] = u_ω(i,x,ml)+U[i]
+                ui,c = u_ω(i,x,ml)
+                ci+=c
+                bn+=1
+                u[I,i] = ui+U[i]
             end
         end
     end
+    @show ci/(bn*length(inside(ml[1]))),ci/(bn*log(N[1]))
 end
 
 using SpecialFunctions,ForwardDiff
@@ -81,6 +95,14 @@ function lamb_dipole(N;D=3N/4,U=1)
     Simulation((N, N), (1,0), D; uλ) # Don't overwrite ghosts with BCs
 end
 
+sim = lamb_dipole(64);σ = sim.flow.σ;
+ml = MLArray(σ); ml_ω!(ml,sim.flow);
+u = sim.flow.u;
+WaterLily.BC!(u,sim.flow.U);
+sum(abs2,u-sim.flow.u⁰)/sim.L # Around N[1]/2!
+biotBC!(u,sim.flow.U,ml);
+sum(abs2,u-sim.flow.u⁰)/sim.L # Like 1/N[1]^3?!?
+    
 include("examples/TwoD_plots.jl")
 sim = lamb_dipole(16);σ = sim.flow.σ;
 @inside σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
