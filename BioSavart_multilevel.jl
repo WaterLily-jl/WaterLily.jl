@@ -98,12 +98,16 @@ end
 
 # Check pressure solver convergence on circle
 circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- (N/2+1.5))-D/2))
-sim = circ(64); a = sim.flow; a.u .= 0; ml = MLArray(a.σ);
-WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
-WaterLily.BDIM!(a);
-for i in 1:30
-    biotBC!(a.u,a.U,ml);
-    @inside a.σ[I] = WaterLily.div(I,a.u)
-    L₂(a.σ)<1e-5 && (@show i; break)
-    WaterLily.project!(a,sim.pois);
+begin 
+    sim = circ(128); a = sim.flow; a.u .= 0; ml = MLArray(a.σ);
+    WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
+    WaterLily.BDIM!(a);
+    for i in 1:30
+        biotBC!(a.u,a.U,ml);
+        @inside a.σ[I] = WaterLily.div(I,a.u)
+        @show L₂(a.σ),maximum(a.u)
+        L₂(a.σ)<1e-3 && (@show i; break)
+        WaterLily.project!(a,sim.pois);
+    end
+    @assert abs(maximum(a.u)-2)<1e-2
 end
