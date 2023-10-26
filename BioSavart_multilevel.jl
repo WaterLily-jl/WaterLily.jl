@@ -12,9 +12,9 @@ function MLArray(x)
     return levels
 end
 
-function ml_ω!(ml,a::Flow)
+function ml_ω!(ml,u)
     # cell-centered vorticity on finest grid
-    @inside ml[1][I] = ω(I,a.u)
+    @inside ml[1][I] = ω(I,u)
     # pool values at each level
     for l ∈ 2:lastindex(ml)
         WaterLily.restrict!(ml[l],ml[l-1])
@@ -24,21 +24,11 @@ end
 
 biotsavart(r,j) = Float32((3-2j)*r[j]/(2π*r'*r))
 r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5f0*(dx-1)
-# inR(x,dx,R) = CartesianIndex(clamp.(Tuple.((round.(Int,x .+ 1.5f0*(dx-1)),first(R),last(R)))...))
-function inR(x,dx,R) 
-    y = x .+ 1.5f0*(dx-1)
-    z = round.(Int,y/dx)
-    CartesianIndex(clamp.(Tuple.((z,first(R),last(R)))...))
-end
-function u_ω(i,x,ml,dis=2.5f0)
-    # initialize at coarsest level
-    ui = zero(eltype(x)); j = i%2+1
+inR(x,dx,R) = CartesianIndex(clamp.(Tuple.((round.(Int,x/dx .+ 1.5f0*(1-1/dx)),first(R),last(R)))...))
 
-    # for I ∈ inside(ml[1]) # single level method
-    #     ui += ml[1][I]*biotsavart(r(x,I,1),j)
-    # end
-    # return ui
-    
+function u_ω(i,x,ml,dis=2.5f0)
+    # initialize at bottom level
+    ui = zero(eltype(x)); j = i%2+1
     l = lastindex(ml)
     ω = ml[l]
     R = WaterLily.inside(ω)
@@ -48,8 +38,6 @@ function u_ω(i,x,ml,dis=2.5f0)
     while l>1
         # find Region close to x
         Rclose = inR(x .-dx*dis,dx,R):inR(x .+dx*dis,dx,R)
-        # Rclose2 = filter(I->sum(abs2,r(x,I,dx))<dis*(dx^2),R)
-        # @assert mapreduce(I->I∈Rclose,&,Rclose2)
 
         # get contributions outside Rclose
         for I ∈ R
@@ -63,7 +51,7 @@ function u_ω(i,x,ml,dis=2.5f0)
         dx = 2^(l-1)
     end
 
-    # add Imax contribution
+    # top level contribution
     for I ∈ R
         ui += ω[I]*biotsavart(r(x,I,dx),j)
     end
@@ -71,13 +59,12 @@ function u_ω(i,x,ml,dis=2.5f0)
 end
 
 function biotBC!(u,U,ml)
+    ml_ω!(ml,u)
     N,n = WaterLily.size_u(u)
     for j ∈ 1:n, i ∈ 1:n
-        for s ∈ (1,2,N[j])
+        for s ∈ ifelse(i==j,(1,2,N[j]),(1,N[j]))
             for I ∈ WaterLily.slice(N,s,j)
-    # i,I = 1,CartesianIndex(5,1)
                 x = WaterLily.loc(i,I)
-                # @show i,j,I,x
                 u[I,i] = u_ω(i,x,ml)+U[i]
             end
         end
@@ -102,10 +89,21 @@ function lamb_dipole(N;D=3N/4,U=1)
 end
 
 begin
-    sim = lamb_dipole(128);σ = sim.flow.σ;
-    ml = MLArray(σ); ml_ω!(ml,sim.flow);
-    u = sim.flow.u;
-    @time WaterLily.BC!(u,sim.flow.U);
-    @time biotBC!(u,sim.flow.U,ml); # lots of allocations!
+    sim = lamb_dipole(128);σ = sim.flow.σ; u = sim.flow.u;
+    ml = MLArray(σ);
+    @time biotBC!(u,sim.flow.U,ml);
     @assert sum(abs2,u-sim.flow.u⁰)/sim.L<2e-4
+    @time BC!(u,sim.flow.U); #only x10 faster
+end
+
+# Check pressure solver convergence on circle
+circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- (N/2+1.5))-D/2))
+sim = circ(64); a = sim.flow; a.u .= 0; ml = MLArray(a.σ);
+WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
+WaterLily.BDIM!(a);
+for i in 1:30
+    biotBC!(a.u,a.U,ml);
+    @inside a.σ[I] = WaterLily.div(I,a.u)
+    L₂(a.σ)<1e-5 && (@show i; break)
+    WaterLily.project!(a,sim.pois);
 end
