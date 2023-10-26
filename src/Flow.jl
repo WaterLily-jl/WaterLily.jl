@@ -91,10 +91,10 @@ function BDIM!(a::Flow)
     @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
 
-function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
+function project!(a::Flow{n},b::AbstractPoisson,w=1; kw...) where n
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u)+a.σᵥ[I]; b.x .*= dt # set source term & solution IC
-    solver!(b)
+    solver!(b; kw...)
     for i ∈ 1:n  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end

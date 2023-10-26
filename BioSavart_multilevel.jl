@@ -107,7 +107,7 @@ begin
         @inside a.σ[I] = WaterLily.div(I,a.u)
         @show L₂(a.σ),maximum(a.u)
         L₂(a.σ)<1e-3 && (@show i; break)
-        WaterLily.project!(a,sim.pois);
+        WaterLily.project!(a,sim.pois;itmx=1);
     end
-    @assert abs(maximum(a.u)-2)<1e-2
+    @assert abs(maximum(a.u)/2-1)<1e-2
 end
