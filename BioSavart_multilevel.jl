@@ -22,63 +22,69 @@ function ml_ω!(ml,a::Flow)
 end
 ω(I::CartesianIndex{2},u) = WaterLily.permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
-biotsavart(r,j) = (3-2j)*r[j]/(2π*r'*r)
-r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5*(dx-1)
-
-function u_ω(i,x,ml,dis=10)
+biotsavart(r,j) = Float32((3-2j)*r[j]/(2π*r'*r))
+r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5f0*(dx-1)
+# inR(x,dx,R) = CartesianIndex(clamp.(Tuple.((round.(Int,x .+ 1.5f0*(dx-1)),first(R),last(R)))...))
+function inR(x,dx,R) 
+    y = x .+ 1.5f0*(dx-1)
+    z = round.(Int,y/dx)
+    CartesianIndex(clamp.(Tuple.((z,first(R),last(R)))...))
+end
+function u_ω(i,x,ml,dis=2.5f0)
     # initialize at coarsest level
     ui = zero(eltype(x)); j = i%2+1
+
+    # for I ∈ inside(ml[1]) # single level method
+    #     ui += ml[1][I]*biotsavart(r(x,I,1),j)
+    # end
+    # return ui
+    
     l = lastindex(ml)
-    R = collect(inside(ml[l]))
-    Imax,dx,ω = 0,0,0
-    n = 0
+    ω = ml[l]
+    R = WaterLily.inside(ω)
+    dx = 2^(l-1)
 
     # loop levels
-    while true
-        # set grid scale
-        ω = ml[l]
-        dx = 2^(l-1)
-
+    while l>1
         # find Region close to x
-        l==1 && break
-        Rclose = filter(I->sum(abs2,r(x,I,dx))<dis*(dx^2),R)
+        Rclose = inR(x .-dx*dis,dx,R):inR(x .+dx*dis,dx,R)
+        # Rclose2 = filter(I->sum(abs2,r(x,I,dx))<dis*(dx^2),R)
+        # @assert mapreduce(I->I∈Rclose,&,Rclose2)
 
         # get contributions outside Rclose
-        for I ∈ setdiff(R,Rclose)
-            n+=1
-            ui += ω[I]*biotsavart(r(x,I,dx),j)
+        for I ∈ R
+            !(I ∈ Rclose) && (ui += ω[I]*biotsavart(r(x,I,dx),j))
         end
 
-        # move "up" one level near 
+        # move "up" one level within Rclose
         l -= 1
-        R = mapreduce(I->collect(WaterLily.up(I)),hcat,Rclose)
+        R = first(WaterLily.up(first(Rclose))):last(WaterLily.up(last(Rclose)))
+        ω = ml[l]
+        dx = 2^(l-1)
     end
 
     # add Imax contribution
     for I ∈ R
-        n+=1
         ui += ω[I]*biotsavart(r(x,I,dx),j)
     end
-    return ui,n
+    return ui
 end
 
 function biotBC!(u,U,ml)
     N,n = WaterLily.size_u(u)
-    ci=bn=0
     for j ∈ 1:n, i ∈ 1:n
         for s ∈ (1,2,N[j])
             for I ∈ WaterLily.slice(N,s,j)
+    # i,I = 1,CartesianIndex(5,1)
                 x = WaterLily.loc(i,I)
-                ui,c = u_ω(i,x,ml)
-                ci+=c
-                bn+=1
-                u[I,i] = ui+U[i]
+                # @show i,j,I,x
+                u[I,i] = u_ω(i,x,ml)+U[i]
             end
         end
     end
-    @show ci/(bn*length(inside(ml[1]))),ci/(bn*log(N[1]))
 end
 
+# Check reconstruction on lamb dipole
 using SpecialFunctions,ForwardDiff
 function lamb_dipole(N;D=3N/4,U=1)
     β = 2.4394π/D
@@ -95,31 +101,11 @@ function lamb_dipole(N;D=3N/4,U=1)
     Simulation((N, N), (1,0), D; uλ) # Don't overwrite ghosts with BCs
 end
 
-sim = lamb_dipole(64);σ = sim.flow.σ;
-ml = MLArray(σ); ml_ω!(ml,sim.flow);
-u = sim.flow.u;
-WaterLily.BC!(u,sim.flow.U);
-sum(abs2,u-sim.flow.u⁰)/sim.L # Around N[1]/2!
-biotBC!(u,sim.flow.U,ml);
-sum(abs2,u-sim.flow.u⁰)/sim.L # Like 1/N[1]^3?!?
-    
-include("examples/TwoD_plots.jl")
-sim = lamb_dipole(16);σ = sim.flow.σ;
-@inside σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-flood(σ[2:end,2:end],clims=(-20,20))
-flood(sim.flow.u[2:end,:,1])
-flood(sim.flow.u[:,2:end,2])
-
-ml = MLArray(σ); ml_ω!(ml,sim.flow);
-flood(ml[1],clims=(-5,5))
-flood(ml[2],clims=(-5,5))
-flood(ml[3],clims=(-5,5))
-flood(ml[4],clims=(-5,5))
-
-u = sim.flow.u;
-WaterLily.BC!(u,sim.flow.U);
-sum(abs2,u-sim.flow.u⁰) # Around N[1]/2!
-biotBC!(u,sim.flow.U,ml);
-sum(abs2,u-sim.flow.u⁰) # Like 1/N[1]^3?!?
-flood(u[2:end,:,1])
-flood(u[:,2:end,2])
+begin
+    sim = lamb_dipole(128);σ = sim.flow.σ;
+    ml = MLArray(σ); ml_ω!(ml,sim.flow);
+    u = sim.flow.u;
+    @time WaterLily.BC!(u,sim.flow.U);
+    @time biotBC!(u,sim.flow.U,ml); # lots of allocations!
+    @assert sum(abs2,u-sim.flow.u⁰)/sim.L<2e-4
+end
