@@ -22,10 +22,6 @@ function ml_ω!(ml,u)
 end
 ω(I::CartesianIndex{2},u) = WaterLily.permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
-biotsavart(r,j) = Float32((3-2j)*r[j]/(2π*r'*r))
-r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5f0*(dx-1)
-inR(x,dx,R) = CartesianIndex(clamp.(Tuple.((round.(Int,x/dx .+ 1.5f0*(1-1/dx)),first(R),last(R)))...))
-
 function u_ω(i,x,ml,dis=2.5f0)
     # initialize at bottom level
     ui = zero(eltype(x)); j = i%2+1
@@ -57,6 +53,10 @@ function u_ω(i,x,ml,dis=2.5f0)
     end
     return ui
 end
+biotsavart(r,j) = Float32((3-2j)*r[j]/(2π*r'*r))
+r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5f0*(dx-1)
+inR(x,dx,R) = clamp(CartesianIndex(round.(Int,x/dx .+ 1.5f0*(1-1/dx))...),R)
+Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,first(R).I,last(R).I))
 
 function biotBC!(u,U,ml)
     ml_ω!(ml,u)
@@ -89,7 +89,7 @@ function lamb_dipole(N;D=3N/4,U=1)
 end
 
 begin
-    sim = lamb_dipole(128);σ = sim.flow.σ; u = sim.flow.u;
+    sim = lamb_dipole(128); σ = sim.flow.σ; u = sim.flow.u;
     ml = MLArray(σ);
     @time biotBC!(u,sim.flow.U,ml);
     @assert sum(abs2,u-sim.flow.u⁰)/sim.L<2e-4
