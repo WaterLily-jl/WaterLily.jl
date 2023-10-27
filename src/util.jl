@@ -18,7 +18,7 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
-@inline inside(a::AbstractArray) = CartesianIndices(map(ax->first(ax)+1:last(ax)-1,axes(a)))
+@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
 """
     inside_u(dims,j)
@@ -117,7 +117,7 @@ using StaticArrays
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 0.5 .* δ(i,I).I)
+@inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex,T=Float64) = loc(last(Ii),Base.front(Ii),T)
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))

@@ -33,7 +33,7 @@ function u_ω(i,x,ml,dis=2.5f0)
     # loop levels
     while l>1
         # find Region close to x
-        Rclose = inR(x .-dx*dis,dx,R):inR(x .+dx*dis,dx,R)
+        Rclose = inR(x/dx .-dis,R):inR(x/dx .+dis,R)
 
         # get contributions outside Rclose
         for I ∈ R
@@ -54,8 +54,8 @@ function u_ω(i,x,ml,dis=2.5f0)
     return ui
 end
 biotsavart(r,j) = Float32((3-2j)*r[j]/(2π*r'*r))
-r(x,I,dx) = x-dx*WaterLily.loc(0,I) .+ 1.5f0*(dx-1)
-inR(x,dx,R) = clamp(CartesianIndex(round.(Int,x/dx .+ 1.5f0*(1-1/dx))...),R)
+r(x,I,dx) = x-dx*WaterLily.loc(0,I,Float32)
+inR(x,R) = clamp(CartesianIndex(round.(Int,x .+ 1.5f0)...),R)
 Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,first(R).I,last(R).I))
 
 function biotBC!(u,U,ml)
@@ -64,7 +64,7 @@ function biotBC!(u,U,ml)
     for j ∈ 1:n, i ∈ 1:n
         for s ∈ ifelse(i==j,(1,2,N[j]),(1,N[j]))
             for I ∈ WaterLily.slice(N,s,j)
-                x = WaterLily.loc(i,I)
+                x = WaterLily.loc(i,I,Float32)
                 u[I,i] = u_ω(i,x,ml)+U[i]
             end
         end
@@ -80,7 +80,7 @@ function lamb_dipole(N;D=3N/4,U=1)
         r = √(x^2+y^2)
         ifelse(r ≥ D/2, U*((D/2r)^2-1)*y, C*besselj1(β*r)*y/r)
     end
-    center = SA[N/2,N/2] .+ 1.5
+    center = SA[N/2,N/2]
     function uλ(i,xy)
         x,y = xy-center
         ifelse(i==1,ForwardDiff.derivative(y->ψ(x,y),y)+1+U,-ForwardDiff.derivative(x->ψ(x,y),x))
@@ -97,7 +97,7 @@ begin
 end
 
 # Check pressure solver convergence on circle
-circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- (N/2+1.5))-D/2))
+circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- N/2)-D/2))
 begin 
     sim = circ(128); a = sim.flow; a.u .= 0; ml = MLArray(a.σ);
     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
