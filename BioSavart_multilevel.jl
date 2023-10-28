@@ -1,10 +1,11 @@
 using WaterLily,StaticArrays
+import WaterLily: @loop,divisible,restrict!,permute,up,inside,slice,size_u
 
 # 2D Multi-level Biot-Savart functions 
 function MLArray(x)
     levels = [copy(x)]
     N = size(x)
-    while all(N .|> WaterLily.divisible)
+    while all(N .|> divisible)
         N = @. 1+N÷2
         y = similar(x,N); fill!(y,0)
         push!(levels,y)
@@ -14,20 +15,20 @@ end
 
 function ml_ω!(ml,u)
     # cell-centered vorticity on finest grid
-    @inside ml[1][I] = ω(I,u)
+    @inside ml[1][I] = curl(I,u)
     # pool values at each level
     for l ∈ 2:lastindex(ml)
-        WaterLily.restrict!(ml[l],ml[l-1])
+        restrict!(ml[l],ml[l-1])
     end
 end
-ω(I::CartesianIndex{2},u) = WaterLily.permute((j,k)->WaterLily.∂(k,j,I,u),3)
+curl(I::CartesianIndex{2},u) = permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
 function u_ω(i,x,ml,dis=2.5f0)
     # initialize at bottom level
     ui = zero(eltype(x)); j = i%2+1
     l = lastindex(ml)
     ω = ml[l]
-    R = WaterLily.inside(ω)
+    R = inside(ω)
     dx = 2^(l-1)
 
     # loop levels
@@ -42,7 +43,7 @@ function u_ω(i,x,ml,dis=2.5f0)
 
         # move "up" one level within Rclose
         l -= 1
-        R = first(WaterLily.up(first(Rclose))):last(WaterLily.up(last(Rclose)))
+        R = first(up(first(Rclose))):last(up(last(Rclose)))
         ω = ml[l]
         dx = 2^(l-1)
     end
@@ -54,41 +55,22 @@ function u_ω(i,x,ml,dis=2.5f0)
     return ui
 end
 biotsavart(r,j) = Float32((3-2j)*r[j]/(2π*r'*r))
-r(x,I,dx) = x-dx*WaterLily.loc(0,I,Float32)
+r(x,I,dx) = x-dx*loc(0,I,Float32)
 inR(x,R) = clamp(CartesianIndex(round.(Int,x .+ 1.5f0)...),R)
 Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,first(R).I,last(R).I))
 
 function biotBC!(u,U,ml)
     ml_ω!(ml,u)
-    N,n = WaterLily.size_u(u)
+    N,n = size_u(u)
     for j ∈ 1:n, i ∈ 1:n
         for s ∈ ifelse(i==j,(1,2,N[j]),(1,N[j]))
-            for I ∈ WaterLily.slice(N,s,j)
-                x = WaterLily.loc(i,I,Float32)
+            for I ∈ slice(N,s,j)
+                x = loc(i,I,Float32)
                 u[I,i] = u_ω(i,x,ml)+U[i]
             end
         end
     end
-    # for i ∈ 1:n
-    #     for s ∈ (1,2,N[i])  # Normal direction using biot-savart
-    #         for I ∈ WaterLily.slice(N,s,i)
-    #             x = WaterLily.loc(i,I,Float32)
-    #             u[I,i] = u_ω(i,x,ml)+U[i]
-    #         end
-    #     end
-    #     j = i%2+1 # Tangent direction using ω=0
-    #     WaterLily.@loop u[I,j] = u[I+δ(i,I),j]-WaterLily.∂(j,CartesianIndex(I+δ(i,I),i),u) over I ∈ WaterLily.slice(N,1,i,3)
-    #     WaterLily.@loop u[I,j] = u[I-δ(i,I),j]+WaterLily.∂(j,CartesianIndex(I-δ(i,I),i),u) over I ∈ WaterLily.slice(N,N[i],i,3)
-    # end
 end
-
-function ω_from_p(I::CartesianIndex,b::AbstractPoisson)
-    du(I,i) = @inbounds(-b.L[I,i]*WaterLily.∂(i,I,b.x))
-    ∂(i,j,I,u) = (u(I+δ(j,I),i)+u(I+δ(j,I)+δ(i,I),i)
-                 -u(I-δ(j,I),i)-u(I-δ(j,I)+δ(i,I),i))/4
-    return WaterLily.permute((j,k)->∂(k,j,I,du),3)
-end
-function resid_update()
 
 # Check reconstruction on lamb dipole
 using SpecialFunctions,ForwardDiff
@@ -115,47 +97,44 @@ begin
     @time BC!(u,sim.flow.U); #only x10 faster
 end
 
+# residual update from pressure (not matching direct calc yet)
+function update_resid!(b,ω)
+    # update ω
+    ω[1] .= 0
+    @inside ω[1][I] = ω_from_p(I,b)
+    for l ∈ 2:lastindex(ω)
+        restrict!(ω[l],ω[l-1])
+    end
+    # updat residual
+    N,n = size_u(u)
+    for i ∈ 1:n
+        @loop b.r[I] -= u_ω(i,loc(i,I,Float32),ω) over I ∈ slice(N.-1,2,i,2)
+        @loop b.r[I] += u_ω(i,loc(i,I+δ(i,I),Float32),ω) over I ∈ slice(N.-1,N[i]-1,i,2)
+    end
+end 
+function ω_from_p(I::CartesianIndex,b::AbstractPoisson)
+    u(I,i) = @inbounds(-b.L[I,i]*WaterLily.∂(i,I,b.x))
+    ∂(i,j,I,u) = (u(I+δ(j,I),i)+u(I+δ(j,I)+δ(i,I),i)
+                 -u(I-δ(j,I),i)-u(I-δ(j,I)+δ(i,I),i))/4
+    return permute((j,k)->∂(k,j,I,u),3)
+end
+
 # Check pressure solver convergence on circle
 include("examples/TwoD_plots.jl")
 circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- N/2)-D/2))
-sim = circ(128); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
-WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
-WaterLily.BDIM!(a);
-BC!(a.u,a.U)
-biotBC!(a.u,a.U,ml);
-flood(ml[1])
-@inside b.z[I] = WaterLily.div(I,a.u)
-flood(b.z)
-solver!(b;itmx=1)
-flood(b.levels[1].r)
-
-function update_resid!(b,ml)
-    ml[1] .= 0;
-    WaterLily.@loop ml[1][I] = ω_from_p(I,b) over I ∈ inside(b.z;buff=2)
-    for l ∈ 2:lastindex(ml)
-        WaterLily.restrict!(ml[l],ml[l-1])
+begin 
+    sim = circ(128); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
+    WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
+    WaterLily.BDIM!(a);
+    for i in 0:10
+        biotBC!(a.u,a.U,ml);
+        @inside a.σ[I] = WaterLily.div(I,a.u)
+        @show L₂(a.σ),maximum(a.u)
+        L₂(a.σ)<1e-3 && (@show i; break)
+        sim.pois.x .= 0
+        WaterLily.project!(a,b;itmx=1)
+        update_resid!(b.levels[1],ml)
+        @show L₂(b.levels[1].r) # not matching yet!
     end
-    N,n = WaterLily.size_u(u)
-    for i ∈ 1:n
-        for s ∈ (1,2,N[i])  # Normal direction using biot-savart
-            for I ∈ WaterLily.slice(N,s,i)
-                x = WaterLily.loc(i,I,Float32)
-                u[I,i] = u_ω(i,x,ml)+U[i]
-            end
-        end
-    end
-end 
-
-# begin 
-#     sim = circ(128); a = sim.flow; a.u .= 0; ml = MLArray(a.σ);
-#     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
-#     WaterLily.BDIM!(a);
-#     for i in 1:30
-#         biotBC!(a.u,a.U,ml);
-#         @inside a.σ[I] = WaterLily.div(I,a.u)
-#         @show L₂(a.σ),maximum(a.u)
-#         L₂(a.σ)<1e-3 && (@show i; break)
-#         WaterLily.project!(a,sim.pois;itmx=1);
-#     end
-#     @assert abs(maximum(a.u)/2-1)<1e-2
-# end
+    @assert abs(maximum(a.u)/2-1)<1e-2
+end
