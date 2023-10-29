@@ -54,16 +54,23 @@ Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,fi
 
 function biotBC!(u,U,ml_ω)
     # fill top level with cell-centered ω₃ and restrict down to lower levels
-    @inside ml_ω[1][I] = centered_ω₃(I,u)
+    ml_ω[1] .= 0
+    @loop ml_ω[1][I] = centered_ω₃(I,u) over I ∈ inside(ml_ω[1],buff=2)
+    # @inside ml_ω[1][I] = centered_ω₃(I,u)
     ml_restrict!(ml_ω)
 
     # fill BCs using multi-level biotsavart
     N,n = size_u(u)
-    for j ∈ 1:n, i ∈ 1:n
-        for s ∈ ifelse(i==j,(1,2,N[j]),(1,N[j]))
-            @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,j)
+    for i ∈ 1:n
+        for s ∈ (2,N[i])
+            @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,i)
         end
     end
+    # for j ∈ 1:n, i ∈ 1:n
+    #     for s ∈ ifelse(i==j,(1,2,N[j]),(1,N[j]))
+    #         @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,j)
+    #     end
+    # end
 end
 centered_ω₃(I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
@@ -93,12 +100,13 @@ begin
 end
 
 # residual update from pressure (not matching direct calc yet)
-function update_resid!(b,ml_ω)
-    @inside ml_ω[1][I] = ω_from_p(I,b)
+function update_resid!(b,ml_ω,u)
+    @loop ml_ω[1][I] = centered_ω₃(I,u)-ml_ω[1][I] over I ∈ inside(ml_ω[1],buff=2)
+    # @loop ml_ω[1][I] = ω_from_p(I,b) over I ∈ inside(ml_ω[1],buff=2)
     ml_restrict!(ml_ω)
 
-    # updat residual on boundaries
-    N,n = size_u(u)
+    # update residual on boundaries
+    N,n = size_u(b.L)
     for i ∈ 1:n
         @loop b.r[I] -= u_ω(i,loc(i,I,Float32),ml_ω) over I ∈ slice(N.-1,2,i,2)
         @loop b.r[I] += u_ω(i,loc(i,I+δ(i,I),Float32),ml_ω) over I ∈ slice(N.-1,N[i]-1,i,2)
@@ -115,18 +123,21 @@ end
 include("examples/TwoD_plots.jl")
 circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- N/2)-D/2))
 begin 
-    sim = circ(128); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
+    sim = circ(256); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
     WaterLily.BDIM!(a);
-    for i in 0:10
-        biotBC!(a.u,a.U,ml);
+    BC!(a.u,a.U)
+    for i in 0:30
+        biotBC!(a.u,a.U,ml)
         @inside a.σ[I] = WaterLily.div(I,a.u)
         @show L₂(a.σ),maximum(a.u)
         L₂(a.σ)<1e-3 && (@show i; break)
         sim.pois.x .= 0
         WaterLily.project!(a,b;itmx=1)
-        update_resid!(b.levels[1],ml)
-        @show L₂(b.levels[1].r) # not matching yet!
+        @inside a.σ[I] = WaterLily.div(I,a.u)
+        @show L₂(a.σ),L₂(b.levels[1]) # matching
+        update_resid!(b.levels[1],ml,a.u)
+        @show L₂(b.levels[1]) # matching 
     end
     @assert abs(maximum(a.u)/2-1)<1e-2
 end
