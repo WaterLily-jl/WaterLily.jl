@@ -99,10 +99,9 @@ begin
     @time BC!(u,sim.flow.U); #only x10 faster
 end
 
-# residual update from pressure (not matching direct calc yet)
-function update_resid!(b,ml_ω,u)
-    @loop ml_ω[1][I] = centered_ω₃(I,u)-ml_ω[1][I] over I ∈ inside(ml_ω[1],buff=2)
-    # @loop ml_ω[1][I] = ω_from_p(I,b) over I ∈ inside(ml_ω[1],buff=2)
+# residual update from pressure
+function update_resid!(b,ml_ω)
+    @loop ml_ω[1][I] = ω_from_p(I,b) over I ∈ inside(ml_ω[1],buff=2)
     ml_restrict!(ml_ω)
 
     # update residual on boundaries
@@ -113,7 +112,7 @@ function update_resid!(b,ml_ω,u)
     end
 end 
 function ω_from_p(I::CartesianIndex,b::AbstractPoisson)
-    u(I,i) = @inbounds(-b.L[I,i]*WaterLily.∂(i,I,b.x))
+    u(I,i) = @inbounds(-b.L[I,i]*WaterLily.∂(i,I,b.ϵ))
     ∂(i,j,I,u) = (u(I+δ(j,I),i)+u(I+δ(j,I)+δ(i,I),i)
                  -u(I-δ(j,I),i)-u(I-δ(j,I)+δ(i,I),i))/4
     return permute((j,k)->∂(k,j,I,u),3)
@@ -122,22 +121,25 @@ end
 # Check pressure solver convergence on circle
 include("examples/TwoD_plots.jl")
 circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- N/2)-D/2))
-begin 
+use_biotsavart = true
+begin
     sim = circ(256); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
     WaterLily.BDIM!(a);
     BC!(a.u,a.U)
-    for i in 0:30
-        biotBC!(a.u,a.U,ml)
-        @inside a.σ[I] = WaterLily.div(I,a.u)
-        @show L₂(a.σ),maximum(a.u)
-        L₂(a.σ)<1e-3 && (@show i; break)
-        sim.pois.x .= 0
-        WaterLily.project!(a,b;itmx=1)
-        @inside a.σ[I] = WaterLily.div(I,a.u)
-        @show L₂(a.σ),L₂(b.levels[1]) # matching
-        update_resid!(b.levels[1],ml,a.u)
-        @show L₂(b.levels[1]) # matching 
+    use_biotsavart && biotBC!(a.u,a.U,ml)
+    @inside b.z[I] = WaterLily.div(I,a.u)
+    WaterLily.residual!(b.levels[1])
+    for i in 1:32
+        ml[1] .= b.x
+        WaterLily.Vcycle!(b)
+        WaterLily.smooth!(b.levels[1])
+        b.levels[1].ϵ .= b.x .- ml[1]; ml[1] .= 0
+        use_biotsavart && update_resid!(b.levels[1],ml)
+        L₂(b.levels[1])<1e-3 && (@show i; break)
     end
-    @assert abs(maximum(a.u)/2-1)<1e-2
+    for i ∈ 1:2
+        @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
+    end
+    maximum(a.u) 
 end
