@@ -3,7 +3,7 @@ import WaterLily: @loop,divisible,restrict!,permute,up,inside,slice,size_u
 
 # 2D Multi-level Biot-Savart functions 
 function MLArray(x)
-    levels = [copy(x)]
+    levels = [zeros(eltype(x),size(x))]
     N = size(x)
     while all(N .|> divisible)
         N = @. 1+N÷2
@@ -54,23 +54,16 @@ Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,fi
 
 function biotBC!(u,U,ml_ω)
     # fill top level with cell-centered ω₃ and restrict down to lower levels
-    ml_ω[1] .= 0
     @loop ml_ω[1][I] = centered_ω₃(I,u) over I ∈ inside(ml_ω[1],buff=2)
-    # @inside ml_ω[1][I] = centered_ω₃(I,u)
     ml_restrict!(ml_ω)
 
     # fill BCs using multi-level biotsavart
     N,n = size_u(u)
     for i ∈ 1:n
-        for s ∈ (2,N[i])
+        for s ∈ (1,2,N[i])
             @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,i)
         end
     end
-    # for j ∈ 1:n, i ∈ 1:n
-    #     for s ∈ ifelse(i==j,(1,2,N[j]),(1,N[j]))
-    #         @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,j)
-    #     end
-    # end
 end
 centered_ω₃(I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
@@ -99,7 +92,24 @@ begin
     @time BC!(u,sim.flow.U); #only x10 faster
 end
 
-# residual update from pressure
+# biotsavart projection
+function biotProject!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;use_biotsavart=true,log=false,tol=1e-3) where n
+    use_biotsavart && biotBC!(a.u,a.U,ml_ω); b = ml_b.levels[1]
+    @inside b.z[I] = WaterLily.div(I,a.u)
+    WaterLily.residual!(b)
+    for i in 1:32
+        ml_ω[1] .= b.x
+        WaterLily.Vcycle!(ml_b)
+        WaterLily.smooth!(b)
+        b.ϵ .= b.x .- ml_ω[1]; ml_ω[1] .= 0
+        use_biotsavart && update_resid!(b,ml_ω)
+        log && @show i,L₂(b)
+        L₂(b)<tol && (@show i; break)
+    end
+    for i ∈ 1:n
+        @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
+    end
+end
 function update_resid!(b,ml_ω)
     @loop ml_ω[1][I] = ω_from_p(I,b) over I ∈ inside(ml_ω[1],buff=2)
     ml_restrict!(ml_ω)
@@ -119,27 +129,17 @@ function ω_from_p(I::CartesianIndex,b::AbstractPoisson)
 end
 
 # Check pressure solver convergence on circle
-include("examples/TwoD_plots.jl")
 circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- N/2)-D/2))
-use_biotsavart = true
+scale = 1
 begin
-    sim = circ(256); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
+    sim = circ(256*scale,D=256*3/4); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
     WaterLily.BDIM!(a);
     BC!(a.u,a.U)
-    use_biotsavart && biotBC!(a.u,a.U,ml)
-    @inside b.z[I] = WaterLily.div(I,a.u)
-    WaterLily.residual!(b.levels[1])
-    for i in 1:32
-        ml[1] .= b.x
-        WaterLily.Vcycle!(b)
-        WaterLily.smooth!(b.levels[1])
-        b.levels[1].ϵ .= b.x .- ml[1]; ml[1] .= 0
-        use_biotsavart && update_resid!(b.levels[1],ml)
-        L₂(b.levels[1])<1e-3 && (@show i; break)
-    end
-    for i ∈ 1:2
-        @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
-    end
+    @time biotProject!(a,b,ml;use_biotsavart=true,tol=scale^2*1e-3)
     maximum(a.u) 
 end
+include("examples/TwoD_plots.jl")
+flood(a.u[2:end,2:end-1,1])
+shift = 256*(scale-1)÷2
+flood(a.u[2+shift:end-shift,2+shift:end-shift-1,1])
