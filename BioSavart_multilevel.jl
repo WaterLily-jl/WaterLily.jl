@@ -12,22 +12,15 @@ function MLArray(x)
     end
     return levels
 end
-
-function ml_ω!(ml,u)
-    # cell-centered vorticity on finest grid
-    @inside ml[1][I] = curl(I,u)
-    # pool values at each level
-    for l ∈ 2:lastindex(ml)
-        restrict!(ml[l],ml[l-1])
-    end
+ml_restrict!(ml) = for l ∈ 2:lastindex(ml)
+    restrict!(ml[l],ml[l-1])
 end
-curl(I::CartesianIndex{2},u) = permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
-function u_ω(i,x,ml,dis=2.5f0)
+function u_ω(i,x,ml_ω,dis=2.5f0)
     # initialize at bottom level
     ui = zero(eltype(x)); j = i%2+1
-    l = lastindex(ml)
-    ω = ml[l]
+    l = lastindex(ml_ω)
+    ω = ml_ω[l]
     R = inside(ω)
     dx = 2^(l-1)
 
@@ -44,7 +37,7 @@ function u_ω(i,x,ml,dis=2.5f0)
         # move "up" one level within Rclose
         l -= 1
         R = first(up(first(Rclose))):last(up(last(Rclose)))
-        ω = ml[l]
+        ω = ml_ω[l]
         dx = 2^(l-1)
     end
 
@@ -59,18 +52,20 @@ r(x,I,dx) = x-dx*loc(0,I,Float32)
 inR(x,R) = clamp(CartesianIndex(round.(Int,x .+ 1.5f0)...),R)
 Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,first(R).I,last(R).I))
 
-function biotBC!(u,U,ml)
-    ml_ω!(ml,u)
+function biotBC!(u,U,ml_ω)
+    # fill top level with cell-centered ω₃ and restrict down to lower levels
+    @inside ml_ω[1][I] = centered_ω₃(I,u)
+    ml_restrict!(ml_ω)
+
+    # fill BCs using multi-level biotsavart
     N,n = size_u(u)
     for j ∈ 1:n, i ∈ 1:n
         for s ∈ ifelse(i==j,(1,2,N[j]),(1,N[j]))
-            for I ∈ slice(N,s,j)
-                x = loc(i,I,Float32)
-                u[I,i] = u_ω(i,x,ml)+U[i]
-            end
+            @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,j)
         end
     end
 end
+centered_ω₃(I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),3)
 
 # Check reconstruction on lamb dipole
 using SpecialFunctions,ForwardDiff
@@ -98,18 +93,15 @@ begin
 end
 
 # residual update from pressure (not matching direct calc yet)
-function update_resid!(b,ω)
-    # update ω
-    ω[1] .= 0
-    @inside ω[1][I] = ω_from_p(I,b)
-    for l ∈ 2:lastindex(ω)
-        restrict!(ω[l],ω[l-1])
-    end
-    # updat residual
+function update_resid!(b,ml_ω)
+    @inside ml_ω[1][I] = ω_from_p(I,b)
+    ml_restrict!(ml_ω)
+
+    # updat residual on boundaries
     N,n = size_u(u)
     for i ∈ 1:n
-        @loop b.r[I] -= u_ω(i,loc(i,I,Float32),ω) over I ∈ slice(N.-1,2,i,2)
-        @loop b.r[I] += u_ω(i,loc(i,I+δ(i,I),Float32),ω) over I ∈ slice(N.-1,N[i]-1,i,2)
+        @loop b.r[I] -= u_ω(i,loc(i,I,Float32),ml_ω) over I ∈ slice(N.-1,2,i,2)
+        @loop b.r[I] += u_ω(i,loc(i,I+δ(i,I),Float32),ml_ω) over I ∈ slice(N.-1,N[i]-1,i,2)
     end
 end 
 function ω_from_p(I::CartesianIndex,b::AbstractPoisson)
