@@ -57,12 +57,15 @@ function biotBC!(u,U,ml_ω)
     @loop ml_ω[1][I] = centered_ω₃(I,u) over I ∈ inside(ml_ω[1],buff=2)
     ml_restrict!(ml_ω)
 
-    # fill BCs using multi-level biotsavart
+    # fill BCs
     N,n = size_u(u)
     for i ∈ 1:n
-        for s ∈ (1,2,N[i])
+        for s ∈ (1,2,N[i]) # Normal direction, biotsavart+background
             @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,i)
         end
+        j = i%2+1          # Tangential direction, ω=0
+        @loop u[I,j] = u[I+δ(i,I),j]-WaterLily.∂(j,CartesianIndex(I+δ(i,I),i),u) over I ∈ slice(N.-1,1,i,3)
+        @loop u[I,j] = u[I-δ(i,I),j]+WaterLily.∂(j,CartesianIndex(I,i),u) over I ∈ slice(N.-1,N[i],i,3)
     end
 end
 centered_ω₃(I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),3)
@@ -94,24 +97,26 @@ end
 
 # biotsavart projection
 function biotProject!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;use_biotsavart=true,log=false,tol=1e-3) where n
-    use_biotsavart && biotBC!(a.u,a.U,ml_ω); b = ml_b.levels[1]
-    @inside b.z[I] = WaterLily.div(I,a.u)
+    use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
+    b = ml_b.levels[1]; @inside b.z[I] = WaterLily.div(I,a.u)
     WaterLily.residual!(b)
+    use_biotsavart && (update_resid!(b,b.x,ml_ω))
     for i in 1:32
         ml_ω[1] .= b.x
         WaterLily.Vcycle!(ml_b)
         WaterLily.smooth!(b)
         b.ϵ .= b.x .- ml_ω[1]; ml_ω[1] .= 0
-        use_biotsavart && update_resid!(b,ml_ω)
+        use_biotsavart && update_resid!(b,b.ϵ,ml_ω)
         log && @show i,L₂(b)
         L₂(b)<tol && (@show i; break)
     end
     for i ∈ 1:n
         @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
     end
+    use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
 end
-function update_resid!(b,ml_ω)
-    @loop ml_ω[1][I] = ω_from_p(I,b) over I ∈ inside(ml_ω[1],buff=2)
+function update_resid!(b,ϵ,ml_ω)
+    @loop ml_ω[1][I] = ω_from_p(I,b.L,ϵ) over I ∈ inside(ml_ω[1],buff=2)
     ml_restrict!(ml_ω)
 
     # update residual on boundaries
@@ -121,8 +126,8 @@ function update_resid!(b,ml_ω)
         @loop b.r[I] += u_ω(i,loc(i,I+δ(i,I),Float32),ml_ω) over I ∈ slice(N.-1,N[i]-1,i,2)
     end
 end 
-function ω_from_p(I::CartesianIndex,b::AbstractPoisson)
-    u(I,i) = @inbounds(-b.L[I,i]*WaterLily.∂(i,I,b.ϵ))
+function ω_from_p(I::CartesianIndex,L,ϵ)
+    u(I,i) = @inbounds(-L[I,i]*WaterLily.∂(i,I,ϵ))
     ∂(i,j,I,u) = (u(I+δ(j,I),i)+u(I+δ(j,I)+δ(i,I),i)
                  -u(I-δ(j,I),i)-u(I-δ(j,I)+δ(i,I),i))/4
     return permute((j,k)->∂(k,j,I,u),3)
@@ -135,11 +140,10 @@ begin
     sim = circ(256*scale,D=256*3/4); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
     WaterLily.BDIM!(a);
-    BC!(a.u,a.U)
     @time biotProject!(a,b,ml;use_biotsavart=true,tol=scale^2*1e-3)
-    maximum(a.u) 
+    maximum(a.u)
 end
 include("examples/TwoD_plots.jl")
-flood(a.u[2:end,2:end-1,1])
+flood(a.u[2:end,2:end-1,1],border=:none)
 shift = 256*(scale-1)÷2
 flood(a.u[2+shift:end-shift,2+shift:end-shift-1,1])
