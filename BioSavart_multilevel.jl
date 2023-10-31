@@ -95,25 +95,41 @@ begin
     @time BC!(u,sim.flow.U); #only x10 faster
 end
 
-# biotsavart projection
-function biotProject!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;use_biotsavart=true,log=false,tol=1e-3) where n
+# biotsavart momentum step
+function biot_mom_step!(a,b,ml;use_biotsavart=true)
+    a.u⁰ .= a.u; WaterLily.scale_u!(a,0)
+    # predictor u → u'
+    WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
+    WaterLily.BDIM!(a);
+    biot_project!(a,b,ml;use_biotsavart)
+    # corrector u → u¹
+    WaterLily.conv_diff!(a.f,a.u,a.σ,ν=a.ν)
+    WaterLily.BDIM!(a); WaterLily.scale_u!(a,0.5)
+    biot_project!(a,b,ml;use_biotsavart,w=0.5)
+    maximum(a.u)
+    push!(a.Δt,WaterLily.CFL(a))
+end
+function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,use_biotsavart=true,log=false,tol=1e-3) where n
     use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
     b = ml_b.levels[1]; @inside b.z[I] = WaterLily.div(I,a.u)
-    WaterLily.residual!(b)
+    dt = w*a.Δt[end]; b.x .*= dt
+    WaterLily.residual!(b); r₂ = L₂(b); nᵖ = 0;
     use_biotsavart && (update_resid!(b,b.x,ml_ω))
-    for i in 1:32
+    while r₂>tol && nᵖ<32
         ml_ω[1] .= b.x
         WaterLily.Vcycle!(ml_b)
         WaterLily.smooth!(b)
         b.ϵ .= b.x .- ml_ω[1]; ml_ω[1] .= 0
         use_biotsavart && update_resid!(b,b.ϵ,ml_ω)
-        log && @show i,L₂(b)
-        L₂(b)<tol && (@show i; break)
+        r₂ = L₂(b); nᵖ+=1
     end
+    nᵖ==32 && @show "did not converge"
+    push!(ml_b.n,nᵖ)
     for i ∈ 1:n
         @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
     end
     use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
+    b.x ./= dt
 end
 function update_resid!(b,ϵ,ml_ω)
     @loop ml_ω[1][I] = ω_from_p(I,b.L,ϵ) over I ∈ inside(ml_ω[1],buff=2)
@@ -134,16 +150,11 @@ function ω_from_p(I::CartesianIndex,L,ϵ)
 end
 
 # Check pressure solver convergence on circle
-circ(N;D=3N/4,U=1) = Simulation((N, N), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- N/2)-D/2))
-scale = 1
-begin
-    sim = circ(256*scale,D=256*3/4); a = sim.flow; b = sim.pois; a.u .= 0; ml = MLArray(a.σ);
-    WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
-    WaterLily.BDIM!(a);
-    @time biotProject!(a,b,ml;use_biotsavart=true,tol=scale^2*1e-3)
-    maximum(a.u)
-end
 include("examples/TwoD_plots.jl")
-flood(a.u[2:end,2:end-1,1],border=:none)
-shift = 256*(scale-1)÷2
-flood(a.u[2+shift:end-shift,2+shift:end-shift-1,1])
+circ(D,U=1) = Simulation((2D, 11D÷8), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- 11D/16)-D/2),ν=U*D/1e4)
+sim = circ(256); ml = MLArray(sim.flow.σ);
+while sim_time(sim)<1
+    biot_mom_step!(sim.flow,sim.pois,ml;use_biotsavart=true)
+end
+@inside sim.flow.σ[I] = centered_ω₃(I,sim.flow.u)*sim.L/sim.U
+flood(sim.flow.σ,border=:none,legend=false,clims=(-25,25))
