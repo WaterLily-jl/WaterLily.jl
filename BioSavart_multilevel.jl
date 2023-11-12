@@ -64,18 +64,17 @@ end
 # compute cell-centered ωᵢ and restrict down to lower levels
 function _fill_ω!(ω,i,u)
     top = ω[1]
-    for I ∈ inside(top,buff=2)
-        top[I] = centered_ω(i,I,u)
-    end
+    @loop top[I] = centered_ω(i,I,u) over I ∈ inside(top,buff=2)
     ml_restrict!(ω)
 end
-fill_ω!(ω,u,::Val{3}) = _fill_ω!.(ω,1:3,Ref(u))
+fill_ω!(ω,u,::Val{3}) = foreach(i->_fill_ω!(ω[i],i,u),1:3)
 fill_ω!(ω,u,::Val{2}) = _fill_ω!(ω,3,u)
 centered_ω(i,I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),i)
 
 # Check reconstruction on lamb dipole
-using SpecialFunctions,ForwardDiff
-function lamb_dipole(N;D=3N/4,U=1)
+using CUDA,SpecialFunctions,ForwardDiff
+CUDA.allowscalar(false)
+function lamb_dipole(N;D=3N/4,U=1,mem=Array)
     β = 2.4394π/D
     C = -2U/(β*besselj0(β*D/2))
     function ψ(x,y)
@@ -87,15 +86,15 @@ function lamb_dipole(N;D=3N/4,U=1)
         x,y = xy-center
         ifelse(i==1,ForwardDiff.derivative(y->ψ(x,y),y)+1+U,-ForwardDiff.derivative(x->ψ(x,y),x))
     end
-    Simulation((N, N), (1,0), D; uλ) # Don't overwrite ghosts with BCs
+    Simulation((N, N), (1,0), D; uλ, mem) # Don't overwrite ghosts with BCs
 end
 
 begin
-    sim = lamb_dipole(128); σ = sim.flow.σ; u = sim.flow.u;
+    sim = lamb_dipole(3*512,mem=Array); σ = sim.flow.σ; u = sim.flow.u;
     ml = MLArray(σ);
-    @time biotBC!(u,sim.flow.U,ml);
+    @time CUDA.@sync biotBC!(u,sim.flow.U,ml); #10x slower on GPU 🤢
     @assert sum(abs2,u-sim.flow.u⁰)/sim.L<2e-4
-    @time BC!(u,sim.flow.U); #only x10 faster
+    @time CUDA.@sync BC!(u,sim.flow.U);
 end
 
 function hill_vortex(N;D=3N/4,U=1,mem=Array)
@@ -113,93 +112,94 @@ end
 begin
     sim = hill_vortex(128,mem=Array); σ = sim.flow.σ; u = sim.flow.u;
     ω = ntuple(i->MLArray(σ),3);
-    @time biotBC!(u,sim.flow.U,ω);
+    @time CUDA.@sync biotBC!(u,sim.flow.U,ω);  #70x slower on GPU 🤢
     @assert sum(abs2,u-sim.flow.u⁰)/sim.L^2<1e-4
-    @time BC!(u,sim.flow.U); 
+    @time CUDA.@sync BC!(u,sim.flow.U); 
 end
 
-# biotsavart momentum step
-function biot_mom_step!(a,b,ml;use_biotsavart=true)
-    a.u⁰ .= a.u; WaterLily.scale_u!(a,0)
-    # predictor u → u'
-    WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
-    WaterLily.BDIM!(a);
-    biot_project!(a,b,ml;use_biotsavart)
-    # corrector u → u¹
-    WaterLily.conv_diff!(a.f,a.u,a.σ,ν=a.ν)
-    WaterLily.BDIM!(a); WaterLily.scale_u!(a,0.5)
-    biot_project!(a,b,ml;use_biotsavart,w=0.5)
-    push!(a.Δt,WaterLily.CFL(a))
-end
-function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,use_biotsavart=true,log=false,tol=1e-3,itmx=32) where n
-    use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
-    b = ml_b.levels[1]; @inside b.z[I] = WaterLily.div(I,a.u)
-    dt = w*a.Δt[end]; b.x .*= dt
-    WaterLily.residual!(b); r₂ = L₂(b); nᵖ = 0;
-    use_biotsavart && (update_resid!(b.r,b.L,b.x,ml_ω))
-    while r₂>tol && nᵖ<itmx
-        ml_ω[1] .= b.x
-        WaterLily.Vcycle!(ml_b)
-        WaterLily.smooth!(b)
-        b.ϵ .= b.x .- ml_ω[1]; ml_ω[1] .= 0
-        use_biotsavart && update_resid!(b.r,b.L,b.ϵ,ml_ω)
-        r₂ = L₂(b); nᵖ+=1
-        log && @show nᵖ,r₂
-    end
-    push!(ml_b.n,nᵖ)
-    for i ∈ 1:n
-        @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
-    end
-    use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
-    b.x ./= dt
-end
-function update_resid!(r,L,ϵ,ml_ω)
-    # get pressure-induced vorticity
-    top = ml_ω[1]
-    @loop top[I] = ω_from_p(I,L,ϵ) over I ∈ inside(top,buff=2)
-    ml_restrict!(ml_ω)
+@show
+# # biotsavart momentum step
+# function biot_mom_step!(a,b,ml;use_biotsavart=true)
+#     a.u⁰ .= a.u; WaterLily.scale_u!(a,0)
+#     # predictor u → u'
+#     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
+#     WaterLily.BDIM!(a);
+#     biot_project!(a,b,ml;use_biotsavart)
+#     # corrector u → u¹
+#     WaterLily.conv_diff!(a.f,a.u,a.σ,ν=a.ν)
+#     WaterLily.BDIM!(a); WaterLily.scale_u!(a,0.5)
+#     biot_project!(a,b,ml;use_biotsavart,w=0.5)
+#     push!(a.Δt,WaterLily.CFL(a))
+# end
+# function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,use_biotsavart=true,log=false,tol=1e-3,itmx=32) where n
+#     use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
+#     b = ml_b.levels[1]; @inside b.z[I] = WaterLily.div(I,a.u)
+#     dt = w*a.Δt[end]; b.x .*= dt
+#     WaterLily.residual!(b); r₂ = L₂(b); nᵖ = 0;
+#     use_biotsavart && (update_resid!(b.r,b.L,b.x,ml_ω))
+#     while r₂>tol && nᵖ<itmx
+#         ml_ω[1] .= b.x
+#         WaterLily.Vcycle!(ml_b)
+#         WaterLily.smooth!(b)
+#         b.ϵ .= b.x .- ml_ω[1]; ml_ω[1] .= 0
+#         use_biotsavart && update_resid!(b.r,b.L,b.ϵ,ml_ω)
+#         r₂ = L₂(b); nᵖ+=1
+#         log && @show nᵖ,r₂
+#     end
+#     push!(ml_b.n,nᵖ)
+#     for i ∈ 1:n
+#         @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
+#     end
+#     use_biotsavart ? biotBC!(a.u,a.U,ml_ω) : BC!(a.u,a.U) 
+#     b.x ./= dt
+# end
+# function update_resid!(r,L,ϵ,ml_ω)
+#     # get pressure-induced vorticity
+#     top = ml_ω[1]
+#     @loop top[I] = ω_from_p(I,L,ϵ) over I ∈ inside(top,buff=2)
+#     ml_restrict!(ml_ω)
 
-    # update residual on boundaries
-    N,n = size_u(L);
-    for i ∈ 1:n
-        @loop r[I] -= u_ω(i,loc(i,I,Float32),ml_ω) over I ∈ slice(N.-1,2,i,2)
-        @loop r[I] += u_ω(i,loc(i,I+δ(i,I),Float32),ml_ω) over I ∈ slice(N.-1,N[i]-1,i,2)
-    end
+#     # update residual on boundaries
+#     N,n = size_u(L);
+#     for i ∈ 1:n
+#         @loop r[I] -= u_ω(i,loc(i,I,Float32),ml_ω) over I ∈ slice(N.-1,2,i,2)
+#         @loop r[I] += u_ω(i,loc(i,I+δ(i,I),Float32),ml_ω) over I ∈ slice(N.-1,N[i]-1,i,2)
+#     end
 
-    # correct global resid
-    res = sum(r)/sum(2 .* (N .- 2))
-    for i ∈ 1:n
-        @loop r[I] -= res over I ∈ slice(N.-1,2,i,2)
-        @loop r[I] -= res over I ∈ slice(N.-1,N[i]-1,i,2)
-    end
-end 
-@fastmath function ω_from_p(I::CartesianIndex,L,ϵ)
-    @inline u(I,i) = @inbounds(-L[I,i]*WaterLily.∂(i,I,ϵ))
-    @inline ∂(i,j,I,u) = (u(I+δ(j,I),i)+u(I+δ(j,I)+δ(i,I),i)
-                 -u(I-δ(j,I),i)-u(I-δ(j,I)+δ(i,I),i))/4
-    return permute((j,k)->∂(k,j,I,u),3)
-end
+#     # correct global resid
+#     res = sum(r)/sum(2 .* (N .- 2))
+#     for i ∈ 1:n
+#         @loop r[I] -= res over I ∈ slice(N.-1,2,i,2)
+#         @loop r[I] -= res over I ∈ slice(N.-1,N[i]-1,i,2)
+#     end
+# end 
+# @fastmath function ω_from_p(I::CartesianIndex,L,ϵ)
+#     @inline u(I,i) = @inbounds(-L[I,i]*WaterLily.∂(i,I,ϵ))
+#     @inline ∂(i,j,I,u) = (u(I+δ(j,I),i)+u(I+δ(j,I)+δ(i,I),i)
+#                  -u(I-δ(j,I),i)-u(I-δ(j,I)+δ(i,I),i))/4
+#     return permute((j,k)->∂(k,j,I,u),3)
+# end
 
-# Check pressure solver convergence on circle
-include("examples/TwoD_plots.jl")
-circ(D,U=1,m=11D÷8;mem=Array) = Simulation((2D,m), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- m/2)-D/2),ν=U*D/1e4,mem)
-sim = circ(256); ml = MLArray(sim.flow.σ);
-while sim_time(sim)<1.2
-    biot_mom_step!(sim.flow,sim.pois,ml)
-    sim_time(sim)%0.1<sim.flow.Δt[end]/sim.L && @show sim_time(sim),sim.flow.Δt[end],sim.pois.n[end]
-end
-flood(sim.flow.p|>Array,border=:none)
-@inside sim.flow.σ[I] = centered_ω₃(I,sim.flow.u)*sim.L/sim.U
-flood(sim.flow.σ|>Array,border=:none,legend=false,clims=(-25,25))
+# # Check pressure solver convergence on circle
+# include("examples/TwoD_plots.jl")
+# circ(D,U=1,m=11D÷8;mem=Array) = Simulation((2D,m), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- m/2)-D/2),ν=U*D/1e4,mem)
+# sim = circ(256); ml = MLArray(sim.flow.σ);
+# while sim_time(sim)<1.2
+#     biot_mom_step!(sim.flow,sim.pois,ml)
+#     sim_time(sim)%0.1<sim.flow.Δt[end]/sim.L && @show sim_time(sim),sim.flow.Δt[end],sim.pois.n[end]
+# end
+# flood(sim.flow.p|>Array,border=:none)
+# @inside sim.flow.σ[I] = centered_ω₃(I,sim.flow.u)*sim.L/sim.U
+# flood(sim.flow.σ|>Array,border=:none,legend=false,clims=(-25,25))
 
-using BenchmarkTools
-using CUDA
-circ(D,U=1,m=2D;mem=Array) = Simulation((2D,m), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- m/2)-D/2),ν=U*D/1e4,mem)
-sim = circ(2048;mem=CUDA.CuArray); a = sim.flow; b = sim.pois.levels[1]; ml = MLArray(a.σ);
-@btime CUDA.@sync WaterLily.conv_diff!($a.f,$a.u⁰,$a.σ,ν=$a.ν); # 80ms, 25ms
-@btime CUDA.@sync WaterLily.BDIM!($a); # 25ms, 14ms
-@btime CUDA.@sync biotBC!($a.u,$a.U,$ml) # 60ms, 530ms
-@btime CUDA.@sync update_resid!($b.r,$b.L,$b.x,$ml) # 80ms, 530ms
-@btime CUDA.@sync sum($b.r) # 2.6ms, 1ms
-@btime CUDA.@sync WaterLily.Vcycle!($sim.pois) # 140ms. 34ms
-@btime CUDA.@sync WaterLily.smooth!($b) # 230ms, 54ms
+# using BenchmarkTools
+# using CUDA
+# circ(D,U=1,m=2D;mem=Array) = Simulation((2D,m), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- m/2)-D/2),ν=U*D/1e4,mem)
+# sim = circ(2048;mem=CUDA.CuArray); a = sim.flow; b = sim.pois.levels[1]; ml = MLArray(a.σ);
+# @btime CUDA.@sync WaterLily.conv_diff!($a.f,$a.u⁰,$a.σ,ν=$a.ν); # 80ms, 25ms
+# @btime CUDA.@sync WaterLily.BDIM!($a); # 25ms, 14ms
+# @btime CUDA.@sync biotBC!($a.u,$a.U,$ml) # 60ms, 530ms
+# @btime CUDA.@sync update_resid!($b.r,$b.L,$b.x,$ml) # 80ms, 530ms
+# @btime CUDA.@sync sum($b.r) # 2.6ms, 1ms
+# @btime CUDA.@sync WaterLily.Vcycle!($sim.pois) # 140ms. 34ms
+# @btime CUDA.@sync WaterLily.smooth!($b) # 230ms, 54ms
