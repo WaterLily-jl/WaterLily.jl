@@ -1,11 +1,11 @@
 using WaterLily,StaticArrays
-import WaterLily: @loop,divisible,restrict!,permute,up,inside,slice,size_u
+import WaterLily: @loop,divisible,restrict!,permute,up,inside,slice,size_u,div
 
 # 2D Multi-level Biot-Savart functions 
 function MLArray(x)
     N = size(x)
     levels = [N]
-    while all(N .|> divisible) && all(N .> 20)
+    while all(N .|> divisible) && prod(N .-2) > 1000
         N = @. 1+N÷2
         push!(levels,N)
     end
@@ -16,62 +16,62 @@ ml_restrict!(ml) = for l ∈ 2:lastindex(ml)
     restrict!(ml[l],ml[l-1])
 end
 
-@fastmath function u_ω(i,x,ml_ω,dis=10)
-    # initialize at bottom level
-    ui = zero(eltype(x)); j = i%2+1
-    l = lastindex(ml_ω)
-    ω = ml_ω[l]
-    R = inside(ω)
-    dx = 2^(l-1)
-
+@fastmath function _u_ω(x,dis,l,R,biotsavart,u=zero(eltype(x)))
     # loop levels
     while l>1
         # find Region close to x
+        dx = 2^(l-1)
         Rclose = inR(x/dx .-dis,R):inR(x/dx .+dis,R)
 
         # get contributions outside Rclose
         for I ∈ R
-            !(I ∈ Rclose) && (ui += @inbounds(ω[I])*biotsavart(r(x,I,dx),j))
+            !(I ∈ Rclose) && (u += biotsavart(r(x,I,dx),I,l))
         end
 
         # move "up" one level within Rclose
         l -= 1
         R = first(up(first(Rclose))):last(up(last(Rclose)))
-        ω = ml_ω[l]
-        dx = 2^(l-1)
     end
 
     # top level contribution
     for I ∈ R
-        ui += @inbounds(ω[I])*biotsavart(r(x,I,dx),j)
-    end
-    return ui
+        u += biotsavart(r(x,I),I)
+    end; u
 end
-@fastmath @inline biotsavart(r,j) = Float32((3-2j)*@inbounds(r[j])/(2π*r'*r))
-@fastmath @inline r(x,I,dx) = x-dx*loc(0,I,Float32)
+u_ω(i,x::SVector{2},ω) = (l=lastindex(ω); _u_ω(x,7,l,inside(ω[l]),(r,I,l=1)->@fastmath @inbounds((2i-3)*ω[l][I]*r[i%2+1])/(2π*r'*r)))
+u_ω(i,x::SVector{3},ω) = (l=lastindex(ω[1]);_u_ω(x,1,l,inside(ω[1][l]),(r,I,l=1)->permute((j,k)->@inbounds(ω[j][l][I]*r[k]),i)/(@fastmath 4π*√(r'*r)^3)))
+@fastmath @inline r(x,I,dx=1) = x-dx*loc(0,I,Float32)
 @fastmath @inline inR(x,R) = clamp(CartesianIndex(round.(Int,x .+ 1.5f0)...),R)
 @inline Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,first(R).I,last(R).I))
 
-function biotBC!(u,U,ml_ω)
-    # fill top level with cell-centered ω₃ and restrict down to lower levels
-    top = ml_ω[1]
-    @loop top[I] = centered_ω₃(I,u) over I ∈ inside(top,buff=2)
-    ml_restrict!(ml_ω)
-
-    # fill BCs
-    N,n = size_u(u)
+# Fill ghosts assuming potential flow outside the domain
+function biotBC!(u,U::NTuple{n},ω) where n
+    fill_ω!(ω,u,Val(n)) # set-up ω
+    N,_ = size_u(u)
     for i ∈ 1:n
-        for s ∈ (2,N[i]) # Normal direction, biotsavart+background
-            @loop u[I,i] = u_ω(i,loc(i,I,Float32),ml_ω)+U[i] over I ∈ slice(N,s,i)
+        for s ∈ (2,N[i]) # Domain faces, biotsavart+background
+            @loop u[I,i] = u_ω(i,loc(i,I,Float32),ω)+U[i] over I ∈ slice(N,s,i)
         end
-        j = i%2+1          # Tangential direction, ω=0
-        @loop u[I,j] = u[I+δ(i,I),j]-WaterLily.∂(j,CartesianIndex(I+δ(i,I),i),u) over I ∈ slice(N.-1,1,i,3)
-        @loop u[I,j] = u[I-δ(i,I),j]+WaterLily.∂(j,CartesianIndex(I,i),u) over I ∈ slice(N.-1,N[i],i,3)
+        for j ∈ 1:n
+            j==i && continue
+            @loop u[I,j] = u[I+δ(i,I),j]-WaterLily.∂(j,CartesianIndex(I+δ(i,I),i),u) over I ∈ slice(N.-1,1,i,3)
+            @loop u[I,j] = u[I-δ(i,I),j]+WaterLily.∂(j,CartesianIndex(I,i),u) over I ∈ slice(N.-1,N[i],i,3)
+        end
         # final Normal direction, incompresibility
-        @loop u[I,i] = u[I+δ(i,I),i]+WaterLily.∂(j,I,u) over I ∈ slice(N.-1,1,i,3)
+        @loop u[I,i] += div(I,u) over I ∈ slice(N.-1,1,i,3)
     end
 end
-centered_ω₃(I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),3)
+# compute cell-centered ωᵢ and restrict down to lower levels
+function _fill_ω!(ω,i,u)
+    top = ω[1]
+    for I ∈ inside(top,buff=2)
+        top[I] = centered_ω(i,I,u)
+    end
+    ml_restrict!(ω)
+end
+fill_ω!(ω,u,::Val{3}) = _fill_ω!.(ω,1:3,Ref(u))
+fill_ω!(ω,u,::Val{2}) = _fill_ω!(ω,3,u)
+centered_ω(i,I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),i)
 
 # Check reconstruction on lamb dipole
 using SpecialFunctions,ForwardDiff
@@ -96,6 +96,26 @@ begin
     @time biotBC!(u,sim.flow.U,ml);
     @assert sum(abs2,u-sim.flow.u⁰)/sim.L<2e-4
     @time BC!(u,sim.flow.U); #only x10 faster
+end
+
+function hill_vortex(N;D=3N/4,U=1,mem=Array)
+    function uλ(i,xyz)
+        q = xyz .- N/2; x,y,z = q; r = √(q'*q); θ = acos(z/r); ϕ = atan(y,x)
+        v_r = ifelse(2r<D,-1.5*(1-(2r/D)^2),1-(D/2r)^3)*U*cos(θ)
+        v_θ = ifelse(2r<D,1.5-3(2r/D)^2,-1-0.5*(D/2r)^3)*U*sin(θ)
+        i==1 && return sin(θ)*cos(ϕ)*v_r+cos(θ)*cos(ϕ)*v_θ
+        i==2 && return sin(θ)*sin(ϕ)*v_r+cos(θ)*sin(ϕ)*v_θ
+        cos(θ)*v_r-sin(θ)*v_θ
+    end
+    Simulation((N, N, N), (0,0,U), D; uλ, mem) # Don't overwrite ghosts with BCs
+end
+
+begin
+    sim = hill_vortex(128,mem=Array); σ = sim.flow.σ; u = sim.flow.u;
+    ω = ntuple(i->MLArray(σ),3);
+    @time biotBC!(u,sim.flow.U,ω);
+    @assert sum(abs2,u-sim.flow.u⁰)/sim.L^2<1e-4
+    @time BC!(u,sim.flow.U); 
 end
 
 # biotsavart momentum step
