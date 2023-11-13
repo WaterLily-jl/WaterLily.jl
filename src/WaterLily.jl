@@ -102,4 +102,8 @@ function measure!(sim::Simulation,t=time(sim))
 end
 
 export Simulation,sim_step!,sim_time,measure!
+
+include("vtkWriter.jl")
+export vtkWriter,write!,close
+
 end # module
