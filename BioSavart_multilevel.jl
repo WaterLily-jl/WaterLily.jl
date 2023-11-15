@@ -38,7 +38,8 @@ function _u_ω(x,dis,l,R,biotsavart,s=0f0)
     end
     return s
 end
-# u_ω(i,x::SVector{2},ω) = (l=lastindex(ω); _u_ω(x,7,l,inside(ω[l]),(r,I,l=1)->@fastmath @inbounds((2i-3)*ω[l][I]*r[i%2+1])/(2π*r'*r)))
+u_ω(i,I::CartesianIndex{2},ω) = _u_ω(loc(i,I,Float32),7,lastindex(ω),inside(ω[end]),
+    @inline (r,I,l) -> @inbounds(ω[l][I]*r[i%2+1])/sum(abs2,r))*Float32((2i-3)/2π)
 u_ω(i,I::CartesianIndex{3},ω) = _u_ω(loc(i,I,Float32),1,lastindex(ω[1]),inside(ω[1][end]),
     @inline (r,I,l) -> permute((j,k)->@inbounds(ω[k][l][I]*r[j]),i)/√sum(abs2,r)^3)/Float32(4π)
 r(x,I::CartesianIndex,dx=1) = x-dx*(SA_F32[I.I...] .- 1.5f0) # faster than loc(0,I,Float32)
@@ -47,7 +48,7 @@ Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,fi
 
 # Fill ghosts assuming potential flow outside the domain
 # function biotBC!(u,U,ω)
-#     fill_ω!(ω,u,Val(n)) # set-up ω
+#     fill_ω!(ω,u) # set-up ω
 #     N,n = size_u(u)
 #     for i ∈ 1:n
 #         for s ∈ (2,N[i]) # Domain faces, biotsavart+background
@@ -69,7 +70,7 @@ function _fill_ω!(ω,i,u)
     ml_restrict!(ω)
 end
 fill_ω!(ω,u) = foreach(i->_fill_ω!(ω[i],i,u),1:3)
-# fill_ω!(ω,u,::Val{2}) = _fill_ω!(ω,3,u)
+fill_ω!(ω::NTuple{L,AbstractArray},u) where L = _fill_ω!(ω,3,u)
 centered_ω(i,I,u) = permute((j,k)->WaterLily.∂(k,j,I,u),i)
 
 N=128
