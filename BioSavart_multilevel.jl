@@ -49,18 +49,19 @@ Base.clamp(I::CartesianIndex,R::CartesianIndices) = CartesianIndex(clamp.(I.I,fi
 
 # Fill ghosts assuming potential flow outside the domain
 import WaterLily: size_u,@loop,slice,div
-function biotBC!(u,U,ω)
+function biotBC!(u,U,ω;fill_faces=true,fill_ghosts=true)
     N,n = size_u(u)
     for i ∈ 1:n
-        for s ∈ (2,N[i]) # Domain faces, biotsavart+background
+        fill_faces && for s ∈ (2,N[i]) # Domain faces, biotsavart+background
             @loop u[I,i] = u_ω(i,I,ω)+U[i] over I ∈ slice(N,s,i)
         end
-        for j ∈ 1:n
+        fill_ghosts && continue
+        for j ∈ 1:n # tangential direction ghosts, curl=0
             j==i && continue
             @loop u[I,j] = u[I+δ(i,I),j]-WaterLily.∂(j,CartesianIndex(I+δ(i,I),i),u) over I ∈ slice(N.-1,1,i,3)
             @loop u[I,j] = u[I-δ(i,I),j]+WaterLily.∂(j,CartesianIndex(I,i),u) over I ∈ slice(N.-1,N[i],i,3)
         end
-        # final Normal direction, incompresibility
+        # Normal direction ghosts, div=0
         @loop u[I,i] += div(I,u) over I ∈ slice(N.-1,1,i,3)
     end
 end
@@ -134,59 +135,54 @@ function biot_mom_step!(a,b,ml;use_biotsavart=true)
     biot_project!(a,b,ml;use_biotsavart,w=0.5)
     push!(a.Δt,WaterLily.CFL(a))
 end
-function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,use_biotsavart=true,log=false,tol=1e-3,itmx=32) where n
-    use_biotsavart ? (fill_ω!(ml_ω,a.u); biotBC!(a.u,a.U,ml_ω)) : BC!(a.u,a.U) 
-    b = ml_b.levels[1]; @inside b.z[I] = WaterLily.div(I,a.u)
-    dt = w*a.Δt[end]; b.x .*= dt
-    WaterLily.residual!(b); r₂ = L₂(b); nᵖ = 0;
-    use_biotsavart && (update_resid!(b.r,b.L,b.x,ml_ω))
-    while r₂>tol && nᵖ<itmx
-        ml_ω[1] .= b.x
-        WaterLily.Vcycle!(ml_b)
-        WaterLily.smooth!(b)
-        b.ϵ .= b.x .- ml_ω[1]; ml_ω[1] .= 0
-        use_biotsavart && update_resid!(b.r,b.L,b.ϵ,ml_ω)
-        r₂ = L₂(b); nᵖ+=1
-        log && @show nᵖ,r₂
+import WaterLily: residual!,Vcycle!,smooth!,∂
+function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,use_biotsavart=true,tol=1e-3,itmx=32) where n
+    b = ml_b.levels[1]; dt = w*a.Δt[end]; b.x .*= dt
+    use_biotsavart ? (fill_ω!(ml_ω,a.u,a.μ₀,a.p); biotBC!(a.u,a.U,ml_ω,fill_ghosts=false)) : BC!(a.u,a.U) 
+    @inside b.z[I] = div(I,a.u); residual!(b); fix_resid!(b.r)
+    r₂ = L₂(b); nᵖ = 0
+    while nᵖ<itmx
+        r₂>tol && (Vcycle!(ml_b); smooth!(b); r₂ = L₂(b); nᵖ+=1)
+        for i ∈ 1:n
+            @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
+        end
+        nᵖ>0 && use_biotsavart && (fill_ω!(ml_ω,a.u); biotBC!(a.u,a.U,ml_ω,fill_ghosts=false))
+        r₂≤tol && break
+        a.p .= 0; @inside b.r[I] = div(I,a.u); fix_resid!(b.r)
     end
+    use_biotsavart ? biotBC!(a.u,a.U,ml_ω,fill_faces=false) : BC!(a.u,a.U)
     push!(ml_b.n,nᵖ)
-    for i ∈ 1:n
-        @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
-    end
-    use_biotsavart ? (fill_ω!(ml_ω,a.u); biotBC!(a.u,a.U,ml_ω)) : BC!(a.u,a.U) 
     b.x ./= dt
 end
-function update_resid!(r,L,ϵ,ml_ω)
-    # get pressure-induced vorticity
-    top = ml_ω[1]
-    @loop top[I] = ω_from_p(I,L,ϵ) over I ∈ inside(top,buff=2)
-    ml_restrict!(ml_ω)
-    # update residual on boundaries
-    N,n = size_u(L);
-    for i ∈ 1:n
-        @loop r[I] -= u_ω(i,I,ml_ω) over I ∈ slice(N.-1,2,i,2)
-        @loop r[I] += u_ω(i,I+δ(i,I),ml_ω) over I ∈ slice(N.-1,N[i]-1,i,2)
-    end
-    # correct global resid
+function fix_resid!(r)
+    N = size(r); n = length(N)
     res = sum(r)/sum(2 .* (N .- 2))
     for i ∈ 1:n
         @loop r[I] -= res over I ∈ slice(N.-1,2,i,2)
         @loop r[I] -= res over I ∈ slice(N.-1,N[i]-1,i,2)
     end
 end 
-@fastmath function ω_from_p(I::CartesianIndex,L,ϵ)
+function _fill_ω!(ω,i,u,μ₀,p)
+    top = ω[1]
+    @loop top[I] = centered_curl(i,I,u)+ω_from_p(i,I,μ₀,p) over I ∈ inside(top,buff=2)
+    ml_restrict!(ω)
+end
+fill_ω!(ω::NTuple{3,NTuple},u,μ₀,p) = foreach(i->_fill_ω!(ω[i],i,u,μ₀,p),1:3)
+fill_ω!(ω::NTuple{N,AbstractArray},u,μ₀,p) where N = _fill_ω!(ω,3,u,μ₀,p)
+@fastmath function ω_from_p(i,I::CartesianIndex,L,ϵ)
     @inline u(I,i) = @inbounds(-L[I,i]*WaterLily.∂(i,I,ϵ))
     @inline ∂(i,j,I,u) = (u(I+δ(j,I),i)+u(I+δ(j,I)+δ(i,I),i)
                  -u(I-δ(j,I),i)-u(I-δ(j,I)+δ(i,I),i))/4
-    return permute((j,k)->∂(k,j,I,u),3)
+    return permute((j,k)->∂(k,j,I,u),i)
 end
 
 # Check pressure solver convergence on circle
 include("examples/TwoD_plots.jl")
 circ(D,U=1,m=11D÷8;mem=Array) = Simulation((2D,m), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- m/2)-D/2),ν=U*D/1e4,mem)
-sim = circ(256); ml = MLArray(sim.flow.σ);
-while sim_time(sim)<1.2
-    biot_mom_step!(sim.flow,sim.pois,ml)
+sim = circ(256,mem=Array); ω = MLArray(sim.flow.σ);
+biot_mom_step!(sim.flow,sim.pois,ω)
+@time while sim_time(sim)<1.2
+    biot_mom_step!(sim.flow,sim.pois,ω)
     sim_time(sim)%0.1<sim.flow.Δt[end]/sim.L && @show sim_time(sim),sim.flow.Δt[end],sim.pois.n[end]
 end
 flood(sim.flow.p|>Array,border=:none)
