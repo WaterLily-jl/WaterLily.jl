@@ -123,37 +123,52 @@ begin
 end
 
 # biotsavart momentum step
-function biot_mom_step!(a,b,ml;use_biotsavart=true)
+function biot_mom_step!(a,b,ml)
     a.u⁰ .= a.u; WaterLily.scale_u!(a,0)
     # predictor u → u'
     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν);
     WaterLily.BDIM!(a);
-    biot_project!(a,b,ml;use_biotsavart)
+    biot_project!(a,b,ml)
     # corrector u → u¹
     WaterLily.conv_diff!(a.f,a.u,a.σ,ν=a.ν)
     WaterLily.BDIM!(a); WaterLily.scale_u!(a,0.5)
-    biot_project!(a,b,ml;use_biotsavart,w=0.5)
+    biot_project!(a,b,ml,w=0.5)
     push!(a.Δt,WaterLily.CFL(a))
 end
 import WaterLily: residual!,Vcycle!,smooth!,∂
-function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,use_biotsavart=true,tol=1e-3,itmx=32) where n
+function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,log=false,tol=1e-3,itmx=32) where n
     b = ml_b.levels[1]; dt = w*a.Δt[end]; b.x .*= dt
-    use_biotsavart ? (fill_ω!(ml_ω,a.u,a.μ₀,a.p); biotBC!(a.u,a.U,ml_ω,fill_ghosts=false)) : BC!(a.u,a.U) 
+    fill_ω!(ml_ω,a.u,a.μ₀,a.p); biotBC!(a.u,a.U,ml_ω,fill_ghosts=false)
     @inside b.z[I] = div(I,a.u); residual!(b); fix_resid!(b.r)
     r₂ = L₂(b); nᵖ = 0
-    while nᵖ<itmx
-        r₂>tol && (Vcycle!(ml_b); smooth!(b); r₂ = L₂(b); nᵖ+=1)
-        for i ∈ 1:n
-            @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
-        end
-        nᵖ>0 && use_biotsavart && (fill_ω!(ml_ω,a.u); biotBC!(a.u,a.U,ml_ω,fill_ghosts=false))
-        r₂≤tol && break
-        a.p .= 0; @inside b.r[I] = div(I,a.u); fix_resid!(b.r)
+    while r₂>tol && nᵖ<itmx
+        ml_ω[1] .= b.x
+        Vcycle!(ml_b); smooth!(b)
+        b.ϵ .= b.x .- ml_ω[1]; ml_ω[1] .= 0
+        update_resid!(b.r,a.u,b.z,b.L,b.ϵ,ml_ω)
+        r₂ = L₂(b); nᵖ+=1
+        log && @show nᵖ,r₂
     end
-    use_biotsavart ? biotBC!(a.u,a.U,ml_ω,fill_faces=false) : BC!(a.u,a.U)
     push!(ml_b.n,nᵖ)
+    for i ∈ 1:n
+        @loop a.u[I,i] -= b.L[I,i]*WaterLily.∂(i,I,b.x) over I ∈ inside(b.x)
+    end
+    biotBC!(a.u,a.U,ml_ω,fill_faces=false)
     b.x ./= dt
 end
+function update_resid!(r,u,u_ϵ,L,ϵ,ω_ϵ)
+    # get pressure-update-induced vorticity
+    top = ω_ϵ[1]
+    @loop top[I] = ω_from_p(3,I,L,ϵ) over I ∈ inside(top,buff=2)
+    ml_restrict!(ω_ϵ)
+    # update residual on boundaries
+    N,n = size_u(L); inN(I,N) = all(@. 2 ≤ I.I ≤ N-1)
+    for i ∈ 1:n
+        @loop (u_ϵ[I]=u_ω(i,I,ω_ϵ); u[I,i]+=u_ϵ[I]; inN(I,N) && (r[I]-=u_ϵ[I])) over I ∈ slice(N,2,i)
+        @loop (u_ϵ[I]=u_ω(i,I,ω_ϵ); u[I,i]+=u_ϵ[I]; inN(I-δ(i,I),N) && (r[I-δ(i,I)]+=u_ϵ[I])) over I ∈ slice(N,N[i],i)
+    end
+    fix_resid!(r)
+end 
 function fix_resid!(r)
     N = size(r); n = length(N)
     res = sum(r)/sum(2 .* (N .- 2))
