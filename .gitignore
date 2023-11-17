@@ -4,6 +4,7 @@
 *.mp4
 *.dat
 *.pdf
+*.jld2
 Manifest.toml
 /docs/build/
 .vscode/
