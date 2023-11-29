@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.5
+# v0.19.9
 
 using Markdown
 using InteractiveUtils
@@ -58,7 +58,7 @@ end
 # ╔═╡ 62c21202-a3d2-4b3c-a1bd-ec71dfdd0848
 begin
 	A = O2state([0.,1.,0.])
-	for t in range(0,20π,200)
+	for t in range(0,20π,120)
 		# update!(A,t)
 		# update!(A,t,f=t->cos(2t),ζ=0.25)
 		# update!(A,t,ζ=0.2abs(A.v[end]))
@@ -69,9 +69,10 @@ end
 # ╔═╡ 95a79ff6-7527-493e-8d6e-1eade4eded3e
 begin
 	B = SS2([0.,1.,0.])
+	ω₀ = 1
 	for t in A.t
 		# update!(B,t)
-		update!(B,t,ωₙ=1+0.2*cos(2t),ζ=0.2abs(B.q̇[end]))
+		update!(B,t,ωₙ=ω₀*(1+0.2*cos(2ω₀*t)),ζ=0.2abs(B.q̇[end])/ω₀)
 	end
 end
 
@@ -96,7 +97,7 @@ Plots = "~1.29.0"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.7.0"
+julia_version = "1.7.3"
 manifest_format = "2.0"
 
 [[deps.Adapt]]
@@ -209,7 +210,7 @@ uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 version = "0.8.6"
 
 [[deps.Downloads]]
-deps = ["ArgTools", "LibCURL", "NetworkOptions"]
+deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 
 [[deps.EarCut_jll]]
@@ -235,6 +236,9 @@ deps = ["Artifacts", "Bzip2_jll", "FreeType2_jll", "FriBidi_jll", "JLLWrappers",
 git-tree-sha1 = "d8a578692e3077ac998b50c0217dfd67f21d1e5f"
 uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 version = "4.4.0+0"
+
+[[deps.FileWatching]]
+uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
 
 [[deps.FixedPointNumbers]]
 deps = ["Statistics"]
