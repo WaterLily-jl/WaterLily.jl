@@ -142,12 +142,12 @@ function biot_mom_step!(a,b,ml)
     push!(a.Δt,WaterLily.CFL(a))
 end
 import WaterLily: residual!,Vcycle!,smooth!,∂
-function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,log=true,tol=1e-3,itmx=32) where n
+function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,log=false,tol=1e-3,itmx=32) where n
     b = ml_b.levels[1]; dt = w*a.Δt[end]; b.x .*= dt
     fill_ω!(ml_ω,a.u,a.μ₀,a.p); biotBC!(a.u,a.U,ml_ω)
     @inside b.z[I] = div(I,a.u); residual!(b); fix_resid!(b.r)
     r₂ = L₂(b); nᵖ = 0
-    temp = ifelse(n==3,ml_ω[1][1],ml_ω[1])
+    temp = point(ml_ω)
     while r₂>tol && nᵖ<itmx
         temp .= b.x
         Vcycle!(ml_b); smooth!(b)
@@ -163,6 +163,8 @@ function biot_project!(a::Flow{n},ml_b::MultiLevelPoisson,ml_ω;w=1,log=true,tol
     pflowBC!(a.u)
     b.x ./= dt
 end
+point(ω::NTuple{N,AbstractArray}) where N = ω[1]
+point(ω::NTuple{3,NTuple}) = ω[1][1]
 function update_resid!(r,u,u_ϵ,L,ω_ϵ)
     # update residual on boundaries
     N,n = size_u(L); inN(I,N) = all(@. 2 ≤ I.I ≤ N-1)
@@ -173,12 +175,13 @@ function update_resid!(r,u,u_ϵ,L,ω_ϵ)
     fix_resid!(r)
 end 
 function fix_resid!(r)
-    N = size(r); n = length(N)
-    res = sum(r)/sum(2 .* (N .- 2))
+    N = size(r); n = length(N); A(i) = 2prod(N.-2)/(N[i]-2)
+    res = sum(r)/sum(A,1:n)
     for i ∈ 1:n
         @loop r[I] -= res over I ∈ slice(N.-1,2,i,2)
         @loop r[I] -= res over I ∈ slice(N.-1,N[i]-1,i,2)
     end
+    # @assert abs(sum(r[inside(r)]))<1e-4
 end 
 function _fill_ω!(ω,i,μ₀,p)
     top = ω[1]
@@ -204,7 +207,7 @@ end
 # Check pressure solver convergence on circle
 include("examples/TwoD_plots.jl")
 circ(D,U=1,m=11D÷8;mem=Array) = Simulation((2D,m), (U,0), D; body=AutoBody((x,t)->√sum(abs2,x .- m/2)-D/2),ν=U*D/1e4,mem)
-sim = circ(256,mem=Array); ω = MLArray(sim.flow.σ);
+sim = circ(256,mem=CuArray); ω = MLArray(sim.flow.σ);
 biot_mom_step!(sim.flow,sim.pois,ω)
 @show sim.pois.n
 @time while sim_time(sim)<1.2
@@ -215,7 +218,8 @@ flood(sim.flow.p|>Array,border=:none)
 @inside sim.flow.σ[I] = centered_curl(3,I,sim.flow.u)*sim.L/sim.U
 flood(sim.flow.σ|>Array,border=:none,legend=false,clims=(-25,25))
 
-sphere(D,U=1;mem=Array) = Simulation((2D,2D,2D), (U,0,0), D; body=AutoBody((x,t)->√sum(abs2,x .- D)-D/2),ν=U*D/1e4,mem)
-sim = sphere(16,mem=Array); ω = ntuple(i->MLArray(sim.flow.σ),3);
+sphere(D,U=1,m=3D÷2;mem=Array) = Simulation((2D,m,m), (U,0,0), D; body=AutoBody((x,t)->√sum(abs2,x .- m/2)-D/2),ν=U*D/1e4,mem)
+sim = sphere(128,mem=CuArray); ω = ntuple(i->MLArray(sim.flow.σ),3);
 biot_mom_step!(sim.flow,sim.pois,ω)
 @show sim.pois.n
+flood(sim.flow.u[:,:,3sim.L÷4,2]|>Array,border=:none,legend=false)
