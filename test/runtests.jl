@@ -23,9 +23,9 @@ arrays = setup_backends()
     @test I+δ(3,I) == CartesianIndex(1,2,4,4)
 
     using StaticArrays
-    @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5)
+    @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
     I = CartesianIndex(rand(2:10,3)...)
-    @test loc(0,I) == SVector(I.I...)
+    @test loc(0,I) == SVector(I.I...) .- 1.5
 
     ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
     WaterLily.grab!(sym,ex)
@@ -41,7 +41,7 @@ arrays = setup_backends()
 
         u = zeros(5,5,2) |> f
         apply!((i,x)->x[i],u)
-        @allowscalar @test [u[i,j,1].-(i-0.5) for i in 1:3, j in 1:3]==zeros(3,3)
+        @allowscalar @test [u[i,j,1].-(i-2) for i in 1:3, j in 1:3]==zeros(3,3)
 
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> f # vector
@@ -167,7 +167,7 @@ using StaticArrays
 function get_flow(N,f)
     a = Flow((N,N),(1.,0.);f,T=Float32)
     @inside a.p[I] = loc(0, I)[2]
-    sdf(x,t) = √sum(abs2,x.-N÷2)-N÷4
+    sdf(x,t) = √sum(abs2,x.-(N÷2+0.5))-N÷4
     map(x,t) = x.-SVector(t,0)
     body = AutoBody(sdf,map)
     WaterLily.measure!(a,body)
@@ -182,26 +182,26 @@ end
         @test mapreduce(abs2,+,a.u[:,5,1].-1) < 6e-5
     end
 end
-
+import WaterLily: ×
 @testset "Metrics.jl" begin
-    J = CartesianIndex(2,3,4)
+    J = CartesianIndex(2,3,4); x = loc(0,J); px = prod(x)
     for f ∈ arrays
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
         @inside p[I] = WaterLily.ke(I,u)
-        @test @allowscalar p[J]==0.5*(26^2+27^2+28^2)
-        @inside p[I] = WaterLily.ke(I,u,(2,3,4))
-        @test @allowscalar p[J]==1.5*24^2
+        @test @allowscalar p[J]==0.5*sum(abs2,x .+ px)
+        @inside p[I] = WaterLily.ke(I,u,x)
+        @test @allowscalar p[J]==1.5*px^2
         @inside p[I] = WaterLily.λ₂(I,u)
         @test @allowscalar p[J]≈1
-        ω = [8-6,6-12,12-8]
+        ω = (1 ./ x)×repeat([px],3)
         @inside p[I] = WaterLily.curl(2,I,u)
         @test @allowscalar p[J]==ω[2]
-        f==Array && @test WaterLily.ω(J,u)==ω
+        f==Array && @test WaterLily.ω(J,u)≈ω
         @inside p[I] = WaterLily.ω_mag(I,u)
         @test @allowscalar p[J]==sqrt(sum(abs2,ω))
-        @inside p[I] = WaterLily.ω_θ(I,(0,0,1),(2,2,2),u)
-        @test @allowscalar p[J]==-ω[1]
+        @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
+        @test @allowscalar p[J]≈ω[1]
 
         N = 20
         a,body = get_flow(N,f)
