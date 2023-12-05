@@ -36,6 +36,7 @@ arrays = setup_backends()
     for f ∈ [Array]
         p = Float64[i+j  for i ∈ 1:4, j ∈ 1:5] |> f
         @test inside(p) == CartesianIndices((2:3,2:4))
+        @test inside(p,buff=0) == CartesianIndices(p)
         @test L₂(p) == 187
 
         u = zeros(5,5,2) |> f
