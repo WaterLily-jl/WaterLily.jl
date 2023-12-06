@@ -32,7 +32,7 @@ function median(a,b,c)
     return a
 end
 
-function conv_diff!(r,u,Φ;ν=0.1)
+function conv_diff!(r,u,Φ;ν=0.1,g=(0,0,0,0))
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
@@ -41,6 +41,9 @@ function conv_diff!(r,u,Φ;ν=0.1)
                r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u)) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+    end
+    for i ∈ 1:n 
+        @loop r[I,i] += g[i] over I ∈ inside_u(N,i) 
     end
 end
 
@@ -71,7 +74,8 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
     exitBC :: Bool # Convection exit
-    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64, exitBC = false) where D
+    g :: NTuple{D, T} # gravity field
+    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64, exitBC = false,g=ntuple(x->zero(T),D)) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u); BC!(u, U, exitBC); exitBC!(u,u,U,0.)
@@ -81,7 +85,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         μ₀ = ones(T, Nd) |> f
         BC!(μ₀,ntuple(zero, D))
         μ₁ = zeros(T, Ng..., D, D) |> f
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν,exitBC)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν,exitBC,g)
     end
 end
 
@@ -110,12 +114,12 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν)
+    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,g=a.g)
     BDIM!(a); BC!(a.u,a.U,a.exitBC)
     a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC)
     # corrector u → u¹
-    conv_diff!(a.f,a.u,a.σ,ν=a.ν)
+    conv_diff!(a.f,a.u,a.σ,ν=a.ν,g=a.g)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC)
     push!(a.Δt,CFL(a))
