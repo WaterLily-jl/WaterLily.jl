@@ -23,6 +23,8 @@ export AutoBody,measure,sdf,+,-
 
 include("Metrics.jl")
 
+abstract type AbstractSimulation end
+
 """
     Simulation(dims::NTuple, u_BC::NTuple, L::Number;
                U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1,
@@ -46,7 +48,7 @@ Constructor for a WaterLily.jl simulation:
 
 See files in `examples` folder for examples.
 """
-struct Simulation
+struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
@@ -54,16 +56,16 @@ struct Simulation
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, u_BC::NTuple{N}, L::Number;
-                        Δt=0.25, ν=0., U=√sum(abs2,u_BC), ϵ=1,
-                        uλ::Function=(i,x)->u_BC[i],exitBC=false,
+                        Δt=0.25, ν=0., U=√sum(abs2,u_BC), ϵ=1, perdir=(0,),
+                        uλ::Function=(i,x)->u_BC[i],
                         body::AbstractBody=NoBody(),T=Float32,mem=Array) where N
-        flow = Flow(dims,u_BC;uλ,Δt,ν,T,f=mem,exitBC)
-        measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ))
+        flow = Flow(dims,u_BC;uλ,Δt,ν,T,f=mem,perdir=perdir)
+        measure!(flow,body;ϵ,perdir=perdir)
+        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir=perdir))
     end
 end
 
-time(sim::Simulation) = sum(sim.flow.Δt[1:end-1])
+time(sim::AbstractSimulation) = sum(sim.flow.Δt[1:end-1])
 """
     sim_time(sim::Simulation)
 
@@ -71,7 +73,7 @@ Return the current dimensionless time of the simulation `tU/L`
 where `t=sum(Δt)`, and `U`,`L` are the simulation velocity and length
 scales.
 """
-sim_time(sim::Simulation) = time(sim)*sim.U/sim.L
+sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 """
     sim_step!(sim::Simulation,t_end;remeasure=true,verbose=false)
@@ -96,8 +98,8 @@ end
 
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
-function measure!(sim::Simulation,t=time(sim))
-    measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
+function measure!(sim::AbstractSimulation,t=time(sim))
+    measure!(sim.flow,sim.body;t,ϵ=sim.ϵ,perdir=sim.flow.perdir)
     update!(sim.pois)
 end
 

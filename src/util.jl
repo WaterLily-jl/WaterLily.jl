@@ -5,6 +5,12 @@ GPUArray = Union{CuArray,ROCArray}
 
 @inline CI(a...) = CartesianIndex(a...)
 """
+    CIj(j,I,jj)
+Replace jᵗʰ component of CartesianIndex with k
+"""
+CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
+
+"""
     δ(i,N::Int)
     δ(i,I::CartesianIndex{N}) where {N}
 
@@ -32,7 +38,9 @@ end
 @inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
-
+function inside_uWB(dims::NTuple{N},j) where {N}
+    CartesianIndices(ntuple( i-> i==j ? (2:dims[i]) : (2:dims[i]-1), N))
+end
 """
     L₂(a)
 
@@ -160,13 +168,30 @@ function BC!(a,A,saveexit=false)
         end
     end
 end
-
 function exitBC!(u,u⁰,U,Δt)
     N,_ = size_u(u)
     exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
     @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
     ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
+end
+function BCVecPerNeu!(a::AbstractArray{T,NN};Dirichlet=false, A=zeros(T,NN),f=1,perdir=(0,)) where {NN,T}
+    N,n = size_u(a)
+    for i ∈ 1:n, j ∈ 1:n
+        if j in perdir
+            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+        else
+            if (i==j)&&Dirichlet # Normal direction, Dirichlet
+                for s ∈ (1,2,N[j])
+                    @loop a[I,i] = f*A[i] over I ∈ slice(N,s,j)
+                end
+            else    # Tangential directions, Neumann
+                @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
+                @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
+            end
+        end
+    end
 end
 
 """
@@ -179,4 +204,48 @@ function BC!(a)
         @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
         @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
     end
+end
+function BCPerNeu!(a;perdir=(0,))
+    N = size(a)
+    for j ∈ eachindex(N)
+        if j in perdir
+            @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
+            @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+        else
+            @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
+            @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
+        end
+    end
+end
+
+# function myBC! end
+# @generated function myBC!(a)
+# end
+
+"""
+    interp(x::SVector, arr::AbstractArray)
+
+    Linear interpolation from array `arr` at index-coordinate `x`.
+    Note: This routine works for any number of dimensions.
+"""
+function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
+    # Index below the interpolation coordinate and the difference
+    i = floor.(Int,x); y = x.-i
+    
+    # CartesianIndices around x 
+    I = CartesianIndex(i...); R = I:I+oneunit(I)
+
+    # Linearly weighted sum over arr[R] (in serial)
+    s = zero(T)
+    @fastmath @inbounds @simd for J in R
+        weight = prod(@. ifelse(J.I==I.I,1-y,y))
+        s += arr[J]*weight
+    end
+    return s
+end
+
+function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
+    # Shift to align with each staggered grid component and interpolate
+    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
+    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end
