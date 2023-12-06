@@ -134,7 +134,14 @@ Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 
 Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
 """
-apply!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii)) over Ii ∈ CartesianIndices(c)
+apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
+applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii)) over Ii ∈ CartesianIndices(c)
+""" 
+    apply!(f, c)
+
+Apply a scalar function `f(x)` to the center of a uniform staggered array `c`.
+"""
+applyS!(f,c) = @loop c[I] = f(loc(0,I)) over I ∈ CartesianIndices(c)
 """
     slice(dims,i,j,low=1)
 
@@ -154,28 +161,7 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A,saveexit=false)
-    N,n = size_u(a)
-    for j ∈ 1:n, i ∈ 1:n
-        if i==j # Normal direction, Dirichlet
-            for s ∈ (1,2)
-                @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
-            end
-            (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
-        else    # Tangential directions, Neumann
-            @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
-        end
-    end
-end
-function exitBC!(u,u⁰,U,Δt)
-    N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
-end
-function BCVecPerNeu!(a::AbstractArray{T,NN};Dirichlet=false, A=zeros(T,NN),f=1,perdir=(0,)) where {NN,T}
+function BC!(a,A;saveexit=false,Dirichlet=true,perdir=(0,))
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
@@ -183,9 +169,10 @@ function BCVecPerNeu!(a::AbstractArray{T,NN};Dirichlet=false, A=zeros(T,NN),f=1,
             @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
         else
             if (i==j)&&Dirichlet # Normal direction, Dirichlet
-                for s ∈ (1,2,N[j])
-                    @loop a[I,i] = f*A[i] over I ∈ slice(N,s,j)
+                for s ∈ (1,2)
+                    @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
                 end
+                (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
                 @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
                 @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
@@ -198,14 +185,7 @@ end
     BC!(a)
 Apply zero Neumann boundary conditions to the ghost cells of a _scalar_ field.
 """
-function BC!(a)
-    N = size(a)
-    for j ∈ eachindex(N)
-        @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
-        @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
-    end
-end
-function BCPerNeu!(a;perdir=(0,))
+function BC!(a;perdir=(0,))
     N = size(a)
     for j ∈ eachindex(N)
         if j in perdir
@@ -217,10 +197,6 @@ function BCPerNeu!(a;perdir=(0,))
         end
     end
 end
-
-# function myBC! end
-# @generated function myBC!(a)
-# end
 
 """
     interp(x::SVector, arr::AbstractArray)

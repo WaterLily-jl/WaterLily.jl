@@ -83,7 +83,7 @@ Note: This runs for general backends, but is _very_ slow to converge.
 """
 @fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
-    BCPerNeu!(p.ϵ,perdir=p.perdir)
+    BC!(p.ϵ;perdir=p.perdir)
     increment!(p)
 end
 
@@ -102,7 +102,7 @@ function pcg!(p::Poisson;it=6)
     rho = r ⋅ z
     abs(rho)<1e-12 && return
     for i in 1:it
-        BCPerNeu!(ϵ,perdir=p.perdir)
+        BC!(ϵ;perdir=p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
         alpha = rho/(z[insideI]⋅ϵ[insideI])
         @loop (x[I] += alpha*ϵ[I];
@@ -135,7 +135,7 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `itmx`: Maximum number of iterations.
 """
 function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
-    BCPerNeu!(p.x,perdir=p.perdir)
+    BC!(p.x;perdir=p.perdir)
     residual!(p); r₂ = L₂(p)
     log && (res = [r₂])
     nᵖ=0
@@ -144,7 +144,7 @@ function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
         log && push!(res,r₂)
         nᵖ+=1
     end
-    BCPerNeu!(p.x,perdir=p.perdir)
+    BC!(p.x;perdir=p.perdir)
     push!(p.n,nᵖ)
     log && return res
 end

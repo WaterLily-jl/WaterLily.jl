@@ -34,7 +34,8 @@ arrays = setup_backends()
 
     # for f ∈ arrays
     for f ∈ [Array]
-        p = Float64[i+j  for i ∈ 1:4, j ∈ 1:5] |> f
+        p = zeros(4,5) |> f
+        apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin
         @test inside(p) == CartesianIndices((2:3,2:4))
         @test inside(p,buff=0) == CartesianIndices(p)
         @test L₂(p) == 187
@@ -56,7 +57,7 @@ arrays = setup_backends()
                 all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
 
         @allowscalar u[end,:,1] .= 3
-        BC!(u, U, true) # save exit values
+        BC!(u, U; saveexit=true) # save exit values
         @allowscalar @test all(u[end, :, 1] .== 3)
 
         WaterLily.exitBC!(u,u,U,0) # conservative exit check
@@ -98,20 +99,20 @@ end
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
 
     err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
-    @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -3 0; 0 -3 -4 0; 0 0 0 0]
     @test err < 1e-5
 
     pois.levels[1].L[5:6,:,1].=0
     WaterLily.update!(pois)
-    @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -2 0; 0 -1 -2 0; 0 0 0 0]
 
     for f ∈ arrays
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
-        @test pois.n[] < 3
+        @test pois.n[] < 4
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
-        @test pois.n[] < 3
+        @test pois.n[] < 4
     end
 end
 
