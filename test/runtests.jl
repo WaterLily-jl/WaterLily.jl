@@ -57,11 +57,22 @@ arrays = setup_backends()
                 all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
 
         @allowscalar u[end,:,1] .= 3
-        BC!(u, U; saveexit=true) # save exit values
+        BC!(u,U,true) # save exit values
         @allowscalar @test all(u[end, :, 1] .== 3)
 
         WaterLily.exitBC!(u,u,U,0) # conservative exit check
         @allowscalar @test all(u[end,2:end-1, 1] .== U[1])
+
+        BC!(u,U,true,(2,)) # periodic in y and save exit values
+        @allowscalar @test all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
+        BC!(σ;perdir=(1,2)) # periodic in two directions
+        @allowscalar @test all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
+        
+        u = rand(Ng..., D) |> f # vector
+        BC!(u,U,true,(1,);Dirichlet=false) #saveexit has no effect here x-preiodic and zero-Neumann
+        @allowscalar @test all(u[:, 1, 1] .== u[:, 2, 1]) && all(u[:, end, 1] .== u[:, end-1, 1]) &&
+                           all(u[:, 1, 2] .== u[:, 2, 2]) && all(u[:, end, 2] .== u[:, end-1, 2]) &&
+                           all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2])
     end
 end
 

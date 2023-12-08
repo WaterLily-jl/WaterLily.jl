@@ -28,7 +28,7 @@ function restrictL!(a,b;perdir=(0,))
     for i ∈ 1:n
         @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
-    BC!(a,zero(n);Dirichlet=false,perdir=perdir)  # correct μ₀ @ boundaries
+    BC!(a,zero(n),false,perdir;Dirichlet=false)  # correct μ₀ @ boundaries
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]

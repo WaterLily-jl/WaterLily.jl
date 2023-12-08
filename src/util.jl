@@ -161,7 +161,7 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A;saveexit=false,Dirichlet=true,perdir=(0,))
+function BC!(a,A,saveexit=false,perdir=(0,);Dirichlet=true)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
@@ -180,7 +180,18 @@ function BC!(a,A;saveexit=false,Dirichlet=true,perdir=(0,))
         end
     end
 end
+"""
+    exitBC!(u,u⁰,U,Δt)
 
+Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
+"""
+function exitBC!(u,u⁰,U,Δt)
+    N,_ = size_u(u)
+    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
+    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
+end
 """
     BC!(a)
 Apply zero Neumann boundary conditions to the ghost cells of a _scalar_ field.

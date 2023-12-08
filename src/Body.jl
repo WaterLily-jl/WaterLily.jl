@@ -28,7 +28,7 @@ at time `t` using an immersion kernel of size `ϵ`.
 
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
-function measure!(a::Flow{N,T},body::AbstractBody;t=T(0),ϵ=1,perdir=(0,)) where {N,T}
+function measure!(a::Flow{N,T},body::AbstractBody;t=T(0),ϵ=1) where {N,T}
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
     @fastmath @inline function fill!(μ₀,μ₁,V,σᵥ,d,I)
         d[I] = sdf(body,loc(0,I,T),t)
@@ -49,9 +49,8 @@ function measure!(a::Flow{N,T},body::AbstractBody;t=T(0),ϵ=1,perdir=(0,)) where
         end
     end
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σᵥ,a.σ,I) over I ∈ inside(a.p)
-    BCVecPerNeu!(a.μ₀,Dirichlet=false, A=zeros(SVector{N,T}),perdir=perdir)  # add BC care for periodic & neu for μ₀
-    BCVecPerNeu!(a.V,perdir=perdir)  # add BC care for periodic & neu for body velocity, which is the most important step
-
+    BC!(a.μ₀,zeros(SVector{N,T}),a.exitBC,a.perdir;Dirichlet=false)  # add BC care for periodic & neu for μ₀
+    BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)  # add BC care for periodic & neu for body velocity, which is the most important step
     @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
     correct_div!(a.σᵥ)
 end
