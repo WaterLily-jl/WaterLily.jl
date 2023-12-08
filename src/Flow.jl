@@ -92,8 +92,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
                   uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
-        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u); 
-        # BC!(u, U, exitBC); exitBC!(u,u,U,0.)
+        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
         BC!(u,U,exitBC,perdir); exitBC!(u,u,U,0.)
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
