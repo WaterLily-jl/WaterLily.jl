@@ -21,6 +21,9 @@ arrays = setup_backends()
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
     @test I+δ(3,I) == CartesianIndex(1,2,4,4)
+    @test WaterLily.CI(I,5)==CartesianIndex(1,2,3,4,5)
+    @test WaterLily.CIj(3,I,5)==CartesianIndex(1,2,5,4)
+    @test WaterLily.CIj(2,CartesianIndex(16,16,16,3),14)==CartesianIndex(16,14,16,3)
 
     using StaticArrays
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
@@ -127,6 +130,11 @@ end
 end
 
 @testset "Flow.jl" begin
+    # test than vanLeer behaves correctly
+    vanLeer = WaterLily.vanLeer
+    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
+    @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
+
     # Check QUICK scheme on boundary
     ϕuL = WaterLily.ϕuL
     ϕuR = WaterLily.ϕuR
@@ -200,6 +208,28 @@ function get_flow(N,f)
     body = AutoBody(sdf,map)
     WaterLily.measure!(a,body)
     return a,body
+end
+function TGVsim(mem;T=Float32,perdir=(1,2))
+    # Define vortex size, velocity, viscosity
+    L = 64; κ=2π/L; ν = 1/(κ*1e8);
+    # TGV vortex in 2D
+    function TGV(i,xy,t,κ,ν)
+        x,y = @. (xy)*κ  # scaled coordinates
+        i==1 && return -sin(x)*cos(y)*exp(-2*κ^2*ν*t) # u_x
+        return          cos(x)*sin(y)*exp(-2*κ^2*ν*t) # u_y
+    end
+    # Initialize simulation
+    return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
+end
+@testset "Flow.jl periodic TGV" begin
+    for f ∈ arrays
+        sim,TGV = TGVsim(f); ue=copy(sim.flow.u) |> Array
+        sim_step!(sim,π/100)
+        apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
+        u = sim.flow.u |> Array
+        @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
+              WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
+    end
 end
 
 @testset "Flow.jl with Body.jl" begin
