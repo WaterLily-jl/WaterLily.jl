@@ -23,8 +23,6 @@ export AutoBody,measure,sdf,+,-
 
 include("Metrics.jl")
 
-abstract type AbstractSimulation end
-
 """
     Simulation(dims::NTuple, u_BC::NTuple, L::Number;
                U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1,
@@ -48,7 +46,7 @@ Constructor for a WaterLily.jl simulation:
 
 See files in `examples` folder for examples.
 """
-struct Simulation <: AbstractSimulation
+struct Simulation
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
@@ -65,7 +63,7 @@ struct Simulation <: AbstractSimulation
     end
 end
 
-time(sim::AbstractSimulation) = sum(sim.flow.Δt[1:end-1])
+time(sim::Simulation) = sum(sim.flow.Δt[1:end-1])
 """
     sim_time(sim::Simulation)
 
@@ -73,7 +71,7 @@ Return the current dimensionless time of the simulation `tU/L`
 where `t=sum(Δt)`, and `U`,`L` are the simulation velocity and length
 scales.
 """
-sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
+sim_time(sim::Simulation) = time(sim)*sim.U/sim.L
 
 """
     sim_step!(sim::Simulation,t_end;remeasure=true,verbose=false)
@@ -98,7 +96,7 @@ end
 
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
-function measure!(sim::AbstractSimulation,t=time(sim))
+function measure!(sim::Simulation,t=time(sim))
     measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
     update!(sim.pois)
 end

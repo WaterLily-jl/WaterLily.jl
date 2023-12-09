@@ -69,10 +69,9 @@ arrays = setup_backends()
         @allowscalar @test all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
         
         u = rand(Ng..., D) |> f # vector
-        BC!(u,U,true,(1,);Dirichlet=false) #saveexit has no effect here x-preiodic and zero-Neumann
-        @allowscalar @test all(u[:, 1, 1] .== u[:, 2, 1]) && all(u[:, end, 1] .== u[:, end-1, 1]) &&
-                           all(u[:, 1, 2] .== u[:, 2, 2]) && all(u[:, end, 2] .== u[:, end-1, 2]) &&
-                           all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2])
+        BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
+        @allowscalar @test all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
+                           all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
     end
 end
 
@@ -110,20 +109,20 @@ end
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
 
     err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
-    @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -3 0; 0 -3 -4 0; 0 0 0 0]
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
     @test err < 1e-5
 
     pois.levels[1].L[5:6,:,1].=0
     WaterLily.update!(pois)
-    @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -2 0; 0 -1 -2 0; 0 0 0 0]
+    @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
     for f ∈ arrays
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
-        @test pois.n[] < 4
+        @test pois.n[] < 3
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
-        @test pois.n[] < 4
+        @test pois.n[] < 3
     end
 end
 
@@ -142,6 +141,23 @@ end
     @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
     # outlet, negative flux -> backward CD
     @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+
+    # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
+    ϕu = WaterLily.ϕu
+    ϕuP = WaterLily.ϕuP
+    λ = WaterLily.quick
+
+    I = CartesianIndex(3); # 1D check, positive flux
+    @test ϕu(1,I,[0.,0.5,2.],1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1);
+    I = CartesianIndex(2); # 1D check, negative flux
+    @test ϕu(1,I,[0.,0.5,2.],-1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1);
+
+    # check for periodic flux
+    I=CartesianIndex(3);Ip=I-2δ(1,I);
+    f = [1.,1.25,1.5,1.75,2.];
+    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
+    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     # Impulsive flow in a box
     U = (2/3, -1/3)

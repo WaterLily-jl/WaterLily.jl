@@ -117,7 +117,6 @@ function pcg!(p::Poisson;it=6)
     end
 end
 smooth!(p) = pcg!(p)
-# smooth!(p) = get_backend(p.r)==CPU() ? SOR!(p,it=3) : Jacobi!(p,it=20)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 

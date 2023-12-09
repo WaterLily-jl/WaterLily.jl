@@ -38,9 +38,7 @@ end
 @inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
-function inside_uWB(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (2:dims[i]) : (2:dims[i]-1), N))
-end
+
 """
     L₂(a)
 
@@ -132,15 +130,11 @@ Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
     apply!(f, c)
 
-Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or 
+a function `f(x)` to the center of a uniform array `c`.
 """
 apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
 applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii)) over Ii ∈ CartesianIndices(c)
-""" 
-    apply!(f, c)
-
-Apply a scalar function `f(x)` to the center of a uniform staggered array `c`.
-"""
 applyS!(f,c) = @loop c[I] = f(loc(0,I)) over I ∈ CartesianIndices(c)
 """
     slice(dims,i,j,low=1)
@@ -161,14 +155,14 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A,saveexit=false,perdir=(0,);Dirichlet=true)
+function BC!(a,A,saveexit=false,perdir=(0,))
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
             @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
             @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
         else
-            if (i==j)&&Dirichlet # Normal direction, Dirichlet
+            if i==j # Normal direction, Dirichlet
                 for s ∈ (1,2)
                     @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
                 end
@@ -207,32 +201,4 @@ function BC!(a;perdir=(0,))
             @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
         end
     end
-end
-
-"""
-    interp(x::SVector, arr::AbstractArray)
-
-    Linear interpolation from array `arr` at index-coordinate `x`.
-    Note: This routine works for any number of dimensions.
-"""
-function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
-    # Index below the interpolation coordinate and the difference
-    i = floor.(Int,x); y = x.-i
-    
-    # CartesianIndices around x 
-    I = CartesianIndex(i...); R = I:I+oneunit(I)
-
-    # Linearly weighted sum over arr[R] (in serial)
-    s = zero(T)
-    @fastmath @inbounds @simd for J in R
-        weight = prod(@. ifelse(J.I==I.I,1-y,y))
-        s += arr[J]*weight
-    end
-    return s
-end
-
-function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
-    # Shift to align with each staggered grid component and interpolate
-    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end
