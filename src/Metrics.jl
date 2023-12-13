@@ -85,6 +85,6 @@ function ∮nds(p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=
     reshape(sum(df,dims=1:N),N) |> Array
 end
 @inline function nds(body::AbstractBody,x,t)
-    d,n,_ = body.measure(x,t)
+    d,n,_ = measure(body,x,t)
     n*WaterLily.kern(clamp(d,-1,1))
 end
