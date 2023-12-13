@@ -206,13 +206,12 @@ import WaterLily: ×
         N = 32
         a,body = get_flow(N,f)
         force = WaterLily.∮nds(a.p,a.V,body)
-        @show force/(π*(N÷4)^2)- [0,1]
         @test sum(abs,force/(π*(N÷4)^2) - [0,1]) < 1e-2
     end
 end
 
 function sphere_sim(radius = 8; mem=Array, exitBC=false)
-    body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
+    body = AutoBody((x,t)-> √sum(abs2,x .- 2radius) - radius)
     return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
 @testset "WaterLily.jl" begin
