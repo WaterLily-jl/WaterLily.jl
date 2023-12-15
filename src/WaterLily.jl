@@ -74,15 +74,15 @@ scales.
 sim_time(sim::Simulation) = time(sim)*sim.U/sim.L
 
 """
-    sim_step!(sim::Simulation,t_end;remeasure=true,verbose=false)
+    sim_step!(sim::Simulation,t_end;max_steps=typemax(Int),remeasure=true,verbose=false)
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
-If `remeasure=true`, the body is remeasured at every time step. 
+If `remeasure=true`, the body is remeasured at every time step.
 Can be set to `false` for static geometries to speed up simulation.
 """
-function sim_step!(sim::Simulation,t_end;verbose=false,remeasure=true)
+function sim_step!(sim::Simulation,t_end;max_steps=typemax(Int),verbose=false,remeasure=true)
     t = time(sim)
-    while t < t_end*sim.L/sim.U
+    while t < t_end*sim.L/sim.U && length(sim.flow.Δt) <= max_steps
         remeasure && measure!(sim,t)
         mom_step!(sim.flow,sim.pois) # evolve Flow
         t += sim.flow.Δt[end]
