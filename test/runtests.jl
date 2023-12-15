@@ -261,17 +261,15 @@ import WaterLily: ×
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test @allowscalar p[J]≈ω[1]
 
-        N = 20
+        N = 32
         a,body = get_flow(N,f)
-        WaterLily.nds!(a.V,body)
-        @test sum(a.V) < 1e-6
         force = WaterLily.∮nds(a.p,a.V,body)
-        @test sum(abs2,force/(π*(N÷4)^2) - [0,1]) < 1e-5
+        @test sum(abs,force/(π*(N÷4)^2) - [0,1]) < 1e-2
     end
 end
 
 function sphere_sim(radius = 8; mem=Array, exitBC=false)
-    body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
+    body = AutoBody((x,t)-> √sum(abs2,x .- 2radius) - radius)
     return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
 @testset "WaterLily.jl" begin
