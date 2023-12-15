@@ -21,6 +21,9 @@ arrays = setup_backends()
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
     @test I+δ(3,I) == CartesianIndex(1,2,4,4)
+    @test WaterLily.CI(I,5)==CartesianIndex(1,2,3,4,5)
+    @test WaterLily.CIj(3,I,5)==CartesianIndex(1,2,5,4)
+    @test WaterLily.CIj(2,CartesianIndex(16,16,16,3),14)==CartesianIndex(16,14,16,3)
 
     using StaticArrays
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
@@ -34,7 +37,8 @@ arrays = setup_backends()
 
     # for f ∈ arrays
     for f ∈ [Array]
-        p = Float64[i+j  for i ∈ 1:4, j ∈ 1:5] |> f
+        p = zeros(4,5) |> f
+        apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin
         @test inside(p) == CartesianIndices((2:3,2:4))
         @test inside(p,buff=0) == CartesianIndices(p)
         @test L₂(p) == 187
@@ -56,11 +60,21 @@ arrays = setup_backends()
                 all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
 
         @allowscalar u[end,:,1] .= 3
-        BC!(u, U, true) # save exit values
+        BC!(u,U,true) # save exit values
         @allowscalar @test all(u[end, :, 1] .== 3)
 
         WaterLily.exitBC!(u,u,U,0) # conservative exit check
         @allowscalar @test all(u[end,2:end-1, 1] .== U[1])
+
+        BC!(u,U,true,(2,)) # periodic in y and save exit values
+        @allowscalar @test all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
+        BC!(σ;perdir=(1,2)) # periodic in two directions
+        @allowscalar @test all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
+        
+        u = rand(Ng..., D) |> f # vector
+        BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
+        @allowscalar @test all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
+                           all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
     end
 end
 
@@ -116,6 +130,11 @@ end
 end
 
 @testset "Flow.jl" begin
+    # test than vanLeer behaves correctly
+    vanLeer = WaterLily.vanLeer
+    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
+    @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
+
     # Check QUICK scheme on boundary
     ϕuL = WaterLily.ϕuL
     ϕuR = WaterLily.ϕuR
@@ -130,6 +149,23 @@ end
     @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
     # outlet, negative flux -> backward CD
     @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+
+    # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
+    ϕu = WaterLily.ϕu
+    ϕuP = WaterLily.ϕuP
+    λ = WaterLily.quick
+
+    I = CartesianIndex(3); # 1D check, positive flux
+    @test ϕu(1,I,[0.,0.5,2.],1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1);
+    I = CartesianIndex(2); # 1D check, negative flux
+    @test ϕu(1,I,[0.,0.5,2.],-1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1);
+
+    # check for periodic flux
+    I=CartesianIndex(3);Ip=I-2δ(1,I);
+    f = [1.,1.25,1.5,1.75,2.];
+    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
+    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     # Impulsive flow in a box
     U = (2/3, -1/3)
@@ -172,6 +208,28 @@ function get_flow(N,f)
     body = AutoBody(sdf,map)
     WaterLily.measure!(a,body)
     return a,body
+end
+function TGVsim(mem;T=Float32,perdir=(1,2))
+    # Define vortex size, velocity, viscosity
+    L = 64; κ=2π/L; ν = 1/(κ*1e8);
+    # TGV vortex in 2D
+    function TGV(i,xy,t,κ,ν)
+        x,y = @. (xy)*κ  # scaled coordinates
+        i==1 && return -sin(x)*cos(y)*exp(-2*κ^2*ν*t) # u_x
+        return          cos(x)*sin(y)*exp(-2*κ^2*ν*t) # u_y
+    end
+    # Initialize simulation
+    return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
+end
+@testset "Flow.jl periodic TGV" begin
+    for f ∈ arrays
+        sim,TGV = TGVsim(f); ue=copy(sim.flow.u) |> Array
+        sim_step!(sim,π/100)
+        apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
+        u = sim.flow.u |> Array
+        @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
+              WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
+    end
 end
 
 @testset "Flow.jl with Body.jl" begin
