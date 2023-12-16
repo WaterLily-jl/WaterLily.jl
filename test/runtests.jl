@@ -203,7 +203,7 @@ using StaticArrays
 function get_flow(N,f)
     a = Flow((N,N),(1.,0.);f,T=Float32)
     @inside a.p[I] = loc(0, I)[2]
-    sdf(x,t) = √sum(abs2,x.-(N÷2+0.5))-N÷4
+    sdf(x,t) = √sum(abs2,x.-(N/2))-N÷4
     map(x,t) = x.-SVector(t,0)
     body = AutoBody(sdf,map)
     WaterLily.measure!(a,body)
@@ -264,7 +264,7 @@ import WaterLily: ×
         N = 32
         a,body = get_flow(N,f)
         force = WaterLily.∮nds(a.p,a.V,body)
-        @test sum(abs,force/(π*(N÷4)^2) - [0,1]) < 1e-2
+        @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
     end
 end
 
