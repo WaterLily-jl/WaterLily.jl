@@ -2,15 +2,10 @@ using WaterLily
 using BenchmarkTools
 using CUDA: CuArray
 using KernelAbstractions: synchronize, get_backend
-using JLD2
-using OutMacro
 
 include("util.jl")
 
-log2n, t_end, max_steps, dtype, backend, samples = parse_cla(ARGS;
-    log2n=(5,6,7,8), t_end=1.0, max_steps=10, dtype=Float32, backend=Array, samples=5)
-evals = 5
-verbose = true
+log2p, max_steps, ftype, backend = parse_cla(ARGS; log2p=(5,6,7,8), max_steps=100, ftype=Float32, backend=Array)
 
 function TGV(p, backend; Re=1e5, T=Float32)
     # Define vortex size, velocity, viscosity
@@ -27,13 +22,14 @@ function TGV(p, backend; Re=1e5, T=Float32)
 end
 
 function benchmark()
-    suite, results = BenchmarkGroup(), BenchmarkGroup()
-    sim_step!(TGV(log2n[1], backend; T=dtype), t_end; max_steps=1, verbose=true, remeasure=false) # warm up
-    add_to_suite!(suite, TGV; log2n=log2n, t_end=t_end, max_steps=max_steps, dtype=dtype, backend=backend) # create benchmark
-    # tune!(suite)
-    results[backend_str[backend]] = run(suite[backend_str[backend]], samples=samples, evals=evals, seconds=1e6, verbose=verbose) # run!
-    fname = string(@__DIR__)*"/tgv_simstep_p$(log2n...)_$(backend_str[backend])_v$VERSION.dat"
-    save_object(fname, results) # save benchmark
+    suite = BenchmarkGroup()
+    results = BenchmarkGroup(["TGV", "sim_step!", log2p, max_steps, ftype, backend_str[backend], git_hash, string(VERSION)])
+    sim_step!(TGV(log2p[1], backend; T=ftype), typemax(ftype); max_steps=1, verbose=false, remeasure=false) # warm up
+    add_to_suite!(suite, TGV; log2p=log2p, max_steps=max_steps, ftype=ftype, backend=backend) # create benchmark
+    results[backend_str[backend]] = run(suite[backend_str[backend]], samples=1, evals=1, seconds=1e6, verbose=true) # run!
+    fname = string(@__DIR__) * "/" *  split(PROGRAM_FILE, '.')[1] *
+        "_$(log2p...)_$(max_steps)_$(ftype)_$(backend_str[backend])_$(git_hash)_$VERSION.json"
+    BenchmarkTools.save(fname, results)
 end
 
 benchmark()
