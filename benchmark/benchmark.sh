@@ -12,11 +12,11 @@
 #     The following arguments would generate benchmarks for the "tgv.jl" case:
 #         -c "tgv.jl" -p "5,6,7" -s 100 -ft "Float32"
 #     which in addition to the benchmark arguments, altogether can be used to launch this script as:
-#         sh benchmark.sh -v "1.8.5 1.9.4" -b "Array CuArray" -t "1 3 6" -c "tgv.jl" -p "5,6,7" -s 100 -ft "Float32"
+#         sh benchmark.sh -v "1.8.5 1.9.4" -b "Array CuArray" -t "1 6" -c "tgv.jl" -p "5,6,7" -s 100 -ft "Float32"
 #     Case arguments accept a list of parameters for each case, and the list index is shared across these arguments (hence lists must have equal length):
 #         -c "tgv.jl donut.jl" -p "5,6,7 7,8" -s "100 500" -ft "Float32 Float64"
 #     which would run the same benchmarks for the TGV as before, and benchmarks for the donut case too resulting into
-#         2 Julia versions x (2 Array + 1 CuArray) backends x (3 TGV sizes + 2 donut sizes) = 15 benchmarks
+#         2 Julia versions x (2 Array + 1 CuArray) backends x (3 TGV sizes + 2 donut sizes) = 30 benchmarks
 #
 # Benchmarks are saved in JSON format with the following nomenclature:
 #     casename_sizes_maxsteps_ftype_backend_waterlilyHEADhash_juliaversion.json
