@@ -59,6 +59,15 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
     Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u)) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
+
+function applyBodyForce!(r::AbstractArray{T,Dv},t,g=(a,b)->0) where {T,Dv}
+    N,n = size_u(r)
+    for i ∈ 1:n
+        gᵢ = g(i,t)
+        @loop r[I,i] += gᵢ over I ∈ inside(N)
+    end
+end
+
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
@@ -85,9 +94,10 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     U :: NTuple{D, T} # domain boundary values
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
+    g :: Function  # (possibly time-varying) body force field
     exitBC :: Bool # Convection exit
     perdir :: NTuple # direction of periodic direction
-    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0.,
+    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., g::Function=(i,t)->0,
                   uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
@@ -98,7 +108,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         V, σᵥ = zeros(T, Nd) |> f, zeros(T, Ng) |> f
         μ₀ = ones(T, Nd) |> f
         μ₁ = zeros(T, Ng..., D, D) |> f
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
     end
 end
 
@@ -128,11 +138,13 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    applyBodyForce!(a.f,time(a),a.g)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir)
     # corrector u → u¹
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
+    applyBodyForce!(a.f,timeNext(a),a.g)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)
     push!(a.Δt,CFL(a))

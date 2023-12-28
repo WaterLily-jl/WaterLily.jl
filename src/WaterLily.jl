@@ -54,16 +54,18 @@ struct Simulation
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, u_BC::NTuple{N}, L::Number;
-                        Δt=0.25, ν=0., U=√sum(abs2,u_BC), ϵ=1, perdir=(0,),
+                        Δt=0.25, ν=0., g=(i,t)->0, U=√sum(abs2,u_BC), ϵ=1, perdir=(0,),
                         uλ::Function=(i,x)->u_BC[i], exitBC=false,
                         body::AbstractBody=NoBody(),T=Float32,mem=Array) where N
-        flow = Flow(dims,u_BC;uλ,Δt,ν,T,f=mem,perdir,exitBC)
+        flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
     end
 end
 
-time(sim::Simulation) = sum(sim.flow.Δt[1:end-1])
+time(flow::Flow) = sum(flow.Δt[1:end-1])
+time(sim::Simulation) = time(sim.flow)
+timeNext(flow::Flow) = sum(flow.Δt)
 """
     sim_time(sim::Simulation)
 
