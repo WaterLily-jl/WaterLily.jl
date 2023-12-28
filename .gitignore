@@ -1,11 +1,34 @@
 .ipynb_checkpoints
+.vscode/
+.DS_Store
+Manifest.toml
+/docs/build/
+
+# gfx
 *.png
 *.gif
 *.mp4
-*.dat
+*.svg
 *.pdf
+*.ogv
+
+# data file
+*.dat
+*.txt
+*.jld*
+
+# paraview
 *.vti
+*.vtr
+*.vts
+*.vtu
+*.vtp
+*.vtm
 *.pvd
-Manifest.toml
-/docs/build/
-.vscode/
+*.pvt*
+
+# on supercomputer
+*.log
+slurm*
+*.sh*
+*#
