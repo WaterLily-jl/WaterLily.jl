@@ -114,7 +114,7 @@ case "$1" in
     shift
     ;;
     *)
-    printf "ERROR: Invalid argument\n"
+    printf "ERROR: Invalid argument %s\n" "${1}" 1>&2
     exit 1
 esac
 shift
