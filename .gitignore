@@ -15,20 +15,8 @@ Manifest.toml
 # data file
 *.dat
 *.txt
-*.jld*
 
 # paraview
 *.vti
-*.vtr
-*.vts
-*.vtu
-*.vtp
-*.vtm
 *.pvd
-*.pvt*
 
-# on supercomputer
-*.log
-slurm*
-*.sh*
-*#
