@@ -97,7 +97,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     g :: Function  # (possibly time-varying) body force field
     exitBC :: Bool # Convection exit
     perdir :: NTuple # direction of periodic direction
-    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., g::Function=(i,t)->0,
+    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., g=(i,t)->0,
                   uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
