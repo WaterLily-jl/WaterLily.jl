@@ -15,8 +15,8 @@ Manifest.toml
 # data file
 *.dat
 *.txt
+*.json
 
 # paraview
 *.vti
 *.pvd
-

@@ -1,0 +1,6 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
+WaterLily = "ed894a53-35f9-47f1-b17f-85db9237eebd"
