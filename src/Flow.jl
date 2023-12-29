@@ -60,19 +60,21 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
 upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
 """
-    applyBodyForce!(r,t,g=(a,b)->0)
+    applyBodyForce!(r,t,g=(a,b)->0,Val{Bool})
 
 This function apply body force `g` at time `t` to `r`, effectively the du/dt.
 Body force `g` input sould be function with arguments: index `a` and time `b`.
-The default of body force is null. 
+The default of body force is null. Val{Bool} is applied to specify whether to run or not.
 """
-function applyBodyForce!(r,t,g=(a,b)->0)
+function applyBodyForce!(r,t,::Val{true},g=(a,b)->0)
     N,n = size_u(r)
     for i ∈ 1:n
         gᵢ = g(i,t)
-        @loop r[I,i] += gᵢ over I ∈ inside(N)
+        r[CartesianIndices(N),i] .+= gᵢ
     end
 end
+function applyBodyForce!(r,t,::Val{false},g=(a,b)->0) end
+
 
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
@@ -101,9 +103,10 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
     g :: Function  # (possibly time-varying) body force field
+    tagBF :: Bool # whether to switch on the body force
     exitBC :: Bool # Convection exit
     perdir :: NTuple # direction of periodic direction
-    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., g=(i,t)->0,
+    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., g=nothing,
                   uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
@@ -114,9 +117,14 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         V, σᵥ = zeros(T, Nd) |> f, zeros(T, Ng) |> f
         μ₀ = ones(T, Nd) |> f
         μ₁ = zeros(T, Ng..., D, D) |> f
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
+        tagBF = true
+        if isnothing(g) g=(i,t) -> 0.; tagBF = false end
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν,g,tagBF,exitBC,perdir)
     end
 end
+
+time(flow::Flow) = sum(flow.Δt[1:end-1])
+timeNext(flow::Flow) = sum(flow.Δt)
 
 function BDIM!(a::Flow)
     dt = a.Δt[end]
@@ -144,13 +152,13 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    applyBodyForce!(a.f,time(a),a.g)
+    applyBodyForce!(a.f,time(a),Val{a.tagBF}(),a.g)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir)
     # corrector u → u¹
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    applyBodyForce!(a.f,timeNext(a),a.g)
+    applyBodyForce!(a.f,timeNext(a),Val{a.tagBF}(),a.g)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)
     push!(a.Δt,CFL(a))

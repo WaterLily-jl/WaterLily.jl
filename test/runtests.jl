@@ -171,9 +171,10 @@ end
     N = 4
     a = zeros(N,N,2); ae = copy(a)
     g(i,t) = i==1 ? t : 2*t
-    ae[:,:,1] = [0 0 0 0; 0 1 1 0; 0 1 1 0; 0 0 0 0]
-    ae[:,:,2] = [0 0 0 0; 0 2 2 0; 0 2 2 0; 0 0 0 0]
-    WaterLily.applyBodyForce!(a,1,g)  # at t=1
+    ae[:,:,1] .= 1; ae[:,:,2] .= 2
+    WaterLily.applyBodyForce!(a,1,Val{false}(),g)
+    @test all(a .== 0)
+    WaterLily.applyBodyForce!(a,1,Val{true}(),g)  # at t=1
     @test all(a .== ae)
 
     # Impulsive flow in a box
@@ -269,9 +270,9 @@ end
         jerk = 0; gy = 1; sim = acceleratingFlow(N;jerk,gy,mem=f)
         sim_step!(sim,1.0); timeExact = WaterLily.time(sim)
         p = sim.flow.p |> Array
-        WaterLily.removeMean!(p); BC!(p,perdir=sim.flow.perdir)
-        pe = copy(sim.flow.p) |> Array; apply!((x)->sim.flow.g(2,timeExact)*x[2],pe)
-        WaterLily.removeMean!(pe); BC!(pe,perdir=sim.flow.perdir)
+        BC!(p,perdir=sim.flow.perdir)
+        pe = copy(sim.flow.p) |> Array; apply!((x)->sim.flow.g(2,timeExact)*(x[2]-N/2),pe)
+        BC!(pe,perdir=sim.flow.perdir)
         @test WaterLily.L₂(p .- pe) < 5e-3 # the error due to accumulation of pressure solver tolerance
     end
 end

@@ -25,7 +25,6 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
 @inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
-@inline inside(dims::NTuple{N}) where N = CartesianIndices(map(i->(2:i-1),dims))
 
 """
     inside_u(dims,j)
