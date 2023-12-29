@@ -152,7 +152,7 @@ using Statistics
 """
     removeMean!(s)
 
-Remove the meam of scalar array `s` in physical domain from `s`.
+Remove the mean of scalar array `s` in physical domain from `s`.
 This is potentially useful for pressure normalization.
 """
 function removeMean!(s)
