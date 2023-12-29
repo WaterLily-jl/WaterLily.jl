@@ -59,7 +59,13 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
     Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u)) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
+"""
+    applyBodyForce!(r,t,g=(a,b)->0)
 
+This function apply body force `g` at time `t` to `r`, effectively the du/dt.
+Body force `g` input sould be function with arguments: index `a` and time `b`.
+The default of body force is null. 
+"""
 function applyBodyForce!(r,t,g=(a,b)->0)
     N,n = size_u(r)
     for i ∈ 1:n
