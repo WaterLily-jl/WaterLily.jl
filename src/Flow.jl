@@ -60,7 +60,7 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
 upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
 
-function applyBodyForce!(r::AbstractArray{T,Dv},t,g=(a,b)->0) where {T,Dv}
+function applyBodyForce!(r,t,g=(a,b)->0)
     N,n = size_u(r)
     for i ∈ 1:n
         gᵢ = g(i,t)
