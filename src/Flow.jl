@@ -58,6 +58,7 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
     Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u)) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
+using EllipsisNotation
 """
     accelerate!(r,t,g)
 
@@ -65,7 +66,7 @@ This function applies a uniform acceleration field `g` at time `t` to `r`.
 If `g ≠ nothing`, then `g(i,t)=dUᵢ/dt`.
 """
 accelerate!(r,t,g) = for i ∈ 1:last(size(r))
-    r[:,i] .= g(i,t)
+    r[..,i] .= g(i,t)
 end
 accelerate!(r,t,::Nothing) = r .= 0
 

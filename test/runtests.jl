@@ -167,7 +167,7 @@ end
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
     @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
-    # check for applying the body force
+    # check applying acceleration 
     N = 4
     a = rand(N,N,2)
     WaterLily.accelerate!(a,1,nothing)
