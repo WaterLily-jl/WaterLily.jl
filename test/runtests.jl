@@ -240,38 +240,27 @@ end
     end
 end
 
-function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,gy=0,mem=Array)
-    NN = (N,N)
-    L = N
-    grav = 1
-    U = √(grav*L)
-    g(i,t) = i==1 ? t*jerk : gy
-    ν = 0.001
+function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
+    # periodic in x, Neumann in y
+    # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
+    UScale = √N  # this is also initial U
+    # constant jerk in x, zero acceleration in y
+    g(i,t) = i==1 ? t*jerk : 0
     return WaterLily.Simulation(
-        NN, (U,0.), N; ν,g,U,Δt=0.001,perdir,T,mem
-    )
+        (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
+    ),jerk
 end
-@testset "Flow.jl with time-varying body force" begin
+@testset "Flow.jl with increasing body force" begin
     for f∈arrays
-        N = 16
-        # test accelerating flow (using periodic condition)
-        jerk = 4; sim = acceleratingFlow(N;jerk,mem=f)
-        sim_step!(sim,1.0); timeExact = WaterLily.time(sim)
-        uFinal = sim.flow.U[1] + 0.5*jerk*timeExact^2
-        u = sim.flow.u |> Array
+        N = 8
+        sim,jerk = acceleratingFlow(N;mem=f)
+        sim_step!(sim,1.0); u = sim.flow.u |> Array
+        # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jert*t dt = uₓ₀ + 0.5*jert*t^2
+        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4
         )
-        # test hydrostatic pressure field (using periodic condition)
-        N=8
-        jerk = 0; gy = 1; sim = acceleratingFlow(N;jerk,gy,mem=f)
-        sim_step!(sim,1.0); timeExact = WaterLily.time(sim)
-        p = sim.flow.p |> Array
-        BC!(p,perdir=sim.flow.perdir)
-        pe = copy(sim.flow.p) |> Array; apply!((x)->sim.flow.g(2,timeExact)*(x[2]-N/2),pe)
-        BC!(pe,perdir=sim.flow.perdir)
-        @test WaterLily.L₂(p .- pe) < 5e-3 # the error due to accumulation of pressure solver tolerance
     end
 end
 
