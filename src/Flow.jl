@@ -34,6 +34,7 @@ function median(a,b,c)
 end
 
 function conv_diff!(r,u,Φ;ν=0.1,perdir=(0,))
+    r .= 0
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         # if it is periodic direction
@@ -62,13 +63,13 @@ using EllipsisNotation
 """
     accelerate!(r,t,g)
 
-This function applies a uniform acceleration field `g` at time `t` to `r`.
+This function adds a uniform acceleration field `g` at time `t` to `r`.
 If `g ≠ nothing`, then `g(i,t)=dUᵢ/dt`.
 """
 accelerate!(r,t,g) = for i ∈ 1:last(size(r))
-    r[..,i] .= g(i,t)
+    r[..,i] .+= g(i,t)
 end
-accelerate!(r,t,::Nothing) = r .= 0
+accelerate!(r,t,::Nothing) = nothing
 
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
@@ -142,14 +143,14 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    accelerate!(a.f,time(a),a.g)
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    accelerate!(a.f,time(a),a.g)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir)
     # corrector u → u¹
-    accelerate!(a.f,timeNext(a),a.g)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
+    accelerate!(a.f,timeNext(a),a.g)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)
     push!(a.Δt,CFL(a))

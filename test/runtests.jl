@@ -169,7 +169,7 @@ end
 
     # check applying acceleration 
     N = 4
-    a = rand(N,N,2)
+    a = zeros(N,N,2)
     WaterLily.accelerate!(a,1,nothing)
     @test all(a .== 0)
     WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t)
