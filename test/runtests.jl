@@ -172,7 +172,7 @@ end
     a = rand(N,N,2)
     WaterLily.accelerate!(a,1,nothing)
     @test all(a .== 0)
-    WaterLily.accelerate!(a,1,(i,t) = i==1 ? t : 2*t)
+    WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t)
     @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
 
     # Impulsive flow in a box
