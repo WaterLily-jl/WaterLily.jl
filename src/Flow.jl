@@ -61,7 +61,7 @@ upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I
 """
     accelerate!(r,t,g)
 
-This function apply uniform acceleration field `g` at time `t` to `r`.
+This function applies a uniform acceleration field `g` at time `t` to `r`.
 If `g ≠ nothing`, then `g(i,t)=dUᵢ/dt`.
 """
 accelerate!(r,t,g) = for i ∈ 1:last(size(r))
