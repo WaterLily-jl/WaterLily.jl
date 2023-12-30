@@ -169,13 +169,11 @@ end
 
     # check for applying the body force
     N = 4
-    a = zeros(N,N,2); ae = copy(a)
-    g(i,t) = i==1 ? t : 2*t
-    ae[:,:,1] .= 1; ae[:,:,2] .= 2
-    WaterLily.applyBodyForce!(a,1,Val{false}(),g)
+    a = rand(N,N,2)
+    WaterLily.accelerate!(a,1,nothing)
     @test all(a .== 0)
-    WaterLily.applyBodyForce!(a,1,Val{true}(),g)  # at t=1
-    @test all(a .== ae)
+    WaterLily.accelerate!(a,1,(i,t) = i==1 ? t : 2*t)
+    @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
 
     # Impulsive flow in a box
     U = (2/3, -1/3)

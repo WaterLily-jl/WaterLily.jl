@@ -147,16 +147,6 @@ in the other dimensions.
 function slice(dims::NTuple{N},i,j,low=1) where N
     CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
 end
-"""
-    removeMean!(s)
-
-Remove the mean of scalar array `s` in physical domain from `s`.
-This is potentially useful for pressure normalization.
-"""
-function removeMean!(s)
-    ss = (@views s[inside(s)])
-    s .-= sum(ss)/length(ss)
-end
 
 """
     BC!(a,A)
