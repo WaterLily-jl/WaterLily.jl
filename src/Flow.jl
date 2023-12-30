@@ -69,8 +69,7 @@ The default of body force is null. Val{Bool} is applied to specify whether to ru
 function applyBodyForce!(r,t,::Val{true},g=(a,b)->0)
     N,n = size_u(r)
     for i ∈ 1:n
-        gᵢ = g(i,t)
-        r[CartesianIndices(N),i] .+= gᵢ
+        r[CartesianIndices(N),i] .+= g(i,t)
     end
 end
 function applyBodyForce!(r,t,::Val{false},g=(a,b)->0) end
