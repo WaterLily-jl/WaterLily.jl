@@ -251,7 +251,7 @@ function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
     ),jerk
 end
 @testset "Flow.jl with increasing body force" begin
-    for f∈arrays
+    for f ∈ arrays
         N = 8
         sim,jerk = acceleratingFlow(N;mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
