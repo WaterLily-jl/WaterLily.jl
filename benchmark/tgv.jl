@@ -27,8 +27,8 @@ function benchmark()
     sim_step!(TGV(log2p[1], backend; T=ftype), typemax(ftype); max_steps=1, verbose=false, remeasure=false) # warm up
     add_to_suite!(suite, TGV; log2p=log2p, max_steps=max_steps, ftype=ftype, backend=backend) # create benchmark
     results[backend_str[backend]] = run(suite[backend_str[backend]], samples=1, evals=1, seconds=1e6, verbose=true) # run!
-    fname = string(@__DIR__) * "/" *  split(PROGRAM_FILE, '.')[1] *
-        "_$(log2p...)_$(max_steps)_$(ftype)_$(backend_str[backend])_$(git_hash)_$VERSION.json"
+    fname = joinpath(@__DIR__, split(PROGRAM_FILE, '.')[1] *
+        "_$(log2p...)_$(max_steps)_$(ftype)_$(backend_str[backend])_$(git_hash)_$VERSION.json")
     BenchmarkTools.save(fname, results)
 end
 
