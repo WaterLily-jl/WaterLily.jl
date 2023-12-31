@@ -36,7 +36,7 @@ display_info () {
 
 # Default backends
 JULIA_USER_VERSION=$(julia_version)
-VERSION=($JULIA_USER_VERSION)
+VERSIONS=('release')
 BACKENDS=('Array' 'CuArray')
 THREADS=('1' '6')
 # Default cases. Arrays below must be same length (specify each case individually)
