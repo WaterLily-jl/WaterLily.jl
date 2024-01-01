@@ -167,6 +167,14 @@ end
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
     @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
+    # check applying acceleration 
+    N = 4
+    a = zeros(N,N,2)
+    WaterLily.accelerate!(a,1,nothing)
+    @test all(a .== 0)
+    WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t)
+    @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
+
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
@@ -229,6 +237,30 @@ end
         u = sim.flow.u |> Array
         @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
               WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
+    end
+end
+
+function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
+    # periodic in x, Neumann in y
+    # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
+    UScale = √N  # this is also initial U
+    # constant jerk in x, zero acceleration in y
+    g(i,t) = i==1 ? t*jerk : 0
+    return WaterLily.Simulation(
+        (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
+    ),jerk
+end
+@testset "Flow.jl with increasing body force" begin
+    for f ∈ arrays
+        N = 8
+        sim,jerk = acceleratingFlow(N;mem=f)
+        sim_step!(sim,1.0); u = sim.flow.u |> Array
+        # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jert*t dt = uₓ₀ + 0.5*jert*t^2
+        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
+        @test (
+            WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
+            WaterLily.L₂(u[:,:,2].-0) < 1e-4
+        )
     end
 end
 
