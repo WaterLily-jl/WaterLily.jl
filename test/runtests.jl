@@ -1,5 +1,6 @@
 using WaterLily
 using Test
+using StaticArrays
 using CUDA: CUDA, @allowscalar
 using AMDGPU: AMDGPU
 
@@ -25,7 +26,6 @@ arrays = setup_backends()
     @test WaterLily.CIj(3,I,5)==CartesianIndex(1,2,5,4)
     @test WaterLily.CIj(2,CartesianIndex(16,16,16,3),14)==CartesianIndex(16,14,16,3)
 
-    using StaticArrays
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...) .- 1.5
@@ -207,16 +207,6 @@ end
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
 end
 
-using StaticArrays
-function get_flow(N,f)
-    a = Flow((N,N),(1.,0.);f,T=Float32)
-    @inside a.p[I] = loc(0, I)[2]
-    sdf(x,t) = √sum(abs2,x.-(N/2))-N÷4
-    map(x,t) = x.-SVector(t,0)
-    body = AutoBody(sdf,map)
-    WaterLily.measure!(a,body)
-    return a,body
-end
 function TGVsim(mem;T=Float32,perdir=(1,2))
     # Define vortex size, velocity, viscosity
     L = 64; κ=2π/L; ν = 1/(κ*1e8);
@@ -264,14 +254,6 @@ end
     end
 end
 
-@testset "Flow.jl with Body.jl" begin
-    # Horizontally moving body
-    for f ∈ arrays
-        a,_ = get_flow(20,f)
-        mom_step!(a,Poisson(a.p,a.μ₀,a.σ))
-        @test mapreduce(abs2,+,a.u[:,5,1].-1) < 6e-5
-    end
-end
 import WaterLily: ×
 @testset "Metrics.jl" begin
     J = CartesianIndex(2,3,4); x = loc(0,J); px = prod(x)
@@ -294,21 +276,28 @@ import WaterLily: ×
         @test @allowscalar p[J]≈ω[1]
 
         N = 32
-        a,body = get_flow(N,f)
-        force = WaterLily.∮nds(a.p,a.V,body)
+        p = zeros(N,N) |> f; u = zeros(N,N,2) |> f
+        @inside p[I] = loc(0, I)[2]
+        body = AutoBody((x,t)->√sum(abs2,x.-(N/2))-N÷4,(x,t)->x-SVector(t,0))
+        force = WaterLily.∮nds(p,u,body)
         @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
     end
 end
 
-function sphere_sim(radius = 8; mem=Array, exitBC=false)
-    body = AutoBody((x,t)-> √sum(abs2,x .- 2radius) - radius)
-    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
-end
 @testset "WaterLily.jl" begin
+    radius = 8; ν=radius/250; T=Float32
+    circle(x,t) = √sum(abs2,x .- 2radius) - radius
+    move(x,t) = x-SA[t,0]
     for mem ∈ arrays, exitBC ∈ (true,false)
-        sim = sphere_sim(;mem,exitBC);
+        # V = 0, U = 1
+        sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle), ν, T, mem, exitBC)
         @test sim_time(sim) == 0
         sim_step!(sim,0.1,remeasure=false)
         @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2
+        # V = U = 1
+        sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle,move), ν, T, mem, exitBC)
+        sim_step!(sim,0.01)
+        @test all(sim.flow.u[:,radius,1].≈1)
+        @test all(sim.pois.n .== 0)
     end
 end
