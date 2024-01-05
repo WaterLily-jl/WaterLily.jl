@@ -157,9 +157,9 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
-function CFL(a::Flow)
+function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
-    min(10.,inv(maximum(a.σ)+5a.ν))
+    min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))
