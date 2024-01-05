@@ -38,14 +38,10 @@ function measure!(a::Flow{N,T},body::AbstractBody;t=T(0),ϵ=1) where {N,T}
                 dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I,T),t)
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
-                for j ∈ 1:N
-                    μ₁[I,i,j] = WaterLily.μ₁(dᵢ,ϵ)*nᵢ[j]
-                end
+                μ₁[I,i,:] .= WaterLily.μ₁(dᵢ,ϵ)*nᵢ
             end
         elseif d[I]<0
-            for i ∈ 1:N
-                μ₀[I,i] = 0
-            end
+            μ₀[I,:] .= 0
         end
     end
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σᵥ,a.σ,I) over I ∈ inside(a.p)

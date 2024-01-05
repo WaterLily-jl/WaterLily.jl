@@ -288,16 +288,26 @@ end
     radius = 8; ν=radius/250; T=Float32
     circle(x,t) = √sum(abs2,x .- 2radius) - radius
     move(x,t) = x-SA[t,0]
+    plate(x,t) = √sum(abs2,x - SA[clamp(x[1],-radius,radius),0])-1.71
+    function rotate(x,t)
+        s,c = sincos(t/radius+1); R = SA[c s ; -s c]
+        R * (x .- 2radius)
+    end
+    # Test sim_time, and sim_step! stopping time
+    sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle), ν, T)
+    @test sim_time(sim) == 0
+    sim_step!(sim,0.1,remeasure=false)
+    @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
     for mem ∈ arrays, exitBC ∈ (true,false)
-        # V = 0, U = 1
-        sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle), ν, T, mem, exitBC)
-        @test sim_time(sim) == 0
-        sim_step!(sim,0.1,remeasure=false)
-        @test length(sim.flow.Δt)-1 == length(sim.pois.n)÷2
-        # V = U = 1
+        # Test that remeasure works perfectly when V = U = 1
         sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle,move), ν, T, mem, exitBC)
         sim_step!(sim,0.01)
         @test all(sim.flow.u[:,radius,1].≈1)
         @test all(sim.pois.n .== 0)
+        # Test that non-uniform V doesn't break
+        sim = Simulation(radius.*(4,4),(0,0),radius; U=1, body=AutoBody(plate,rotate), ν, T, mem, exitBC)
+        sim_step!(sim,0.01)
+        @test sim.pois.n == [2,1]
+        @test 1 > sim.flow.Δt[end] > 0.25
     end
 end
