@@ -288,10 +288,14 @@ end
     radius = 8; ν=radius/250; T=Float32
     circle(x,t) = √sum(abs2,x .- 2radius) - radius
     move(x,t) = x-SA[t,0]
-    plate(x,t) = √sum(abs2,x - SA[clamp(x[1],-radius,radius),0])-1.71
+    plate(x,t) = √sum(abs2,x - SA[clamp(x[1],-radius+2,radius-2),0])-2
     function rotate(x,t)
         s,c = sincos(t/radius+1); R = SA[c s ; -s c]
         R * (x .- 2radius)
+    end
+    function bend(x,t) # into ≈ circular arc
+        y,z = x .- 2radius; κ = 2t/radius^2+0.2f0/radius
+        SA[y-y^2*κ^2/6,z+y^2*κ/2]
     end
     # Test sim_time, and sim_step! stopping time
     sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle), ν, T)
@@ -308,6 +312,11 @@ end
         sim = Simulation(radius.*(4,4),(0,0),radius; U=1, body=AutoBody(plate,rotate), ν, T, mem, exitBC)
         sim_step!(sim,0.01)
         @test sim.pois.n == [2,1]
-        @test 1 > sim.flow.Δt[end] > 0.25
+        @test 1 > sim.flow.Δt[end] > 0.5
+        # Test that divergent V doesn't break
+        sim = Simulation(radius.*(4,4),(0,0),radius; U=1, body=AutoBody(plate,bend), ν, T, mem, exitBC)
+        sim_step!(sim,0.01)
+        @test sim.pois.n == [2,1]
+        @test 1.2 > sim.flow.Δt[end] > 0.8
     end
 end
