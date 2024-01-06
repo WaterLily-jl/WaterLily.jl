@@ -293,9 +293,9 @@ end
         s,c = sincos(t/radius+1); R = SA[c s ; -s c]
         R * (x .- 2radius)
     end
-    function bend(x,t) # into ≈ circular arc
-        y,z = x .- 2radius; κ = 2t/radius^2+0.2f0/radius
-        SA[y-y^2*κ^2/6,z+y^2*κ/2]
+    function bend(xy,t) # into ≈ circular arc
+        x,y = xy .- 2radius; κ = 2t/radius^2+0.2f0/radius
+        return SA[x+x^3*κ^2/6,y-x^2*κ/2]
     end
     # Test sim_time, and sim_step! stopping time
     sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle), ν, T)
