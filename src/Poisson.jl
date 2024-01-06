@@ -39,7 +39,7 @@ end
 
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
-    @inside iD[I] = abs2(D[I])<1e-8 ? 0. : inv(D[I])
+    @inside iD[I] = abs2(D[I])<2eps(eltype(D)) ? 0. : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
@@ -71,7 +71,26 @@ end
     return s
 end
 
-residual!(p::Poisson) = @inside p.r[I] = p.z[I]-mult(I,p.L,p.D,p.x)
+"""
+    residual!(p::Poisson)
+
+Computes the resiual `r = z-Ax` and corrects it such that
+`r = 0` if `iD==0` which ensures local satisfiability
+    and 
+`sum(r) = 0` which ensures global satisfiability.
+
+The global correction is done by adjusting all points uniformly, 
+minimizing the local effect. Other approaches are possible.
+
+Note: These corrections mean `x` is not strictly solving `Ax=z`, but
+without the corrections, no solution exists.
+"""
+function residual!(p::Poisson) 
+    @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
+    s = sum(p.r)/length(p.r[inside(p.r)])
+    abs(s) <= 2eps(eltype(s)) && return
+    @inside p.r[I] = p.r[I]-s
+end
 
 increment!(p::Poisson) = @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
                                 p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)

@@ -90,7 +90,6 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     σ :: Sf # divergence scalar
     # BDIM fields
     V :: Vf # body velocity vector
-    σᵥ:: Sf # body velocity divergence
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
     # Non-fields
@@ -108,10 +107,8 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         BC!(u,U,exitBC,perdir); exitBC!(u,u,U,0.)
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
-        V, σᵥ = zeros(T, Nd) |> f, zeros(T, Ng) |> f
-        μ₀ = ones(T, Nd) |> f
-        μ₁ = zeros(T, Ng..., D, D) |> f
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
+        V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
     end
 end
 
@@ -126,7 +123,7 @@ end
 
 function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = w*a.Δt[end]
-    @inside b.z[I] = div(I,a.u)+a.σᵥ[I]; b.x .*= dt # set source term & solution IC
+    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
     for i ∈ 1:n  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
