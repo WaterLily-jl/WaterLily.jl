@@ -132,20 +132,22 @@ function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
 end
 
 """
-    mom_step!(a::Flow,b::AbstractPoisson)
+    mom_predictor!(a::Flow,b::AbstractPoisson)
+    mom_corrector!(a::Flow,b::AbstractPoisson)
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
-and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow. The time integration
+is only first-order accurate if `mom_corrector!` is not called after `mom_predictor!`.
 """
-@fastmath function mom_step!(a::Flow,b::AbstractPoisson)
+@fastmath function mom_predictor!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u; scale_u!(a,0)
-    # predictor u → u'
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,time(a),a.g)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir)
-    # corrector u → u¹
+end
+@fastmath function mom_corrector!(a::Flow,b::AbstractPoisson)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,timeNext(a),a.g)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)

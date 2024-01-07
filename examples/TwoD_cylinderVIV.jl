@@ -1,5 +1,4 @@
 using WaterLily
-using Plots; gr()
 using StaticArrays
 include("TwoD_plots.jl")
 
@@ -39,12 +38,8 @@ let
         # update until time tᵢ in the background
         t = sum(sim.flow.Δt[1:end-1])
         while t < tᵢ*sim.L/sim.U
-
-            # measure body
-            measure!(sim,t)
-
-            # update flow
-            mom_step!(sim.flow,sim.pois)
+            # predict flow
+            WaterLily.mom_predictor!(sim.flow,sim.pois)
             
             # pressure force
             force = -WaterLily.∮nds(sim.flow.p,sim.flow.f,sim.body,t)
@@ -58,6 +53,10 @@ let
 
             # update time, sets the pos/v0 correctly
             t0 = t; t += Δt
+
+            # measure body & correct flow
+            measure!(sim,t)
+            WaterLily.mom_corrector!(sim.flow,sim.pois)
         end
 
         # plot vorticity
