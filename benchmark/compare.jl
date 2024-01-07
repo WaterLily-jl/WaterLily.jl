@@ -1,7 +1,9 @@
 using BenchmarkTools, PrettyTables
 
 # Load benchmarks
-benchmarks = [BenchmarkTools.load(f)[1] for f in ARGS]
+benchmarks = [BenchmarkTools.load(fname)[1] for fname in ARGS if !occursin("--sort", fname)]
+sort_cla = findfirst(occursin.("--sort", ARGS))
+sort_idx = !isnothing(sort_cla) ? ARGS[sort_cla] |> x -> split(x, "=")[end] |> x -> parse(Int, x) : 0
 # Get backends string vector and assert same case sizes for the different backends
 backends_str = [String.(k)[1] for k in keys.(benchmarks)]
 log2p_str = [String.(keys(benchmarks[i][backend_str])) for (i, backend_str) in enumerate(backends_str)]
@@ -20,6 +22,15 @@ for n in log2p_str[1]
         data[i, :] .= [backends_str[i], benchmark.tags[end-1], benchmark.tags[end], benchmark.tags[end-3],
             datap.allocs, (datap.gctimes[1] / datap.times[1]) * 100.0, datap.times[1] / 1e9, speedup]
     end
-    pretty_table(data; header=header, header_alignment=:c, formatters=ft_printf("%.2f", [6,7,8]))
+    sorted_cond, sorted_idx = 0 < sort_idx <= 8, nothing
+    if sorted_cond
+        sorted_idx = sortperm(data[:, sort_idx])
+        baseline_idx = findfirst(x->x==1, sorted_idx)
+        data .= data[sorted_idx, :]
+    end
+    hl_base = Highlighter(f=(data, i, j) -> sorted_cond ? i == findfirst(x->x==1, sorted_idx) : i==1,
+        crayon=Crayon(foreground=:blue))
+    hl_fast = Highlighter(f=(data, i, j) -> i == argmin(data[:, end-1]), crayon=Crayon(foreground=(32,125,56)))
+    pretty_table(data; header=header, header_alignment=:c, highlighters=(hl_base, hl_fast), formatters=ft_printf("%.2f", [6,7,8]))
 end
 
