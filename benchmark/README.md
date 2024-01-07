@@ -24,13 +24,13 @@ The accepted command line arguments are (parenthesis for short version):
     -v "1.8.5 1.9.4" -b "Array CuArray" -t "1 6"
     ```
     which would generate benchmark for all these combinations of parameters.
- - Case arguments: `--cases(-c)`, `--log2p(-p)`, `--max_steps(-s)`, `--ftype(-ft)`. The `--cases` argument specifies which cases to benchmark, and it can be again a list of different cases. The name of the cases needs to be defined in [benchmark.jl](./benchmark.jl), for example `tgv` or `jelly`. Hence, to add a new case first define the function that returns a `Simulation` in [benchmark.jl](./benchmark.jl), and then it can be called using the `--cases(-c)` list argument. Case size, number of time steps, and float data type are then defined for each case (`p`, `-s`, `-ft`, respectively). All case arguments must have an equal length since each element of the array defines the case in different aspects.
+ - Case arguments: `--cases(-c)`, `--log2p(-p)`, `--max_steps(-s)`, `--ftype(-ft)`. The `--cases` argument specifies which cases to benchmark, and it can be again a list of different cases. The name of the cases needs to be defined in [benchmark.jl](./benchmark.jl), for example `tgv` or `jelly`. Hence, to add a new case first define the function that returns a `Simulation` in [benchmark.jl](./benchmark.jl), and then it can be called using the `--cases(-c)` list argument. Case size, number of time steps, and float data type are then defined for each case (`-p`, `-s`, `-ft`, respectively). All case arguments must have an equal length since each element of the array defines the case in different aspects.
 
-The following benchmark launch
+The following command
 ```sh
 sh benchmark.sh -v release -t "1 3 6" -b "Array CuArray" -c "tgv jelly" -p "6,7,8 5,6" -s "10 100" -ft "Float64 Float32"
 ```
-would allow running benchmarks with 4 the backends: CPUx1 (serial), CPUx3, CPUx6, GPU. Additionally, two benchmarks would be tested, `tgv` and `jelly`, with different sizes, number of time steps, and float type, each. This would result into 1 Julia version x (3 Array + 1 CuArray) backends x (3 TGV sizes + 2 jelly sizes) = 20 benchmarks.
+would allow running benchmarks with 4 backends: CPUx1 (serial), CPUx3, CPUx6, GPU. Additionally, two benchmarks would be tested, `tgv` and `jelly`, with different sizes, number of time steps, and float type, each. This would result into 1 Julia version x (3 Array + 1 CuArray) backends x (3 TGV sizes + 2 jelly sizes) = 20 benchmarks.
 
 Benchmarks are saved in JSON format with the following nomenclature: `casename_sizes_maxsteps_ftype_backend_waterlilyHEADhash_juliaversion.json`. Benchmarks can be finally compared using [`compare.jl`](./compare.jl) as follows
 ```sh
