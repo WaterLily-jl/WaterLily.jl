@@ -1,5 +1,22 @@
 #!/bin/bash
 
+# Utils
+join_array_comma () {
+    arr=("$@")
+    printf -v joined '%s,' $arr
+    echo "[${joined%,}]"
+}
+join_array_str_comma () {
+    arr=("$@")
+    printf -v joined '\"%s\",' $arr
+    echo "[${joined%,}]"
+}
+join_array_tuple_comma () {
+    arr=("$@")
+    printf -v joined '(%s),' $arr
+    echo "[${joined%,}]"
+}
+
 # Grep current julia version
 julia_version () {
     julia_v=($(julia -v))
@@ -8,7 +25,7 @@ julia_version () {
 
 # Update project environment with new Julia version
 update_environment () {
-    echo "Updating environment to Julia v$version"
+    echo "Updating environment to Julia $version"
     # Mark WaterLily as a development package. Then update dependencies and precompile.
     julia +${version} --project -e "using Pkg; Pkg.develop(PackageSpec(path=dirname(@__DIR__))); Pkg.update();"
 }
@@ -40,10 +57,10 @@ VERSIONS=('release')
 BACKENDS=('Array' 'CuArray')
 THREADS=('1' '6')
 # Default cases. Arrays below must be same length (specify each case individually)
-CASES=('tgv.jl')
-LOG2P=('5,6,7')
-MAXSTEPS=('100')
-FTYPE=('Float32')
+CASES=('tgv' 'jelly')
+LOG2P=('6,7' '5,6')
+MAXSTEPS=('100' '100')
+FTYPE=('Float32' 'Float32')
 
 # Parse arguments
 while [ $# -gt 0 ]; do
@@ -83,8 +100,6 @@ esac
 shift
 done
 
-NCASES=${#CASES[@]}
-
 # Assert "--threads" argument is not empy if "Array" backend is present
 if [[ " ${BACKENDS[*]} " =~ [[:space:]]'Array'[[:space:]] ]]; then
     if [ "${#THREADS[@]}" == 0 ]; then
@@ -93,26 +108,45 @@ if [[ " ${BACKENDS[*]} " =~ [[:space:]]'Array'[[:space:]] ]]; then
     fi
 fi
 
+# Assert all case arguments have equal size
+NCASES=${#CASES[@]}
+NLOG2P=${#LOG2P[@]}
+NMAXSTEPS=${#MAXSTEPS[@]}
+NFTYPE=${#FTYPE[@]}
+st=0
+for i in $NLOG2P $NMAXSTEPS $NFTYPE; do
+    [ "$NCASES" = "$i" ]
+    st=$(( $? + st ))
+done
+if [ $st != 0 ]; then
+    echo "ERROR: Case arguments are arrays of different sizes."
+    exit 1
+fi
+
 # Display information
 display_info
 
+# Join arrays
+CASES=$(join_array_str_comma "${CASES[*]}")
+LOG2P=$(join_array_tuple_comma "${LOG2P[*]}")
+MAXSTEPS=$(join_array_comma "${MAXSTEPS[*]}")
+FTYPE=$(join_array_comma "${FTYPE[*]}")
+
 # Benchmarks
 for version in "${VERSIONS[@]}" ; do
-    echo "Julia v$version benchmaks"
+    echo "Julia $version benchmaks"
     update_environment
-    for i in "${!CASES[@]}"; do
-        args_case="${CASES[$i]} --log2p="${LOG2P[$i]}" --max_steps=${MAXSTEPS[$i]} --ftype=${FTYPE[$i]}"
-        for backend in "${BACKENDS[@]}" ; do
-            if [ "${backend}" == "Array" ]; then
-                for thread in "${THREADS[@]}" ; do
-                    args="-t $thread "$args_case" --backend=$backend"
-                    run_benchmark
-                done
-            else
-                args=$args_case" --backend=$backend"
+    args_cases="--cases=$CASES --log2p=$LOG2P --max_steps=$MAXSTEPS --ftype=$FTYPE"
+    for backend in "${BACKENDS[@]}" ; do
+        if [ "${backend}" == "Array" ]; then
+            for thread in "${THREADS[@]}" ; do
+                args="-t $thread benchmark.jl --backend=$backend $args_cases"
                 run_benchmark
-            fi
-        done
+            done
+        else
+            args="benchmark.jl --backend=$backend $args_cases"
+            run_benchmark
+        fi
     done
 done
 
