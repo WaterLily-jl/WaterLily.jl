@@ -70,7 +70,7 @@ arrays = setup_backends()
         @allowscalar @test all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
         BC!(σ;perdir=(1,2)) # periodic in two directions
         @allowscalar @test all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
-        
+
         u = rand(Ng..., D) |> f # vector
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @allowscalar @test all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
@@ -140,7 +140,7 @@ end
     ϕuR = WaterLily.ϕuR
     quick = WaterLily.quick
     ϕ = WaterLily.ϕ
-    
+
     # inlet with positive flux -> CD
     @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
     # inlet negative flux -> backward QUICK
@@ -167,7 +167,7 @@ end
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
     @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
-    # check applying acceleration 
+    # check applying acceleration
     N = 4
     a = zeros(N,N,2)
     WaterLily.accelerate!(a,1,nothing)
@@ -205,6 +205,17 @@ end
     #test booleans
     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+
+    # tests for AutoBodies
+    @test all(measure(AutoBodies([body1,body2],+),[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
+    @test all(measure(AutoBodies([body1,body2],-),[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+
+    radius = [1.0, 0.75, 0.5, 0.25]
+    circles = [(x,t) -> √sum(abs2,x)-r for r ∈ radius]
+    body = AutoBody(circles[1])-AutoBody(circles[2])+AutoBody(circles[3])-AutoBody(circles[4])
+    bodies = AutoBodies(AutoBody[AutoBody(c) for c ∈ circles], [-,+,-])
+    xy = rand(2)
+    @test all(measure(body, xy, 1.).≈measure(bodies, xy, 1.))
 end
 
 function TGVsim(mem;T=Float32,perdir=(1,2))
