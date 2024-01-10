@@ -1,23 +1,6 @@
 using WaterLily
 using Test
 using StaticArrays
-using CUDA: CUDA, @allowscalar
-using AMDGPU: AMDGPU
-
-function setup_backends()
-    arrays = [Array]
-    if CUDA.functional()
-        CUDA.allowscalar(false)
-        push!(arrays, CUDA.CuArray)
-    end
-    if AMDGPU.functional()
-        AMDGPU.allowscalar(false)
-        push!(arrays, AMDGPU.ROCArray)
-    end
-    return arrays
-end
-
-arrays = setup_backends()
 
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -35,8 +18,7 @@ arrays = setup_backends()
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
 
-    # for f ∈ arrays
-    for f ∈ [Array]
+    for f ∈ arrays_test
         p = zeros(4,5) |> f
         apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin
         @test inside(p) == CartesianIndices((2:3,2:4))
@@ -70,7 +52,7 @@ arrays = setup_backends()
         @allowscalar @test all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
         BC!(σ;perdir=(1,2)) # periodic in two directions
         @allowscalar @test all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
-        
+
         u = rand(Ng..., D) |> f # vector
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @allowscalar @test all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
@@ -92,7 +74,7 @@ function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
 end
 
 @testset "Poisson.jl" begin
-    for f ∈ arrays
+    for f ∈ arrays_test
         err,pois = Poisson_setup(Poisson,(5,5);f)
         @test @allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
         @test @allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
@@ -119,7 +101,7 @@ end
     WaterLily.update!(pois)
     @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
-    for f ∈ arrays
+    for f ∈ arrays_test
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
         @test pois.n[] < 3
@@ -140,7 +122,7 @@ end
     ϕuR = WaterLily.ϕuR
     quick = WaterLily.quick
     ϕ = WaterLily.ϕ
-    
+
     # inlet with positive flux -> CD
     @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
     # inlet negative flux -> backward QUICK
@@ -167,7 +149,7 @@ end
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
     @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
-    # check applying acceleration 
+    # check applying acceleration
     N = 4
     a = zeros(N,N,2)
     WaterLily.accelerate!(a,1,nothing)
@@ -178,7 +160,7 @@ end
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
-    for f ∈ arrays
+    for f ∈ arrays_test
         a = Flow(N, U; f, T=Float32)
         mom_step!(a, MultiLevelPoisson(a.p,a.μ₀,a.σ))
         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
@@ -220,7 +202,7 @@ function TGVsim(mem;T=Float32,perdir=(1,2))
     return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
 end
 @testset "Flow.jl periodic TGV" begin
-    for f ∈ arrays
+    for f ∈ arrays_test
         sim,TGV = TGVsim(f); ue=copy(sim.flow.u) |> Array
         sim_step!(sim,π/100)
         apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
@@ -241,7 +223,7 @@ function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
     ),jerk
 end
 @testset "Flow.jl with increasing body force" begin
-    for f ∈ arrays
+    for f ∈ arrays_test
         N = 8
         sim,jerk = acceleratingFlow(N;mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
@@ -257,7 +239,7 @@ end
 import WaterLily: ×
 @testset "Metrics.jl" begin
     J = CartesianIndex(2,3,4); x = loc(0,J); px = prod(x)
-    for f ∈ arrays
+    for f ∈ arrays_test
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
         @inside p[I] = WaterLily.ke(I,u)
@@ -302,7 +284,7 @@ end
     @test sim_time(sim) == 0
     sim_step!(sim,0.1,remeasure=false)
     @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
-    for mem ∈ arrays, exitBC ∈ (true,false)
+    for mem ∈ arrays_test, exitBC ∈ (true,false)
         # Test that remeasure works perfectly when V = U = 1
         sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle,move), ν, T, mem, exitBC)
         sim_step!(sim,0.01)
