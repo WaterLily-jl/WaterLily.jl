@@ -1,4 +1,4 @@
-module WaterLilyWriterVTKExt
+module WaterLilyWriteVTKExt
 
 if isdefined(Base, :get_extension)
     using WriteVTK
