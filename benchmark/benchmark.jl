@@ -55,7 +55,7 @@ function benchmark()
         sim_step!(getf(case)(p[1], backend; T=ft), typemax(ft); max_steps=1, verbose=false, remeasure=false) # warm up
         add_to_suite!(suite, getf(case); p=p, s=s, ft=ft, backend=backend) # create benchmark
         results[backend_str[backend]] = run(suite[backend_str[backend]], samples=1, evals=1, seconds=1e6, verbose=true) # run!
-        fname = joinpath(@__DIR__, "$(case)_$(p...)_$(s)_$(ft)_$(backend_str[backend])_$(git_hash)_$VERSION.json")
+        fname = "$(case)_$(p...)_$(s)_$(ft)_$(backend_str[backend])_$(git_hash)_$VERSION.json"
         BenchmarkTools.save(fname, results)
     end
 end
