@@ -2,8 +2,6 @@ name: CI
 on:
   pull_request:
   push:
-      branches:
-        - master
 jobs:
   test:
     if: github.event.pull_request.draft == false
