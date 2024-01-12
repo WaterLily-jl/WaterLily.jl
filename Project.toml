@@ -4,7 +4,6 @@ authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
 version = "1.0.3"
 
 [deps]
-Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -28,7 +27,6 @@ WaterLilyWriteVTKExt = "WriteVTK"
 [compat]
 AMDGPU = "^0.4.13,0.6"
 CUDA = "4.1.4,5"
-Documenter = "0.19 - 0.28,1"
 ForwardDiff = "^0.10.18"
 KernelAbstractions = "^0.9.1"
 Reexport = "^1.2.2"
