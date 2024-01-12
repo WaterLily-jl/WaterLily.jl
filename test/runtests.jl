@@ -1,6 +1,18 @@
 using WaterLily
 using Test
 using StaticArrays
+using CUDA
+using AMDGPU
+using GPUArrays
+
+function setup_backends()
+    arrays = [Array]
+    CUDA.functional() && push!(arrays, CUDA.CuArray)
+    AMDGPU.functional() && push!(arrays, AMDGPU.ROCArray)
+    return arrays
+end
+
+arrays = setup_backends()
 
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -18,7 +30,7 @@ using StaticArrays
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
 
-    for f ∈ arrays_test
+    for f ∈ arrays
         p = zeros(4,5) |> f
         apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin
         @test inside(p) == CartesianIndices((2:3,2:4))
@@ -27,35 +39,35 @@ using StaticArrays
 
         u = zeros(5,5,2) |> f
         apply!((i,x)->x[i],u)
-        @allowscalar @test [u[i,j,1].-(i-2) for i in 1:3, j in 1:3]==zeros(3,3)
+        @test GPUArrays.@allowscalar [u[i,j,1].-(i-2) for i in 1:3, j in 1:3]==zeros(3,3)
 
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> f # vector
         σ = rand(Ng...) |> f # scalar
         BC!(u, U)
         BC!(σ)
-        @allowscalar @test all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
-                all(u[3:end-1, 1, 1] .== u[3:end-1, 2, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end-1, 1])
-        @allowscalar @test all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
-                all(u[1, 3:end-1, 2] .== u[2, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end-1, 3:end-1, 2])
-        @allowscalar @test all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
-                all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
+        @test GPUArrays.@allowscalar all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
+            all(u[3:end-1, 1, 1] .== u[3:end-1, 2, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end-1, 1])
+        @test GPUArrays.@allowscalar all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
+            all(u[1, 3:end-1, 2] .== u[2, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end-1, 3:end-1, 2])
+        @test GPUArrays.@allowscalar all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
+            all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
 
-        @allowscalar u[end,:,1] .= 3
+        GPUArrays.@allowscalar u[end,:,1] .= 3
         BC!(u,U,true) # save exit values
-        @allowscalar @test all(u[end, :, 1] .== 3)
+        @test GPUArrays.@allowscalar all(u[end, :, 1] .== 3)
 
         WaterLily.exitBC!(u,u,U,0) # conservative exit check
-        @allowscalar @test all(u[end,2:end-1, 1] .== U[1])
+        @test GPUArrays.@allowscalar all(u[end,2:end-1, 1] .== U[1])
 
         BC!(u,U,true,(2,)) # periodic in y and save exit values
-        @allowscalar @test all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
+        @test GPUArrays.@allowscalar all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
         BC!(σ;perdir=(1,2)) # periodic in two directions
-        @allowscalar @test all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
+        @test GPUArrays.@allowscalar all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
 
         u = rand(Ng..., D) |> f # vector
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
-        @allowscalar @test all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
+        @test GPUArrays.@allowscalar all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
                            all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
     end
 end
@@ -66,18 +78,18 @@ function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
     pois = poisson(x,c,z)
     soln = map(I->T(I.I[1]),CartesianIndices(N)) |> f
     I = first(inside(x))
-    @allowscalar @. soln -= soln[I]
+    GPUArrays.@allowscalar @. soln -= soln[I]
     z = mult!(pois,soln)
     solver!(pois)
-    @allowscalar @. x -= x[I]
+    GPUArrays.@allowscalar @. x -= x[I]
     return L₂(x-soln)/L₂(soln),pois
 end
 
 @testset "Poisson.jl" begin
-    for f ∈ arrays_test
+    for f ∈ arrays
         err,pois = Poisson_setup(Poisson,(5,5);f)
-        @test @allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
-        @test @allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
+        @test GPUArrays.@allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
+        @test GPUArrays.@allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
         @test err < 1e-5
         err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
@@ -101,7 +113,7 @@ end
     WaterLily.update!(pois)
     @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
 
-    for f ∈ arrays_test
+    for f ∈ arrays
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
         @test pois.n[] < 3
@@ -160,7 +172,7 @@ end
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
-    for f ∈ arrays_test
+    for f ∈ arrays
         a = Flow(N, U; f, T=Float32)
         mom_step!(a, MultiLevelPoisson(a.p,a.μ₀,a.σ))
         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
@@ -202,7 +214,7 @@ function TGVsim(mem;T=Float32,perdir=(1,2))
     return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
 end
 @testset "Flow.jl periodic TGV" begin
-    for f ∈ arrays_test
+    for f ∈ arrays
         sim,TGV = TGVsim(f); ue=copy(sim.flow.u) |> Array
         sim_step!(sim,π/100)
         apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
@@ -223,7 +235,7 @@ function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
     ),jerk
 end
 @testset "Flow.jl with increasing body force" begin
-    for f ∈ arrays_test
+    for f ∈ arrays
         N = 8
         sim,jerk = acceleratingFlow(N;mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
@@ -239,23 +251,23 @@ end
 import WaterLily: ×
 @testset "Metrics.jl" begin
     J = CartesianIndex(2,3,4); x = loc(0,J); px = prod(x)
-    for f ∈ arrays_test
+    for f ∈ arrays
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
         @inside p[I] = WaterLily.ke(I,u)
-        @test @allowscalar p[J]==0.5*sum(abs2,x .+ px)
+        @test GPUArrays.@allowscalar p[J]==0.5*sum(abs2,x .+ px)
         @inside p[I] = WaterLily.ke(I,u,x)
-        @test @allowscalar p[J]==1.5*px^2
+        @test GPUArrays.@allowscalar p[J]==1.5*px^2
         @inside p[I] = WaterLily.λ₂(I,u)
-        @test @allowscalar p[J]≈1
+        @test GPUArrays.@allowscalar p[J]≈1
         ω = (1 ./ x)×repeat([px],3)
         @inside p[I] = WaterLily.curl(2,I,u)
-        @test @allowscalar p[J]==ω[2]
+        @test GPUArrays.@allowscalar p[J]==ω[2]
         f==Array && @test WaterLily.ω(J,u)≈ω
         @inside p[I] = WaterLily.ω_mag(I,u)
-        @test @allowscalar p[J]==sqrt(sum(abs2,ω))
+        @test GPUArrays.@allowscalar p[J]==sqrt(sum(abs2,ω))
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
-        @test @allowscalar p[J]≈ω[1]
+        @test GPUArrays.@allowscalar p[J]≈ω[1]
 
         N = 32
         p = zeros(N,N) |> f; u = zeros(N,N,2) |> f
@@ -284,7 +296,7 @@ end
     @test sim_time(sim) == 0
     sim_step!(sim,0.1,remeasure=false)
     @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
-    for mem ∈ arrays_test, exitBC ∈ (true,false)
+    for mem ∈ arrays, exitBC ∈ (true,false)
         # Test that remeasure works perfectly when V = U = 1
         sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle,move), ν, T, mem, exitBC)
         sim_step!(sim,0.01)

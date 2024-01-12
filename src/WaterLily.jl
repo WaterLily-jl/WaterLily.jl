@@ -104,16 +104,6 @@ end
 
 export Simulation,sim_step!,sim_time,measure!
 
-# Setup backends for tests depending on available packages (CUDA, AMDGPU, or none)
-function arrays_test()
-    CUDAext = Base.get_extension(@__MODULE__, :WaterLilyCUDAExt)
-    !isnothing(CUDAext) && return CUDAext.arrays_test()
-    AMDGPUext = Base.get_extension(@__MODULE__, :WaterLilyAMDGPUExt)
-    !isnothing(AMDGPUext) && return AMDGPUext.arrays_test()
-    return [Array]
-end
-export arrays_test
-
 # WriteVTKExt functions to be extended
 function vtkWriter end
 function write! end
@@ -122,7 +112,6 @@ function write! end
 if !isdefined(Base, :get_extension)
 using Requires
 end
-
 function __init__()
     @static if !isdefined(Base, :get_extension)
         @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/WaterLilyAMDGPUExt.jl")

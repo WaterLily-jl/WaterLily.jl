@@ -13,6 +13,7 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Requires = "ae029012-a4dd-5104-9daa-d747884805df"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [weakdeps]
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
@@ -40,6 +41,7 @@ AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 Makie = "537997a7-5e4e-5d89-9595-2241ea00577e"
 PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
@@ -49,4 +51,4 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["BenchmarkTools", "GLMakie", "LaTeXStrings", "Makie", "PerformanceTestTools", "Plots", "Test", "UnicodePlots"]
+test = ["AMDGPU", "BenchmarkTools", "CUDA", "GLMakie", "GPUArrays", "LaTeXStrings", "Makie", "PerformanceTestTools", "Plots", "Test", "UnicodePlots"]
