@@ -3,7 +3,7 @@ module WaterLilyAMDGPUExt
 if isdefined(Base, :get_extension)
     using AMDGPU
 else
-    import ..AMDGPU
+    using ..AMDGPU
 end
 
 using WaterLily
