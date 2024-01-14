@@ -54,21 +54,14 @@ The operators vector `ops`specifies the specific operation to call between to co
 struct AutoBodies{T1<:AbstractVector,T2<:AbstractVector}
     bodies::T1
     ops::T2
-    function AutoBodies(bodies, ops::AbstractVector)
-        println(bodies)
-        println(ops)
-        # !all(x -> x==Base.:+ || x==Base.:-, ops || x==Base.:∩, ops || x==Base.:∪, ops) &&
-            # ArgumentError("Operations array not supported. Use only + or -")
-        length(bodies) != length(ops)+1 && ArgumentError("length(bodies) != length(ops)+1")
-        new{typeof(bodies),typeof(ops)}(bodies, ops)
-    end
+    AutoBodies(bodies, ops::AbstractVector) = new{typeof(bodies),typeof(ops)}(bodies,ops)
 end
-AutoBodies(bodies) = AutoBodies(bodies,repeat([+],length(bodies)-1))
-AutoBodies(bodies, op::Function) = AutoBodies(bodies,repeat([op],length(bodies)-1))
-Base.:vcat(a::AutoBodies, b::AutoBodies) = AutoBodies(vcat(a.bodies, b.bodies), vcat(a.ops, b.ops))
-Base.:+(a::AutoBodies, b::AutoBodies) = vcat(a, b)
-Base.:∩(a::AutoBodies, b::AutoBodies) = vcat(a, b)
-Base.:-(a::AutoBodies, b::AutoBodies) = vcat(a, b)
+AutoBodies(bodies) = AutoBodies(bodies,[nothing,nothing,repeat([+],length(bodies)-1)])
+AutoBodies(bodies, op::Function) = AutoBodies(bodies,[nothing,nothing,repeat([op],length(bodies)-1)])
+concat(a::AutoBodies, b::AutoBodies, op) = AutoBodies([a.bodies, b.bodies], [a.ops, b.ops, [op]])
+Base.:+(a::AutoBodies, b::AutoBodies) = concat(a, b, +)
+Base.:∩(a::AutoBodies, b::AutoBodies) = concat(a, b, ∩)
+Base.:-(a::AutoBodies, b::AutoBodies) = concat(a, b, -)
 Base.:∪(a::AutoBodies, b::AutoBodies) = a+b
 
 """
@@ -80,9 +73,9 @@ If bodies are not actual `::AutoBody`, it recursively iterates in the nested bod
 unpack(a::AutoBody,x,t) = (a.sdf, a.map, a.sdf(x,t))
 function sdf_map_d(bodies,ops,x,t)
     sdf, map, d = isa(bodies[1], AutoBody) ? unpack(bodies[1],x,t) : sdf_map_d(bodies[1],ops[1],x,t)
-    for (body,ops) ∈ zip(bodies[2:end],ops)
-        sdf2, map2, d2 = isa(body, AutoBody) ? unpack(body,x,t) : sdf_map_d(body,ops,x,t)
-        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops,x,t)
+    for i ∈ eachindex(bodies)[begin+1:end]
+        sdf2, map2, d2 = isa(bodies[i],AutoBody) ? unpack(bodies[i],x,t) : sdf_map_d(bodies[i],ops[i],x,t)
+        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops[3][i-1],x,t)
     end
     return sdf, map, d
 end
