@@ -51,7 +51,7 @@ This type implements the superposition of bodies by iteration instead of recursi
 functions is done on the `mesure` function, and not before.
 The operators vector `ops`specifies the specific operation to call between to consecutive bodies in the vector of `bodies`.
 """
-struct AutoBodies{T1<:AbstractVector,T2<:AbstractVector}
+struct AutoBodies{T1<:AbstractVector,T2<:AbstractVector} <: AbstractBody
     bodies::T1
     ops::T2
     AutoBodies(bodies, ops::AbstractVector) = new{typeof(bodies),typeof(ops)}(bodies,ops)
