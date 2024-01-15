@@ -46,19 +46,18 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     z::S
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
-    r₀ :: T
     perdir :: NTuple # direction of periodic boundary condition
-    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};atol=1e-3,maxlevels=4,perdir=(0,)) where T
+    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=4,perdir=(0,)) where T
         levels = Poisson[Poisson(x,L,z;perdir)]
         while all(size(levels[end].x) .|> divisible) && length(levels) <= maxlevels
             push!(levels,restrictML(levels[end]))
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        r₀ = mapreduce(x->atol*x,*,size(levels[1].x))
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],r₀,perdir)
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
+
 function update!(ml::MultiLevelPoisson)
     update!(ml.levels[1])
     for l ∈ 2:length(ml.levels)
@@ -88,14 +87,14 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 function solver!(ml::MultiLevelPoisson;log=false,tol=1e-3,itmx=32)
     p = ml.levels[1]
     BC!(p.x;perdir=p.perdir)
-    residual!(p); r₂ = L₂(p)
+    residual!(p); r₂ = L∞(p)
     log && (res = [r₂])
     nᵖ=0
     while nᵖ<itmx
         Vcycle!(ml)
-        smooth!(p); r₂ = L₂(p)
+        smooth!(p); r₂ = L∞(p)
         log && push!(res,r₂)
-        nᵖ+=1; r₂<ml.r₀ && break
+        nᵖ+=1; r₂<tol && break
     end
     BC!(p.x;perdir=p.perdir)
     push!(ml.n,nᵖ);

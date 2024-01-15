@@ -138,6 +138,7 @@ end
 smooth!(p) = pcg!(p)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
+L∞(p::Poisson) = maximum(abs.(p.r))
 
 """
     solver!(A::Poisson;log,tol,itmx)
@@ -154,13 +155,13 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 """
 function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
     BC!(p.x;perdir=p.perdir)
-    residual!(p); r₂ = L₂(p)
+    residual!(p); r₂ = L∞(p)
     log && (res = [r₂])
     nᵖ=0
-    while r₂>tol && nᵖ<itmx
-        smooth!(p); r₂ = L₂(p)
+    while nᵖ<itmx
+        smooth!(p); r₂ = L∞(p)
         log && push!(res,r₂)
-        nᵖ+=1
+        nᵖ+=1; r₂<tol && break
     end
     BC!(p.x;perdir=p.perdir)
     push!(p.n,nᵖ)
