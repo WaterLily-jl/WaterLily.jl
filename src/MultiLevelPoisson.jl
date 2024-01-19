@@ -84,17 +84,18 @@ end
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(ml::MultiLevelPoisson;log=false,tol=1e-3,itmx=32)
+function solver!(ml::MultiLevelPoisson;log=false,tol=1e-4,itmx=32)
     p = ml.levels[1]
     BC!(p.x;perdir=p.perdir)
     residual!(p); r₂ = L∞(p)
     log && (res = [r₂])
     nᵖ=0
-    while nᵖ<itmx
+    while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
         smooth!(p); r₂ = L∞(p)
         log && push!(res,r₂)
-        nᵖ+=1; r₂<tol && break
+        nᵖ+=1
+        @debug "MultiLevelPoissonSolver: iter=$nᵖ, r₂=$r₂"
     end
     BC!(p.x;perdir=p.perdir)
     push!(ml.n,nᵖ);
