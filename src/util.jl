@@ -1,5 +1,5 @@
 using KernelAbstractions: get_backend, @index, @kernel
-using CUDA: CuArray
+using CUDA: CuArray, launch_configuration
 using AMDGPU: ROCArray
 GPUArray = Union{CuArray,ROCArray}
 
@@ -90,6 +90,10 @@ becomes
 
 where `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 """
+pow2(x) = 2^round(Int,log(x)/log(2))
+# workgroupsize(sizeR) = ntuple(j->j==argmax(sizeR) ? min(pow2(maximum(sizeR)),64) : 1, length(sizeR))
+@inline workgroupsize(sizeR) = ntuple(j->j==argmax(sizeR) ? 64 : 1, length(sizeR))
+# workgroupsize(sizeR) = 64
 macro loop(args...)
     ex,_,itr = args
     _,I,R = itr.args; sym = []
@@ -102,8 +106,25 @@ macro loop(args...)
             $I += I0
             @fastmath @inbounds $ex
         end
-        # $kern(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
+        # $kern(get_backend($(sym[1])),workgroupsize(size($R)))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
         $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+    end |> esc
+end
+macro loop_nonKA(args...)
+    ex,_,itr = args
+    _,I,R = itr.args; sym = []
+    grab!(sym,ex)     # get arguments and replace composites in `ex`
+    setdiff!(sym,[I]) # don't want to pass I as an argument
+    @gensym kern      # generate unique kernel function name
+    I0 = return quote $R[1]-oneunit($R[1]) end |> esc
+    return quote
+        function $kern($(rep.(sym)...)) # replace composite arguments
+            for $I ∈ $R
+                $I += $I0
+                @fastmath @inbounds $ex
+            end
+        end
+        $kern($(sym...))
     end |> esc
 end
 function grab!(sym,ex::Expr)
@@ -131,7 +152,7 @@ Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
     apply!(f, c)
 
-Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or 
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or
 a function `f(x)` to the center of a uniform array `c`.
 """
 apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
