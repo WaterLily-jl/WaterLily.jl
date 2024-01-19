@@ -19,7 +19,7 @@ include("Body.jl")
 export AbstractBody,measure_sdf!
 
 include("AutoBody.jl")
-export AutoBody,AutoBodies,measure,sdf,+,-
+export AutoBody,Bodies,measure,sdf,+,-
 
 include("Metrics.jl")
 

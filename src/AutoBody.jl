@@ -39,65 +39,73 @@ Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 sdf(body::AutoBody,x,t) = body.sdf(x,t)
 
 """
-    AutoBodies(bodies, ops::AbstractVector)
+    Bodies(bodies, ops::AbstractVector)
 
-  - `bodies::Vector{AbstractBody}`: Vector of AbstractBody
+  - `bodies::Vector{AutoBody}`: Vector of AutoBody
   - `ops::Vector{Function}`: Vector of operators for the superposition of multiple AutoBody
 
 Superposes multiple `body::AutoBody` objects together according to the operators `ops`.
 While this can be manually performed by the operators implemented for `AutoBody`, adding too many
-bodies can yield a recursion problem of the `sdf and `map` functions not fiting in the stack.
+bodies can yield a recursion problem of the `sdf and `map` functions not fitting in the stack.
 This type implements the superposition of bodies by iteration instead of recursion, and the reduction of the sdf and map
 functions is done on the `mesure` function, and not before.
-The operators vector `ops`specifies the specific operation to call between to consecutive bodies in the vector of `bodies`.
+The operators vector `ops` specifies the specific operation to call between two consecutive bodies in the vector of `bodies`.
+Note that `+` (or the alias `∪`) is the only operation supported between `Bodies`.
 """
-struct AutoBodies{T1<:AbstractVector,T2<:AbstractVector} <: AbstractBody
-    bodies::T1
-    ops::T2
-    AutoBodies(bodies, ops::AbstractVector) = new{typeof(bodies),typeof(ops)}(bodies,ops)
+struct Bodies <: AbstractBody
+    bodies::Vector{AutoBody}
+    ops::Vector{Function}
+    function Bodies(bodies, ops::AbstractVector)
+        all(x -> x==Base.:+ || x==Base.:- || x==Base.:∩ || x==Base.:∪, ops) &&
+            ArgumentError("Operations array not supported. Use only `ops ∈ [+,-,∩,∪]`")
+        length(bodies) != length(ops)+1 && ArgumentError("length(bodies) != length(ops)+1")
+        new(bodies,ops)
+    end
 end
-AutoBodies(bodies) = AutoBodies(bodies,[nothing,nothing,repeat([+],length(bodies)-1)])
-AutoBodies(bodies, op::Function) = AutoBodies(bodies,[nothing,nothing,repeat([op],length(bodies)-1)])
-concat(a::AutoBodies, b::AutoBodies, op) = AutoBodies([a.bodies, b.bodies], [a.ops, b.ops, [op]])
-Base.:+(a::AutoBodies, b::AutoBodies) = concat(a, b, +)
-Base.:∩(a::AutoBodies, b::AutoBodies) = concat(a, b, ∩)
-Base.:-(a::AutoBodies, b::AutoBodies) = concat(a, b, -)
-Base.:∪(a::AutoBodies, b::AutoBodies) = a+b
+Bodies(bodies) = Bodies(bodies,repeat([+],length(bodies)-1))
+Bodies(bodies, op::Function) = Bodies(bodies,repeat([op],length(bodies)-1))
+Base.:+(a::Bodies, b::Bodies) = Bodies(vcat(a.bodies, b.bodies), vcat(a.ops, b.ops))
+Base.:∪(a::Bodies, b::Bodies) = a+b
 
 """
-    sdf_map_d(ab::AutoBodies,x,t)
+    sdf_map_d(ab::Bodies,x,t)
 
-Returns the `sdf` and `map` functions, and the distance `d` (`d=sdf(x,t)`) for `::AutoBodies`.
+Returns the `sdf` and `map` functions, and the distance `d` (`d=sdf(x,t)`) for `::Bodies`.
 If bodies are not actual `::AutoBody`, it recursively iterates in the nested bodies of the vector.
 """
 unpack(a::AutoBody,x,t) = (a.sdf, a.map, a.sdf(x,t))
 function sdf_map_d(bodies,ops,x,t)
-    sdf, map, d = isa(bodies[1], AutoBody) ? unpack(bodies[1],x,t) : sdf_map_d(bodies[1],ops[1],x,t)
+    sdf, map, d = bodies[1].sdf, bodies[1].map, bodies[1].sdf(x,t)
     for i ∈ eachindex(bodies)[begin+1:end]
-        sdf2, map2, d2 = isa(bodies[i],AutoBody) ? unpack(bodies[i],x,t) : sdf_map_d(bodies[i],ops[i],x,t)
-        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops[3][i-1],x,t)
+        sdf2, map2, d2 = bodies[i].sdf, bodies[i].map, bodies[i].sdf(x,t)
+        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops[i-1],x,t)
     end
     return sdf, map, d
 end
+"""
+    reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op,x,t)
+
+Returns `sdf`, `map`, and `sdf(x,t)` between two (unpacked) `AutoBody`s.
+"""
 function reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op,x,t)
     (Base.:+ == op || Base.:∪ == op) && d_b < d_a && return (sdf_b, map_b, d_b)
-    Base.:- == op && -sdf_b(x,t) > sdf_a(x,t) && return ((y,u)->-sdf_b(y,u), map_b, -sdf_b(x,t))
-    Base.:∩ == op && sdf_b(x,t) > sdf_a(x,t) && return (sdf_b, map_b, sdf_b(x,t))
-    return sdf_a, map_a, sdf_a(x,t)
+    Base.:- == op && -d_b > d_a && return ((y,u)->-sdf_b(y,u), map_b, -d_b)
+    Base.:∩ == op && d_b > d_a && return (sdf_b, map_b, d_b)
+    return sdf_a, map_a, d_a
 end
-sdf(a::AutoBodies,x,t) = sdf_map_d(a.bodies,a.ops,x,t)[end]
+sdf(a::Bodies,x,t) = sdf_map_d(a.bodies,a.ops,x,t)[end]
 
 using ForwardDiff
 """
     d,n,V = measure(body::AutoBody,x,t)
-    d,n,V = measure(body::AutoBodies,x,t)
+    d,n,V = measure(body::Bodies,x,t)
 
 Determine the implicit geometric properties from the `sdf` and `map`.
 The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
 The velocity is determined _solely_ from the optional `map` function.
 """
 measure(body::AutoBody,x,t) = measure(body.sdf,body.map,x,t)
-function measure(a::AutoBodies,x,t)
+function measure(a::Bodies,x,t)
     sdf, map, _ = sdf_map_d(a.bodies,a.ops,x,t)
     measure(sdf,map,x,t)
 end
