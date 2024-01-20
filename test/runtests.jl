@@ -206,14 +206,14 @@ end
     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
 
-    # tests for AutoBodies
-    @test all(measure(AutoBodies([body1,body2],+),[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
-    @test all(measure(AutoBodies([body1,body2],-),[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+    # tests for Bodies
+    @test all(measure(Bodies([body1,body2],+),[-√2.,-√2.],1.).≈measure(body1+body2,[-√2.,-√2.],1.))
+    @test all(measure(Bodies([body1,body2],-),[-√2.,-√2.],1.).≈measure(body1-body2,[-√2.,-√2.],1.))
 
     radius = [1.0, 0.75, 0.5, 0.25]
     circles = [(x,t) -> √sum(abs2,x)-r for r ∈ radius]
     body = AutoBody(circles[1])-AutoBody(circles[2])+AutoBody(circles[3])-AutoBody(circles[4])
-    bodies = AutoBodies(AutoBody[AutoBody(c) for c ∈ circles], [-,+,-])
+    bodies = Bodies(AutoBody[AutoBody(c) for c ∈ circles], [-,+,-])
     xy = rand(2)
     @test all(measure(body, xy, 1.).≈measure(bodies, xy, 1.))
 end
@@ -309,7 +309,7 @@ end
         return SA[x+x^3*κ^2/6,y-x^2*κ/2]
     end
     # Test sim_time, and sim_step! stopping time
-    sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle), ν, T)
+    sim = Simulation(radius.*(4,4),(1,0),radius; body=AutoBody(circle), ν, T, exitBC=true)
     @test sim_time(sim) == 0
     sim_step!(sim,0.1,remeasure=false)
     @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
