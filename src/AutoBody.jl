@@ -73,7 +73,6 @@ Base.:∪(a::Bodies, b::Bodies) = a+b
 Returns the `sdf` and `map` functions, and the distance `d` (`d=sdf(x,t)`) for `::Bodies`.
 If bodies are not actual `::AutoBody`, it recursively iterates in the nested bodies of the vector.
 """
-unpack(a::AutoBody,x,t) = (a.sdf, a.map, a.sdf(x,t))
 function sdf_map_d(bodies,ops,x,t)
     sdf, map, d = bodies[1].sdf, bodies[1].map, bodies[1].sdf(x,t)
     for i ∈ eachindex(bodies)[begin+1:end]
