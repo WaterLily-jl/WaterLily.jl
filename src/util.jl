@@ -41,7 +41,7 @@ size_u(u) = splitn(size(u))
 
 L₂ norm of array `a` excluding ghosts.
 """
-L₂(a::Array) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 
 """
     @inside <expr>
