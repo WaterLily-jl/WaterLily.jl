@@ -292,7 +292,7 @@ end
         return SA[x+x^3*κ^2/6,y-x^2*κ/2]
     end
     # Test sim_time, and sim_step! stopping time
-    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T, exitBC=true)
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)
     @test sim_time(sim) == 0
     sim_step!(sim,0.1,remeasure=false)
     @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
