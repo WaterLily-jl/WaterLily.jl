@@ -49,4 +49,4 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["AMDGPU", "BenchmarkTools", "CUDA", "GLMakie", "GPUArrays", "LaTeXStrings", "Makie", "PerformanceTestTools", "Plots", "Test", "UnicodePlots"]
+test = ["Test", "CUDA", "AMDGPU", "GPUArrays"]
