@@ -207,7 +207,7 @@ end
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
 
     # tests for Bodies
-    @test all(measure(Bodies([body1,body2],+),[-√2.,-√2.],1.).≈measure(body1+body2,[-√2.,-√2.],1.))
+    @test all(measure(Bodies([body1,body2]),[-√2.,-√2.],1.).≈measure(body1+body2,[-√2.,-√2.],1.))
     @test all(measure(Bodies([body1,body2],-),[-√2.,-√2.],1.).≈measure(body1-body2,[-√2.,-√2.],1.))
 
     radius = [1.0, 0.75, 0.5, 0.25]
