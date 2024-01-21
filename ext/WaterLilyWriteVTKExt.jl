@@ -1,11 +1,21 @@
-using WriteVTK
+module WaterLilyWriteVTKExt
+
+if isdefined(Base, :get_extension)
+    using WriteVTK
+else
+    using ..WriteVTK
+end
+
+using WaterLily
 using Printf: @sprintf
+import Base: close
+
 """
     vtk_grid(name;attrib,T)
 
 Generates a `vtkWriter` that hold the collection name to which the `vtk` files are written.
 The default attributes that are saved are the `Velocity` and the `Pressure` fields.
-Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword.    
+Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword.
 """
 struct vtkWriter
     fname::String
@@ -21,7 +31,7 @@ end
 """
     default_attrib()
 
-return a `Dict` containing the name and bound funtion for the default attributes. 
+return a `Dict` containing the name and bound funtion for the default attributes.
 The name is used as the key in the `vtk` file and the function generates the data
 to put in the file. With this approach, any variable can be save to the vtk file.
 """
@@ -49,7 +59,7 @@ end
 
 closes the `vtkWriter`, this is required to write the collection file.
 """
-Base.close(w::vtkWriter)=(vtk_save(w.collection);nothing)
+close(w::vtkWriter)=(vtk_save(w.collection);nothing)
 """
     components_first(a::Array)
 
@@ -60,3 +70,5 @@ function components_first(a::Array)
     N=length(size(a)); p=[N,1:N-1...]
     return permutedims(a,p)
 end
+
+end # module
