@@ -114,25 +114,25 @@ Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iteratio
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
-function pcg!(p::Poisson;it=6)
+function pcg!(p::Poisson{T};it=6) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     insideI = inside(x) # [insideI]
-    rho = r ⋅ z
-    abs(rho)<1e-12 && return
+    rho = T(r⋅z)
+    abs(rho)<10eps(T) && return
     for i in 1:it
         BC!(ϵ;perdir=p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/(z[insideI]⋅ϵ[insideI])
+        alpha = rho/T(z[insideI]⋅ϵ[insideI])
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
         (i==it || abs(alpha)<1e-2) && return
         @inside z[I] = r[I]*p.iD[I]
-        rho2 = r⋅z
-        abs(rho2)<1e-8 && return
+        rho2 = T(r⋅z)
+        abs(rho2)<10eps(T) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
-        rho = rho2        
+        rho = rho2
     end
 end
 smooth!(p) = pcg!(p)
