@@ -95,6 +95,27 @@ In this example, the `sdf` function defines a line segment from `-L/2 ≤ x[2] �
 
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation since it eliminates allocations at every grid cell and time step.
 
+### Circle inside an oscillating flow
+This [example](examples/TwoD_oscillatingFlowOverCircle.jl) demonstrates a uniform flow over a 2D circle subjected to a sinusoidally-time-varying body force. 
+The flow is also periodic in lateral direction.
+You can introduce a time-varying uniform body force to the flow by providing an additional argument, `g`, when constructing the `Simulation`. Additionally, the orientation of the periodic boundary condition can be specified using the argument `perdir`.
+```julia
+function circle(n,m;Re=250,U=1)
+    # define a circle at the domain center
+    radius = m/8
+    body = AutoBody((x,t)->√sum(abs2, x .- SA[n/2,m/2]) - radius)
+
+    # define time-varying body force and periodic direction
+    accelScale = U^2/radius
+    timeScale = radius/U
+    Simulation((n,m), (U,0), radius; ν=U*radius/Re,g=(i,t)-> i==1 ? 2accelScale*sin(2π/4*t/timeScale) : 0, Δt=0.01, body, perdir=(1,))
+end
+```
+The `g` parameter accepts a function with direction (`i`) and time (`t`) arguments. This allows you to create a spatially uniform body force with variations over time. It's important to note that the body force is now only uniform in space.
+
+The `perdir` argument is a tuple that specifies the directions to which periodic boundary conditions should be applied. Keep in mind that using two or more directions as cyclic is entirely feasible!
+
+
 ## Multi-threading and GPU backends
 
 WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) to multi-thread on CPU and run on GPU backends. The implementation method and speed-up are documented in our [ParCFD abstract](https://arxiv.org/abs/2304.08159). In summary, a single macro `WaterLily.@loop` is used for nearly every loop in the code base, and this uses KernelAbstractactions to generate optimized code for each back-end. The speed-up is more pronounce for large simulations, and we've [benchmarked](benchmark/donut/donut.jl) up to 23x-speed up on a Intel Core i7-10750H x6 processor, and 182x speed-up NVIDIA GeForce GTX 1650 Ti GPU card.
