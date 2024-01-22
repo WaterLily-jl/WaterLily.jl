@@ -96,25 +96,24 @@ In this example, the `sdf` function defines a line segment from `-L/2 ≤ x[2] �
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation since it eliminates allocations at every grid cell and time step.
 
 ### Circle inside an oscillating flow
-This [example](examples/TwoD_oscillatingFlowOverCircle.jl) demonstrates a uniform flow over a 2D circle subjected to a sinusoidally-time-varying body force. 
-The flow is also periodic in lateral direction.
-You can introduce a time-varying uniform body force to the flow by providing an additional argument, `g`, when constructing the `Simulation`. Additionally, the orientation of the periodic boundary condition can be specified using the argument `perdir`.
+![Oscillating flow](examples/oscillating.gif)
+
+This [example](examples/TwoD_oscillatingFlowOverCircle.jl) demonstrates a 2D oscillating periodic flow over a circle.
 ```julia
 function circle(n,m;Re=250,U=1)
     # define a circle at the domain center
     radius = m/8
-    body = AutoBody((x,t)->√sum(abs2, x .- SA[n/2,m/2]) - radius)
+    body = AutoBody((x,t)->√sum(abs2, x .- (n/2,m/2)) - radius)
 
-    # define time-varying body force and periodic direction
-    accelScale = U^2/radius
-    timeScale = radius/U
-    Simulation((n,m), (U,0), radius; ν=U*radius/Re,g=(i,t)-> i==1 ? 2accelScale*sin(2π/4*t/timeScale) : 0, Δt=0.01, body, perdir=(1,))
+    # define time-varying body force `g` and periodic direction `perdir`
+    accelScale, timeScale = U^2/2radius, radius/U
+    g(i,t) = i==1 ? -2accelScale*sin(t/timeScale) : 0 
+    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, g, perdir=(1,))
 end
 ```
-The `g` parameter accepts a function with direction (`i`) and time (`t`) arguments. This allows you to create a spatially uniform body force with variations over time. It's important to note that the body force is now only uniform in space.
+The `g` argument accepts a function with direction (`i`) and time (`t`) arguments. This allows you to create a spatially uniform body force with variations over time. In this example, the function adds a sinusoidal force in the "x" direction `i=1`, and nothing to the other directions.
 
-The `perdir` argument is a tuple that specifies the directions to which periodic boundary conditions should be applied. Keep in mind that using two or more directions as cyclic is entirely feasible!
-
+The `perdir` argument is a tuple that specifies the directions to which periodic boundary conditions should be applied. Any number of directions may be defined as periodic, but in this example only the `i=1` direction is used allowing the flow to accelerate freely in this direction.
 
 ## Multi-threading and GPU backends
 

@@ -1,15 +1,13 @@
 using WaterLily
-using StaticArrays
-function circle(n,m;Re=250,U=1)
+function circle(n,m;κ=1.5,Re=250,U=1)
     # define a circle at the domain center
     radius = m/8
-    body = AutoBody((x,t)->√sum(abs2, x .- SA[n/2,m/2]) - radius)
+    body = AutoBody((x,t)->√sum(abs2, x .- (n/2,m/2)) - radius)
 
-    # define time-varying body force and periodic direction
-    accelScale = U^2/radius
-    timeScale = radius/U
-    Simulation((n,m), (U,0), radius; ν=U*radius/Re,g=(i,t)-> i==1 ? 2accelScale*sin(2π/4*t/timeScale) : 0, Δt=0.01, body, perdir=(1,))
+    # define time-varying body force `g` and periodic direction `perdir`
+    accelScale, timeScale = U^2/2radius, κ*radius/U
+    g(i,t) = i==1 ? -2accelScale*sin(t/timeScale) : 0 
+    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, g, perdir=(1,))
 end
-
 include("TwoD_plots.jl")
-sim_gif!(circle(3*2^6,2^7),duration=20,step=0.05,clims=(-25,25),plotbody=true,levels=20)
+sim_gif!(circle(196,196),duration=20,clims=(-8,8),plotbody=true)
