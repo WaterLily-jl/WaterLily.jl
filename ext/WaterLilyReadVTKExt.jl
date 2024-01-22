@@ -40,6 +40,4 @@ function restart_sim!(a::Simulation;fname::String="WaterLily.pvd")
     push!(a.flow.Δt,WaterLily.CFL(a.flow))
 end
 
-export restart_sim!
-
 end # module
