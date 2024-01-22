@@ -1,7 +1,7 @@
 #!/bin/bash
 
 THIS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-WATERLILY_ROOT=$(dirname "${THIS_DIR}")
+export WATERLILY_ROOT=$(dirname "${THIS_DIR}")
 
 # Utils
 join_array_comma () {
@@ -26,15 +26,14 @@ julia_version () {
     echo "${julia_v[2]}"
 }
 
-# Update project environment with new Julia version
+# Update project environment with new Julia version: Mark WaterLily as a development packag, then update dependencies and precompile.
 update_environment () {
     echo "Updating environment to Julia $version"
-    # Mark WaterLily as a development package. Then update dependencies and precompile.
-    julia +${version} --project="${WATERLILY_ROOT}" -e "using Pkg; Pkg.instantiate();"
+    julia +${version} --project=$THIS_DIR -e "using Pkg; Pkg.develop(PackageSpec(path=get(ENV, \"WATERLILY_ROOT\", \"\"))); Pkg.update();"
 }
 
 run_benchmark () {
-    full_args=(+${version} --project="${WATERLILY_ROOT}" --startup-file=no $args)
+    full_args=(+${version} --project=${THIS_DIR} --startup-file=no $args)
     echo "Running: julia ${full_args[@]}"
     julia "${full_args[@]}"
 }
