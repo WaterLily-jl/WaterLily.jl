@@ -1,7 +1,6 @@
 using WaterLily
 using ReadVTK, WriteVTK
 using StaticArrays
-using Test
 
 function circle(p=4;Re=250,mem=Array,U=1)
     # Define simulation size, geometry dimensions, viscosity
@@ -14,22 +13,24 @@ function circle(p=4;Re=250,mem=Array,U=1)
     end
     Simulation((8L,6L,16),(U,0,0),L;ν=U*L/Re,body,mem)
 end
-# make a simulation
+
+# make a simulation on the CPU
 sim = circle();
 # make a vtk writer
 wr = vtkWriter("TwoD_circle_restart")
+# sim and then write and stop
 sim_step!(sim,1)
 write!(wr, sim)
 close(wr)
 
-# re start the sim from a paraview file
-restart = circle();
+# re-start the sim from a paraview file but on the GPU this time
+import CUDA
+@assert CUDA.functional()
+restart = circle(;mem=CUDA.CuArray);
 restart_sim!(restart; fname="TwoD_circle_restart.pvd")
 
 # intialize
-t₀ = sim_time(sim)
-duration = 10
-tstep = 0.1
+t₀ = sim_time(sim); duration = 10; tstep = 0.1
 
 # step and write
 @time for tᵢ in range(t₀,t₀+duration;step=tstep)

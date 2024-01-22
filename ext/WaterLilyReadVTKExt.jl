@@ -33,8 +33,8 @@ function restart_sim!(a::Simulation;fname::String="WaterLily.pvd")
     @assert extent.+1 == collect(size(a.flow.p)) text
     # fill the arrays for pressure and velocity
     point_data = ReadVTK.get_point_data(vtk)
-    a.flow.p .= squeeze(Array(get_data_reshaped(point_data["Pressure"])))
-    a.flow.u .= squeeze(components_last(Array(get_data_reshaped(point_data["Velocity"]))))
+    copyto!(a.flow.p, squeeze(Array(get_data_reshaped(point_data["Pressure"]))));
+    copyto!(a.flow.u, squeeze(components_last(Array(get_data_reshaped(point_data["Velocity"])))));
     # reset time to work with the new time step
     a.flow.Δt[end] = PVDFile(fname).timesteps[end]*a.L/a.U
     push!(a.flow.Δt,WaterLily.CFL(a.flow))
