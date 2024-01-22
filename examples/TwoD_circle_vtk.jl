@@ -1,4 +1,5 @@
 using WaterLily
+using WriteVTK
 using StaticArrays
 function circle(p=4;Re=250,mem=Array,U=1)
     # Define simulation size, geometry dimensions, viscosity
@@ -16,9 +17,10 @@ function circle(p=4;Re=250,mem=Array,U=1)
     Simulation((8L,6L,16),(U,0,0),L;ν,body,mem)
 end
 
-import CUDA
-@assert CUDA.functional()
-sim = circle(mem=CUDA.CuArray);
+# import CUDA
+# @assert CUDA.functional()
+# sim = circle(mem=CUDA.CuArray);
+sim = circle();
 
 # make a writer with some attributes
 velocity(a::Simulation) = a.flow.u |> Array;

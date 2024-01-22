@@ -1,6 +1,7 @@
 using WaterLily
 using Test
 using StaticArrays
+using ReadVTK, WriteVTK
 using CUDA
 using AMDGPU
 using GPUArrays
@@ -277,9 +278,10 @@ import WaterLily: ×
     end
 end
 
-function sphere_sim(radius = 8; mem=Array, exitBC=false)
+function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)
     body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
-    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
+    D==2 && Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
+    Simulation(radius.*(6,4,1),(1,0,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
 @testset "WaterLily.jl" begin
     radius = 8; ν=radius/250; T=Float32; nm = radius.*(4,4)
@@ -324,7 +326,7 @@ end
     end
 end
 
-@testset "vtkUtils.jl" begin
+@testset "VTKExt.jl" begin
     for D ∈ [2,3], mem ∈ arrays
         # make a simulation
         sim = sphere_sim(;D,mem);
