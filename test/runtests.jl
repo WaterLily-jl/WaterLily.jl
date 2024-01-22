@@ -277,6 +277,10 @@ import WaterLily: ×
     end
 end
 
+function sphere_sim(radius = 8; mem=Array, exitBC=false)
+    body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
+    return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
+end
 @testset "WaterLily.jl" begin
     radius = 8; ν=radius/250; T=Float32; nm = radius.*(4,4)
     circle(x,t) = √sum(abs2,x .- 2radius) - radius
@@ -317,5 +321,30 @@ end
         sim_step!(sim)
         @test sim.pois.n == [2,1]
         @test 1.2 > sim.flow.Δt[end] > 0.8
+    end
+end
+
+@testset "vtkUtils.jl" begin
+    for D ∈ [2,3], mem ∈ arrays
+        # make a simulation
+        sim = sphere_sim(;D,mem);
+        # make a vtk writer
+        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
+        sim_step!(sim,1); write!(wr, sim); close(wr)
+
+        # re start the sim from a paraview file
+        restart = sphere_sim(;D,mem);
+        restart_sim!(restart;fname="test_vtk_reader_$D.pvd")
+
+        # check that the restart is the same as the original
+        @test all(sim.flow.p .== restart.flow.p)
+        @test all(sim.flow.u .== restart.flow.u)
+        @test all(sim.flow.μ₀ .== restart.flow.μ₀)
+        @test sim.flow.Δt[end] == restart.flow.Δt[end]
+        @test abs(sim_time(sim)-sim_time(restart))<1e-3
+
+        # clean-up
+        @test_nowarn rm("TEST_DIR",recursive=true)
+        @test_nowarn rm("test_vtk_reader_$D.pvd")
     end
 end
