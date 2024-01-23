@@ -7,14 +7,20 @@ else
 end
 
 using WaterLily
-import WaterLily: vtkWriter, write!
+import WaterLily: vtkWriter, write!, default_attrib, pvd_collection
 using Printf: @sprintf
 import Base: close
 
 """
-    vtkWriter(fname;attrib,dir,T)
+    pvd_collection(fname;append=false)
 
-Generates a `vtkWriter` that hold the collection name to which the `vtk` files are written.
+wrapper for a paraview_collection that returns a pvd file header
+"""
+pvd_collection(fname;append=false) = paraview_collection(fname;append=append)
+"""
+    VTKWriter(fname;attrib,dir,T)
+
+Generates a `VTKWriter` that hold the collection name to which the `vtk` files are written.
 The default attributes that are saved are the `Velocity` and the `Pressure` fields.
 Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword.
 """
@@ -27,7 +33,10 @@ struct VTKWriter
 end
 function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32)
     !isdir(dir) && mkdir(dir)
-    VTKWriter(fname,dir,paraview_collection(fname),attrib,[0])
+    VTKWriter(fname,dir,pvd_collection(fname),attrib,[0])
+end
+function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k)
+    VTKWriter(fname,dir,collection,attrib,[k])
 end
 """
     default_attrib()
@@ -40,7 +49,7 @@ _velocity(a::Simulation) = a.flow.u |> Array;
 _pressure(a::Simulation) = a.flow.p |> Array;
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 """
-    write!(w::vtkWriter, sim::Simulation)
+    write!(w::VTKWriter, sim::Simulation)
 
 Write the simulation data at time `sim_time(sim)` to a `vti` file and add the file path
 to the collection file.
@@ -56,9 +65,9 @@ function write!(w::VTKWriter,a::Simulation)
     w.collection[round(sim_time(a),digits=4)]=vtk
 end
 """
-    close(w::vtkWriter)
+    close(w::VTKWriter)
 
-closes the `vtkWriter`, this is required to write the collection file.
+closes the `VTKWriter`, this is required to write the collection file.
 """
 close(w::VTKWriter)=(vtk_save(w.collection);nothing)
 """

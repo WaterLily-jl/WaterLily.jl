@@ -108,7 +108,9 @@ export Simulation,sim_step!,sim_time,measure!
 # WriteVTKExt functions to be extended
 function vtkWriter end
 function write! end
-export vtkWriter, write!
+function default_attrib end
+function pvd_collection end
+export vtkWriter, write!, default_attrib, pvd_collection
 
 # ReadVTKExt functions to be extended
 function restart_sim! end
