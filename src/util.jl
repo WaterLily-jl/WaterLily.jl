@@ -1,7 +1,4 @@
 using KernelAbstractions: get_backend, @index, @kernel
-using CUDA: CuArray, launch_configuration
-using AMDGPU: ROCArray
-GPUArray = Union{CuArray,ROCArray}
 
 @inline CI(a...) = CartesianIndex(a...)
 """
@@ -45,7 +42,6 @@ size_u(u) = splitn(size(u))
 L₂ norm of array `a` excluding ghosts.
 """
 L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
-L₂(a::GPUArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
 
 """
     @inside <expr>
