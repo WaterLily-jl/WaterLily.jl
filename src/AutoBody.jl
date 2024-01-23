@@ -92,6 +92,11 @@ function reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op,x,t)
     Base.:∩ == op && d_b > d_a && return (sdf_b, map_b, d_b)
     return sdf_a, map_a, d_a
 end
+"""
+    d = sdf(a::Bodies,x,t)
+
+Compute distance for `Bodies` type.
+"""
 sdf(a::Bodies,x,t) = sdf_map_d(a.bodies,a.ops,x,t)[end]
 
 using ForwardDiff
