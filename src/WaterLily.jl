@@ -105,15 +105,11 @@ end
 
 export Simulation,sim_step!,sim_time,measure!
 
-# WriteVTKExt functions to be extended
-function vtkWriter end
-function write! end
-function default_attrib end
-function pvd_collection end
-export vtkWriter, write!, default_attrib, pvd_collection
+# WriteVTKExt export
+include("../ext/WaterLilyDefaults.jl")
+export vtkWriter, write!, default_attrib
 
-# ReadVTKExt functions to be extended
-function restart_sim! end
+# ReadVTKExt export
 export restart_sim!
 
 # Backward compatibility for extensions

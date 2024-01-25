@@ -41,7 +41,7 @@ function restart_sim!(a::Simulation;fname::String="WaterLily.pvd",attrib=default
     # return a writer if needed
     k = length(PVDFile(fname).timesteps)
     vtkWriter(split(fname,".pvd")[1],PVDFile(fname).directories[1],
-              pvd_collection(fname;append=true),attrib,k)
+              WaterLily.pvd_collection(fname;append=true),attrib,k)
 end
 
 end # module
