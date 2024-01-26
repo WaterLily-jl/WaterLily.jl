@@ -34,6 +34,7 @@ restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(N) = mod(N,2)==0 && N>4
+@inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 """
     MultiLevelPoisson{N,M}
 
@@ -47,9 +48,9 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
     perdir :: NTuple # direction of periodic boundary condition
-    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=4,perdir=(0,)) where T
+    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=Inf,perdir=(0,)) where T
         levels = Poisson[Poisson(x,L,z;perdir)]
-        while all(size(levels[end].x) .|> divisible) && length(levels) <= maxlevels
+        while divisible(levels[end]) && length(levels) <= maxlevels
             push!(levels,restrictML(levels[end]))
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
@@ -84,20 +85,20 @@ end
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(ml::MultiLevelPoisson;log=false,tol=1e-4,itmx=32)
+function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
     BC!(p.x;perdir=p.perdir)
-    residual!(p); r₂ = L∞(p)
-    log && (res = [r₂])
+    residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
         smooth!(p); r₂ = L∞(p)
-        log && push!(res,r₂)
         nᵖ+=1
-        @debug "MultiLevelPoissonSolver: iter=$nᵖ, r₂=$r₂"
+        @debug "MultiLevelPoissonSolver: levels=$(length(ml.levels)), iter=$nᵖ"
+        @debug "r∞=$r₂ (r₀=$r₀), r₂=$(L₂(p)) (r₀=$r₂₀)"
     end
+    (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
+    (nᵖ>4 && divisible(ml.levels[end])) && push!(ml.levels,restrictML(ml.levels[end])) # add a level if this was hard
     BC!(p.x;perdir=p.perdir)
     push!(ml.n,nᵖ);
-    log && return res
 end
