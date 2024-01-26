@@ -1,6 +1,7 @@
 using WaterLily
 using Test
 using StaticArrays
+using ReadVTK, WriteVTK
 using CUDA
 using AMDGPU
 using GPUArrays
@@ -197,7 +198,20 @@ end
 
     #test booleans
     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
+    @test all(measure(body1∪body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+
+    # test curvature, 2D and 3D
+    # A = ForwardDiff.Hessian(y->body1.sdf(y,0.0),[0.,0.])
+    @test all(WaterLily.curvature([1. 0.; 0. 1.]).≈(1.,0.))
+    @test all(WaterLily.curvature([2. 1. 0.; 1. 2. 1.; 0. 1. 2.]).≈(3.,10.))
+
+    # check that sdf functions are the same
+    for f ∈ arrays
+        p = zeros(4,5) |> f; measure_sdf!(p,body1)
+        I = CartesianIndex(2,3)
+        @test p[I]≈body1.sdf(loc(0,I),0.0)
+    end
 end
 
 function TGVsim(mem;T=Float32,perdir=(1,2))
@@ -238,7 +252,7 @@ end
         N = 8
         sim,jerk = acceleratingFlow(N;mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
-        # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jert*t dt = uₓ₀ + 0.5*jert*t^2
+        # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
         uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
@@ -267,6 +281,8 @@ import WaterLily: ×
         @test GPUArrays.@allowscalar p[J]==sqrt(sum(abs2,ω))
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test GPUArrays.@allowscalar p[J]≈ω[1]
+        apply!((x)->1,p)
+        @test WaterLily.L₂(p)≈prod(size(p).-2)
 
         N = 32
         p = zeros(N,N) |> f; u = zeros(N,N,2) |> f
@@ -317,5 +333,35 @@ end
         sim_step!(sim)
         @test sim.pois.n == [2,1]
         @test 1.2 > sim.flow.Δt[end] > 0.8
+    end
+end
+
+function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)
+    body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
+    D==2 && Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
+    Simulation(radius.*(6,4,1),(1,0,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
+end
+@testset "VTKExt.jl" begin
+    for D ∈ [2,3], mem ∈ arrays
+        # make a simulation
+        sim = sphere_sim(;D,mem);
+        # make a vtk writer
+        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
+        sim_step!(sim,1); write!(wr, sim); close(wr)
+
+        # re start the sim from a paraview file
+        restart = sphere_sim(;D,mem);
+        restart_sim!(restart;fname="test_vtk_reader_$D.pvd")
+
+        # check that the restart is the same as the original
+        @test all(sim.flow.p .== restart.flow.p)
+        @test all(sim.flow.u .== restart.flow.u)
+        @test all(sim.flow.μ₀ .== restart.flow.μ₀)
+        @test sim.flow.Δt[end] == restart.flow.Δt[end]
+        @test abs(sim_time(sim)-sim_time(restart))<1e-3
+
+        # clean-up
+        @test_nowarn rm("TEST_DIR",recursive=true)
+        @test_nowarn rm("test_vtk_reader_$D.pvd")
     end
 end

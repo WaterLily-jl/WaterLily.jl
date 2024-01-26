@@ -105,19 +105,29 @@ end
 
 export Simulation,sim_step!,sim_time,measure!
 
-# WriteVTKExt functions to be extended
+# default WriteVTK functions
 function vtkWriter end
 function write! end
+function default_attrib end
+function pvd_collection end
+# export
+export vtkWriter, write!, default_attrib
+
+# default ReadVTK functions
+function restart_sim! end
+# export
+export restart_sim!
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
-using Requires
+    using Requires
 end
 function __init__()
     @static if !isdefined(Base, :get_extension)
         @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/WaterLilyAMDGPUExt.jl")
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
+        @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
     end
 end
 
