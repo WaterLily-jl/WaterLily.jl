@@ -14,7 +14,7 @@ import Base: close
 """
     pvd_collection(fname;append=false)
 
-wrapper for a paraview_collection that returns a pvd file header
+Wrapper for a `paraview_collection` that returns a pvd file header
 """
 pvd_collection(fname;append=false) = paraview_collection(fname;append=append)
 """
@@ -41,7 +41,7 @@ end
 """
     default_attrib()
 
-return a `Dict` containing the `name`` and `bound_function` for the default attributes. 
+Returns a `Dict` containing the `name` and `bound_function` for the default attributes. 
 The `name` is used as the key in the `vtk` file and the `bound_function` generates the data
 to put in the file. With this approach, any variable can be save to the vtk file.
 """
@@ -67,7 +67,7 @@ end
 """
     close(w::VTKWriter)
 
-closes the `VTKWriter`, this is required to write the collection file.
+Closes the `VTKWriter`, this is required to write the collection file.
 """
 close(w::VTKWriter)=(vtk_save(w.collection);nothing)
 """
