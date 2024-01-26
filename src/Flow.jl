@@ -131,7 +131,6 @@ function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     b.x ./= dt
 end
 
-using BenchmarkTools
 """
     mom_step!(a::Flow,b::AbstractPoisson)
 
@@ -141,18 +140,11 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    # @btime conv_diff!($a.f,$a.u⁰,$a.σ,ν=$a.ν,perdir=$a.perdir)
-    @time conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    # @btime accelerate!($a.f,time($a),a.g)
-    # @btime BDIM!($a);
-    @time BDIM!(a);
-    # @btime BC!($a.u,$a.U,$a.exitBC,$a.perdir)
-    @time BC!(a.u,a.U,a.exitBC,a.perdir)
+    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    accelerate!(a.f,time(a),a.g)
+    BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
-    # @btime project!($a,$b);
-    @time project!(a,b);
-    @assert false
-    BC!(a.u,a.U,a.exitBC,a.perdir)
+    project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir)
     # corrector u → u¹
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,timeNext(a),a.g)
