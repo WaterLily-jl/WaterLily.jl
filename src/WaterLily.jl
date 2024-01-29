@@ -6,7 +6,6 @@ export L₂,BC!,@inside,inside,δ,apply!,loc
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
 
-using LoggingExtras
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
 

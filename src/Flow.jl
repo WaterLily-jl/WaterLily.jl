@@ -140,14 +140,12 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow,b::AbstractPoisson)
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    @debug "Predictor"
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,time(a),a.g)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir)
     # corrector u → u¹
-    @debug "Corrector"
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,timeNext(a),a.g)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir)
