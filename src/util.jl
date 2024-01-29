@@ -199,3 +199,17 @@ function BC!(a;perdir=(0,))
         end
     end
 end
+using LinearAlgebra: dot
+using FastGaussQuadrature: gausslegendre
+"""
+    integrate(f,a,b)
+
+Integrates a univariate function `f(γ)` from `a` to `b` using 10_000-point Gauss-Legendre quadrature.
+"""
+function integrate(f,a,b;N=10_000)
+    nodes, weights = gausslegendre(N)
+    # rescale from [-1,1] to [a,b]
+    nodes = (b-a).*(nodes.+1.)/2.
+    # integrate
+    (b-a).*dot(weights/2.,f.(nodes))
+end

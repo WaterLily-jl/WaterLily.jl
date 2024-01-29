@@ -30,6 +30,10 @@ arrays = setup_backends()
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
 
+    @test WaterLily.integrate(τ->1,0,1)≈1
+    @test WaterLily.integrate(τ->τ,0,1)≈1/2
+    @test WaterLily.integrate(τ->τ^2,0,1)≈1/3
+
     for f ∈ arrays
         p = zeros(4,5) |> f
         apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin
@@ -163,11 +167,13 @@ end
 
     # check applying acceleration
     N = 4
-    a = zeros(N,N,2)
-    WaterLily.accelerate!(a,1,nothing)
+    a = zeros(N,N,2); U = [0.,0.]
+    WaterLily.accelerate!(U,a,1,nothing)
     @test all(a .== 0)
-    WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t)
+    WaterLily.accelerate!(U,a,1,(i,t) -> i==1 ? t : 2*t)
     @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
+    # check that BC are integrated correctly
+    @test all(U.≈[0.5,1.])
 
     # Impulsive flow in a box
     U = (2/3, -1/3)
@@ -245,15 +251,15 @@ function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
     g(i,t) = i==1 ? t*jerk : 0
     return WaterLily.Simulation(
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
-    ),jerk
+    ),jerk,UScale
 end
 @testset "Flow.jl with increasing body force" begin
     for f ∈ arrays
         N = 8
-        sim,jerk = acceleratingFlow(N;mem=f)
+        sim,jerk,U₀ = acceleratingFlow(N;mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
-        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
+        uFinal = U₀ + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4
