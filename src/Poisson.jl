@@ -155,13 +155,13 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 """
 function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
     BC!(p.x;perdir=p.perdir)
-    residual!(p); r₂ = L∞(p)
+    residual!(p); r₂ = L₂(p)
     log && (res = [r₂])
     nᵖ=0
-    while nᵖ<itmx
-        smooth!(p); r₂ = L∞(p)
+    while r₂>tol && nᵖ<itmx
+        smooth!(p); r₂ = L₂(p)
         log && push!(res,r₂)
-        nᵖ+=1; r₂<tol && break
+        nᵖ+=1
     end
     BC!(p.x;perdir=p.perdir)
     push!(p.n,nᵖ)
