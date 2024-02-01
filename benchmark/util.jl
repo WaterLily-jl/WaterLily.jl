@@ -33,5 +33,6 @@ function add_to_suite!(suite, sim_function; p=(3,4,5), s=100, ft=Float32, backen
     end
 end
 
-git_hash = read(`git rev-parse --short HEAD`, String) |> x -> strip(x, '\n')
+waterlily_dir = get(ENV, "WATERLILY_ROOT", "")
+git_hash = read(`git -C $waterlily_dir rev-parse --short HEAD`, String) |> x -> strip(x, '\n')
 getf(str) = eval(Symbol(str))
