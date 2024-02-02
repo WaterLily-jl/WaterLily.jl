@@ -1,5 +1,4 @@
 using WaterLily
-# using CUDA
 function circle(m,n;a0=0.5,Re=250,U=1,f=Array)
     # define a circle at the domain center
     radius = n/8
@@ -9,5 +8,4 @@ function circle(m,n;a0=0.5,Re=250,U=1,f=Array)
     Simulation((m,n), Ut, radius; U, ν=U*radius/Re, body, mem=f)
 end
 include("TwoD_plots.jl")
-sim = circle(2*196,196)
-sim_gif!(sim,duration=20,clims=(-8,8),plotbody=true)
+sim_gif!(circle(2*196,196),duration=20,clims=(-8,8),plotbody=true)

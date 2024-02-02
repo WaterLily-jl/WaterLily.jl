@@ -250,15 +250,15 @@ function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
     g(i,t) = i==1 ? t*jerk : 0
     return WaterLily.Simulation(
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
-    ),jerk,UScale
+    ),jerk
 end
 @testset "Flow.jl with increasing body force" begin
     for f ∈ arrays
         N = 8
-        sim,jerk,U₀ = acceleratingFlow(N;mem=f)
+        sim,jerk = acceleratingFlow(N;mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
-        uFinal = U₀ + 0.5*jerk*WaterLily.time(sim)^2
+        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4

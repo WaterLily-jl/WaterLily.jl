@@ -59,7 +59,7 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
     Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u)) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
-using EllipsisNotation #, Setfield
+using EllipsisNotation
 """
     accelerate!(r,t,g)
 
