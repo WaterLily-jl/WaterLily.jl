@@ -69,10 +69,10 @@ If `g ≠ nothing`, then `g(i,t)=dUᵢ/dt`.
 accelerate!(r,t,g::Function,::Tuple) = for i ∈ 1:last(size(r))
     r[..,i] .+= g(i,t)
 end
-accelerate!(r,t,::Nothing,U::Function) = for i ∈ 1:last(size(r))
+accelerate!(r,t,g::Nothing,U::Function) = for i ∈ 1:last(size(r))
     r[..,i] .+= ForwardDiff.derivative(τ->U(i,τ),t)
 end
-accelerate(r,t,::Function,::Function) = for i ∈ 1:last(size(r))
+accelerate!(r,t,g::Function,U::Function) = for i ∈ 1:last(size(r))
     r[..,i] .+= g(i,t) + ForwardDiff.derivative(τ->U(i,τ),t)
 end
 accelerate!(r,t,::Nothing,::Tuple) = nothing
@@ -104,7 +104,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     ν :: T # kinematic viscosity
     g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
     exitBC :: Bool # Convection exit
-    perdir :: NTuple # direction of periodic direction
+    perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
                   uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
         Ng = N .+ 2

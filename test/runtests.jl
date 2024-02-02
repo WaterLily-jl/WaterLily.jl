@@ -173,7 +173,9 @@ end
     @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
     WaterLily.accelerate!(a,1,nothing,(i,t) -> i==1 ? -t : -2*t)
     @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-
+    WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t,(i,t) -> i==1 ? -t : -2*t)
+    @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
+    
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
