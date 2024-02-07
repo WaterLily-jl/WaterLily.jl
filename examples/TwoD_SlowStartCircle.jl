@@ -5,7 +5,7 @@ function circle(m,n;a0=0.5,Re=250,U=1,f=Array)
     radius = n/8
     body = AutoBody((x,t)->√sum(abs2, x .- (m/4,n/2)) - radius)
     # define time-varying velocity boundary conditions
-    Ut(i,t::T) where {T} = i==1 ? convert(T,a0*t+(1.0+tanh(31.4*(t-1.0/a0)))/2.0*(1-a0*t)) : convert(T,0.0)
+    Ut(i,t::T) where T = i==1 ? convert(T,a0*t+(1.0+tanh(31.4*(t-1.0/a0)))/2.0*(1-a0*t)) : zero(T)
     Simulation((m,n), Ut, radius; U, ν=U*radius/Re, body, mem=f)
 end
 include("TwoD_plots.jl")
