@@ -217,7 +217,7 @@ end
     for f ∈ arrays
         p = zeros(4,5) |> f; measure_sdf!(p,body1)
         I = CartesianIndex(2,3)
-        @test p[I]≈body1.sdf(loc(0,I),0.0)
+        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I),0.0)
     end
 end
 
