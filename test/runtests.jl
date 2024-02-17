@@ -203,10 +203,21 @@ end
     @test all(measure(body2,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
     @test all(measure(body2,[1.,-1.,-1.],1.).≈(0.,[1.,0.,0.],[-2.,-2.,-2.]))
 
-    #test booleans
+    # test booleans
     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1∪body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+
+    # tests for Bodies
+    @test all(measure(Bodies([body1,body2]),[-√2.,-√2.],1.).≈measure(body1+body2,[-√2.,-√2.],1.))
+    @test all(measure(Bodies([body1,body2],-),[-√2.,-√2.],1.).≈measure(body1-body2,[-√2.,-√2.],1.))
+
+    radius = [1.0, 0.75, 0.5, 0.25]
+    circles = [(x,t) -> √sum(abs2,x)-r for r ∈ radius]
+    body = AutoBody(circles[1])-AutoBody(circles[2])+AutoBody(circles[3])-AutoBody(circles[4])
+    bodies = Bodies(AutoBody[AutoBody(c) for c ∈ circles], [-,+,-])
+    xy = rand(2)
+    @test all(measure(body, xy, 1.).≈measure(bodies, xy, 1.))
 
     # test curvature, 2D and 3D
     # A = ForwardDiff.Hessian(y->body1.sdf(y,0.0),[0.,0.])
