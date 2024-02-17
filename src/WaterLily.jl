@@ -24,22 +24,25 @@ export AutoBody,Bodies,measure,sdf,+,-
 include("Metrics.jl")
 
 """
-    Simulation(dims::NTuple, u_BC::NTuple, L::Number;
-               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1,
-               uλ::Function=(i,x)->u_BC[i],
+    Simulation(dims::NTuple, u_BC::Union{NTuple,Function}, L::Number;
+               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1, perdir=(1,)
+               uλ::nothing, g=nothing, exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array)
 
 Constructor for a WaterLily.jl simulation:
 
   - `dims`: Simulation domain dimensions.
-  - `u_BC`: Simulation domain velocity boundary conditions, `u_BC[i]=uᵢ, i=eachindex(dims)`.
+  - `u_BC`: Simulation domain velocity boundary conditions, either a 
+            tuple `u_BC[i]=uᵢ, i=eachindex(dims)`, or a time-varying function `f(i,t)`
   - `L`: Simulation length scale.
   - `U`: Simulation velocity scale.
   - `Δt`: Initial time step.
   - `ν`: Scaled viscosity (`Re=UL/ν`).
   - `g`: Domain acceleration, `g(i,t)=duᵢ/dt`
   - `ϵ`: BDIM kernel width.
+  - `perdir`: Domain periodic boundary condition in the `(i,)` direction.
+  - `exitBC`: Convective exit boundary condition in the `i=1` direction.
   - `uλ`: Function to generate the initial velocity field.
   - `body`: Immersed geometry.
   - `T`: Array element type.
@@ -54,10 +57,15 @@ struct Simulation
     flow :: Flow
     body :: AbstractBody
     pois :: AbstractPoisson
-    function Simulation(dims::NTuple{N}, u_BC::NTuple{N}, L::Number;
-                        Δt=0.25, ν=0., g=nothing, U=√sum(abs2,u_BC), ϵ=1, perdir=(0,),
-                        uλ::Function=(i,x)->u_BC[i], exitBC=false,
-                        body::AbstractBody=NoBody(),T=Float32,mem=Array) where N
+    function Simulation(dims::NTuple{N}, u_BC, L::Number;
+                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(0,),
+                        uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
+                        T=Float32, mem=Array) where N
+        @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
+        @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
+        isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,T(0)),N)).==T) "`u_BC` is not type stable"
+        uλ = isnothing(uλ) ? ifelse(isa(u_BC,Function),(i,x)->u_BC(i,0.),(i,x)->u_BC[i]) : uλ
+        U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
         flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
@@ -105,19 +113,29 @@ end
 
 export Simulation,sim_step!,sim_time,measure!
 
-# WriteVTKExt functions to be extended
+# default WriteVTK functions
 function vtkWriter end
 function write! end
+function default_attrib end
+function pvd_collection end
+# export
+export vtkWriter, write!, default_attrib
+
+# default ReadVTK functions
+function restart_sim! end
+# export
+export restart_sim!
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
-using Requires
+    using Requires
 end
 function __init__()
     @static if !isdefined(Base, :get_extension)
         @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/WaterLilyAMDGPUExt.jl")
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
+        @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
     end
 end
 

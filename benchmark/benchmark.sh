@@ -1,5 +1,8 @@
 #!/bin/bash
 
+THIS_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+export WATERLILY_ROOT=$(dirname "${THIS_DIR}")
+
 # Utils
 join_array_comma () {
     arr=("$@")
@@ -23,16 +26,16 @@ julia_version () {
     echo "${julia_v[2]}"
 }
 
-# Update project environment with new Julia version
+# Update project environment with new Julia version: Mark WaterLily as a development packag, then update dependencies and precompile.
 update_environment () {
     echo "Updating environment to Julia $version"
-    # Mark WaterLily as a development package. Then update dependencies and precompile.
-    julia +${version} --project -e "using Pkg; Pkg.develop(PackageSpec(path=dirname(@__DIR__))); Pkg.update();"
+    julia +${version} --project=$THIS_DIR -e "using Pkg; Pkg.develop(PackageSpec(path=get(ENV, \"WATERLILY_ROOT\", \"\"))); Pkg.update();"
 }
 
 run_benchmark () {
-    echo "Running: julia +${version} --project --startup-file=no $args"
-    julia +${version} --project --startup-file=no $args
+    full_args=(+${version} --project=${THIS_DIR} --startup-file=no $args)
+    echo "Running: julia ${full_args[@]}"
+    julia "${full_args[@]}"
 }
 
 # Print benchamrks info
@@ -140,11 +143,11 @@ for version in "${VERSIONS[@]}" ; do
     for backend in "${BACKENDS[@]}" ; do
         if [ "${backend}" == "Array" ]; then
             for thread in "${THREADS[@]}" ; do
-                args="-t $thread benchmark.jl --backend=$backend $args_cases"
+                args="-t $thread ${THIS_DIR}/benchmark.jl --backend=$backend $args_cases"
                 run_benchmark
             done
         else
-            args="benchmark.jl --backend=$backend $args_cases"
+            args="${THIS_DIR}/benchmark.jl --backend=$backend $args_cases"
             run_benchmark
         fi
     done
