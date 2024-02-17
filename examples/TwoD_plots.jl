@@ -15,7 +15,7 @@ end
 addbody(x,y;c=:black) = Plots.plot!(Shape(x,y), c=c, legend=false)
 function body_plot!(sim;levels=[0],lines=:black,R=inside(sim.flow.p))
     WaterLily.measure_sdf!(sim.flow.σ,sim.body,WaterLily.time(sim))
-    contour!(sim.flow.σ[R]';levels,lines)
+    contour!(sim.flow.σ[R]'|>Array;levels,lines)
 end
 
 function sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
@@ -24,7 +24,7 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
     @time @gif for tᵢ in range(t₀,t₀+duration;step)
         sim_step!(sim,tᵢ;remeasure)
         @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-        flood(sim.flow.σ[R]; kv...)
+        flood(sim.flow.σ[R]|>Array; kv...)
         plotbody && body_plot!(sim)
         verbose && println("tU/L=",round(tᵢ,digits=4),
             ", Δt=",round(sim.flow.Δt[end],digits=3))
