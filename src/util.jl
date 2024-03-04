@@ -101,7 +101,7 @@ macro loop(args...)
             end
             $kern1(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
             # $kern1(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
-    elseif typeof(get_backend($(sym[1]))) <: CPU
+        elseif typeof(get_backend($(sym[1]))) <: CPU
             function $kern2($(rep.(sym)...)) # replace composite arguments
                 @batch for $I ∈ $R
                     @fastmath @inbounds $ex
