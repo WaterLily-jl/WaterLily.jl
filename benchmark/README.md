@@ -38,6 +38,6 @@ julia --project compare.jl benchmark_1.json benchmark_2.json benchmark_3.json ..
 ```
 Note that each case benchmarks should be compared separately. If a single case is benchmarked, and all the JSON files in the current directory belong to it, one can simply run (eg. for the `tgv` benchmark):
 ```sh
-julia --project compare.jl $(find . -name "tgv*.json" -printf "%T@ %Tc %p\n" | sort -n | awk '{print $8}') --sort=1
+julia --project compare.jl $(find . -name "tgv*.json" -printf "%T@ %Tc %p\n" | sort -n | awk '{print $7}') --sort=1
 ```
 which would take all the `tgv` JSON files, sort them by creation time, and pass them as arguments to the `compare.jl` program. Finally, note that the first benchmark passed as argument is taken as reference to compute speedups of other benchmarks: `speedup_x = time(benchmark_1) / time(benchmark_x)`. The `--sort=<1 to 8>` argument can also be used when running the comparison. It will sort the benchmark table rows by the values corresponding to the column index passed as argument. `--sort=1` corresponds to sorting by backend. The baseline row is highlighted in blue, and the fastest run in a table is highlighted in green.
