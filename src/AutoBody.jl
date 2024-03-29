@@ -41,15 +41,15 @@ sdf(body::AutoBody,x,t) = body.sdf(x,t)
 """
     Bodies(bodies, ops::AbstractVector)
 
-  - `bodies::Vector{AutoBody}`: Vector of AutoBody
-  - `ops::Vector{Function}`: Vector of operators for the superposition of multiple AutoBody
+  - `bodies::Vector{AutoBody}`: Vector of `AutoBody`
+  - `ops::Vector{Function}`: Vector of operators for the superposition of multiple `AutoBody`s
 
 Superposes multiple `body::AutoBody` objects together according to the operators `ops`.
 While this can be manually performed by the operators implemented for `AutoBody`, adding too many
-bodies can yield a recursion problem of the `sdf and `map` functions not fitting in the stack.
-This type implements the superposition of bodies by iteration instead of recursion, and the reduction of the sdf and map
+bodies can yield a recursion problem of the `sdf` and `map` functions not fitting in the stack.
+This type implements the superposition of bodies by iteration instead of recursion, and the reduction of the `sdf` and `map`
 functions is done on the `mesure` function, and not before.
-The operators vector `ops` specifies the specific operation to call between two consecutive bodies in the vector of `bodies`.
+The operators vector `ops` specifies the operation to call between two consecutive `AutoBody`s in the `bodies` vector.
 Note that `+` (or the alias `∪`) is the only operation supported between `Bodies`.
 """
 struct Bodies <: AbstractBody
@@ -57,7 +57,7 @@ struct Bodies <: AbstractBody
     ops::Vector{Function}
     function Bodies(bodies, ops::AbstractVector)
         all(x -> x==Base.:+ || x==Base.:- || x==Base.:∩ || x==Base.:∪, ops) &&
-            ArgumentError("Operations array not supported. Use only `ops ∈ [+,-,∩,∪]`")
+            ArgumentError("Operations array `ops` not supported. Use only `ops ∈ [+,-,∩,∪]`")
         length(bodies) != length(ops)+1 && ArgumentError("length(bodies) != length(ops)+1")
         new(bodies,ops)
     end
@@ -70,23 +70,22 @@ Base.:∪(a::Bodies, b::Bodies) = a+b
 """
     sdf_map_d(ab::Bodies,x,t)
 
-Returns the `sdf` and `map` functions, and the distance `d` (`d=sdf(x,t)`) for `::Bodies`.
-If bodies are not actual `::AutoBody`, it recursively iterates in the nested bodies of the vector.
+Returns the `sdf` and `map` functions, and the distance `d` (`d=sdf(x,t)`) for the `Bodies` type.
 """
 function sdf_map_d(bodies,ops,x,t)
     sdf, map, d = bodies[1].sdf, bodies[1].map, bodies[1].sdf(x,t)
     for i ∈ eachindex(bodies)[begin+1:end]
         sdf2, map2, d2 = bodies[i].sdf, bodies[i].map, bodies[i].sdf(x,t)
-        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops[i-1],x,t)
+        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops[i-1])
     end
     return sdf, map, d
 end
 """
     reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op,x,t)
 
-Returns `sdf`, `map`, and `sdf(x,t)` between two (unpacked) `AutoBody`s.
+Reduces two different `sdf` and `map` functions, and `d` value.
 """
-function reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op,x,t)
+function reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op)
     (Base.:+ == op || Base.:∪ == op) && d_b < d_a && return (sdf_b, map_b, d_b)
     Base.:- == op && -d_b > d_a && return ((y,u)->-sdf_b(y,u), map_b, -d_b)
     Base.:∩ == op && d_b > d_a && return (sdf_b, map_b, d_b)
@@ -95,7 +94,7 @@ end
 """
     d = sdf(a::Bodies,x,t)
 
-Compute distance for `Bodies` type.
+Computes distance for `Bodies` type.
 """
 sdf(a::Bodies,x,t) = sdf_map_d(a.bodies,a.ops,x,t)[end]
 
