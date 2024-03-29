@@ -154,7 +154,7 @@ body = AutoBody(sdf, map)
 Simulation((512,384), (1,0), 32; body, perdir=(2,))
 ```
 
-Additionally, the flag `exitBC=true` can be passed to the `Simulation` function to enable convective boundary conditions. This will apply a 1D convective exit in the __`x`__ direction (there is not way to change this at the moment). The `exitBC` flag is set to `false` by default.
+Additionally, the flag `exitBC=true` can be passed to the `Simulation` function to enable convective boundary conditions. This will apply a 1D convective exit in the __`x`__ direction (there is not way to change this at the moment). The `exitBC` flag is set to `false` by default. In this case, the boundary condition is set to the corresponding value of the `u_BC` vector you specified when constructing the `Simulation`.
 
 ```julia
 using WaterLily
@@ -163,7 +163,7 @@ using WaterLily
 body = AutoBody(sdf, map)
 
 # y-periodic boundary conditions
-Simulation((512,384), (1,0), 32; body, exitBC=true)
+Simulation((512,384), u_BC=(1,0), L=32; body, exitBC=true)
 ```
 
 
