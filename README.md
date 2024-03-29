@@ -234,7 +234,7 @@ write!(writer, sim)
 # don't forget to close the file
 close(writer)
 ```
-Internally, this function read the last file in the `.pvd` file and use that to set the `velocity` and `pressure` field in the simulation. The `sim_time` is also set to the last value saved in the `.pvd` file. The function also return a `vtkwriter` that will append the new data to the file used to restart the simulation. __Note__ the `sim` that will be filled must be identical to the one saved to the file for this restart to work, that is, the same size, same body, etc.
+Internally, this function reads the last file in the `.pvd` file and use that to set the `velocity` and `pressure` fields in the simulation. The `sim_time` is also set to the last value saved in the `.pvd` file. The function also returns a `vtkwriter` that will append the new data to the file used to restart the simulation. __Note__ the `sim` that will be filled must be identical to the one saved to the file for this restart to work, that is, the same size, same body, etc.
 
 ## Multi-threading and GPU backends
 
