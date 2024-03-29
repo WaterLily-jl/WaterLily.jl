@@ -134,7 +134,7 @@ The `Ut` function is used to define the time-varying velocity field. In this exa
 
 ![periodic cylinder](examples/periodic.gif)
 
-In addition to the standard free-slip (or reflective) boundary conditions, WaterLily also supports periodic boundary conditions. The following example demonstrates how to set up a `Simulation` with periodic boundary conditions in the `y`direction.
+In addition to the standard free-slip (or reflective) boundary conditions, WaterLily also supports periodic boundary conditions. The following example demonstrates how to set up a `Simulation` with periodic boundary conditions in the "y" direction.
 
 ```julia
 using WaterLily,StaticArrays
