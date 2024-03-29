@@ -211,7 +211,7 @@ writer = vtkWriter("advanced_writer"; attrib=custom_attrib)
 ...
 close(writer)
 ```
-The function that are passed to the `attrib` (custom attributes) must follow the same structure as what is shown in this example, that is, given a `Simulation`, return a N-dimensional (scalar or vector) field. The `vtkwriter` function will automatically write the data to a `.pvd` file, which can be read by Paraview. The prototype for the `vtkwriter` function is:
+The functions that are passed to the `attrib` (custom attributes) must follow the same structure as what is shown in this example, that is, given a `Simulation`, return a N-dimensional (scalar or vector) field. The `vtkwriter` function will automatically write the data to a `.pvd` file, which can be read by Paraview. The prototype for the `vtkwriter` function is:
 ```julia
 # prototype vtk writer function
 custom_vtk_function(a::Simulation) = ... |> Array
