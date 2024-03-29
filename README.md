@@ -198,7 +198,7 @@ _body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body, WaterLily.time(a));
 lamda(a::Simulation) = (@inside a.flow.σ[I] = WaterLily.λ₂(I, a.flow.u);
                         a.flow.σ |> Array;)
                         
-# this maps what to write to the name in the file
+# this maps field names to values in the file
 custom_attrib = Dict(
     "Velocity" => velocity,
     "Pressure" => pressure,
