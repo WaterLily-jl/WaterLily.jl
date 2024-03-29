@@ -169,7 +169,7 @@ Simulation((512,384), (1,0), 32; body, exitBC=true)
 
 ### [Writing to a VTK file](https://github.com/weymouth/WaterLily.jl/blob/master/examples/ThreeD_cylinder_vtk_restart.jl)
 
-The following example demonstrates how to write simulation data to a `.pvd` file using the `WriteVTK` package and the WaterLily `vtkwriter` function. The simples writer can be instantiated with
+The following example demonstrates how to write simulation data to a `.pvd` file using the `WriteVTK` package and the WaterLily `vtkwriter` function. The simplest writer can be instantiated with
 
 ```julia
 using WaterLily,WriteVTK
