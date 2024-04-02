@@ -1,79 +1,102 @@
 @inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 @inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
-
-function restrictML(b::AbstractArray{T}) where T
-    N,n = size_u(b)
-    a = zeros(T,map(i->1+i÷2,N)...,n)
-    restrictL!(a,b)
-    Poisson(a)
-end
-function restrictL!(a,b)
-    N,n = size_u(a)
-    for i ∈ 1:n
-        @loop a[I,i] = 0.5sum(@inbounds(b[J,i]) for J ∈ up(I,i)) over I ∈ inside(N)
+@fastmath @inline function restrict(I::CartesianIndex,b)
+    s = zero(eltype(b))
+    for J ∈ up(I)
+     s += @inbounds(b[J])
     end
+    return s
 end
-restrict!(a,b) = @inside a[I] = sum(@inbounds(b[J]) for J ∈ up(I))
+@fastmath @inline function restrictL(I::CartesianIndex,i,b)
+    s = zero(eltype(b))
+    for J ∈ up(I,i)
+     s += @inbounds(b[J,i])
+    end
+    return 0.5s
+end
+
+function restrictML(b::Poisson)
+    N,n = size_u(b.L)
+    Na = map(i->1+i÷2,N)
+    aL = similar(b.L,(Na...,n)); fill!(aL,0)
+    ax = similar(b.x,Na); fill!(ax,0)
+    restrictL!(aL,b.L,perdir=b.perdir)
+    Poisson(ax,aL,copy(ax);b.perdir)
+end
+function restrictL!(a::AbstractArray{T},b;perdir=(0,)) where T
+    Na,n = size_u(a)
+    for i ∈ 1:n
+        @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
+    end
+    BC!(a,zeros(SVector{n,T}),false,perdir)  # correct μ₀ @ boundaries
+end
+restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(N) = mod(N,2)==0 && N>4
+@inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 """
     MultiLevelPoisson{N,M}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
 The only variable is `levels`, a vector of nested `Poisson` systems.
 """
-struct MultiLevelPoisson{N,M,T} <: AbstractPoisson{N,M,T}
-    levels :: Vector{Poisson{N,M,T}}
+struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+    x::S
+    L::V
+    z::S
+    levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
-    function MultiLevelPoisson(L::AbstractArray{T,n}) where {T,n}
-        levels = [Poisson(L)]
-        while all(size(levels[end].x) .|> divisible)
-            push!(levels,restrictML(levels[end].L))
+    perdir :: NTuple # direction of periodic boundary condition
+    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=Inf,perdir=(0,)) where T
+        levels = Poisson[Poisson(x,L,z;perdir)]
+        while divisible(levels[end]) && length(levels) <= maxlevels
+            push!(levels,restrictML(levels[end]))
         end
-        text = "MultiLevelPoisson requires size=a2ⁿ, where a<31, n>2"
-        @assert (length(levels)>2 && all(size(levels[end].x).<31)) text
-        new{n-1,n,T}(levels,[])
+        text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
+        @assert (length(levels)>2) text
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
-function update!(ml::MultiLevelPoisson,L)
-    update!(ml.levels[1],L)
+
+function update!(ml::MultiLevelPoisson)
+    update!(ml.levels[1])
     for l ∈ 2:length(ml.levels)
-        restrictL!(ml.levels[l].L,ml.levels[l-1].L)
-        set_diag!(ml.levels[l])
+        restrictL!(ml.levels[l].L,ml.levels[l-1].L,perdir=ml.levels[l-1].perdir)
+        update!(ml.levels[l])
     end
 end
 
 function Vcycle!(ml::MultiLevelPoisson;l=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
-    GS!(fine,it=0)
+    Jacobi!(fine)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
-    GS!(coarse,it=2)
+    smooth!(coarse)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
+    BC!(fine.ϵ;perdir=fine.perdir)
     increment!(fine)
 end
 
-mult(ml::MultiLevelPoisson,x) = mult(ml.levels[1],x)
+mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
+residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(x,ml::MultiLevelPoisson,b;log=false,tol=1e-3,itmx=32)
+function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
-    @assert size(p.x)==size(x)
-    p.x .= x
-    residual!(p,b); r₂ = L₂(p.r)
-    log && (res = [r₂])
+    BC!(p.x;perdir=p.perdir)
+    residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
-        GS!(p,it=2); r₂ = L₂(p.r)
-        log && push!(res,r₂)
+        smooth!(p); r₂ = L∞(p)
         nᵖ+=1
     end
-    x .= p.x
-    push!(ml.n,nᵖ)
-    log && return res
+    (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
+    (nᵖ>4 && divisible(ml.levels[end])) && push!(ml.levels,restrictML(ml.levels[end])) # add a level if this was hard
+    BC!(p.x;perdir=p.perdir)
+    push!(ml.n,nᵖ);
 end

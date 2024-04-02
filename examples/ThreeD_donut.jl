@@ -1,32 +1,35 @@
 using WaterLily
-using LinearAlgebra: norm2
-include("ThreeD_Plots.jl")
-
-function donut(p=6,Re=1e3)
+using StaticArrays
+function donut(p=6;Re=1e3,mem=Array,U=1)
     # Define simulation size, geometry dimensions, viscosity
     n = 2^p
-    center,R,r = [n/2,n/2,n/2], n/4, n/16
-    ν = R/Re
-    @show R,ν
+    center,R,r = SA[n/2,n/2,n/2], n/4, n/16
+    ν = U*R/Re
 
     # Apply signed distance function for a torus
+    norm2(x) = √sum(abs2,x)
     body = AutoBody() do xyz,t
         x,y,z = xyz - center
-        norm2([x,norm2([y,z])-R])-r
+        norm2(SA[x,norm2(SA[y,z])-R])-r
     end
 
-    # Initialize simulation
-    Simulation((2n+2,n+2,n+2),[1.,0.,0.],R;ν,body),center
+    # Initialize simulation and return center for flow viz
+    Simulation((2n,n,n),(U,0,0),R;ν,body,mem),center
 end
 
-function ω_θ_data(sim)
-    @inside sim.flow.σ[I] = WaterLily.ω_θ(I,[1,0,0],center,sim.flow.u)*sim.L/sim.U
-    @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
-end
-function body_data(sim)
-    @inside sim.flow.σ[I] = sum(sim.flow.μ₀[I,i]+sim.flow.μ₀[I+δ(i,I),i] for i=1:3)
-    @view sim.flow.σ[2:end-1,2:end-1,2:end-1]
+import CUDA
+@assert CUDA.functional()
+sim,center = donut(mem=CUDA.CuArray);
+#sim,center = donut(mem=Array); # if you don't have a CUDA GPU
+
+dat = sim.flow.σ[inside(sim.flow.σ)] |> Array;
+function ω_θ!(dat,sim,center=center)
+    dt, a = sim.L/sim.U, sim.flow.σ
+    @inside a[I] = WaterLily.ω_θ(I,(1,0,0),center,sim.flow.u)*dt
+    copyto!(dat,a[inside(a)]) 
 end
 
-sim,center = donut()
-sim,fig = contour_video!(sim,ω_θ_data,body_data,name="donut.mp4",duration=10)
+include("ThreeD_Plots.jl")
+@time makie_video!(sim,dat,ω_θ!,name="donut.mp4",duration=10,step=0.25) do obs
+    contour(obs, levels=[-5,5], colormap=:balance)
+end

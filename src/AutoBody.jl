@@ -1,99 +1,131 @@
 """
-    AutoBody(sdf,map=(x,t)->x) <: AbstractBody
+    AutoBody(sdf,map=(x,t)->x; compose=true) <: AbstractBody
 
-    - sdf(x::AbstractVector,t::Real)::Real: signed distance function
-    - map(x::AbstractVector,t::Real)::AbstractVector: coordinate mapping function
+  - `sdf(x::AbstractVector,t::Real)::Real`: signed distance function
+  - `map(x::AbstractVector,t::Real)::AbstractVector`: coordinate mapping function
+  - `compose::Bool=true`: Flag for composing `sdf=sdf∘map`
 
-Define a geometry by its `sdf` and optional coordinate `map`. All other
-properties are determined using Automatic Differentiation. Note: the `map`
-is composed automatically if provided, ie `sdf(x,t) = sdf(map(x,t),t)`.
+Implicitly define a geometry by its `sdf` and optional coordinate `map`. Note: the `map`
+is composed automatically if `compose=true`, i.e. `sdf(x,t) = sdf(map(x,t),t)`.
+Both parameters remain independent otherwise. It can be particularly heplful to set
+`compose=false` when adding mulitple bodies together to create a more complex one.
 """
 struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
     map::F2
-    function AutoBody(sdf,map=(x,t)->x)
-        comp(x,t) = sdf(map(x,t),t)
+    function AutoBody(sdf, map=(x,t)->x; compose=true)
+        comp(x,t) = compose ? sdf(map(x,t),t) : sdf(x,t)
         new{typeof(comp),typeof(map)}(comp, map)
     end
 end
 
-"""
-    measure!(flow::Flow, body::AutoBody; t=0, ϵ=1)
-
-Uses `body.sdf` and `body.map` to fill the arrays:
-
-    `flow.μ₀`, Zeroth kernel moment
-    `flow.μ₁`, First kernel moment scaled by the body normal
-    `flow.V`,  Body velocity
-    `flow.σᵥ`,  Body velocity divergence scaled by `μ₀-1`
-
-at time `t` using an immersion kernel of size `ϵ`.
-See [Maertens & Weymouth](https://eprints.soton.ac.uk/369635/)
-"""
-function measure!(a::Flow{N},body::AutoBody;t=0,ϵ=1) where N
-    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0; a.σᵥ .= 0
-    sdf = a.σ
-    apply_sdf!(x->body.sdf(x,t), sdf)   # distance to cell center
-    for I ∈ inside(a.p)
-        if abs(sdf[I])<ϵ+1   # near interface
-            a.σᵥ[I] = μ₀(sdf[I],ϵ)-1
-            # measure properties and fill arrays at face (i,I)
-            for i ∈ 1:N
-                dᵢ,n,V = measure(body,loc(i,I),t)
-                a.V[I,i] = V[i]
-                a.μ₀[I,i] = μ₀(dᵢ,ϵ)
-                a.μ₁[I,i,:] = μ₁(dᵢ,ϵ).*n
-            end
-        elseif sdf[I]<0      # completely inside body
-            a.μ₀[I,:] .= 0
-            a.σᵥ[I] = -1
-        end
-    end
-    @inside a.σᵥ[I] = a.σᵥ[I]*div(I,a.V) # scaled divergence
-    BC!(a.μ₀,zeros(SVector{N}))
+function Base.:+(a::AutoBody, b::AutoBody)
+    map(x,t) = ifelse(a.sdf(x,t)<b.sdf(x,t),a.map(x,t),b.map(x,t))
+    sdf(x,t) = min(a.sdf(x,t),b.sdf(x,t))
+    AutoBody(sdf,map,compose=false)
 end
+function Base.:∩(a::AutoBody, b::AutoBody)
+    map(x,t) = ifelse(a.sdf(x,t)>b.sdf(x,t),a.map(x,t),b.map(x,t))
+    sdf(x,t) = max(a.sdf(x,t),b.sdf(x,t))
+    AutoBody(sdf,map,compose=false)
+end
+Base.:∪(x::AutoBody, y::AutoBody) = x+y
+Base.:-(x::AutoBody) = AutoBody((d,t)->-x.sdf(d,t),x.map,compose=false)
+Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 
-function apply_sdf!(f,a,margin=2,stride=1)
-    # strided index and signed distance function
-    @inline J(I) = stride*I+oneunit(I)
-    @inline sdf(I) = f(WaterLily.loc(0,J(I)) .- (stride-1)/2)
+"""
+    d = sdf(body::AutoBody,x,t) = body.sdf(x,t)
+"""
+sdf(body::AutoBody,x,t) = body.sdf(x,t)
 
-    # if the strided array is indivisible, fill it using the sdf 
-    dims = (size(a) .-2 ) .÷ stride
-    if sum(mod.(dims,2)) != 0
-        @loop a[J(I)] = sdf(I) over I ∈ CartesianIndices(dims)
-    
-    # if not, fill an array with twice the stride first
-    else    
-        apply_sdf!(f,a,margin,2stride)
+"""
+    Bodies(bodies, ops::AbstractVector)
 
-    # and only improve the values within a margin of sdf=0
-        tol = stride*(√length(dims)+margin)
-        @loop (d = @inbounds a[J(I)+stride*CI(mod.(I.I,2))]; 
-               a[J(I)] = abs(d)<tol ? sdf(I) : d) over I ∈ CartesianIndices(dims)
+  - `bodies::Vector{AutoBody}`: Vector of `AutoBody`
+  - `ops::Vector{Function}`: Vector of operators for the superposition of multiple `AutoBody`s
+
+Superposes multiple `body::AutoBody` objects together according to the operators `ops`.
+While this can be manually performed by the operators implemented for `AutoBody`, adding too many
+bodies can yield a recursion problem of the `sdf` and `map` functions not fitting in the stack.
+This type implements the superposition of bodies by iteration instead of recursion, and the reduction of the `sdf` and `map`
+functions is done on the `mesure` function, and not before.
+The operators vector `ops` specifies the operation to call between two consecutive `AutoBody`s in the `bodies` vector.
+Note that `+` (or the alias `∪`) is the only operation supported between `Bodies`.
+"""
+struct Bodies <: AbstractBody
+    bodies::Vector{AutoBody}
+    ops::Vector{Function}
+    function Bodies(bodies, ops::AbstractVector)
+        all(x -> x==Base.:+ || x==Base.:- || x==Base.:∩ || x==Base.:∪, ops) &&
+            ArgumentError("Operations array `ops` not supported. Use only `ops ∈ [+,-,∩,∪]`")
+        length(bodies) != length(ops)+1 && ArgumentError("length(bodies) != length(ops)+1")
+        new(bodies,ops)
     end
 end
+Bodies(bodies) = Bodies(bodies,repeat([+],length(bodies)-1))
+Bodies(bodies, op::Function) = Bodies(bodies,repeat([op],length(bodies)-1))
+Base.:+(a::Bodies, b::Bodies) = Bodies(vcat(a.bodies, b.bodies), vcat(a.ops, b.ops))
+Base.:∪(a::Bodies, b::Bodies) = a+b
+
+"""
+    sdf_map_d(ab::Bodies,x,t)
+
+Returns the `sdf` and `map` functions, and the distance `d` (`d=sdf(x,t)`) for the `Bodies` type.
+"""
+function sdf_map_d(bodies,ops,x,t)
+    sdf, map, d = bodies[1].sdf, bodies[1].map, bodies[1].sdf(x,t)
+    for i ∈ eachindex(bodies)[begin+1:end]
+        sdf2, map2, d2 = bodies[i].sdf, bodies[i].map, bodies[i].sdf(x,t)
+        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops[i-1])
+    end
+    return sdf, map, d
+end
+"""
+    reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op,x,t)
+
+Reduces two different `sdf` and `map` functions, and `d` value.
+"""
+function reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op)
+    (Base.:+ == op || Base.:∪ == op) && d_b < d_a && return (sdf_b, map_b, d_b)
+    Base.:- == op && -d_b > d_a && return ((y,u)->-sdf_b(y,u), map_b, -d_b)
+    Base.:∩ == op && d_b > d_a && return (sdf_b, map_b, d_b)
+    return sdf_a, map_a, d_a
+end
+"""
+    d = sdf(a::Bodies,x,t)
+
+Computes distance for `Bodies` type.
+"""
+sdf(a::Bodies,x,t) = sdf_map_d(a.bodies,a.ops,x,t)[end]
 
 using ForwardDiff
 """
-    measure(body::AutoBody,x,t)
+    d,n,V = measure(body::AutoBody,x,t)
+    d,n,V = measure(body::Bodies,x,t)
 
-ForwardDiff is used to determine the geometric properties from the `sdf`.
-Note: The velocity is determined _soley_ from the optional `map` function.
+Determine the implicit geometric properties from the `sdf` and `map`.
+The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
+The velocity is determined _solely_ from the optional `map` function.
 """
-function measure(body,x,t)
+measure(body::AutoBody,x,t) = measure(body.sdf,body.map,x,t)
+function measure(a::Bodies,x,t)
+    sdf, map, _ = sdf_map_d(a.bodies,a.ops,x,t)
+    measure(sdf,map,x,t)
+end
+function measure(sdf,map,x,t)
     # eval d=f(x,t), and n̂ = ∇f
-    d = body.sdf(x,t)
-    n = ForwardDiff.gradient(x->body.sdf(x,t), x)
+    d = sdf(x,t)
+    n = ForwardDiff.gradient(x->sdf(x,t), x)
+    any(isnan.(n)) && return (d,zero(x),zero(x))
 
-    # correct general implicit fnc f(x₀)=0 to be a psuedo-sdf 
+    # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
     #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
     m = √sum(abs2,n); d /= m; n /= m
 
     # The velocity depends on the material change of ξ=m(x,t):
     #   Dm/Dt=0 → ṁ + (dm/dx)ẋ = 0 ∴  ẋ =-(dm/dx)\ṁ
-    J = ForwardDiff.jacobian(x->body.map(x,t), x)
-    dot = ForwardDiff.derivative(t->body.map(x,t), t)
+    J = ForwardDiff.jacobian(x->map(x,t), x)
+    dot = ForwardDiff.derivative(t->map(x,t), t)
     return (d,n,-J\dot)
 end
 
@@ -102,7 +134,7 @@ using LinearAlgebra: tr
     curvature(A::AbstractMatrix)
 
 Return `H,K` the mean and Gaussian curvature from `A=hessian(sdf)`.
-K=tr(minor(A)) in 3D and K=0 in 2D.
+`K=tr(minor(A))` in 3D and `K=0` in 2D.
 """
 function curvature(A::AbstractMatrix)
     H,K = 0.5*tr(A),0

@@ -167,7 +167,7 @@ begin
 		end
 		
 		# make the fish simulation
-		return Simulation((4L+2,2L+2),[U,0.],L;
+		return Simulation((4L,2L),(U,0),L;
 							ν=U*L/Re,body=AutoBody(sdf,map))
 	end
 	
