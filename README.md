@@ -20,7 +20,7 @@ WaterLily.jl solves the unsteady incompressible 2D or 3D [Navier-Stokes equation
 
 The user can set the boundary conditions, the initial velocity field, the fluid viscosity (which determines the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number)), and immerse solid obstacles using a signed distance function. These examples and others are found in the [examples](examples).
 
-### Flow over a circle
+### [Flow over a circle](examples/TwoD_circle.jl)
 We define the size of the simulation domain as `n`x`m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U=1,0)` and Reynolds number is `Re=U*radius/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid.
 ```julia
 using WaterLily
@@ -45,8 +45,8 @@ contour(circ.flow.p')
 ```
 A set of [flow metric functions](src/Metrics.jl) have been implemented and the examples use these to make gifs such as the one above.
 
-### 3D Taylor Green Vortex
-The three-dimensional [Taylor Green Vortex](examples/ThreeD_TaylorGreenVortex.jl) demonstrates many of the other available simulation options. First, you can simulate a nontrivial initial velocity field by passing in a vector function `uλ(i,xyz)` where `i ∈ (1,2,3)` indicates the velocity component `uᵢ` and `xyz=[x,y,z]` is the position vector.
+### [3D Taylor Green Vortex](examples/ThreeD_TaylorGreenVortex.jl)
+The three-dimensional [Taylor Green Vortex](https://en.wikipedia.org/wiki/Taylor%E2%80%93Green_vortex) demonstrates many of the other available simulation options. First, you can simulate a nontrivial initial velocity field by passing in a vector function `uλ(i,xyz)` where `i ∈ (1,2,3)` indicates the velocity component `uᵢ` and `xyz=[x,y,z]` is the position vector.
 ```julia
 function TGV(; pow=6, Re=1e5, T=Float64, mem=Array)
     # Define vortex size, velocity, viscosity
@@ -71,7 +71,7 @@ sim_step!(vortex,1)
 ```
 For an AMD GPU, use `import AMDGPU` and `mem=AMDGPU.ROCArray`. Note that Julia 1.9 is required for AMD GPUs.
 
-### Moving bodies
+### [Moving bodies](examples/TwoD_hover.jl)
 ![Flapping line segment flow](examples/hover.gif)
 
 You can simulate moving bodies in Waterlily by passing a coordinate `map` to `AutoBody` in addition to the `sdf`.
@@ -95,10 +95,10 @@ In this example, the `sdf` function defines a line segment from `-L/2 ≤ x[2] �
 
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation since it eliminates allocations at every grid cell and time step.
 
-### [Circle inside an oscillating flow](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_oscillatingFlowOverCircle.jl)
+### [Circle inside an oscillating flow](examples/TwoD_oscillatingFlowOverCircle.jl)
 ![Oscillating flow](examples/oscillating.gif)
 
-This [example](examples/TwoD_oscillatingFlowOverCircle.jl) demonstrates a 2D oscillating periodic flow over a circle.
+Body forces and periodic flows boundary conditions can be demonstrated usng a 2D oscillating periodic flow over a circle.
 ```julia
 function circle(n,m;Re=250,U=1)
     # define a circle at the domain center
@@ -115,8 +115,7 @@ The `g` argument accepts a function with direction (`i`) and time (`t`) argument
 
 The `perdir` argument is a tuple that specifies the directions to which periodic boundary conditions should be applied. Any number of directions may be defined as periodic, but in this example only the `i=1` direction is used allowing the flow to accelerate freely in this direction.
 
-### [Accelerating reference frame](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_SlowStartCircle.jl)
-
+### [Accelerating reference frame](examples/TwoD_SlowStartCircle.jl)
 ![accelerating cylinder](examples/accelerating.gif)
 
 WaterLily gives the posibility to set up a `Simulation` using time-varying boundary conditions for the velocity field. This can be used to simulate a flow in an accelerating reference frame. The following example demonstrates how to set up a `Simulation` with a time-varying velocity field.
@@ -130,8 +129,7 @@ sim = Simulation((256,256), Ut, 32)
 The `Ut` function is used to define the time-varying velocity field. In this example, the velocity in the "x" direction is set to `a0*t` where `a0` is the acceleration of the reference frame. The `Simulation` function is then called with the `Ut` function as the second argument. The simulation will then run with the time-varying velocity field.
 
 
-### [Periodic and convective boundary conditions](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_circle_periodicBC_convectiveBC.jl)
-
+### [Periodic and convective boundary conditions](examples/TwoD_circle_periodicBC_convectiveBC.jl)
 ![periodic cylinder](examples/periodic.gif)
 
 In addition to the standard free-slip (or reflective) boundary conditions, WaterLily also supports periodic boundary conditions. The following example demonstrates how to set up a `Simulation` with periodic boundary conditions in the "y" direction.
