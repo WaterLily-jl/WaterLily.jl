@@ -19,5 +19,6 @@ deploydocs(
     repo = "github.com/weymouth/WaterLily.jl.git",
     target = "build",
     branch = "gh-pages",
+    push_preview = true,
     versions = ["stable" => "v^", "v#.#" ],
 )
