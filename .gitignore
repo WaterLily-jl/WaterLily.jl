@@ -3,6 +3,7 @@
 .DS_Store
 Manifest.toml
 /docs/build/
+/docs/src/examples/*.jpg
 
 # gfx
 *.png
