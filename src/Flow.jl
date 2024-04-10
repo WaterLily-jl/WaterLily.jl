@@ -4,6 +4,10 @@
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuP(a,Ip,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuL(a,I,f,u,λ=quick) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuR(a,I,f,u,λ=quick) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+
 @fastmath @inline function div(I::CartesianIndex{m},u) where {m}
     init=zero(eltype(u))
     for i in 1:m
@@ -29,27 +33,59 @@ function median(a,b,c)
     return a
 end
 
-function conv_diff!(r,u,Φ;ν=0.1)
+function conv_diff!(r,u,Φ;ν=0.1,perdir=(0,))
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
-        @loop r[I,i] += ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u)-ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u);
+        # if it is periodic direction
+        tagper = (j in perdir)
+        # treatment for bottom boundary with BCs
+        lowerBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
+        # inner cells
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u);
                r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] += - ϕ(j,CI(I,i),u)*ϕ(i,CI(I,j),u) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+        # treatment for upper boundary with BCs
+        upperBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
     end
 end
 
+# Neumann BC Building block
+lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
+upperBoundary!(r,u,Φ,ν,i,j,N,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u)) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+
+# Periodic BC Building block
+lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
+    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u)) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
+upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
+
+using EllipsisNotation
 """
-    Flow{D, V, S, F, B, T}
+    accelerate!(r,t,g)
+
+This function adds a uniform acceleration field `g` at time `t` to `r`.
+If `g ≠ nothing`, then `g(i,t)=dUᵢ/dt`.
+"""
+accelerate!(r,t,g::Function,::Tuple) = for i ∈ 1:last(size(r))
+    r[..,i] .+= g(i,t)
+end
+accelerate!(r,t,g::Nothing,U::Function) = for i ∈ 1:last(size(r))
+    r[..,i] .+= ForwardDiff.derivative(τ->U(i,τ),t)
+end
+accelerate!(r,t,g::Function,U::Function) = for i ∈ 1:last(size(r))
+    r[..,i] .+= g(i,t) + ForwardDiff.derivative(τ->U(i,τ),t)
+end
+accelerate!(r,t,::Nothing,::Tuple) = nothing
+
+"""
+    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
 Flow solves the unsteady incompressible [Navier-Stokes equations](https://en.wikipedia.org/wiki/Navier%E2%80%93Stokes_equations) on a Cartesian grid.
 Solid boundaries are modelled using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/).
-The primary variables are the scalar pressure `p` (an array of dimension `N`)
-and the velocity vector field `u` (an array of dimension `M=N+1`).
+The primary variables are the scalar pressure `p` (an array of dimension `D`)
+and the velocity vector field `u` (an array of dimension `D+1`).
 """
 struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}}
     # Fluid fields
@@ -60,40 +96,45 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     σ :: Sf # divergence scalar
     # BDIM fields
     V :: Vf # body velocity vector
-    σᵥ:: Sf # body velocity divergence
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
     # Non-fields
-    U :: NTuple{D, T} # domain boundary values
+    U :: Union{NTuple{D,Number},Function} # domain boundary values
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    function Flow(N::NTuple{D}, U::NTuple{D}; f=Array, Δt=0.25, ν=0., uλ::Function=(i, x) -> 0., T=Float64) where D
+    g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
+    exitBC :: Bool # Convection exit
+    perdir :: NTuple # tuple of periodic direction
+    function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
+                  uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
-        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u); BC!(u, U)
-        u⁰ = copy(u)
+        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
+        BC!(u,BCTuple(U,0.,D),exitBC,perdir); exitBC!(u,u,BCTuple(U,0.,D),0.)
+        u⁰ = copy(u);
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
-        V, σᵥ = zeros(T, Nd) |> f, zeros(T, Ng) |> f
-        μ₀ = ones(T, Nd) |> f
-        BC!(μ₀,ntuple(zero, D))
-        μ₁ = zeros(T, Ng..., D, D) |> f
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,σᵥ,μ₀,μ₁,U,T[Δt],ν)
+        V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
     end
 end
 
-function BDIM!(a::Flow{n}) where n
+time(flow::Flow) = sum(flow.Δt[1:end-1])
+timeNext(flow::Flow) = sum(flow.Δt)
+
+function BDIM!(a::Flow)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
     @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
 
 function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
-    dt = a.Δt[end]
-    @inside b.z[I] = (div(I,a.u)+w*a.σᵥ[I])/dt # divergence source term
+    dt = w*a.Δt[end]
+    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
-    for i ∈ 1:n  # apply pressure solution b.x
-        @loop a.u[I,i] -= dt*b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
+    for i ∈ 1:n  # apply solution and unscale to recover pressure
+        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
+    b.x ./= dt
 end
 
 """
@@ -102,22 +143,28 @@ end
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::Flow,b::AbstractPoisson)
-    a.u⁰ .= a.u; a.u .= 0
+@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson) where N
+    a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν)
-    BDIM!(a); BC!(a.u,a.U)
-    project!(a,b); BC!(a.u,a.U)
+    U = BCTuple(a.U,time(a),N)
+    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    accelerate!(a.f,time(a),a.g,a.U)
+    BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
+    a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
+    project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
     # corrector u → u¹
-    conv_diff!(a.f,a.u,a.σ,ν=a.ν)
-    BDIM!(a); BC!(a.u,a.U,2)
-    project!(a,b,2); a.u ./= 2; BC!(a.u,a.U)
+    U = BCTuple(a.U,timeNext(a),N)
+    conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
+    accelerate!(a.f,timeNext(a),a.g,a.U)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
+    project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
     push!(a.Δt,CFL(a))
 end
+scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
-function CFL(a::Flow)
+function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
-    min(10.,inv(maximum(a.σ)+5a.ν))
+    min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))

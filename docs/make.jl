@@ -4,8 +4,9 @@ makedocs(
     modules = [WaterLily],
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", nothing) == "true",
-        canonical="https:/weymouth.github.io/WaterLily.jl/",
+        canonical="https://weymouth.github.io/WaterLily.jl/",
         assets=String[],
+        mathengine = MathJax3()
     ),
     authors = "Gabriel Weymouth",
     sitename = "WaterLily.jl",
