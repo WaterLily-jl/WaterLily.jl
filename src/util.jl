@@ -1,9 +1,12 @@
 using KernelAbstractions: get_backend, @index, @kernel
-using CUDA: CuArray
-using AMDGPU: ROCArray
-GPUArray = Union{CuArray,ROCArray}
 
 @inline CI(a...) = CartesianIndex(a...)
+"""
+    CIj(j,I,jj)
+Replace jᵗʰ component of CartesianIndex with k
+"""
+CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
+
 """
     δ(i,N::Int)
     δ(i,I::CartesianIndex{N}) where {N}
@@ -18,7 +21,7 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
-@inline inside(a::AbstractArray) = CartesianIndices(map(ax->first(ax)+1:last(ax)-1,axes(a)))
+@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
 """
     inside_u(dims,j)
@@ -39,12 +42,11 @@ size_u(u) = splitn(size(u))
 L₂ norm of array `a` excluding ghosts.
 """
 L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
-L₂(a::GPUArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
 
 """
     @inside <expr>
 
-Simple macro to automate efficient loops over cells excluding ghosts. For example
+Simple macro to automate efficient loops over cells excluding ghosts. For example,
 
     @inside p[I] = sum(loc(0,I))
 
@@ -55,7 +57,7 @@ becomes
 See [`@loop`](@ref).
 """
 macro inside(ex)
-    # Make sure its a single assignment
+    # Make sure it's a single assignment
     @assert ex.head == :(=) && ex.args[1].head == :(ref)
     a,I = ex.args[1].args[1:2]
     return quote # loop over the size of the reference
@@ -96,6 +98,7 @@ macro loop(args...)
             $I += I0
             @fastmath @inbounds $ex
         end
+        # $kern(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
         $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
     end |> esc
 end
@@ -112,27 +115,26 @@ rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
-    loc(i,I)
+    loc(i,I) = loc(Ii)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 0.5 .* δ(i,I).I)
-
+@inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
+@inline loc(Ii::CartesianIndex,T=Float64) = loc(last(Ii),Base.front(Ii),T)
+Base.last(I::CartesianIndex) = last(I.I)
+Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
     apply!(f, c)
 
-Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c`.
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or
+a function `f(x)` to the center of a uniform array `c`.
 """
-function apply!(f,c)
-    N,n = size_u(c)
-    for i ∈ 1:n
-        @loop c[I,i] = f(i,loc(i,I)) over I ∈ CartesianIndices(N)
-    end
-end
-
+apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
+applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii)) over Ii ∈ CartesianIndices(c)
+applyS!(f,c) = @loop c[I] = f(loc(0,I)) over I ∈ CartesianIndices(c)
 """
-    slice(dims,i,j,low=1,trim=0)
+    slice(dims,i,j,low=1)
 
 Return `CartesianIndices` range slicing through an array of size `dims` in
 dimension `j` at index `i`. `low` optionally sets the lower extent of the range
@@ -143,34 +145,65 @@ function slice(dims::NTuple{N},i,j,low=1) where N
 end
 
 """
-    BC!(a,A,f=1)
+    BC!(a,A)
+
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=f*A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=f*Aₓ ∀ x ∈ minmax(X)`. A zero Nuemann condition
+condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
+boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A,f=1)
+function BC!(a,A,saveexit=false,perdir=(0,))
     N,n = size_u(a)
-    for j ∈ 1:n, i ∈ 1:n
-        if i==j # Normal direction, Dirichlet
-            for s ∈ (1,2,N[j])
-                @loop a[I,i] = f*A[i] over I ∈ slice(N,s,j)
+    for i ∈ 1:n, j ∈ 1:n
+        if j in perdir
+            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+        else
+            if i==j # Normal direction, Dirichlet
+                for s ∈ (1,2)
+                    @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
+                end
+                (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
+            else    # Tangential directions, Neumann
+                @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
+                @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
             end
-        else    # Tangential directions, Neumann
-            @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
         end
     end
 end
+"""
+    exitBC!(u,u⁰,U,Δt)
 
+Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
+"""
+function exitBC!(u,u⁰,U,Δt)
+    N,_ = size_u(u)
+    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
+    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
+end
 """
     BC!(a)
-Apply zero Nuemann boundary conditions to the ghost cells of a _scalar_ field.
+Apply zero Neumann boundary conditions to the ghost cells of a _scalar_ field.
 """
-function BC!(a)
+function BC!(a;perdir=(0,))
     N = size(a)
     for j ∈ eachindex(N)
-        @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
-        @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
+        if j in perdir
+            @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
+            @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+        else
+            @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
+            @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
+        end
     end
 end
+"""
+    BCTuple(f,t,N)
+
+Generate a tuple of `N` values from either a boundary condition 
+function `f(i,t)` or the tuple of boundary conditions f=(fₓ,...).
+"""
+BCTuple(f::Function,t,N)=ntuple(i->f(i,t),N)
+BCTuple(f::Tuple,t,N)=f

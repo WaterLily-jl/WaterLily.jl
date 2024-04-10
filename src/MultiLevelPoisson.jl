@@ -20,19 +20,21 @@ function restrictML(b::Poisson)
     Na = map(i->1+i÷2,N)
     aL = similar(b.L,(Na...,n)); fill!(aL,0)
     ax = similar(b.x,Na); fill!(ax,0)
-    restrictL!(aL,b.L)
-    Poisson(ax,aL,copy(ax))
+    restrictL!(aL,b.L,perdir=b.perdir)
+    Poisson(ax,aL,copy(ax);b.perdir)
 end
-function restrictL!(a,b)
+function restrictL!(a::AbstractArray{T},b;perdir=(0,)) where T
     Na,n = size_u(a)
     for i ∈ 1:n
         @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
+    BC!(a,zeros(SVector{n,T}),false,perdir)  # correct μ₀ @ boundaries
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(N) = mod(N,2)==0 && N>4
+@inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 """
     MultiLevelPoisson{N,M}
 
@@ -45,20 +47,22 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     z::S
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
-    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T},maxlevels=4) where T
-        levels = Poisson[Poisson(x,L,z)]
-        while all(size(levels[end].x) .|> divisible) && length(levels) <= maxlevels
+    perdir :: NTuple # direction of periodic boundary condition
+    function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=Inf,perdir=(0,)) where T
+        levels = Poisson[Poisson(x,L,z;perdir)]
+        while divisible(levels[end]) && length(levels) <= maxlevels
             push!(levels,restrictML(levels[end]))
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[])
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
+
 function update!(ml::MultiLevelPoisson)
     update!(ml.levels[1])
     for l ∈ 2:length(ml.levels)
-        restrictL!(ml.levels[l].L,ml.levels[l-1].L)
+        restrictL!(ml.levels[l].L,ml.levels[l-1].L,perdir=ml.levels[l-1].perdir)
         update!(ml.levels[l])
     end
 end
@@ -74,23 +78,25 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     smooth!(coarse)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
+    BC!(fine.ϵ;perdir=fine.perdir)
     increment!(fine)
 end
 
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(ml::MultiLevelPoisson;log=false,tol=1e-3,itmx=32)
+function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
-    residual!(p); r₂ = L₂(p)
-    log && (res = [r₂])
+    BC!(p.x;perdir=p.perdir)
+    residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
-        smooth!(p); r₂ = L₂(p)
-        log && push!(res,r₂)
+        smooth!(p); r₂ = L∞(p)
         nᵖ+=1
     end
-    push!(ml.n,nᵖ)
-    log && return res
+    (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
+    (nᵖ>4 && divisible(ml.levels[end])) && push!(ml.levels,restrictML(ml.levels[end])) # add a level if this was hard
+    BC!(p.x;perdir=p.perdir)
+    push!(ml.n,nᵖ);
 end

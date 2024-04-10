@@ -20,11 +20,13 @@ function jelly(p=5;Re=5e2,mem=Array,U=1)
     Simulation((n,n,4n),(0,0,-U),R;ν,body,mem,T=Float32)
 end
 
+using Meshing, GeometryBasics
 function geom!(md,d,sim,t=WaterLily.time(sim))
     a = sim.flow.σ
     WaterLily.measure_sdf!(a,sim.body,t)
     copyto!(d,a[inside(a)]) # copy to CPU
     mirrorto!(md,d)         # mirror quadrant
+    normal_mesh(GeometryBasics.Mesh(md,Meshing.MarchingCubes(),origin=Vec(0,0,0),widths=size(md)))
 end
 
 function ω!(md,d,sim)
@@ -42,11 +44,13 @@ function mirrorto!(a,b)
     return a
 end
 
-import CUDA
-using GLMakie
+using CUDA, GLMakie
+Makie.inline!(false)
+CUDA.allowscalar(false)
 begin
     # Define geometry and motion on GPU
     sim = jelly(mem=CUDA.CuArray);
+    sim_step!(sim,sim_time(sim)+0.05);
 
     # Create CPU buffer arrays for geometry flow viz 
     a = sim.flow.σ
@@ -55,7 +59,7 @@ begin
 
     # Set up geometry viz
     geom = geom!(md,d,sim) |> Observable;
-    fig, _, _ = contour(geom, levels=[0], alpha=0.01)
+    fig, _, _ = GLMakie.mesh(geom, alpha=0.1, color=:red)
 
     #Set up flow viz
     ω = ω!(md,d,sim) |> Observable;
