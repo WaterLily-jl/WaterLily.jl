@@ -19,9 +19,9 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 """
     inside(a)
 
-Return CartesianIndices range excluding a single layer of cells on all boundaries.
+Return CartesianIndices range excluding the double layer of cells on all boundaries.
 """
-@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
+@inline inside(a::AbstractArray;buff=2) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
 """
     inside_u(dims,j)
@@ -30,9 +30,9 @@ Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _vector_ array on face `j` with size `dims`.
 """
 function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
+    CartesianIndices(ntuple( i-> i==j ? (4:dims[i]-2) : (3:dims[i]-1), N))
 end
-@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
+@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(3:i-2),dims)...,1:N))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
@@ -120,7 +120,7 @@ using StaticArrays
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
+@inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 2.5 .- 0.5 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex,T=Float64) = loc(last(Ii),Base.front(Ii),T)
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
@@ -156,17 +156,21 @@ function BC!(a,A,saveexit=false,perdir=(0,))
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
+            #@TODO make sure this is correct
             @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
             @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
         else
             if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2)
+                for s ∈ (1,2,3)
                     @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
+                (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j]-1,j);
+                                       @loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
-                @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
-                @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,2,j)
+                @loop a[I,i] = a[I+2δ(j,I),i] over I ∈ slice(N,1,j)
+                @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j]-1,j)
+                @loop a[I,i] = a[I-2δ(j,I),i] over I ∈ slice(N,N[j],j)
             end
         end
     end
@@ -178,7 +182,7 @@ Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
 function exitBC!(u,u⁰,U,Δt)
     N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
+    exitR = slice(N.-2,N[1]-2,1,3)              # exit slice excluding ghosts
     @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
     ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
@@ -191,11 +195,14 @@ function BC!(a;perdir=(0,))
     N = size(a)
     for j ∈ eachindex(N)
         if j in perdir
+            #@TODO check this as well
             @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
             @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
         else
-            @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
-            @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
+            @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,2,j)
+            @loop a[I] = a[I+2δ(j,I)] over I ∈ slice(N,1,j)
+            @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j]-1,j)
+            @loop a[I] = a[I-2δ(j,I)] over I ∈ slice(N,N[j],j)
         end
     end
 end
