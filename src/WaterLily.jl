@@ -1,4 +1,9 @@
+"""
+$(README)
+"""
 module WaterLily
+
+using DocStringExtensions
 
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc

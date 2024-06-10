@@ -19,21 +19,35 @@ join_array_tuple_comma () {
     printf -v joined '(%s),' $arr
     echo "[${joined%,}]"
 }
-
+# Check if juliaup exists in environment
+check_if_juliaup () {
+    if ! command -v juliaup &> /dev/null
+    then # juliaup does not exist, return false
+        return 1
+    else # juliaup exists, return true
+        return 0
+    fi
+}
 # Grep current julia version
 julia_version () {
     julia_v=($(julia -v))
     echo "${julia_v[2]}"
 }
-
 # Update project environment with new Julia version: Mark WaterLily as a development packag, then update dependencies and precompile.
 update_environment () {
-    echo "Updating environment to Julia $version"
-    julia +${version} --project=$THIS_DIR -e "using Pkg; Pkg.develop(PackageSpec(path=get(ENV, \"WATERLILY_ROOT\", \"\"))); Pkg.update();"
+    if check_if_juliaup; then
+        echo "Updating environment to Julia $version"
+        julia +${version} --project=$THIS_DIR -e "using Pkg; Pkg.develop(PackageSpec(path=get(ENV, \"WATERLILY_ROOT\", \"\"))); Pkg.update();"
+    fi
 }
 
 run_benchmark () {
-    full_args=(+${version} --project=${THIS_DIR} --startup-file=no $args)
+    if check_if_juliaup; then
+        full_args=(+${version} --project=${THIS_DIR} --startup-file=no $args)
+    else
+        full_args=(--project=${THIS_DIR} --startup-file=no $args)
+    fi
+
     echo "Running: julia ${full_args[@]}"
     julia "${full_args[@]}"
 }
@@ -134,12 +148,16 @@ CASES=$(join_array_str_comma "${CASES[*]}")
 LOG2P=$(join_array_tuple_comma "${LOG2P[*]}")
 MAXSTEPS=$(join_array_comma "${MAXSTEPS[*]}")
 FTYPE=$(join_array_comma "${FTYPE[*]}")
+args_cases="--cases=$CASES --log2p=$LOG2P --max_steps=$MAXSTEPS --ftype=$FTYPE"
 
 # Benchmarks
 for version in "${VERSIONS[@]}" ; do
-    echo "Julia $version benchmaks"
+    if ! check_if_juliaup; then
+        echo "juliaup could not be found, running with default Julia version $( julia_version )"
+    else
+        echo "Julia $version benchmaks"
+    fi
     update_environment
-    args_cases="--cases=$CASES --log2p=$LOG2P --max_steps=$MAXSTEPS --ftype=$FTYPE"
     for backend in "${BACKENDS[@]}" ; do
         if [ "${backend}" == "Array" ]; then
             for thread in "${THREADS[@]}" ; do
@@ -151,6 +169,9 @@ for version in "${VERSIONS[@]}" ; do
             run_benchmark
         fi
     done
+    if ! check_if_juliaup; then
+        break
+    fi # if no juliaup, we only test default Julia version
 done
 
 echo "All done!"
