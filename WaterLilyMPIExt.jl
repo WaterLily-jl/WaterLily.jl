@@ -9,11 +9,11 @@ const NNEIGHBORS_PER_DIM = 2
 """return the CI of the halos must only point to halos, otherwise it messes-up 
 the reconstruction"""
 function halos(dims::NTuple{N},j) where N
-    CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (2:3) : (dims[i]-1:dims[i]) : (3:dims[i]-2), N))
+    CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (2:3) : (dims[i]-1:dims[i]) : (1:dims[i]), N))
 end
 # return the CI of the buff 
 function buff(dims::NTuple{N},j) where N
-    CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (4:5) : (dims[i]-3:dims[i]-2) : (3:dims[i]-2), N))
+    CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (4:5) : (dims[i]-3:dims[i]-2) : (1:dims[i]), N))
 end
 
 # function update_halo!(d, A, neighbors, comm)
@@ -33,22 +33,81 @@ end
 #     MPI.Waitall!(reqs)
 # end
 
-function update_halo!(d, A, neighbors, comm)
+function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
     reqs=MPI.Request[]
+    # Send to / receive from neighbor 1 in dimension d
+    push!(reqs,MPI.Isend(send1,  neighbor[1], 0, comm))
+    push!(reqs,MPI.Irecv!(recv1, neighbor[1], 1, comm))
+    # Send to / receive from neighbor 2 in dimension d
+    push!(reqs,MPI.Irecv!(recv2, neighbor[2], 0, comm))
+    push!(reqs,MPI.Isend(send2,  neighbor[2], 1, comm))
+    # wair for all transfer to be done
+    MPI.Waitall!(reqs)
+    return
+end
+# Pototype for boundary conditions update
+function update_halo!(d, A, neighbors, comm)
     # get data to transfer
     send1 = A[buff(size(A),-d)]; send2 = A[buff(size(A),+d)]
     recv1 = zero(send1);         recv2 = zero(send2)
-    # Send to / receive from neighbor 1 in dimension d
-    push!(reqs,MPI.Isend(send1,  neighbors[1,d], 0, comm))
-    push!(reqs,MPI.Irecv!(recv1, neighbors[1,d], 1, comm))
-    # Send to / receive from neighbor 2 in dimension d
-    push!(reqs,MPI.Irecv!(recv2, neighbors[2,d], 0, comm))
-    push!(reqs,MPI.Isend(send2,  neighbors[2,d], 1, comm))
-    # wair for all transfer to be done
-    MPI.Waitall!(reqs)
+    # swap the array
+    mpi_swap!(send1,recv1,send2,recv2,neighbors[:,d],comm)
     # put back in place if the neightbor exists
     (neighbors[1,d] != MPI.PROC_NULL) && (A[halos(size(A),-d)] .= recv1)
     (neighbors[2,d] != MPI.PROC_NULL) && (A[halos(size(A),+d)] .= recv2)
+end
+# function update_halo!(d, A, neighbors, comm)
+#     reqs=MPI.Request[]
+#     # get data to transfer
+#     send1 = A[buff(size(A),-d)]; send2 = A[buff(size(A),+d)]
+#     recv1 = zero(send1);         recv2 = zero(send2)
+#     # Send to / receive from neighbor 1 in dimension d
+#     push!(reqs,MPI.Isend(send1,  neighbors[1,d], 0, comm))
+#     push!(reqs,MPI.Irecv!(recv1, neighbors[1,d], 1, comm))
+#     # Send to / receive from neighbor 2 in dimension d
+#     push!(reqs,MPI.Irecv!(recv2, neighbors[2,d], 0, comm))
+#     push!(reqs,MPI.Isend(send2,  neighbors[2,d], 1, comm))
+#     # wair for all transfer to be done
+#     MPI.Waitall!(reqs)
+#     # put back in place if the neightbor exists
+#     (neighbors[1,d] != MPI.PROC_NULL) && (A[halos(size(A),-d)] .= recv1)
+#     (neighbors[2,d] != MPI.PROC_NULL) && (A[halos(size(A),+d)] .= recv2)
+# end
+# struct MPIgrid{T}
+#     comm :: MPI.COMM_WORLD
+#     periods :: AbstractVector{}
+#     me :: T
+#     coords :: AbstractVector{T}
+#     neighbors :: AbstractArray{T}
+# end
+function WaterLily.BC!(a,A,saveexit=false,perdir=(0,),mpi)
+    N,n = size_u(a)
+    for i ∈ 1:n, j ∈ 1:n
+        # get data to transfer
+        send1 = a[buff(N,-j),i]; send2 = a[buff(N,+j),i]
+        recv1 = zero(send1);     recv2 = zero(send2)
+        # swap 
+        mpi_swap!(send1,recv1,send2,recv2,mpi.neighbors[:,j],comm)
+
+        # domain boundaries
+        if neighbors[1,i]==MPI.PROC_NULL # left wall
+            if i==j # set flux
+                recv1 .= A[i]
+            else # zero gradient
+                recv1 .= reverse(send1; dims=i)
+            end
+        end
+        if neighbors[2,i]==MPI.PROC_NULL # right wall
+            if i==j && (!saveexit || i>1) # convection exit
+                recv2 .= A[i]
+            else # zero gradient
+                recv2 .= reverse(send1; dims=i)
+            end
+        end
+        # this sets the BCs
+        a[halos(N,-j),i] .= recv1
+        a[halos(N,+j),i] .= recv2
+    end
 end
 
 # global coordinate in grid space
@@ -98,12 +157,16 @@ sim = circle(nx,ny,center,nx/4)
 xs = loc(0,CartesianIndex(3,3))
 println("I am rank $me, at global coordinate $xs")
 
+# first we chack s imple rank matrix
 sim.flow.σ .= NaN
 sim.flow.σ[inside(sim.flow.σ)] .= me
 
 # check that the measure uses the correct loc function
 # measure_sdf!(sim.flow.σ,sim.body,0.0)
 # save("waterlily_$me.jld2", "sdf", sim.flow.σ)
+
+# second check is to check the μ₀
+sim.flow.σ[inside(sim.flow.σ)] .= sim.flow.μ₀[inside(sim.flow.σ),1]
 
 # updating the halos should not do anything
 save("waterlily_$me.jld2", "sdf", sim.flow.σ)

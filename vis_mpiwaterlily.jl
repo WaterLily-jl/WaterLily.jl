@@ -10,15 +10,20 @@ C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
 p1 = contourf(C', cmap=:imola10, aspect_ratio=:equal, levels=3)
 
 
-rank_0 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_0.jld2")["sdf"]#[4:end-2,4:end-2]
 rank_1 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_1.jld2")["sdf"]#[4:end-2,4:end-2]
 rank_2 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_2.jld2")["sdf"]#[4:end-2,4:end-2]
 rank_3 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_3.jld2")["sdf"]#[4:end-2,4:end-2]
+rank_0 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_0.jld2")["sdf"]#[4:end-2,4:end-2]
 
 C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
 
 p2 = contourf(C', cmap=:imola10, aspect_ratio=:equal, levels=3)
 plot(p1,p2,layout = @layout [a b])
+
+
+
+
+# OLD FUNCTIONS
 # @views function update_halo!(A, neighbors, comm)
 #     # Send to / receive from neighbor 1 in dimension x ("left neighbor")
 #     if neighbors[1,1] != MPI.PROC_NULL
