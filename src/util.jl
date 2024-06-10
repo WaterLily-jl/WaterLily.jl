@@ -68,9 +68,7 @@ end
 """
     @loop <expr> over <I ∈ R>
 
-Macro to automate fast CPU or GPU loops using KernelAbstractions.jl.
-The macro creates a kernel function from the expression `<expr>` and
-evaluates that function over the CartesianIndices `I ∈ R`.
+Macro to automate fast loops using @simd.
 
 For example
 
@@ -78,40 +76,19 @@ For example
 
 becomes
 
-    @kernel function kern(a,i,@Const(I0))
-        I ∈ @index(Global,Cartesian)+I0
-        a[I,i] += sum(loc(i,I))
+    @simd for I ∈ R
+        @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
-    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
-
-where `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 """
 macro loop(args...)
     ex,_,itr = args
-    _,I,R = itr.args; sym = []
-    grab!(sym,ex)     # get arguments and replace composites in `ex`
-    setdiff!(sym,[I]) # don't want to pass I as an argument
-    @gensym kern      # generate unique kernel function name
+    _,I,R = itr.args
     return quote
-        @kernel function $kern($(rep.(sym)...),@Const(I0)) # replace composite arguments
-            $I = @index(Global,Cartesian)
-            $I += I0
+        @simd for $I ∈ $R # serial computation
             @fastmath @inbounds $ex
         end
-        # $kern(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
-        $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
     end |> esc
 end
-function grab!(sym,ex::Expr)
-    ex.head == :. && return union!(sym,[ex])      # grab composite name and return
-    start = ex.head==:(call) ? 2 : 1              # don't grab function names
-    foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
-    ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
-end
-grab!(sym,ex::Symbol) = union!(sym,[ex])        # grab symbol name
-grab!(sym,ex) = nothing
-rep(ex) = ex
-rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
@@ -120,8 +97,8 @@ using StaticArrays
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float64) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
-@inline loc(Ii::CartesianIndex,T=Float64) = loc(last(Ii),Base.front(Ii),T)
+@inline loc(i,I::CartesianIndex{N}) where N = SVector{N}(I.I .- 3//2 .- 1//2 .* δ(i,I).I)
+@inline loc(Ii::CartesianIndex) = loc(last(Ii),Base.front(Ii))
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
@@ -213,7 +190,7 @@ BCTuple(f::Tuple,t,N)=f
     Linear interpolation from array `arr` at index-coordinate `x`.
     Note: This routine works for any number of dimensions.
 """
-function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
+function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
     i = floor.(Int,x); y = x.-i
     
@@ -228,8 +205,8 @@ function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     end
     return s
 end
-function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
+function interp(x::SVector{D}, varr::AbstractArray) where {D}
     # Shift to align with each staggered grid component and interpolate
-    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
+    @inline shift(i) = SVector{D}(ifelse(i==j,1//2,0) for j in 1:D)
+    return SVector{D}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end

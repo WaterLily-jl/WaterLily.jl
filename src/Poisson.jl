@@ -37,6 +37,8 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     end
 end
 
+using ForwardDiff: Dual
+Base.eps(::Type{D}) where D<:Dual{T} where T = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
     @inside iD[I] = abs2(D[I])<2eps(eltype(D)) ? 0. : inv(D[I])
@@ -118,17 +120,17 @@ function pcg!(p::Poisson{T};it=6) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     insideI = inside(x) # [insideI]
-    rho = T(r⋅z)
+    rho = r⋅z
     abs(rho)<10eps(T) && return
     for i in 1:it
         BC!(ϵ;perdir=p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/T(z[insideI]⋅ϵ[insideI])
+        alpha = rho / (z[insideI]⋅ϵ[insideI])
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
         (i==it || abs(alpha)<1e-2) && return
         @inside z[I] = r[I]*p.iD[I]
-        rho2 = T(r⋅z)
+        rho2 = r⋅z
         abs(rho2)<10eps(T) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]

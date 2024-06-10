@@ -81,7 +81,7 @@ end
 Surface normal integral of field `p` over the `body`.
 """
 function ∮nds(p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {T,N}
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,T),t) over I ∈ inside(p)
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I),t) over I ∈ inside(p)
     [sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
 end
 @inline function nds(body::AbstractBody,x,t)
