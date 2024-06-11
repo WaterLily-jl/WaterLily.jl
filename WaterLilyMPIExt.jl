@@ -16,22 +16,6 @@ function buff(dims::NTuple{N},j) where N
     CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (4:5) : (dims[i]-3:dims[i]-2) : (1:dims[i]), N))
 end
 
-# function update_halo!(d, A, neighbors, comm)
-#     reqs=MPI.Request[]
-#     # Send to / receive from neighbor 1 in dimension d
-#     sendbuf = A[buff(size(A),-d)]
-#     recvbuf = zeros(length(sendbuf))
-#     push!(reqs,MPI.Isend(sendbuf,  neighbors[1,d], 0, comm))
-#     push!(reqs,MPI.Irecv!(recvbuf, neighbors[1,d], 1, comm))
-#     A[halos(size(A),-d)] .= reshape(recvbuf,size(halos(size(A),-d)))
-#     # Send to / receive from neighbor 2 in dimension d
-#     sendbuf = A[buff(size(A),+d)]
-#     recvbuf = zeros(length(sendbuf))
-#     push!(reqs,MPI.Irecv!(recvbuf, neighbors[2,d], 0, comm))
-#     push!(reqs,MPI.Isend(sendbuf,  neighbors[2,d], 1, comm))
-#     A[halos(size(A),+d)] .= reshape(recvbuf,size(halos(size(A),+d)))
-#     MPI.Waitall!(reqs)
-# end
 
 function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
     reqs=MPI.Request[]
@@ -45,68 +29,63 @@ function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
     MPI.Waitall!(reqs)
     return
 end
-# Pototype for boundary conditions update
-function update_halo!(d, A, neighbors, comm)
-    # get data to transfer
-    send1 = A[buff(size(A),-d)]; send2 = A[buff(size(A),+d)]
-    recv1 = zero(send1);         recv2 = zero(send2)
-    # swap the array
-    mpi_swap!(send1,recv1,send2,recv2,neighbors[:,d],comm)
-    # put back in place if the neightbor exists
-    (neighbors[1,d] != MPI.PROC_NULL) && (A[halos(size(A),-d)] .= recv1)
-    (neighbors[2,d] != MPI.PROC_NULL) && (A[halos(size(A),+d)] .= recv2)
+
+
+function BC!(a)
+    N = size(a)
+    for d ∈ eachindex(N)# this is require because scalar and vector field are located at different location
+        Ii = δ(d,CartesianIndex(0,0))
+        # get data to transfer
+        send1 = a[buff(N,-d).-Ii]; send2 = a[buff(N,+d)]
+        recv1 = zero(send1);   recv2 = zero(send2)
+        # swap 
+        mpi_swap!(send1,recv1,send2,recv2,neighbors[:,d],comm)
+
+        # this sets the BCs
+        if neighbors[1,d] != MPI.PROC_NULL # right wall
+            a[halos(N,-d).-Ii] .= recv1
+        else
+            a[halos(N,-d).-Ii] .= reverse(send1; dims=d)
+        end
+        if neighbors[2,d] != MPI.PROC_NULL # right wall
+            a[halos(N,+d)] .= recv2
+        else
+            a[halos(N,+d)] .= reverse(send2; dims=d)
+        end
+    end
 end
-# function update_halo!(d, A, neighbors, comm)
-#     reqs=MPI.Request[]
-#     # get data to transfer
-#     send1 = A[buff(size(A),-d)]; send2 = A[buff(size(A),+d)]
-#     recv1 = zero(send1);         recv2 = zero(send2)
-#     # Send to / receive from neighbor 1 in dimension d
-#     push!(reqs,MPI.Isend(send1,  neighbors[1,d], 0, comm))
-#     push!(reqs,MPI.Irecv!(recv1, neighbors[1,d], 1, comm))
-#     # Send to / receive from neighbor 2 in dimension d
-#     push!(reqs,MPI.Irecv!(recv2, neighbors[2,d], 0, comm))
-#     push!(reqs,MPI.Isend(send2,  neighbors[2,d], 1, comm))
-#     # wair for all transfer to be done
-#     MPI.Waitall!(reqs)
-#     # put back in place if the neightbor exists
-#     (neighbors[1,d] != MPI.PROC_NULL) && (A[halos(size(A),-d)] .= recv1)
-#     (neighbors[2,d] != MPI.PROC_NULL) && (A[halos(size(A),+d)] .= recv2)
-# end
-# struct MPIgrid{T}
-#     comm :: MPI.COMM_WORLD
-#     periods :: AbstractVector{}
-#     me :: T
-#     coords :: AbstractVector{T}
-#     neighbors :: AbstractArray{T}
-# end
-function WaterLily.BC!(a,A,saveexit=false,perdir=(0,),mpi)
-    N,n = size_u(a)
+
+function BC!(a,A,neighbors,comm,saveexit=false)
+    N,n = WaterLily.size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         # get data to transfer
         send1 = a[buff(N,-j),i]; send2 = a[buff(N,+j),i]
         recv1 = zero(send1);     recv2 = zero(send2)
         # swap 
-        mpi_swap!(send1,recv1,send2,recv2,mpi.neighbors[:,j],comm)
+        mpi_swap!(send1,recv1,send2,recv2,neighbors[:,j],comm)
 
         # domain boundaries
-        if neighbors[1,i]==MPI.PROC_NULL # left wall
+        if neighbors[1,j]==MPI.PROC_NULL # left wall
             if i==j # set flux
-                recv1 .= A[i]
+                a[halos(N,-j),i] .= A[i]
             else # zero gradient
-                recv1 .= reverse(send1; dims=i)
+                a[halos(N,-j),i] .= reverse(send1; dims=j)
             end
+        else
+            a[halos(N,-j),i] .= recv1
         end
-        if neighbors[2,i]==MPI.PROC_NULL # right wall
-            if i==j && (!saveexit || i>1) # convection exit
-                recv2 .= A[i]
+        if neighbors[2,j]==MPI.PROC_NULL # right wall
+            if i==j #&& (!saveexit || i>1) # convection exit
+                a[halos(N,+j),i] .= A[i]
             else # zero gradient
-                recv2 .= reverse(send1; dims=i)
+                a[halos(N,+j),i] .= reverse(send2; dims=j)
             end
+        else
+            a[halos(N,+j),i] .= recv2
         end
         # this sets the BCs
-        a[halos(N,-j),i] .= recv1
-        a[halos(N,+j),i] .= recv2
+        # (neighbors[1,j] != MPI.PROC_NULL) && (a[halos(N,-j),i] .= recv1)
+        # (neighbors[2,j] != MPI.PROC_NULL) && (a[halos(N,+j),i] .= recv2)
     end
 end
 
@@ -166,17 +145,17 @@ sim.flow.σ[inside(sim.flow.σ)] .= me
 # save("waterlily_$me.jld2", "sdf", sim.flow.σ)
 
 # second check is to check the μ₀
-sim.flow.σ[inside(sim.flow.σ)] .= sim.flow.μ₀[inside(sim.flow.σ),1]
+sim.flow.σ .= sim.flow.μ₀[:,:,1]
 
 # updating the halos should not do anything
 save("waterlily_$me.jld2", "sdf", sim.flow.σ)
-for d in 1:2
-    update_halo!(d, sim.flow.σ, neighbors, comm)
-    # @show tmp[1:8,1:8]
-    # sim.flow.σ .= tmp
-    # sim.flow.μ₀[halos(size(tmp),-d),d] .= 1.0
-    # sim.flow.μ₀[halos(size(tmp),+d),d] .= 1.0
-end
+
+BC!(sim.flow.μ₀, zeros(SVector{2,Float64}), neighbors, comm)
+
+BC!(sim.flow.σ)
+
+sim.flow.σ .= sim.flow.μ₀[:,:,1]
+
 save("waterlily_haloupdate_$me.jld2","sdf",sim.flow.σ)
 
 MPI.Finalize()
