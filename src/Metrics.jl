@@ -82,12 +82,17 @@ Surface normal integral of field `p` over the `body`.
 """
 ∮nds(flow::Flow,body::AbstractBody) = ∮nds(flow.p,flow.f,body,time(flow))
 function ∮nds(p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {T,N}
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,T),t) over I ∈ inside(p)
-    [sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
-end
-@inline function nds(body::AbstractBody,x,t)
-    d,n,_ = measure(body,x,t)
-    n*WaterLily.kern(clamp(d,-1,1))
+    @fastmath @inline function fill!(df,p,I)
+        d = sdf(body,WaterLily.loc(0,I,T),t)
+        if abs(d)<1
+            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
+            df[I,:] .= p[I]*nᵢ*WaterLily.kern(clamp(dᵢ,-1,1))
+        else
+            df[I,:] .= 0
+        end
+    end
+    @loop fill!(df,p,I) over I ∈ inside(p)
+    T[sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
 end
 # viscous stress tensor
 ∇²u(I::CartesianIndex{2},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:2, j ∈ 1:2]
@@ -99,22 +104,51 @@ Compute the viscous force on a immersed body.
 """
 ∮τnds(flow::Flow,body::AbstractBody) = ∮τnds(flow.u,flow.f,body,time(flow))
 function ∮τnds(u::AbstractArray{T,N},df::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N}
-   Nu,_ = size_u(u); In = CartesianIndices(map(i->(2:i-1),Nu)) 
-   @loop df[I,:] .= ∇²u(I,u)*nds(body,loc(0,I,T),t) over I ∈ inside(In)
-   [sum(@inbounds(df[inside(In),i])) for i ∈ 1:N-1] |> Array
-end
-"""
-∮pxnds(u::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0)
-
-Compute the viscous force on a immersed body. 
-"""
-function ∮xnds(x₀::SVector{N,T},p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {N,T}
-    @loop df[I,:] .= p[I]*xnds(body,x₀,loc(0,I,T),t) over I ∈ inside(p)
-    [sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
-end
-function ∮xnds(x₀::SVector{2,T},p::AbstractArray{T,2},σ::AbstractArray{T,2},body::AbstractBody,t=0) where T
-    @loop σ[I] = p[I]*xnds(body,x₀,loc(0,I,T),t) over I ∈ inside(p)
-    sum(@inbounds(σ[inside(p)]))
+    @warn "∮τnds is can be innacurate for viscous force computation, use with care..."
+    Nu,_ = size_u(u); In = CartesianIndices(map(i->(2:i-1),Nu))
+    @fastmath @inline function fill!(df,u,I)
+        d = sdf(body,WaterLily.loc(0,I,T),t)
+        if abs(d)<1
+            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
+            df[I,:] .= ∇²u(I,u)*nᵢ*WaterLily.kern(clamp(dᵢ,-1,1))
+        else
+            df[I,:] .= 0
+        end
+    end
+    @loop fill!(df,u,I) over I ∈ inside(In)
+    T[sum(@inbounds(df[inside(In),i])) for i ∈ 1:N-1] |> Array
 end
 using LinearAlgebra: cross
-@inline xnds(body::AbstractBody,x₀::SVector,x,t) = cross((x-x₀),nds(body,x,t))
+"""
+    ∮xnds(x₀::Svector,u::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0)
+
+Computes the pressure moment on a immersed body relative to point x₀. 
+"""
+∮xnds(x₀,flow::Flow,body::AbstractBody) = ∮xnds(x₀,flow.p,flow.f,body,time(flow))
+function ∮xnds(x₀::SVector{N,T},p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {N,T}
+    @fastmath @inline function fill!(df,p,I)
+        d = sdf(body,WaterLily.loc(0,I,T),t)
+        if abs(d)<1
+            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
+            df[I,:] .= p[I]*cross((WaterLily.loc(0,I,T)-x₀),nᵢ*WaterLily.kern(clamp(dᵢ,-1,1)))
+        else
+            df[I,:] .= 0
+        end
+    end
+    @loop fill!(df,p,I) over I ∈ inside(p)
+    T[sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
+end
+∮xnds(x₀,flow::Flow{2},body::AbstractBody) = ∮xnds(x₀,flow.p,flow.σ,body,time(flow))
+function ∮xnds(x₀::SVector{2,T},p::AbstractArray{T,2},σ::AbstractArray{T,2},body::AbstractBody,t=0) where T
+    @fastmath @inline function fill!(df,p,I)
+        d = sdf(body,WaterLily.loc(0,I,T),t)
+        if abs(d)<1
+            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
+            df[I] = p[I]*cross((WaterLily.loc(0,I,T)-x₀),nᵢ*WaterLily.kern(clamp(dᵢ,-1,1)))
+        else
+            df[I] = 0
+        end
+    end
+    @loop fill!(σ,p,I) over I ∈ inside(p)
+    sum(@inbounds(σ[inside(p)]))
+end
