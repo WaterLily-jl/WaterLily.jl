@@ -80,6 +80,7 @@ end
 
 Surface normal integral of field `p` over the `body`.
 """
+∮nds(flow::Flow,body::AbstractBody) = ∮nds(flow.p,flow.f,body,time(flow))
 function ∮nds(p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {T,N}
     @loop df[I,:] .= p[I]*nds(body,loc(0,I,T),t) over I ∈ inside(p)
     [sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
@@ -96,8 +97,24 @@ end
 
 Compute the viscous force on a immersed body. 
 """
+∮τnds(flow::Flow,body::AbstractBody) = ∮τnds(flow.u,flow.f,body,time(flow))
 function ∮τnds(u::AbstractArray{T,N},df::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N}
    Nu,_ = size_u(u); In = CartesianIndices(map(i->(2:i-1),Nu)) 
    @loop df[I,:] .= ∇²u(I,u)*nds(body,loc(0,I,T),t) over I ∈ inside(In)
    [sum(@inbounds(df[inside(In),i])) for i ∈ 1:N-1] |> Array
 end
+"""
+∮pxnds(u::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0)
+
+Compute the viscous force on a immersed body. 
+"""
+function ∮xnds(x₀::SVector{N,T},p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {N,T}
+    @loop df[I,:] .= p[I]*xnds(body,x₀,loc(0,I,T),t) over I ∈ inside(p)
+    [sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
+end
+function ∮xnds(x₀::SVector{2,T},p::AbstractArray{T,2},σ::AbstractArray{T,2},body::AbstractBody,t=0) where T
+    @loop σ[I] = p[I]*xnds(body,x₀,loc(0,I,T),t) over I ∈ inside(p)
+    sum(@inbounds(σ[inside(p)]))
+end
+using LinearAlgebra: cross
+@inline xnds(body::AbstractBody,x₀::SVector,x,t) = cross((x-x₀),nds(body,x,t))
