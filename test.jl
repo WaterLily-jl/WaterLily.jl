@@ -5,7 +5,7 @@ function map(x,t;L,θ)
     SA[c -s; s c]*(x-SA[L,L])
 end
 function sdf(ξ,t;L)
-    p = ξ-SA[0,clamp(ξ[1],-L/2,L/2)] 
+    p = ξ-SA[0,clamp(ξ[1],-L/2,L/2)]
     √(p'*p)-2
 end
 function make_sim(θ;L=32,U=1,Re=100)
@@ -23,10 +23,9 @@ function step_force!(θ,sim,t=WaterLily.timeNext(sim.flow))
 end
 sim = make_sim(π/36);
 lift_hist = [step_force!(π/36,sim) for _ ∈ 1:20]
-sim⁰ = deepcopy(sim);
-a = step_force!(π/36+1e-4,deepcopy(sim⁰));
-b = step_force!(π/36-1e-4,deepcopy(sim⁰));
-step_force!(π/36,deepcopy(sim⁰)),(a-b)/2e-4
+a = step_force!(π/36+1e-4,deepcopy(sim));
+b = step_force!(π/36-1e-4,deepcopy(sim));
+println("FD grad = ", (a-b)/2e-4)
 
 function step_force(θ,sim⁰)
     sim = make_sim(θ)
@@ -35,6 +34,5 @@ function step_force(θ,sim⁰)
     sim_step!(sim)
     sum(sim.flow.p)
 end
-using ForwardDiff: derivative, Dual, Tag
-step_force(π/36,sim⁰)
-step_force(Dual{Tag{typeof(step_force), Float64}}(π/36,1),sim⁰)
+using ForwardDiff: derivative
+println("AD grad = ", derivative(x->step_force(x,deepcopy(sim)),π/36))
