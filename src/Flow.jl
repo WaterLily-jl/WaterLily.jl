@@ -35,9 +35,11 @@ function conv_diff!(r,u,Φ;ν=0.1,perdir=(0,))
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         # convection diffusion on inner cells
-        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u);
-               r[I,i] += Φ[I]) over I ∈ inside_u(N,0)
-        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,0)
+        @loop r[I,i] += ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u) over I ∈ slice(N,3,j)
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u);
+               r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] -= ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u))-ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j]-2,j)
     end
 end
 
