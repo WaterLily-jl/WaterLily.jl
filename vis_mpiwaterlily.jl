@@ -1,23 +1,53 @@
 using FileIO,JLD2,Plots
+using WaterLily
+d = 1
 
-rank_0 = load("/home/marin/Workspace/WaterLily/waterlily_0.jld2")["sdf"]#[4:end-2,4:end-2]
-rank_1 = load("/home/marin/Workspace/WaterLily/waterlily_1.jld2")["sdf"]#[4:end-2,4:end-2]
-rank_2 = load("/home/marin/Workspace/WaterLily/waterlily_2.jld2")["sdf"]#[4:end-2,4:end-2]
-rank_3 = load("/home/marin/Workspace/WaterLily/waterlily_3.jld2")["sdf"]#[4:end-2,4:end-2]
+rank_0 = load("/home/marin/Workspace/WaterLily/waterlily_1_0.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_1 = load("/home/marin/Workspace/WaterLily/waterlily_1_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_2 = load("/home/marin/Workspace/WaterLily/waterlily_1_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_3 = load("/home/marin/Workspace/WaterLily/waterlily_1_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+
+# @assert all(rank_0[:,end-1:end] .≈ rank_0[:,3:4])
+# @assert all(rank_2[:,end-1:end] .≈ rank_3[:,3:4])
+
 
 C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
 
 p1 = contourf(C', cmap=:imola10, aspect_ratio=:equal, levels=3)
 
-rank_1 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_1.jld2")["sdf"]#[4:end-2,4:end-2]
-rank_2 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_2.jld2")["sdf"]#[4:end-2,4:end-2]
-rank_3 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_3.jld2")["sdf"]#[4:end-2,4:end-2]
-rank_0 = load("/home/marin/Workspace/WaterLily/waterlily_haloupdate_0.jld2")["sdf"]#[4:end-2,4:end-2]
+rank_1_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_2_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_3_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_0_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_0.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
 
-C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
+C = vcat(hcat(rank_0_1,rank_1_1),hcat(rank_2_1,rank_3_1))
 
+# p2 = contourf(C[inside_u(size(C),1)]', cmap=:imola10, aspect_ratio=:equal, levels=3)
 p2 = contourf(C', cmap=:imola10, aspect_ratio=:equal, levels=3)
-plot(p1,p2,layout = @layout [a b])
+
+
+rank_1_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_2_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_3_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_0_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_0.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+
+C = vcat(hcat(rank_0_2,rank_1_2),hcat(rank_2_2,rank_3_2))
+
+p3 = contourf(C', cmap=:imola10, aspect_ratio=:equal, levels=3)
+
+
+rank_1_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_2_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_3_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_0_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_0.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+
+C = vcat(hcat(rank_0_3,rank_1_3),hcat(rank_2_3,rank_3_3))
+
+p4 = contourf(C', cmap=:imola10, aspect_ratio=:equal, levels=10)
+
+
+plot(p1,p2,p3,p4,layout = @layout [a b; c d])
+# plot(p1,p2,layout = @layout [a b])
 
 
 
@@ -137,3 +167,25 @@ plot(p1,p2,layout = @layout [a b])
 #     (neighbors[1,d] != MPI.PROC_NULL) && (A[halos(size(A),-d)] .= recv1)
 #     (neighbors[2,d] != MPI.PROC_NULL) && (A[halos(size(A),+d)] .= recv2)
 # end
+
+
+# MPI
+# MPI.Init()
+# dims   = [0, 0, 0]
+# comm   = MPI.COMM_WORLD
+# nprocs = MPI.Comm_size(comm)
+# periods = [0, 0, 0]
+# disp::Integer=1
+# reorder::Bool=true
+
+# MPI.Dims_create!(nprocs, dims)
+# comm_cart = MPI.Cart_create(comm, dims, periods, reorder)
+# me     = MPI.Comm_rank(comm_cart)
+# coords = MPI.Cart_coords(comm_cart)
+# # make the cart comm
+# neighbors = fill(MPI.PROC_NULL, NNEIGHBORS_PER_DIM, NDIMS_MPI);
+# for i = 1:NDIMS_MPI
+#     neighbors[:,i] .= MPI.Cart_shift(comm_cart, i-1, disp);
+# end
+# (me == 0) && println("nprocs=$(nprocs), dims[1]=$(dims[1]), dims[2]=$(dims[2])")
+# println("I am rank $me, at coordinate $coords")
