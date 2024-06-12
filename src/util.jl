@@ -82,13 +82,30 @@ becomes
 """
 macro loop(args...)
     ex,_,itr = args
-    _,I,R = itr.args
+    _,I,R = itr.args; sym = []
+    grab!(sym,ex)     # get arguments and replace composites in `ex`
+    setdiff!(sym,[I]) # don't want to pass I as an argument
+    @gensym kern      # generate unique kernel function name
     return quote
-        @simd for $I ∈ $R # serial computation
+        @kernel function $kern($(rep.(sym)...),@Const(I0)) # replace composite arguments
+            $I = @index(Global,Cartesian)
+            $I += I0
             @fastmath @inbounds $ex
         end
+        # $kern(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
+        $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
     end |> esc
 end
+function grab!(sym,ex::Expr)
+    ex.head == :. && return union!(sym,[ex])      # grab composite name and return
+    start = ex.head==:(call) ? 2 : 1              # don't grab function names
+    foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
+    ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
+end
+grab!(sym,ex::Symbol) = union!(sym,[ex])        # grab symbol name
+grab!(sym,ex) = nothing
+rep(ex) = ex
+rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
@@ -179,7 +196,7 @@ end
 """
     BCTuple(f,t,N)
 
-Generate a tuple of `N` values from either a boundary condition 
+Generate a tuple of `N` values from either a boundary condition
 function `f(i,t)` or the tuple of boundary conditions f=(fₓ,...).
 """
 BCTuple(f::Function,t,N)=ntuple(i->f(i,t),N)
@@ -193,8 +210,8 @@ BCTuple(f::Tuple,t,N)=f
 function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
     i = floor.(Int,x); y = x.-i
-    
-    # CartesianIndices around x 
+
+    # CartesianIndices around x
     I = CartesianIndex(i...); R = I:I+oneunit(I)
 
     # Linearly weighted sum over arr[R] (in serial)

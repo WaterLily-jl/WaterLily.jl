@@ -1,5 +1,6 @@
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 GR = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
 GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
