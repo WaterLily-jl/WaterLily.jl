@@ -37,7 +37,7 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     end
 end
 
-using ForwardDiff: Dual
+using ForwardDiff: Dual,Tag
 Base.eps(::Type{D}) where D<:Dual{Tag{G,T}} where {G,T} = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
