@@ -72,6 +72,14 @@ arrays = setup_backends()
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @test GPUArrays.@allowscalar all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
                            all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
+
+        # test interpolation
+        a = zeros(5,5,2) |> f; b = zeros(5,5) |> f
+        apply!((i,x)->x[i]+1.5,a); apply!(x->x[1]+1.5,b) # offset for start of grid
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5,1),a) .≈ [2.5,1.])
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5,3),a) .≈ [3.5,3.])
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
     end
 end
 

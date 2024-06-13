@@ -29,7 +29,7 @@ less accurately than inline terms because of the staggered grid.
         @inbounds(u[I+δ(j,I),i]+u[I+δ(j,I)+δ(i,I),i]
                  -u[I-δ(j,I),i]-u[I-δ(j,I)+δ(i,I),i])/4)
 
-using LinearAlgebra: eigvals
+using LinearAlgebra: eigvals, Hermitian
 """
     λ₂(I::CartesianIndex{3},u)
 
@@ -40,7 +40,7 @@ Jeong, J., & Hussain, F., doi:[10.1017/S0022112095000462](https://doi.org/10.101
 function λ₂(I::CartesianIndex{3},u)
     J = @SMatrix [∂(i,j,I,u) for i ∈ 1:3, j ∈ 1:3]
     S,Ω = (J+J')/2,(J-J')/2
-    eigvals(S^2+Ω^2)[2]
+    eigvals(Hermitian(S^2+Ω^2))[2]
 end
 
 """
