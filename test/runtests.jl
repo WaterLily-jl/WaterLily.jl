@@ -306,7 +306,7 @@ import WaterLily: ×
         p = zeros(N,N) |> f; u = zeros(N,N,2) |> f
         @inside p[I] = loc(0, I)[2]
         body = AutoBody((x,t)->√sum(abs2,x.-(N/2))-N÷4,(x,t)->x-SVector(t,0))
-        force = WaterLily.∮nds(p,u,body)
+        force = WaterLily.∮nds(p,body)
         @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
     end
 end

@@ -113,6 +113,11 @@ function measure(a::Bodies,x,t)
     sdf, map, _ = sdf_map_d(a.bodies,a.ops,x,t)
     measure(sdf,map,x,t)
 end
+# measures the distance, normal, and velocity accuratly for sdf≤1
+function measure_fast(body::AutoBody,x,t)
+    abs(body.sdf(x,t))>1 && return zero(eltype(x)),zero(x),zero(x)
+    measure(body.sdf,body.map,x,t)
+end
 function measure(sdf,map,x,t)
     # eval d=f(x,t), and n̂ = ∇f
     d = sdf(x,t)

@@ -33,6 +33,7 @@ function inside_u(dims::NTuple{N},j) where {N}
     CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
 end
 @inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
+@inline inside_u(u::AbstractArray{T,N}) where {T,N} = CartesianIndices(map(i->(2:i-1),size(u)[1:end-1]))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 

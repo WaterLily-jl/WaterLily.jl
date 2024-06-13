@@ -80,75 +80,32 @@ end
 
 Surface normal integral of field `p` over the `body`.
 """
-∮nds(flow::Flow,body::AbstractBody) = ∮nds(flow.p,flow.f,body,time(flow))
-function ∮nds(p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {T,N}
-    @fastmath @inline function fill!(df,p,I)
-        d = sdf(body,WaterLily.loc(0,I,T),t)
-        if abs(d)<1
-            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
-            df[I,:] .= p[I]*nᵢ*WaterLily.kern(clamp(dᵢ,-1,1))
-        else
-            df[I,:] .= 0
-        end
-    end
-    @loop fill!(df,p,I) over I ∈ inside(p)
-    T[sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
+∮nds(flow::Flow,body::AbstractBody) = ∮nds(flow.p,body,time(flow))
+∮nds(p::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside(p)) do I
+    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
+    p[I]*n*WaterLily.kern(d)
 end
 # viscous stress tensor
 ∇²u(I::CartesianIndex{2},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:2, j ∈ 1:2]
 ∇²u(I::CartesianIndex{3},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:3, j ∈ 1:3]
 """
-   ∮τnds(u::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0)
+   ∮τnds(u,body::AbstractBody,t=0)
 
 Compute the viscous force on a immersed body. 
 """
-∮τnds(flow::Flow,body::AbstractBody) = ∮τnds(flow.u,flow.f,body,time(flow))
-function ∮τnds(u::AbstractArray{T,N},df::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N}
-    @warn "∮τnds is can be innacurate for viscous force computation, use with care..."
-    Nu,_ = size_u(u); In = CartesianIndices(map(i->(2:i-1),Nu))
-    @fastmath @inline function fill!(df,u,I)
-        d = sdf(body,WaterLily.loc(0,I,T),t)
-        if abs(d)<1
-            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
-            df[I,:] .= ∇²u(I,u)*nᵢ*WaterLily.kern(clamp(dᵢ,-1,1))
-        else
-            df[I,:] .= 0
-        end
-    end
-    @loop fill!(df,u,I) over I ∈ inside(In)
-    T[sum(@inbounds(df[inside(In),i])) for i ∈ 1:N-1] |> Array
+∮τnds(flow::Flow,body::AbstractBody) = ∮τnds(flow.u,body,time(flow))
+∮τnds(u::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside_u(u)) do I
+    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
+    ∇²u(I,u)*n*WaterLily.kern(d)
 end
 using LinearAlgebra: cross
 """
-    ∮xnds(x₀::Svector,u::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0)
+    ∮xnds(x₀,up,body::AbstractBody,t=0)
 
 Computes the pressure moment on a immersed body relative to point x₀. 
 """
-∮xnds(x₀,flow::Flow,body::AbstractBody) = ∮xnds(x₀,flow.p,flow.f,body,time(flow))
-function ∮xnds(x₀::SVector{N,T},p::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0) where {N,T}
-    @fastmath @inline function fill!(df,p,I)
-        d = sdf(body,WaterLily.loc(0,I,T),t)
-        if abs(d)<1
-            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
-            df[I,:] .= p[I]*cross((WaterLily.loc(0,I,T)-x₀),nᵢ*WaterLily.kern(clamp(dᵢ,-1,1)))
-        else
-            df[I,:] .= 0
-        end
-    end
-    @loop fill!(df,p,I) over I ∈ inside(p)
-    T[sum(@inbounds(df[inside(p),i])) for i ∈ 1:N] |> Array
-end
-∮xnds(x₀,flow::Flow{2},body::AbstractBody) = ∮xnds(x₀,flow.p,flow.σ,body,time(flow))
-function ∮xnds(x₀::SVector{2,T},p::AbstractArray{T,2},σ::AbstractArray{T,2},body::AbstractBody,t=0) where T
-    @fastmath @inline function fill!(df,p,I)
-        d = sdf(body,WaterLily.loc(0,I,T),t)
-        if abs(d)<1
-            dᵢ,nᵢ,_ = measure(body,WaterLily.loc(0,I,T),t)
-            df[I] = p[I]*cross((WaterLily.loc(0,I,T)-x₀),nᵢ*WaterLily.kern(clamp(dᵢ,-1,1)))
-        else
-            df[I] = 0
-        end
-    end
-    @loop fill!(σ,p,I) over I ∈ inside(p)
-    sum(@inbounds(σ[inside(p)]))
+∮xnds(x₀,flow::Flow,body::AbstractBody) = ∮xnds(x₀,flow.p,body,time(flow))
+∮xnds(x₀::SVector{N,T},p::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside(p)) do I
+    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
+    p[I]*cross((WaterLily.loc(0,I,T)-x₀),n*WaterLily.kern(d))
 end

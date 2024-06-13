@@ -47,7 +47,7 @@ let
             mom_step!(sim.flow,sim.pois)
             
             # pressure force
-            force = -WaterLily.∮nds(sim.flow.p,sim.flow.f,sim.body,t)
+            force = -WaterLily.∮nds(sim.flow.p,sim.body,t)
             
             # compute motion and acceleration 1DOF
             Δt = sim.flow.Δt[end]
