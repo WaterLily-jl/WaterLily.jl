@@ -2,17 +2,7 @@ using WaterLily
 using StaticArrays
 using Plots
 
-# function EquilateralTriangle(p::AbstractVector{T}, r::T ) where T
-#     k = sqrt(3.0);
-#     x = abs(p[1]) - r;
-#     y = p[2] + r/k;
-#     if( x+k*y>0.0 ) p = SA[camp(x-k*y,-2r,2),-k*x-y]./2.0;
-#     p = SA[clamp(x,-2r,2),y]
-#     return -norm(p)*sign(p[2]);
-# end
-
 norm(x) = √sum(abs2,x)
-
 function make_sim(;L=2^5,U=1,Re=250,mem=Array)
 
     # triangle sdf    

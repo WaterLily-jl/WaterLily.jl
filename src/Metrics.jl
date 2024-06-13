@@ -82,7 +82,7 @@ Surface normal integral of field `p` over the `body`.
 """
 ∮nds(flow::Flow,body::AbstractBody) = ∮nds(flow.p,body,time(flow))
 ∮nds(p::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside(p)) do I
-    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
+    d,n,_ = measure_fast(body,WaterLily.loc(0,I),t)
     p[I]*n*WaterLily.kern(d)
 end
 # viscous stress tensor
@@ -95,7 +95,7 @@ Compute the viscous force on a immersed body.
 """
 ∮τnds(flow::Flow,body::AbstractBody) = ∮τnds(flow.u,body,time(flow))
 ∮τnds(u::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside_u(u)) do I
-    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
+    d,n,_ = measure_fast(body,WaterLily.loc(0,I),t)
     ∇²u(I,u)*n*WaterLily.kern(d)
 end
 using LinearAlgebra: cross
@@ -106,6 +106,6 @@ Computes the pressure moment on a immersed body relative to point x₀.
 """
 ∮xnds(x₀,flow::Flow,body::AbstractBody) = ∮xnds(x₀,flow.p,body,time(flow))
 ∮xnds(x₀::SVector{N,T},p::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside(p)) do I
-    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
-    p[I]*cross((WaterLily.loc(0,I,T)-x₀),n*WaterLily.kern(d))
+    d,n,_ = measure_fast(body,WaterLily.loc(0,I),t)
+    p[I]*cross((WaterLily.loc(0,I)-x₀),n*WaterLily.kern(d))
 end
