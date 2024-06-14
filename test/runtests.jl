@@ -304,7 +304,7 @@ import WaterLily: ×
         @test GPUArrays.@allowscalar p[J]==ω[2]
         f==Array && @test WaterLily.ω(J,u)≈ω
         @inside p[I] = WaterLily.ω_mag(I,u)
-        @test GPUArrays.@allowscalar p[J]==sqrt(sum(abs2,ω))
+        @test GPUArrays.@allowscalar p[J]≈sqrt(sum(abs2,ω))
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test GPUArrays.@allowscalar p[J]≈ω[1]
         apply!((x)->1,p)
