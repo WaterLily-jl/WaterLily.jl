@@ -68,7 +68,8 @@ end
 """
     @loop <expr> over <I ∈ R>
 
-Macro to automate fast loops using @simd.
+Macro to automate fast loops using @simd when running in serial,
+or KernelAbstractions when running multi-threaded CPU or GPU.
 
 For example
 
@@ -79,21 +80,39 @@ becomes
     @simd for I ∈ R
         @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
+
+on serial execution, or
+
+    @kernel function kern(a,i,@Const(I0))
+        I ∈ @index(Global,Cartesian)+I0
+        a[I,i] += sum(loc(i,I))
+    end
+    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
+
+when multi-threading on CPU or using CuArrays.
+Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 """
 macro loop(args...)
     ex,_,itr = args
     _,I,R = itr.args; sym = []
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
-    @gensym kern      # generate unique kernel function name
+    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
     return quote
-        @kernel function $kern($(rep.(sym)...),@Const(I0)) # replace composite arguments
+        function $kern($(rep.(sym)...),::Val{1})
+            @simd for $I ∈ $R
+                @fastmath @inbounds $ex
+            end
+        end
+        @kernel function $kern_($(rep.(sym)...),@Const(I0)) # replace composite arguments
             $I = @index(Global,Cartesian)
             $I += I0
             @fastmath @inbounds $ex
         end
-        # $kern(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
-        $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+        function $kern($(rep.(sym)...),_)
+            $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+        end
+        $kern($(sym...),Val{Threads.nthreads()}()) # dispatch to SIMD for -t 1, or KA otherwise
     end |> esc
 end
 function grab!(sym,ex::Expr)
@@ -102,7 +121,7 @@ function grab!(sym,ex::Expr)
     foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
     ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
 end
-grab!(sym,ex::Symbol) = union!(sym,[ex])        # grab symbol name
+grab!(sym,ex::Symbol) = union!(sym,[ex])          # grab symbol name
 grab!(sym,ex) = nothing
 rep(ex) = ex
 rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
