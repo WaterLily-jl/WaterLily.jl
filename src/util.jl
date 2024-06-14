@@ -133,7 +133,7 @@ using StaticArrays
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N}) where N = SVector{N}(I.I .- 1.5f0 .- 0.5f0   .* δ(i,I).I)
+@inline loc(i,I::CartesianIndex{N}) where N = SVector{N}(I.I .- 1.5f0 .- 0.5f0 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex) = loc(last(Ii),Base.front(Ii))
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))

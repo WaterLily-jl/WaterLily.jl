@@ -25,10 +25,10 @@ arrays = setup_backends()
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...) .- 1.5
 
-    # ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
-    # WaterLily.grab!(sym,ex)
-    # @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
-    # @test sym == [:a, :I, :i, :(p.b), :q]
+    ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
+    WaterLily.grab!(sym,ex)
+    @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
+    @test sym == [:a, :I, :i, :(p.b), :q]
 
     @test all(WaterLily.BCTuple((1,2,3),0,3).==WaterLily.BCTuple((i,t)->i,0,3))
     @test all(WaterLily.BCTuple((i,t)->t,1.234,3).==ntuple(i->1.234,3))
