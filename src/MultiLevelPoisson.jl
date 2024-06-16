@@ -28,7 +28,7 @@ function restrictL!(a::AbstractArray{T},b;perdir=(0,)) where T
     for i ∈ 1:n
         @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
-    BC!(a,zeros(SVector{n,T}),false,perdir)  # correct μ₀ @ boundaries
+    BC!(a,zeros(SVector{n,T}),false) #,perdir)  # correct μ₀ @ boundaries
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
@@ -78,7 +78,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     smooth!(coarse)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
-    BC!(fine.ϵ;perdir=fine.perdir)
+    # BC!(fine.ϵ;perdir=fine.perdir)
     increment!(fine)
 end
 
@@ -87,7 +87,7 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
-    BC!(p.x;perdir=p.perdir)
+    # BC!(p.x;perdir=p.perdir)
     residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
@@ -97,6 +97,6 @@ function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     end
     (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
     (nᵖ>4 && divisible(ml.levels[end])) && push!(ml.levels,restrictML(ml.levels[end])) # add a level if this was hard
-    BC!(p.x;perdir=p.perdir)
+    # BC!(p.x;perdir=p.perdir)
     push!(ml.n,nᵖ);
 end

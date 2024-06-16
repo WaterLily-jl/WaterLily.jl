@@ -1,4 +1,4 @@
-using WaterLily,StaticArrays,CUDA
+using WaterLily,StaticArrays
 
 function make_sim(θ;L=32,U=1,Re=100,mem=Array)
     function map(x,t)
@@ -11,6 +11,11 @@ function make_sim(θ;L=32,U=1,Re=100,mem=Array)
     end
     Simulation((2L,2L),(U,0),L,ν=U*L/Re,body=AutoBody(sdf,map),T=typeof(θ[]),mem=mem)
 end
+
+sim = make_sim(0f0);
+a,b = sim.flow,sim.pois;
+WaterLily.mom_step!(a,b)
+@time WaterLily.mom_step!(a,b) # test allocations
 
 function step_force!(sim)
     sim_step!(sim)

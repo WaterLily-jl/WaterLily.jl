@@ -146,18 +146,29 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson) where N
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    U = BCTuple(a.U,time(a),N)
-    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,time(a),a.g,a.U)
-    BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
-    a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
+    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν)
+    BDIM!(a); BC!(a.u,a.U,a.exitBC)
+    a.exitBC && exitBC!(a.u,a.u⁰,a.U,a.Δt[end]) # convective exit
+    project!(a,b); BC!(a.u,a.U,a.exitBC)
     # corrector u → u¹
-    U = BCTuple(a.U,timeNext(a),N)
-    conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,timeNext(a),a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
-    project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
+    conv_diff!(a.f,a.u,a.σ,ν=a.ν)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC)
+    project!(a,b,0.5); BC!(a.u,a.U,a.exitBC)
+
+    # # Perdir and time(a) are both allocating
+    # # predictor u → u'
+    # U = BCTuple(a.U,time(a),N)
+    # conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    # accelerate!(a.f,time(a),a.g,a.U)
+    # BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
+    # a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
+    # project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
+    # # corrector u → u¹
+    # U = BCTuple(a.U,timeNext(a),N)
+    # conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
+    # accelerate!(a.f,timeNext(a),a.g,a.U)
+    # BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
+    # project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))

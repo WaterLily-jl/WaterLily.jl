@@ -89,7 +89,7 @@ without the corrections, no solution exists.
 """
 function residual!(p::Poisson) 
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
-    s = sum(p.r)/length(p.r[inside(p.r)])
+    s = sum(p.r)/length(inside(p.r))
     abs(s) <= 2eps(eltype(s)) && return
     @inside p.r[I] = p.r[I]-s
 end
@@ -104,7 +104,7 @@ Note: This runs for general backends, but is _very_ slow to converge.
 """
 @fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
-    BC!(p.ϵ;perdir=p.perdir)
+    # BC!(p.ϵ;perdir=p.perdir)
     increment!(p)
 end
 
@@ -119,13 +119,14 @@ Note: This runs for general backends and is the default smoother.
 function pcg!(p::Poisson{T};it=6) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
-    insideI = inside(x) # [insideI]
+    # insideI = inside(x) # [insideI]
     rho = r⋅z
     abs(rho)<10eps(T) && return
     for i in 1:it
-        BC!(ϵ;perdir=p.perdir)
+        # BC!(ϵ;perdir=p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho / (z[insideI]⋅ϵ[insideI])
+        # alpha = rho / (z[insideI]⋅ϵ[insideI])
+        alpha = rho / (z⋅ϵ)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
         (i==it || abs(alpha)<1e-2) && return
@@ -140,7 +141,7 @@ end
 smooth!(p) = pcg!(p)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
-L∞(p::Poisson) = maximum(abs.(p.r))
+L∞(p::Poisson) = maximum(abs,p.r)
 
 """
     solver!(A::Poisson;log,tol,itmx)
@@ -156,7 +157,7 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `itmx`: Maximum number of iterations.
 """
 function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
-    BC!(p.x;perdir=p.perdir)
+    # BC!(p.x;perdir=p.perdir)
     residual!(p); r₂ = L₂(p)
     log && (res = [r₂])
     nᵖ=0
@@ -165,7 +166,7 @@ function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
         log && push!(res,r₂)
         nᵖ+=1
     end
-    BC!(p.x;perdir=p.perdir)
+    # BC!(p.x;perdir=p.perdir)
     push!(p.n,nᵖ)
     log && return res
 end
