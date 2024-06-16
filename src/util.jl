@@ -85,7 +85,7 @@ on serial execution, or
 
     @kernel function kern(a,i,@Const(I0))
         I ∈ @index(Global,Cartesian)+I0
-        a[I,i] += sum(loc(i,I))
+        @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
     kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
 
@@ -243,6 +243,6 @@ function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
 end
 function interp(x::SVector{D}, varr::AbstractArray) where {D}
     # Shift to align with each staggered grid component and interpolate
-    @inline shift(i) = SVector{D}(ifelse(i==j,1//2,0) for j in 1:D)
+    @inline shift(i) = SVector{D}(ifelse(i==j,0.5f0,0f0) for j in 1:D)
     return SVector{D}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end
