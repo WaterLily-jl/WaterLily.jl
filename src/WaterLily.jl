@@ -77,7 +77,7 @@ struct Simulation
     end
 end
 
-time(sim::Simulation) = time(sim.flow)
+time(sim::Simulation) = sum(@view(sim.flow.Δt[1:end-1]))
 """
     sim_time(sim::Simulation)
 
@@ -112,7 +112,7 @@ end
 
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
-function measure!(sim::Simulation,t=timeNext(sim.flow))
+function measure!(sim::Simulation,t=sum(sim.flow.Δt))
     measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
     update!(sim.pois)
 end

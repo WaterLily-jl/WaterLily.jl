@@ -213,14 +213,6 @@ function BC!(a;perdir=(0,))
     end
 end
 """
-    BCTuple(f,t,N)
-
-Generate a tuple of `N` values from either a boundary condition
-function `f(i,t)` or the tuple of boundary conditions f=(fₓ,...).
-"""
-BCTuple(f::Function,t,N)=ntuple(i->f(i,t),N)
-BCTuple(f::Tuple,t,N)=f
-"""
     interp(x::SVector, arr::AbstractArray)
 
     Linear interpolation from array `arr` at index-coordinate `x`.
