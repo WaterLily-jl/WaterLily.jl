@@ -119,13 +119,12 @@ Note: This runs for general backends and is the default smoother.
 function pcg!(p::Poisson{T};it=6) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
-    # insideI = inside(x) # [insideI]
     rho = r⋅z
     abs(rho)<10eps(T) && return
     for i in 1:it
         # BC!(ϵ;perdir=p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        # alpha = rho / (z[insideI]⋅ϵ[insideI])
+        # alpha = rho / inner(z,ϵ)
         alpha = rho / (z⋅ϵ)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
@@ -140,6 +139,7 @@ function pcg!(p::Poisson{T};it=6) where T
 end
 smooth!(p) = pcg!(p)
 
+# inner(a,b) = sum(@inbounds(a[I]*b[I]) for I ∈ inside(a))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
