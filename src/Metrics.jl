@@ -81,7 +81,7 @@ end
 Surface normal integral of field `p` over the `body`.
 """
 ∮nds(flow::Flow,body::AbstractBody) = ∮nds(flow.p,body,time(flow))
-∮nds(p::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside(p)) do I
+∮nds(p::AbstractArray,body::AbstractBody,t=0) = sum(inside(p)) do I
     d,n,_ = measure_fast(body,WaterLily.loc(0,I),t)
     p[I]*n*WaterLily.kern(d)
 end
