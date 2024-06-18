@@ -27,13 +27,13 @@ at time `t` using an immersion kernel of size `ϵ`.
 
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
-function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where {N}
+function measure!(a::Flow{N,T},body::AbstractBody;t=T(0),ϵ=1) where {N,T}
     a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
-        d[I] = sdf(body,loc(0,I),t)
+        d[I] = sdf(body,loc(0,I,T),t)
         if abs(d[I])<2+ϵ
             for i ∈ 1:N
-                dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I),t)
+                dᵢ,nᵢ,Vᵢ = measure(body,WaterLily.loc(i,I,T),t)
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
                 μ₁[I,i,:] .= WaterLily.μ₁(dᵢ,ϵ)*nᵢ
@@ -43,8 +43,8 @@ function measure!(a::Flow{N},body::AbstractBody;t=0,ϵ=1) where {N}
         end
     end
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
-    BC!(a.μ₀,zeros(SVector{N}),a.exitBC,a.perdir) # BC on μ₀, don't fill normal component yet
-    BC!(a.V ,zeros(SVector{N}),a.exitBC,a.perdir)
+    BC!(a.μ₀,zeros(SVector{N,T}),a.exitBC,a.perdir) # BC on μ₀, don't fill normal component yet
+    BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
 end
 
 # Convolution kernel and its moments
