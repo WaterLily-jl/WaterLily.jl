@@ -23,6 +23,9 @@ jobs:
         exclude:
           - os: macOS-latest
             arch: x86
+        env:
+          - JULIA_NUM_THREADS=1
+          - JULIA_NUM_THREADS=auto
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
