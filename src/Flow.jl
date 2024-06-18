@@ -68,12 +68,8 @@ Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
 accelerate!(r,dt,g::Function,::Tuple,t=sum(dt)) = for i ∈ 1:last(size(r))
     r[..,i] .+= g(i,t)
 end
-accelerate!(r,dt,g::Nothing,U::Function,t=sum(dt)) = for i ∈ 1:last(size(r))
-    r[..,i] .+= ForwardDiff.derivative(τ->U(i,τ),t)
-end
-accelerate!(r,dt,g::Function,U::Function,t=sum(dt)) = for i ∈ 1:last(size(r))
-    r[..,i] .+= g(i,t) + ForwardDiff.derivative(τ->U(i,τ),t)
-end
+accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(i,t)->ForwardDiff.derivative(τ->U(i,τ),t),())
+accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(i,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,τ),t),())
 accelerate!(r,dt,::Nothing,::Tuple) = nothing
 """
     BCTuple(U,dt,N)
@@ -165,8 +161,6 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
-BCTuple(f::Function,dt,N)=(t=sum(dt);ntuple(i->f(i,t),N))
-BCTuple(f::Tuple,dt,N)=f
 
 function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
