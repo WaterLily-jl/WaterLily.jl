@@ -30,7 +30,7 @@ include("Metrics.jl")
 
 """
     Simulation(dims::NTuple, u_BC::Union{NTuple,Function}, L::Number;
-               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1, perdir=(1,)
+               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1, perdir=()
                uλ::nothing, g=nothing, exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array)
@@ -63,7 +63,7 @@ struct Simulation
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, u_BC, L::Number;
-                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(0,),
+                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"

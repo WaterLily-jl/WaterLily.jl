@@ -33,7 +33,7 @@ function median(a,b,c)
     return a
 end
 
-function conv_diff!(r,u,Φ;ν=0.1,perdir=(0,))
+function conv_diff!(r,u,Φ;ν=0.1,perdir=())
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
@@ -108,7 +108,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
-                  uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
+                  uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
@@ -130,7 +130,7 @@ end
 function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
-    solver!(b)
+    solver!(b); perBC!(b.x,b.perdir)
     for i ∈ 1:n  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
@@ -147,17 +147,17 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
     U = BCTuple(a.U,@view(a.Δt[1:end-1]),N)
-    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν)#,perdir=a.perdir)
+    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U)
-    BDIM!(a); BC!(a.u,U,a.exitBC)#,a.perdir)
+    BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,U,a.exitBC)#,a.perdir)
+    project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
     # corrector u → u¹
     U = BCTuple(a.U,a.Δt,N)
-    conv_diff!(a.f,a.u,a.σ,ν=a.ν)#,perdir=a.perdir)
+    conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,a.Δt,a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC)#,a.perdir)
-    project!(a,b,0.5); BC!(a.u,U,a.exitBC)#,a.perdir)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
+    project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
