@@ -225,9 +225,9 @@ end
     end
 end
 
-function TGVsim(mem;T=Float32,perdir=(1,2))
+function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
     # Define vortex size, velocity, viscosity
-    L = 64; κ=2π/L; ν = 1/(κ*1e8);
+    L = 64; κ=2π/L; ν = 1/(κ*Re);
     # TGV vortex in 2D
     function TGV(i,xy,t,κ,ν)
         x,y = @. (xy)*κ  # scaled coordinates
@@ -239,13 +239,22 @@ function TGVsim(mem;T=Float32,perdir=(1,2))
 end
 @testset "Flow.jl periodic TGV" begin
     for f ∈ arrays
-        sim,TGV = TGVsim(f); ue=copy(sim.flow.u) |> Array
+        sim,TGV = TGVsim(f,T=Float32); ue=copy(sim.flow.u) |> Array
         sim_step!(sim,π/100)
         apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
         u = sim.flow.u |> Array
         @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
               WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
     end
+end
+@testset "ForwardDiff of TGV" begin
+    function TGV_ke(Re)
+        sim,_ = TGVsim(Array;Re)
+        sim_step!(sim,π/100)
+        sum(I->WaterLily.ke(I,sim.flow.u),inside(sim.flow.p))
+    end
+    using ForwardDiff:derivative
+    @test derivative(TGV_ke,1e3) ≈ (TGV_ke(1e3+1)-TGV_ke(1e3-1))/2 rtol=1e-6    
 end
 
 function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
