@@ -22,20 +22,20 @@ function step_force!(sim)
     sum(sim.flow.p)
 end
 
-mem = Array
-θ = Ref(π/36) # wrap the parameter in a Ref so it can be updated
+θ₀ = Float32(π/36)
+θ = Ref(θ₀) # wrap the parameter in a Ref so it can be updated
 
-sim = make_sim(θ; mem);
+sim = make_sim(θ);
 lift_hist = [step_force!(sim) for _ ∈ 1:20]
-θ[] = π/36+1e-4; a = step_force!(deepcopy(sim)); # use a copy to avoid updating sim
-θ[] = π/36-1e-4; b = step_force!(deepcopy(sim)); # use a copy to avoid updating sim
-θ[] = π/36; c = step_force!(sim);
-println("sim value and FD partial = ", (c,(a-b)/2e-4))
+θ[] = θ₀+0.001f0; a = step_force!(deepcopy(sim)); # use a copy to avoid updating sim
+θ[] = θ₀-0.001f0; b = step_force!(deepcopy(sim)); # use a copy to avoid updating sim
+θ[] = θ₀; c = step_force!(sim);
+println("sim value and FD partial = ", (c,(a-b)/0.002f0))
 
 using ForwardDiff: Dual,Tag
-T = typeof(Tag(step_force!, Float64)) # make a tag
-θAD = Ref(Dual{T}(π/36, 0.))          # wrap the Dual parameter in a Ref
-simAD = make_sim(θAD; mem);          # make a sim of the correct type
+T = typeof(Tag(step_force!,typeof(θ₀))) # make a tag
+θAD = Ref(Dual{T}(θ₀,0))                # wrap the Dual parameter in a Ref
+simAD = make_sim(θAD);                  # make a sim of the correct type
 lift_histAD = [step_force!(simAD) for _ ∈ 1:20] # still works
-θAD[] = Dual{T}(π/36,1.)              # update partial to take derivative
+θAD[] = Dual{T}(θ₀,1)                   # update partial to take derivative
 println("simAD = ", step_force!(simAD))
