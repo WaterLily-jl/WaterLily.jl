@@ -197,21 +197,9 @@ function exitBC!(u,u⁰,U,Δt)
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
 end
 """
-    BC!(a)
-Apply zero Neumann boundary conditions to the ghost cells of a _scalar_ field.
+    perBC!(a,perdir)
+Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
-function BC!(a;perdir=())
-    N = size(a)
-    for j ∈ eachindex(N)
-        if j in perdir
-            @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-            @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
-        else
-            @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
-            @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
-        end
-    end
-end
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
     @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)

@@ -167,6 +167,7 @@ function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
         log && push!(res,r₂)
         nᵖ+=1
     end
+    perBC!(p.x,p.perdir)
     push!(p.n,nᵖ)
     log && return res
 end

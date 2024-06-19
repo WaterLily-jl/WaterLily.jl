@@ -33,13 +33,10 @@ using ReadVTK, WriteVTK
         u = rand(Ng..., D) |> f # vector
         σ = rand(Ng...) |> f # scalar
         BC!(u, U)
-        BC!(σ)
         @test GPUArrays.@allowscalar all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1]) &&
             all(u[3:end-1, 1, 1] .== u[3:end-1, 2, 1]) && all(u[3:end-1, end, 1] .== u[3:end-1, end-1, 1])
         @test GPUArrays.@allowscalar all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
             all(u[1, 3:end-1, 2] .== u[2, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end-1, 3:end-1, 2])
-        @test GPUArrays.@allowscalar all(σ[1, 2:end-1] .== σ[2, 2:end-1]) && all(σ[end, 2:end-1] .== σ[end-1, 2:end-1]) &&
-            all(σ[2:end-1, 1] .== σ[2:end-1, 2]) && all(σ[2:end-1, end] .== σ[2:end-1, end-1])
 
         GPUArrays.@allowscalar u[end,:,1] .= 3
         BC!(u,U,true) # save exit values
@@ -50,7 +47,7 @@ using ReadVTK, WriteVTK
 
         BC!(u,U,true,(2,)) # periodic in y and save exit values
         @test GPUArrays.@allowscalar all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
-        BC!(σ;perdir=(1,2)) # periodic in two directions
+        WaterLily.perBC!(σ,(1,2)) # periodic in two directions
         @test GPUArrays.@allowscalar all(σ[1, 2:end-1] .== σ[end-1, 2:end-1]) && all(σ[2:end-1, 1] .== σ[2:end-1, end-1])
 
         u = rand(Ng..., D) |> f # vector
