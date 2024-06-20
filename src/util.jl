@@ -126,7 +126,7 @@ macro loop(args...)
         function $kern($(rep.(sym)...),::Val{:KernelAbstractions})
             $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
         end
-        $kern($(sym...),Val{$backend}()) # dispatch to SIMD or KA otherwise
+        $kern($(sym...),Val{$(QuoteNode(backend))}()) # dispatch to SIMD or KA otherwise
     end |> esc
 end
 function grab!(sym,ex::Expr)
