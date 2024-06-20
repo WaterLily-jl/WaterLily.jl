@@ -77,7 +77,7 @@ struct Simulation
     end
 end
 
-time(sim::Simulation) = sum(@view(sim.flow.Δt[1:end-1]))
+time(sim::Simulation) = time(sim.flow)
 """
     sim_time(sim::Simulation)
 

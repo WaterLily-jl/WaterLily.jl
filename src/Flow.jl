@@ -121,6 +121,13 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     end
 end
 
+"""
+    time(a::Flow)
+
+Current flow time.
+"""
+time(a::Flow) = sum(@view(a.Δt[1:end-1]))
+
 function BDIM!(a::Flow)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
