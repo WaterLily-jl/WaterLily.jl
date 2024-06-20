@@ -228,6 +228,6 @@ function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
 end
 function interp(x::SVector{D}, varr::AbstractArray) where {D}
     # Shift to align with each staggered grid component and interpolate
-    @inline shift(i) = SVector{D}(ifelse(i==j,0.5f0,0f0) for j in 1:D)
+    @inline shift(i) = SVector{D}(ifelse(i==j,0.5,0.0) for j in 1:D)
     return SVector{D}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end
