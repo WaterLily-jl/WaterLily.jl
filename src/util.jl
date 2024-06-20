@@ -66,6 +66,7 @@ macro inside(ex)
 end
 
 # Could also use ScopedValues in Julia 1.11+
+using Preferences
 const backend = Symbol(@load_preference("backend", "KernelAbstractions"))
 function set_backend(new_backend::String)
     if !(new_backend in ("SIMD", "KernelAbstractions"))
