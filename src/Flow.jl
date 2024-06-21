@@ -33,7 +33,7 @@ function median(a,b,c)
     return a
 end
 
-function conv_diff!(r,u,Φ;ν=0.1,perdir=(0,))
+function conv_diff!(r,u,Φ;ν=0.1,perdir=())
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
@@ -61,21 +61,23 @@ upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I
 
 using EllipsisNotation
 """
-    accelerate!(r,t,g)
+    accelerate!(r,dt,g)
 
-This function adds a uniform acceleration field `g` at time `t` to `r`.
-If `g ≠ nothing`, then `g(i,t)=dUᵢ/dt`.
+Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
 """
-accelerate!(r,t,g::Function,::Tuple) = for i ∈ 1:last(size(r))
+accelerate!(r,dt,g::Function,::Tuple,t=sum(dt)) = for i ∈ 1:last(size(r))
     r[..,i] .+= g(i,t)
 end
-accelerate!(r,t,g::Nothing,U::Function) = for i ∈ 1:last(size(r))
-    r[..,i] .+= ForwardDiff.derivative(τ->U(i,τ),t)
-end
-accelerate!(r,t,g::Function,U::Function) = for i ∈ 1:last(size(r))
-    r[..,i] .+= g(i,t) + ForwardDiff.derivative(τ->U(i,τ),t)
-end
-accelerate!(r,t,::Nothing,::Tuple) = nothing
+accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(i,t)->ForwardDiff.derivative(τ->U(i,τ),t),())
+accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(i,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,τ),t),())
+accelerate!(r,dt,::Nothing,::Tuple) = nothing
+"""
+    BCTuple(U,dt,N)
+
+Return BC tuple `U(i∈1:N, t=sum(dt))`.
+"""
+BCTuple(f::Function,dt,N,t=sum(dt))=ntuple(i->f(i,t),N)
+BCTuple(f::Tuple,dt,N)=f
 
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
@@ -106,7 +108,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
-                  uλ::Function=(i, x) -> 0., perdir=(0,), exitBC=false, T=Float64) where D
+                  uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
@@ -114,12 +116,17 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         u⁰ = copy(u);
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
+        BC!(μ₀,ntuple(zero, D),false,perdir)
         new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
     end
 end
 
-time(flow::Flow) = sum(flow.Δt[1:end-1])
-timeNext(flow::Flow) = sum(flow.Δt)
+"""
+    time(a::Flow)
+
+Current flow time.
+"""
+time(a::Flow) = sum(@view(a.Δt[1:end-1]))
 
 function BDIM!(a::Flow)
     dt = a.Δt[end]
@@ -146,16 +153,16 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson) where N
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    U = BCTuple(a.U,time(a),N)
+    U = BCTuple(a.U,@view(a.Δt[1:end-1]),N)
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,time(a),a.g,a.U)
+    accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U)
     BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
     # corrector u → u¹
-    U = BCTuple(a.U,timeNext(a),N)
+    U = BCTuple(a.U,a.Δt,N)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,timeNext(a),a.g,a.U)
+    accelerate!(a.f,a.Δt,a.g,a.U)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
     project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
     push!(a.Δt,CFL(a))
