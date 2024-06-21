@@ -311,33 +311,33 @@ import WaterLily: ×
         @test WaterLily.L₂(p)≈prod(size(p).-2)
         # test force routines
         N = 32
-        p = zeros(N,N) |> f; u = zeros(N,N,2) |> f
+        p = zeros(N,N) |> f; df₂ = zeros(N,N,2) |> f; df₃ = zeros(N,N,N,3) |> f
         @inside p[I] = loc(0, I)[2]
         body = AutoBody((x,t)->√sum(abs2,x.-(N/2))-N÷4,(x,t)->x)
-        force = WaterLily.∮nds(p,body)
+        force = WaterLily.pressure_force(p,df₂,body)
         @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
         # stress tensor
-        u₂ = zeros(N,N,2) |> f;
+        u₂ = zeros(N,N,2) |> f
         u₃ = zeros(N,N,N,3) |> f
-        @test all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ 0) 
-        @test all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
+        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ 0)
+        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
         apply!((i,x)->x[i],u₂) # uniform gradient
         apply!((i,x)->x[i],u₃)
-        @test all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
-        @test all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
+        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
+        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
         apply!((i,x)->x[i%2+1],u₂) # shear
         apply!((i,x)->x[i%3+1],u₃)
-        @test all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
-        @test all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
+        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
+        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
         # viscous force
         u₂ .= 0; u₃ .= 0
-        @test all(WaterLily.∮τnds(u₂,body) .≈ 0)
-        @test all(WaterLily.∮τnds(u₃,body) .≈ 0)
+        @test all(WaterLily.viscous_force(u₂,1.0,df₂,body) .≈ 0)
+        @test all(WaterLily.viscous_force(u₃,1.0,df₃,body) .≈ 0)
         # pressure moment
         p₂ = zeros(N,N) |> f; apply!(x->x[2],p₂)
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
-        @test WaterLily.∮xnds(SVector{2,Float64}(N/2,N/2),p₂,body,0) ≈ 0 # no moment in hydrostatic pressure
-        @test all(WaterLily.∮xnds(SVector{3,Float64}(N/2,N/2,N/2),p₃,body,0) .≈ SA[0 0 0]) # with a 3D field, 3D moments
+        @test WaterLily.pressure_moment(SVector{2,Float64}(N/2,N/2),p₂,df₂,body,0)[1] ≈ 0 # no moment in hydrostatic pressure
+        @test all(WaterLily.pressure_moment(SVector{3,Float64}(N/2,N/2,N/2),p₃,df₃,body,0) .≈ SA[0 0 0]) # with a 3D field, 3D moments
     end
 end
 

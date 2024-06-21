@@ -75,37 +75,67 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
     n = norm2(θ)
     n<=eps(n) ? 0. : θ'*ω(I,u) / n
 end
-"""
-    ∮nds(p,body::AutoBody,t=0)
 
-Surface normal integral of field `p` over the `body`.
 """
-∮nds(flow::Flow,body::AbstractBody) = ∮nds(flow.p,body,time(flow))
-∮nds(p::AbstractArray{T},body::AbstractBody,t=0) where T = sum(inside(p)) do I
-    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
-    p[I]*n*WaterLily.kern(d)
+    nds(body::AutoBody,x,t)
+
+BDIM-masked surface normal.
+"""
+@inline function nds(body::AutoBody,x,t)
+    d,n,_ = measure_fast(body,x,t)
+    n*WaterLily.kern(clamp(d,-1,1))
 end
-# viscous stress tensor
+
+"""
+    pressure_force(sim::Simulation)
+
+Compute the pressure force on an immersed body.
+"""
+pressure_force(sim) = pressure_force(sim.flow,sim.body)
+pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
+function pressure_force(p,df,body,t=0)
+    df .= zero(eltype(p))
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I),t) over I ∈ inside(p)
+    sum(Float64,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+end
+
+"""
+    ∇²u(I::CartesianIndex,u)
+
+Rate-of-strain tensor.
+"""
 ∇²u(I::CartesianIndex{2},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:2, j ∈ 1:2]
 ∇²u(I::CartesianIndex{3},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:3, j ∈ 1:3]
 """
-   ∮τnds(u,body::AbstractBody,t=0)
+   viscous_force(sim::Simulation)
 
-Compute the viscous force on a immersed body. 
+Compute the viscous force on an immersed body.
 """
-∮τnds(flow::Flow,body::AbstractBody) = ∮τnds(flow.u,body,time(flow))
-∮τnds(u::AbstractArray{T},body::AbstractBody,t=0) where T = sum(inside_u(u)) do I
-    d,n,_ = measure_fast(body,WaterLily.loc(0,I,T),t)
-    ∇²u(I,u)*n*WaterLily.kern(d)
+viscous_force(sim) = viscous_force(sim.flow,sim.body)
+viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
+function viscous_force(u,ν,df,body,t=0)
+    df .= zero(eltype(u))
+    @loop df[I,:] .= -ν*∇²u(I,u)*nds(body,loc(0,I),t) over I ∈ inside_u(u)
+    sum(Float64,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
+
+"""
+   total_force(sim::Simulation)
+
+Compute the total force on an immersed body.
+"""
+total_force(sim) = pressure_force(sim) .+ viscous_force(sim)
+
 using LinearAlgebra: cross
 """
-    ∮xnds(x₀,up,body::AbstractBody,t=0)
+    pressure_moment(x₀,sim::Simulation)
 
-Computes the pressure moment on a immersed body relative to point x₀. 
+Computes the pressure moment on an immersed body relative to point x₀.
 """
-∮xnds(x₀,flow::Flow,body::AbstractBody) = ∮xnds(x₀,flow.p,body,time(flow))
-∮xnds(x₀::SVector{N,T},p::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N} = sum(inside(p)) do I
-    d,n,_ = measure_fast(body,WaterLily.loc(0,I),t)
-    p[I]*cross((WaterLily.loc(0,I)-x₀),n*WaterLily.kern(d))
+pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
+pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
+function pressure_moment(x₀,p,df,body,t=0)
+    df .= zero(eltype(p))
+    @loop df[I,:] .= p[I]*cross(loc(0,I)-x₀,nds(body,loc(0,I),t)) over I ∈ inside(p)
+    sum(Float64,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
