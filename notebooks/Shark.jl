@@ -71,7 +71,7 @@ begin
 	plot(dogfish)
 	nose,len = (30,224),500
 	width = [0.02,0.07,0.06,0.048,0.03,0.019,0.01]
-	scatter!(nose[1].+len.*range(0,1,length=length(width)), 
+	scatter!(nose[1].+len.*range(0,1,length=length(width)),
 		nose[2].-len.*width,color=:blue,legend=false)
 	thk = fit(width)
 	x = 0:0.01:1
@@ -92,7 +92,7 @@ end
 
 # ╔═╡ ea51f472-7ffc-4062-a45c-1410d26b1c3e
 md"""
-- The wavelength of the traveling wave is a bit longer than the body length. 
+- The wavelength of the traveling wave is a bit longer than the body length.
 
 The slider below controls the wavelength of the traveling wave λ, which you can adjust to see the impact it has on the backbone over the motion cycle.
 """
@@ -117,7 +117,7 @@ md"""
 
 Now the thickness and motion are defined, but how will we apply these to a fluid simulation? `WaterLily`uses an [immersed boundary method](https://eprints.soton.ac.uk/369635/) and [automatic differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation) to embed a body into the flow. The upshot is that we don't need to do any meshing; all we need is a signed distance function (SDF) to the surface.
 
-Let's start by defining the SDF to the "backbone", which is a line segment from $x=0\ldots 1$. [See this great video from Inigo Quilez for a derivation of this sdf.](https://www.youtube.com/watch?v=PMltMdi1Wzg) The plot below shows the sdf and the zero contour, which is ... just a line segment. 
+Let's start by defining the SDF to the "backbone", which is a line segment from $x=0\ldots 1$. [See this great video from Inigo Quilez for a derivation of this sdf.](https://www.youtube.com/watch?v=PMltMdi1Wzg) The plot below shows the sdf and the zero contour, which is ... just a line segment.
 
 Simple adjustments to the SDF give us more control of the shape and position. By shifting the y offset as `y = y-shift`, we can move the body laterally. And by subtracting a thickness from the distance as `sdf = sdf-thickness`, we can give the line some width. This is all we need to model the shark.
 """
@@ -130,7 +130,7 @@ md"thickness: $@bind T Slider(0.001:0.25:2, show_value=true)"
 
 # ╔═╡ 839db88c-a477-4718-88bb-796ab0cd6591
 begin
-	function segment_sdf(x,y) 
+	function segment_sdf(x,y)
 		s = clamp(x,0,1)         # distance along the segment
 		y = y-shift              # shift laterally
 		sdf = √sum(abs2,(x-s,y)) # line segment SDF
@@ -154,7 +154,7 @@ begin
 	function fish(thk,amp,k=5.3;L=2^6,A=0.1,St=0.3,Re=1e4)
 		# fraction along fish length
 		s(x) = clamp(x[1]/L,0,1)
-		
+
 		# fish geometry: thickened line SDF
 		sdf(x,t) = √sum(abs2,x-L*SVector(s(x),0.))-L*thk(s(x))
 
@@ -165,16 +165,16 @@ begin
 			xc = x.-L # shift origin
 			return xc-SVector(0.,A*L*amp(s(xc))*sin(k*s(xc)-ω*t))
 		end
-		
+
 		# make the fish simulation
 		return Simulation((4L,2L),(U,0),L;
 							ν=U*L/Re,body=AutoBody(sdf,map))
 	end
-	
+
 	# Create the swimming shark
 	L,A,St = 3*2^5,0.1,0.3
 	swimmer = fish(thk,amp;L,A,St);
-	
+
 	# Save a time span for one swimming cycle
 	period = 2A/St
 	cycle = range(0,23/24*period,length=24)
@@ -182,7 +182,7 @@ end
 
 # ╔═╡ d844c02d-41c8-43a8-95dd-742ea6c24f86
 md"""
-We can test our geometry by plotting the immersed boundary function `μ₀`; which equals 1 in the fluid and 0 in the body. 
+We can test our geometry by plotting the immersed boundary function `μ₀`; which equals 1 in the fluid and 0 in the body.
 """
 
 # ╔═╡ e618b2d9-abe8-4e97-aab2-e87c6278378f
@@ -197,23 +197,23 @@ md"""
 
 ### Running visualizing and measuring the simulation
 
-That animation of the motion looks great, so we are ready to run the flow simulator! 
+That animation of the motion looks great, so we are ready to run the flow simulator!
 
 The `sim_step!(sim,t,remeasure=true)` function runs the simulator up to time `t`, remeasuring the body position every time step. (`remeasure=false` by default since it takes a little extra computational time and isn't needed for statics geometries.)
 """
 
 # ╔═╡ 845cbd96-c01b-49f7-94df-15836a68ebba
 # run the simulation a few cycles (this takes few seconds)
-begin 
+begin
 	sim_step!(swimmer,3,remeasure=true)
 	sim_time(swimmer)
 end
 
 # ╔═╡ d5c82801-8387-4ef0-9f34-3279a54603c5
 md"""
-The simulation has now run forward in time, but there are no visualizations or measurements by default. 
+The simulation has now run forward in time, but there are no visualizations or measurements by default.
 
-To see what is going on, lets make a gif of the vorticity `ω=curl(u)` to visualize the vortices in the wake of the shark. This requires simulating a cycle of motion, and computing the `curl` at all the points `@inside` the simulation. 
+To see what is going on, lets make a gif of the vorticity `ω=curl(u)` to visualize the vortices in the wake of the shark. This requires simulating a cycle of motion, and computing the `curl` at all the points `@inside` the simulation.
 """
 
 # ╔═╡ a5c9b186-332f-4812-bb07-0bbe288f5091
@@ -221,7 +221,7 @@ begin
 	# plot the vorcity ω=curl(u) scaled by the body length L and flow speed U
 	function plot_vorticity(sim)
 		@inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-		contourf(sim.flow.σ', 
+		contourf(sim.flow.σ',
 			color=palette(:BuGn), clims=(-10,10),linewidth=0,
 			aspect_ratio=:equal,legend=false,border=:none)
 	end
@@ -237,27 +237,27 @@ end
 md"""
 This is pretty (CFD does stand for _Colorful Fluid Dynamics_ after all), but also tells us something important about the flow. Notice that there are no eddies coming off the body anywhere other than the tail! This is a sign of efficiency since energy is only used to create those trailing vortices.
 
-We can dig in and get some quantitative measurements from the simulation as well. The function `∮nds` takes a integral over the body surface. By passing in the pressure `p`, we can measure the thrust force and side force generated by the shark!
+We can dig in and get some quantitative measurements from the simulation as well. The function `pressure_force` takes an integral of the pressure field over the body surface so can measure the thrust force and side force generated by the shark!
 """
 
 # ╔═╡ c4c3fa5c-79bc-4d55-827f-c952b129ab5f
 begin
 	function get_force(sim,t)
 		sim_step!(sim,t,remeasure=true)
-		return WaterLily.∮nds(sim.flow.p,sim.body,t*sim.L/sim.U)./(0.5*sim.L*sim.U^2)
+		return WaterLily.pressure_force(sim)./(0.5*sim.L*sim.U^2)
 	end
 	forces = [get_force(swimmer,t) for t ∈ sim_time(swimmer).+cycle]
 	"got forces"
 end
 
 # ╔═╡ 9fc14582-108f-4434-83da-f7b32b676bd3
-scatter(cycle./period,[first.(forces),last.(forces)], 
-	labels=permutedims(["thrust","side"]), 
+scatter(cycle./period,[first.(forces),last.(forces)],
+	labels=permutedims(["thrust","side"]),
 	xlabel="scaled time", ylabel="scaled force")
 
 # ╔═╡ 9c67282b-e26a-42bf-836e-fc464b8ca63d
 md"""
-We can learn a lot from this simple plot. For example, the side-to-side force has the same frequency as the swimming motion itself while the thrust force has double the frequency, with a peak every time the tail passes through the centerline. 
+We can learn a lot from this simple plot. For example, the side-to-side force has the same frequency as the swimming motion itself while the thrust force has double the frequency, with a peak every time the tail passes through the centerline.
 
 ### Next steps
 
