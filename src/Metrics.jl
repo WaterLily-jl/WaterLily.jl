@@ -82,7 +82,7 @@ end
 BDIM-masked surface normal.
 """
 @inline function nds(body,x,t)
-    d,n,_ = measure_fast(body,x,t)
+    d,n,_ = measure(body,x,t,fast=true)
     n*WaterLily.kern(clamp(d,-1,1))
 end
 
@@ -93,10 +93,10 @@ Compute the pressure force on an immersed body.
 """
 pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
-function pressure_force(p,df,body,t=0)
+function pressure_force(p,df,body,t=0,T=promote_type(Float64,eltype(p)))
     df .= zero(eltype(p))
     @loop df[I,:] .= p[I]*nds(body,loc(0,I),t) over I ∈ inside(p)
-    sum(Float64,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    sum(T,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
 """
@@ -113,10 +113,10 @@ Compute the viscous force on an immersed body.
 """
 viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
-function viscous_force(u,ν,df,body,t=0)
+function viscous_force(u,ν,df,body,t=0,T=promote_type(Float64,eltype(u)))
     df .= zero(eltype(u))
     @loop df[I,:] .= -ν*∇²u(I,u)*nds(body,loc(0,I),t) over I ∈ inside_u(u)
-    sum(Float64,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    sum(T,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
 """
@@ -134,8 +134,8 @@ Computes the pressure moment on an immersed body relative to point x₀.
 """
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
-function pressure_moment(x₀,p,df,body,t=0)
+function pressure_moment(x₀,p,df,body,t=0,T=promote_type(Float64,eltype(p)))
     df .= zero(eltype(p))
     @loop df[I,:] .= p[I]*cross(loc(0,I)-x₀,nds(body,loc(0,I),t)) over I ∈ inside(p)
-    sum(Float64,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    sum(T,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
