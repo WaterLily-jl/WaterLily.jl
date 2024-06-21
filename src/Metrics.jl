@@ -77,11 +77,11 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
 end
 
 """
-    nds(body::AutoBody,x,t)
+    nds(body,x,t)
 
 BDIM-masked surface normal.
 """
-@inline function nds(body::AutoBody,x,t)
+@inline function nds(body,x,t)
     d,n,_ = measure_fast(body,x,t)
     n*WaterLily.kern(clamp(d,-1,1))
 end
