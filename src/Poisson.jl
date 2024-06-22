@@ -134,7 +134,7 @@ function pcg!(p::Poisson{T};it=6) where T
         (i==it || abs(alpha)<1e-2) && return
         @inside z[I] = r[I]*p.iD[I]
         rho2 = r⋅z
-        abs(rho2)<10eps(T) && return
+        (abs(rho)<10eps(T) || abs(rho)<abs(rho2)) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
         rho = rho2
