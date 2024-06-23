@@ -120,7 +120,7 @@ Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iteratio
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
-function pcg!(p::Poisson{T};it=6) where T
+function pcg!(p::Poisson{T};it=6,f=2) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     rho = r⋅z
@@ -134,13 +134,13 @@ function pcg!(p::Poisson{T};it=6) where T
         (i==it || abs(alpha)<1e-2) && return
         @inside z[I] = r[I]*p.iD[I]
         rho2 = r⋅z
-        (abs(rho)<10eps(T) || abs(rho)<abs(rho2)) && return
+        (abs(rho2)<10eps(T) || f*abs(rho)<abs(rho2)) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
         rho = rho2
     end
 end
-smooth!(p) = pcg!(p)
+smooth!(p) = pcg!(p,f=1.1) # fail faster
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
@@ -163,7 +163,7 @@ function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
     log && (res = [r₂])
     nᵖ=0
     while r₂>tol && nᵖ<itmx
-        smooth!(p); r₂ = L₂(p)
+        pcg!(p); r₂ = L₂(p)
         log && push!(res,r₂)
         nᵖ+=1
     end
