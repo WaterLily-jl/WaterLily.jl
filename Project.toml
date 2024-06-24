@@ -20,12 +20,14 @@ AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 
 [extensions]
 WaterLilyAMDGPUExt = "AMDGPU"
 WaterLilyCUDAExt = "CUDA"
 WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = "WriteVTK"
+WaterLilyMPIExt = "MPI"
 
 [compat]
 AMDGPU = "^0.4.13,0.6"
@@ -53,6 +55,7 @@ ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 
 [targets]
 test = ["Test", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK"]

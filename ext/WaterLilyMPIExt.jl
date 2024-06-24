@@ -1,22 +1,41 @@
-using MPI,WaterLily
-using StaticArrays
-using FileIO,JLD2
+module WaterLilyMPIExt
+
+if isdefined(Base, :get_extension)
+    using MPI
+else
+    using ..MPI
+end
+
+using WaterLily
+import WaterLily: init_mpi,me,BC!,L₂,L∞,loc   
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
 const NNEIGHBORS_PER_DIM = 2
 
+"""
+    halos(dims,d)
 
-"""return the CI of the halos must only point to halos, otherwise it messes-up 
-the reconstruction"""
+Return the CartesianIndices of the halos in dimension `±d` of an array of size `dims`.
+"""
 function halos(dims::NTuple{N},j) where N
     CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (1:2) : (dims[i]-1:dims[i]) : (1:dims[i]), N))
 end
-# return the CI of the buff 
+"""
+    buff(dims,d)
+
+Return the CartesianIndices of the buffer in dimension `±d` of an array of size `dims`.
+"""
 function buff(dims::NTuple{N},j) where N
     CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (3:4) : (dims[i]-3:dims[i]-2) : (1:dims[i]), N))
 end
 
+"""
+    mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
 
+This function swaps the data between two MPI processes. The data is sent from `send1` to `neighbor[1]` and received in `recv1`.
+The data is sent from `send2` to `neighbor[2]` and received in `recv2`. The function is non-blocking and returns when all data 
+has been sent and received. 
+"""
 function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
     reqs=MPI.Request[]
     # Send to / receive from neighbor 1 in dimension d
@@ -29,8 +48,12 @@ function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
     MPI.Waitall!(reqs)
 end
 
+"""
+    BC!(a)
 
-function WaterLily.BC!(a;perdir=(0,))
+This function sets the boundary conditions of the array `a` using the MPI grid.
+"""
+function BC!(a;perdir=(0,))
     N = size(a)
     for d ∈ eachindex(N)    # this is require because scalar and vector field are located 
                             # at different location
@@ -54,7 +77,7 @@ function WaterLily.BC!(a;perdir=(0,))
     end
 end
 
-function WaterLily.BC!(a,A,saveexit=false,perdir=(0,))
+function BC!(a,A,saveexit=false,perdir=(0,))
     N,n = WaterLily.size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         # get data to transfer
@@ -129,27 +152,27 @@ end
 finalize_mpi() = MPI.Finalize()
 
 # global coordinate in grid space
-grid_loc(;grid=MPI_GRID_NULL) = 0
-grid_loc(;grid=mpi_grid()) = grid.global_loc
+# grid_loc(;grid=MPI_GRID_NULL) = 0
+# grid_loc() = mpi_grid().global_loc
 me()= mpi_grid().me
+neighbor(d,i) = mpi_grid().neighbors[i,d]
+neighbor(d) = mpi_grid().neighbors[:,d]
 
 # every process must redifine the loc to be global
-@inline function WaterLily.loc(i,I::CartesianIndex{N},T=Float64) where N
+@inline function loc(i,I::CartesianIndex{N},T=Float64) where N
     # global position in the communicator
-    SVector{N,T}(grid_loc() .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
+    SVector{N,T}(mpi_grid().global_loc .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
 end
 
-function WaterLily.L₂(a)
-    MPI.Allreduce(sum(abs2,@inbounds(a[I]) for I ∈ inside(a)),+,mpi_grid().comm)
-end
-function WaterLily.L₂(p::Poisson)
+L₂(a) = MPI.Allreduce(sum(abs2,@inbounds(a[I]) for I ∈ inside(a)),+,mpi_grid().comm)
+function L₂(p::Poisson)
     s = zero(eltype(p.r))
     for I ∈ inside(p.r)
         @inbounds s += p.r[I]*p.r[I]
     end
     MPI.Allreduce(s,+,mpi_grid().comm)
 end
-WaterLily.L∞(p::Poisson) = MPI.Allreduce(maximum(abs.(p.r)),Base.max,mpi_grid().comm)
+L∞(p::Poisson) = MPI.Allreduce(maximum(abs.(p.r)),Base.max,mpi_grid().comm)
 function ⋅(a::AbstractArray{T},b::AbstractArray{T}) where T
     s = zero(T)
     for I ∈ inside(a)
@@ -158,111 +181,4 @@ function ⋅(a::AbstractArray{T},b::AbstractArray{T}) where T
     MPI.Allreduce(s,+,mpi_grid().comm)
 end
 
-using WaterLily: inside,@loop,mult
-function WaterLily.pcg!(p::Poisson{T};it=6) where T
-    me()==0 && println("pcg! started $it iterations")
-    x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
-    @inside z[I] = ϵ[I] = r[I]*p.iD[I]
-    insideI = inside(x) # [insideI]
-    rho = T(r⋅z)
-    println("pcg! computed inital residuals $rho")
-    abs(rho)<10eps(T) && return
-    for i in 1:it
-        me()==0 && print("pcg! iteration: $i, $rho")
-        BC!(ϵ;perdir=p.perdir)
-        @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/T(z[insideI]⋅ϵ[insideI])
-        @loop (x[I] += alpha*ϵ[I];
-               r[I] -= alpha*z[I]) over I ∈ inside(x)
-        (i==it || abs(alpha)<1e-2) && return
-        @inside z[I] = r[I]*p.iD[I]
-        rho2 = T(r⋅z)
-        me()==0 && println(", rho2 $rho2")
-        abs(rho2)<10eps(T) && return
-        beta = rho2/rho
-        @inside ϵ[I] = beta*ϵ[I]+z[I]
-        rho = rho2
-    end
-end
-
-"""Flow around a circle"""
-function circle(n,m,center,radius;Re=250,U=1)
-    body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, psolver=Poisson)
-end
-
-# local grid size
-nx = 2^6
-ny = 2^5
-
-# init the MPI grid and the simulation
-r = init_mpi((nx,ny))
-sim = circle(nx,ny,SA[ny,ny],nx/4)
-
-(me()==0) && println("nx=$nx, ny=$ny")
-
-# check global coordinates
-xs = loc(0,CartesianIndex(3,3))
-println("I am rank $r, at global coordinate $xs")
-
-# first we chack s imple rank matrix
-# sim.flow.σ .= NaN
-# sim.flow.μ₀ .= NaN
-# sim.flow.σ[inside(sim.flow.σ)] .= reshape(collect(1:length(inside(sim.flow.σ))),size(inside(sim.flow.σ)))
-
-# global_loc_function(i,x) = x[i]
-# apply!(global_loc_function,sim.flow.μ₀)
-# check that the measure uses the correct loc function
-# measure_sdf!(sim.flow.σ,sim.body,0.0)
-# save("waterlily_$me.jld2", "sdf", sim.flow.σ)
-
-# second check is to check the μ₀
-# sim.flow.σ .= sim.flow.μ₀[:,:,2]
-
-# updating the halos should not do anything
-save("waterlily_1_$me.jld2", "sdf", sim.flow.u⁰)
-
-# # BC!(sim.flow.μ₀,zeros(SVector{2,Float64}))
-# # BC!(sim.flow.σ)
-
-# # sim.flow.σ .= sim.flow.μ₀[:,:,2]
-
-# # sim_step!(sim, 10.0; verbose=true)
-# # mom_step!(sim.flow,sim.pois)
-sim.flow.u⁰ .= sim.flow.u; WaterLily.scale_u!(sim.flow,0)
-# predictor u → u'
-U = WaterLily.BCTuple(sim.flow.U,WaterLily.time(sim.flow),2)
-(me == 0) && println("U = $U")
-save("waterlily_2_$me.jld2", "sdf", sim.flow.u)
-WaterLily.conv_diff!(sim.flow.f,sim.flow.u⁰,sim.flow.σ,ν=sim.flow.ν)
-WaterLily.BDIM!(sim.flow); BC!(sim.flow.u,U)
-save("waterlily_3_$me.jld2", "sdf", sim.flow.f)
-# @WaterLily.inside sim.flow.σ[I] = WaterLily.div(I,sim.flow.u)
-# BC!(sim.flow.σ)
-# WaterLily.project!(sim.flow,sim.pois)
-dt = sim.flow.Δt[end]
-@inside sim.pois.z[I] = WaterLily.div(I,sim.flow.u); sim.pois.x .*= dt # set source term & solution IC
-# solver!(b)
-BC!(sim.pois.x)
-WaterLily.residual!(sim.pois); r₂ = L₂(sim.pois)
-# save("waterlily_4_$me.jld2", "sdf", sim.pois.r)
-save("waterlily_4_$me.jld2", "sdf", sim.pois.L[:,:,2])
-WaterLily.smooth!(sim.pois)
-for i ∈ 1:2  # apply solution and unscale to recover pressure
-    @WaterLily.loop sim.flow.u[I,i] -= sim.pois.L[I,i]*WaterLily.∂(i,I,sim.pois.x) over I ∈ inside(sim.pois.x)
-end
-sim.pois.x ./= dt
-BC!(sim.flow.u,U)
-
-println("L₂(σ) in rank $me : $r₂ \nL₂(pois) in rank $me : $(L₂(sim.pois))")
-
-
-sim.pois.r .= 0.0
-me() == 2 && (sim.pois.r[32,32] = 123.456789) # make this the only non-zero element
-println("L∞(pois) : $(WaterLily.L∞(sim.pois))")
-
-# WaterLily.smooth!(sim.pois.levels[1])
-
-# @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u) * sim.L / sim.U
-
-finalize_mpi()
+end # module
