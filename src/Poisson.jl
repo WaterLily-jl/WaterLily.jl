@@ -114,11 +114,11 @@ end
 
 using LinearAlgebra: ⋅
 """
-    pcg!(p::Poisson; it=6)
+    pcg!(p::Poisson; it=6, f=2)
 
 Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations, 
-but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
-Note: This runs for general backends and is the default smoother.
+but will exit early if the step-size `|α| < 1%` or residual `ρ = r'D⁻¹r < 10eps`.
+Will also exit if `ρᵏ⁺¹ ≥ fρᵏ` to avoid divergence.
 """
 function pcg!(p::Poisson{T};it=6,f=2) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
