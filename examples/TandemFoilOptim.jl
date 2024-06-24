@@ -35,6 +35,7 @@ function two_foil_drag(φ,St=0.3)
     period = 2/St
     cost = -mean_thrust(make_foils(φ;St),range(period,2period,200))
     @show φ,cost
+    return cost
 end
 res = optimize(x->two_foil_drag(first(x)),[2f0],Adam(alpha=0.5,beta_mean=0.5,beta_var=0.5),
         Optim.Options(iterations = 10);autodiff = :forward)
