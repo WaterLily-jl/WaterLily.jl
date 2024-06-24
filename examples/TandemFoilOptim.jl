@@ -19,30 +19,22 @@ function make_foils(φ;two=true,L=64,Re=200,St=0.3,αₘ=-π/18,U=1,n=8,m=4,T=ty
         √(p'*p)-2                   # distance (with thickness offset)
     end
 
-    Simulation((n*L,m*L),(U,0),L;ν=U*L/Re,body=AutoBody(sdf,map),T=typeof(φ))
+    Simulation((n*L,m*L),(U,0),L;ν=U*L/Re,body=AutoBody(sdf,map),T)
 end
 
-thrust(flow,body,t) = sum(inside(flow.p)) do I
-    d,n,_ = measure(body,WaterLily.loc(0,I),t)
-    flow.p[I]*n[1]*WaterLily.kern(clamp(d,-1,1))
+# Thrust history and mean
+thrust_hist!(sim,time) = map(time) do t
+    sim_step!(sim,t)
+    WaterLily.pressure_force(sim)[1]
 end
+mean_thrust(sim,time) = sum(thrust_hist!(sim,time))/length(time)
 
-function Δimpulse!(sim)
-    Δt = sim.flow.Δt[end]*sim.U/sim.L
-    sim_step!(sim)
-    Δt*thrust(sim.flow,sim.body,WaterLily.time(sim))
-end
-
-function mean_drag(φ,two=true,St=0.3,N=3,period=2N/St)
-    sim = make_foils(φ;two,St)
-    sim_step!(sim,period) # warm-in transient period
-    impulse = 0           # integrate impulse
-    while sim_time(sim)<2period
-        impulse += Δimpulse!(sim)
-    end
-    impulse/period        # return mean thrust
-end
-
+# Optimize φ
 using Optim
-θ = Optim.minimizer(optimize(x->-mean_thrust(first(x)), [0f0], Newton(),
-    Optim.Options(show_trace=true,f_tol=1e-2); autodiff = :forward))
+function two_foil_drag(φ,St=0.3)
+    period = 2/St
+    cost = -mean_thrust(make_foils(φ;St),range(period,2period,200))
+    @show φ,cost
+end
+res = optimize(x->two_foil_drag(first(x)),[2f0],Adam(alpha=0.5,beta_mean=0.5,beta_var=0.5),
+        Optim.Options(iterations = 10);autodiff = :forward)
