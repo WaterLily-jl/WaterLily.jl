@@ -8,7 +8,7 @@ end
 
 using StaticArrays
 using WaterLily
-import WaterLily: init_mpi,me,BC!,L₂,L∞,loc,⋅,finalize_mpi
+import WaterLily: init_mpi,me,BC!,perBC!,L₂,L∞,loc,⋅,finalize_mpi
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
 const NNEIGHBORS_PER_DIM = 2
@@ -54,10 +54,8 @@ end
 
 This function sets the boundary conditions of the array `a` using the MPI grid.
 """
-function BC!(a;perdir=(0,))
-    N = size(a)
-    for d ∈ eachindex(N)    # this is require because scalar and vector field are located 
-                            # at different location
+function perBC!(a, perdir, mpi, N = size(a)) # single function of MPI is used
+    for d ∈ eachindex(N)
         # get data to transfer
         send1 = a[buff(N,-d)]; send2 = a[buff(N,+d)]
         recv1 = zero(send1);   recv2 = zero(send2)
@@ -78,7 +76,7 @@ function BC!(a;perdir=(0,))
     end
 end
 
-function BC!(a,A,saveexit=false,perdir=(0,))
+function BC!(a,A,mpi,saveexit=false,perdir=())
     N,n = WaterLily.size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         # get data to transfer
@@ -160,9 +158,9 @@ neighbor(d,i) = mpi_grid().neighbors[i,d]
 neighbor(d) = mpi_grid().neighbors[:,d]
 
 # every process must redifine the loc to be global
-@inline function loc(i,I::CartesianIndex{N},T=Float64) where N
+@inline function loc(i,I::CartesianIndex{N}) where N
     # global position in the communicator
-    SVector{N,T}(mpi_grid().global_loc .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
+    SVector{N}(mpi_grid().global_loc .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
 end
 
 L₂(a) = MPI.Allreduce(sum(abs2,@inbounds(a[I]) for I ∈ inside(a)),+,mpi_grid().comm)

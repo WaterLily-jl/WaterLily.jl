@@ -166,7 +166,7 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A,saveexit=false,perdir=())
+function BC!(a,A,::Nothing,saveexit=false,perdir=())
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
@@ -205,8 +205,8 @@ end
     perBC!(a,perdir)
 Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
-perBC!(a,::Tuple{}) = nothing
-perBC!(a, perdir, N = size(a)) = for j ∈ perdir
+perBC!(a,::Tuple{},::Nothing) = nothing
+perBC!(a, perdir, ::Nothing, N = size(a)) = for j ∈ perdir
     @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
     @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
 end
