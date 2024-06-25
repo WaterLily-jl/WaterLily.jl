@@ -125,18 +125,19 @@ function write! end
 function default_attrib end
 function pvd_collection end
 # export
-export vtkWriter, write!, default_attrib
+export vtkWriter,write!,default_attrib
 
 # default ReadVTK functions
 function restart_sim! end
 # export
 export restart_sim!
 
-# @TODO default MPI function
+# @TODO add default MPI function
 function init_mpi end
 function me end
+function finalize_mpi end
 # export
-export init_mpi, me
+export init_mpi,me,finalize_mpi
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)

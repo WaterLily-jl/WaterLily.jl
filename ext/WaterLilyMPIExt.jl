@@ -6,8 +6,9 @@ else
     using ..MPI
 end
 
+using StaticArrays
 using WaterLily
-import WaterLily: init_mpi,me,BC!,L₂,L∞,loc   
+import WaterLily: init_mpi,me,BC!,L₂,L∞,loc,⋅,finalize_mpi
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
 const NNEIGHBORS_PER_DIM = 2
