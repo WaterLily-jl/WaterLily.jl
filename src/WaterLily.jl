@@ -30,7 +30,7 @@ include("Metrics.jl")
 
 """
     Simulation(dims::NTuple, u_BC::Union{NTuple,Function}, L::Number;
-               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1, perdir=(1,)
+               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1, perdir=()
                uλ::nothing, g=nothing, exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array)
@@ -63,12 +63,12 @@ struct Simulation
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, u_BC, L::Number;
-                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(0,),
+                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array, psolver=MultiLevelPoisson) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
-        isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,T(0)),N)).==T) "`u_BC` is not type stable"
+        isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zero(T)),N)).==T) "`u_BC` is not type stable"
         uλ = isnothing(uλ) ? ifelse(isa(u_BC,Function),(i,x)->u_BC(i,0.),(i,x)->u_BC[i]) : uλ
         U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
         flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
@@ -112,7 +112,7 @@ end
 
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
-function measure!(sim::Simulation,t=timeNext(sim.flow))
+function measure!(sim::Simulation,t=sum(sim.flow.Δt))
     measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
     update!(sim.pois)
 end
@@ -138,6 +138,17 @@ function me end
 function finalize_mpi end
 # export
 export init_mpi,me,finalize_mpi
+# Check number of threads when loading WaterLily
+"""
+    check_nthreads(::Val{1})
+
+Check the number of threads available for the Julia session that loads WaterLily.
+A warning is shown when running in serial (JULIA_NUM_THREADS=1).
+"""
+check_nthreads(::Val{1}) = @warn("\nUsing WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because \
+    it disables the GPU backend and defaults to serial CPU."*
+    "\nUse JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU or GPU backends.")
+check_nthreads(_) = nothing
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
@@ -151,6 +162,7 @@ function __init__()
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
         @require MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195" include("../ext/WaterLilyMPIExt.jl")
     end
+    check_nthreads(Val{Threads.nthreads()}())
 end
 
 end # module

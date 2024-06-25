@@ -4,7 +4,7 @@ using StaticArrays
 include("TwoD_plots.jl")
 
 # required to keep things global
-let 
+let
     # parameters
     Re = 250; U = 1
     p = 5; L = 2^p
@@ -45,14 +45,14 @@ let
 
             # update flow
             mom_step!(sim.flow,sim.pois)
-            
+
             # pressure force
-            force = -WaterLily.∮nds(sim.flow.p,sim.flow.f,sim.body,t)
-            
+            force = -WaterLily.pressure_force(sim)
+
             # compute motion and acceleration 1DOF
             Δt = sim.flow.Δt[end]
             accel = (force[2]- k*p0 + mₐ*a0)/(m + mₐ)
-            p0 += Δt*(v0+Δt*accel/2.) 
+            p0 += Δt*(v0+Δt*accel/2.)
             v0 += Δt*accel
             a0 = accel
 
@@ -64,7 +64,7 @@ let
         @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
         flood(sim.flow.σ; shift=(-0.5,-0.5),clims=(-5,5))
         body_plot!(sim); plot!(title="tU/L $tᵢ")
-        
+
         # print time step
         println("tU/L=",round(tᵢ,digits=4),", Δt=",round(sim.flow.Δt[end],digits=3))
     end
