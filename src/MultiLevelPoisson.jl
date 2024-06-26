@@ -33,7 +33,7 @@ end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
-@inline divisible(N) = mod(N,2)==0 && N>4
+@inline divisible(N) = mod(N,2)==0 && N>8
 @inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 """
     MultiLevelPoisson{N,M}
@@ -86,15 +86,18 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
-    residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
+    residual!(p); r∞⁰ = r∞ = L∞(p); r₂⁰ = r₂ = L₂(p)
     nᵖ=0
-    while r₂>tol && nᵖ<itmx
+    while nᵖ<itmx
         Vcycle!(ml)
-        smooth!(p); r₂ = L∞(p)
+        smooth!(p); r∞ = L∞(p);
         nᵖ+=1
+        # @debug " MultiLevelPoissonSolver | iter=$nᵖ, r∞=$r∞ (r∞⁰=$r∞⁰), r₂=$(L₂(p)) (r₂⁰=$r₂⁰)\n"
+        @debug "ml, $nᵖ, $r∞⁰, $r∞, $r₂⁰, $(L₂(p))\n"
+        r∞≤tol && break
     end
     perBC!(p.x,p.perdir)
-    (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
-    (nᵖ>4 && divisible(ml.levels[end])) && push!(ml.levels,restrictML(ml.levels[end])) # add a level if this was hard
+    # (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
+    # (nᵖ>4 && divisible(ml.levels[end])) && push!(ml.levels,restrictML(ml.levels[end])) # add a level if this was hard
     push!(ml.n,nᵖ);
 end
