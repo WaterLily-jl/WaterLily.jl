@@ -13,7 +13,7 @@ function logger(fname::String="WaterLily")
     end;
     global_logger(logger);
     # put header file
-    @debug "mlp/c, iter, r∞⁰,r∞, r₂⁰, r₂\n"
+    @debug "mlp/c, iter, r∞, r₂\n"
 end
 
 @inline CI(a...) = CartesianIndex(a...)
