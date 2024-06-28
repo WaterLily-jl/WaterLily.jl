@@ -24,7 +24,9 @@ end
 
 
 # intialize
-sim = make_sim()#mem=CuArray);
+sim = make_sim()
+# using CUDA
+# sim = make_sim(mem=CuArray)
 t₀,duration,tstep = sim_time(sim),10,0.1;
 
 # run
@@ -40,7 +42,7 @@ anim = @animate for tᵢ in range(t₀,t₀+duration;step=tstep)
 
     # flood plot
     @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u) * sim.L / sim.U
-    contourf(clamp.(sim.flow.σ,-10,10)',dpi=300,
+    contourf(clamp.(sim.flow.σ|>Array,-10,10)',dpi=300,
              color=palette(:RdBu_11), clims=(-10,10), linewidth=0,
              aspect_ratio=:equal, legend=false, border=:none)
 

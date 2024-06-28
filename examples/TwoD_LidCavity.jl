@@ -37,7 +37,8 @@ L = 2^7
 U = 1.0
 Re = 100
 sim = Simulation((L,L),(0.0,0.0),L;U=U,ν=U*L/Re)
-
+# using CUDA
+# sim = Simulation((L,L),(0.0,0.0),L;U=U,ν=U*L/Re,mem=CuArray)
 # get start time
 t₀ = round(sim_time(sim))
 duration = 20; step = 0.1
@@ -49,7 +50,7 @@ anim = @animate for tᵢ in range(t₀,t₀+duration;step)
 
     # flood plot
     @inside sim.flow.σ[I] = mag(I,sim.flow.u)
-    flood(sim.flow.σ; shift=(-0.5,-0.5),clims=(0,1))
+    flood(sim.flow.σ|>Array; shift=(-0.5,-0.5),clims=(0,1))
 
     # print time step
     println("tU/L=",round(tᵢ,digits=4),", Δt=",round(sim.flow.Δt[end],digits=3))

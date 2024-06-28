@@ -1,6 +1,5 @@
 using WaterLily
 using StaticArrays
-using CUDA
 include("TwoD_plots.jl")
 
 function circle(n,m;Re=550,U=1,mem=Array,T=Float32)
