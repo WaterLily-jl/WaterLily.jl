@@ -8,7 +8,7 @@ Set up a logger to write the pressure solver data to a logging file named `Water
 """
 function logger(fname::String="WaterLily")
     ENV["JULIA_DEBUG"] = all
-    logger = FormatLogger(fname*".log"; append=false) do io, args
+    logger = FormatLogger(ifelse(fname[end-3:end]==".log",fname[1:end-4],fname)*".log"; append=false) do io, args
         (args.level <= Logging.Debug && args.message[1:2]=="ml" ) && print(io, args.message[3:end])
     end;
     global_logger(logger);

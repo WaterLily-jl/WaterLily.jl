@@ -49,6 +49,9 @@ anim  = @animate for tᵢ in range(t₀,t₀+duration;step=tstep)
 end
 gif(anim,"cylinder.gif")
 
+# show the pressure logger
+# plot_logger("test_psolver")
+
 # time = cumsum(sim.flow.Δt[4:end-1])
 # plot(time/sim.L,forces_p[4:end]/(sim.L),label="pressure force")
 # plot!(time/sim.L,forces_ν[4:end]/(sim.L),label="viscous force")
