@@ -93,7 +93,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
                   uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float64) where D
-        Ng = N .+ 2
+        Ng = N .+ 4
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
         BC!(u,BCTuple(U,0.,D),exitBC,perdir); exitBC!(u,u,BCTuple(U,0.,D),0.)

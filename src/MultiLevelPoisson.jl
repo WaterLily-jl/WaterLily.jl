@@ -17,7 +17,7 @@ end
 
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
-    Na = map(i->2+i÷2,N)
+    Na = map(i->i÷2,N)
     aL = similar(b.L,(Na...,n)); fill!(aL,0)
     ax = similar(b.x,Na); fill!(ax,0)
     restrictL!(aL,b.L,perdir=b.perdir)
