@@ -132,12 +132,12 @@ function restart_sim! end
 # export
 export restart_sim!
 
-# @TODO add default MPI function
-function init_mpi end
-function me end
-function finalize_mpi end
-# export
-export init_mpi,me,finalize_mpi
+# # @TODO add default MPI function
+# function init_mpi end
+# function me end
+# function finalize_mpi end
+# # export
+# export init_mpi,me,finalize_mpi
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})
@@ -160,7 +160,7 @@ function __init__()
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
-        @require MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195" include("../ext/WaterLilyMPIExt.jl")
+        # @require MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195" include("../ext/WaterLilyMPIExt.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end

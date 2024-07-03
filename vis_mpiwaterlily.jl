@@ -33,7 +33,7 @@ rank_0_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_0.jld2")["sdf"][:,:
 
 C = vcat(hcat(rank_0_2,rank_1_2),hcat(rank_2_2,rank_3_2))
 
-p3 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=3)
+p3 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=20)
 
 
 rank_1_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
@@ -43,7 +43,7 @@ rank_0_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_0.jld2")["sdf"][:,:
 
 C = vcat(hcat(rank_0_3,rank_1_3),hcat(rank_2_3,rank_3_3))
 
-p4 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10)
+p4 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=20)
 
 
 plot(p1,p2,p3,p4,layout = @layout [a b; c d])

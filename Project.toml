@@ -27,7 +27,7 @@ WaterLilyAMDGPUExt = "AMDGPU"
 WaterLilyCUDAExt = "CUDA"
 WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = "WriteVTK"
-WaterLilyMPIExt = "MPI"
+# WaterLilyMPIExt = "MPI"
 
 [compat]
 AMDGPU = "^0.4.13,0.6"
