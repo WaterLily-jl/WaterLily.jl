@@ -37,9 +37,9 @@ end
 L = 2^7
 U = 1.0
 Re = 100
-sim = Simulation((L,L),(0.0,0.0),L;U=U,ν=U*L/Re)
 # using CUDA
-# sim = Simulation((L,L),(0.0,0.0),L;U=U,ν=U*L/Re,mem=CuArray)
+sim = Simulation((L,L),(0.0,0.0),L;U=U,ν=U*L/Re,mem=Array)
+
 # get start time
 t₀ = round(sim_time(sim))
 duration = 20; step = 0.1
