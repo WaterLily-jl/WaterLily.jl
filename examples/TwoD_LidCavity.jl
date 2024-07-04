@@ -1,10 +1,11 @@
 using WaterLily
 include("TwoD_plots.jl")
 
+# velocity magnitude
 mag(I,u) = √sum(ntuple(i->0.25*(u[I,i]+u[I+δ(i,I),i])^2,length(I)))
 
 # import explicitly BC function and overwrite
-function BC_lid!(a,A)
+function BC_lid!(a)
     N,n = WaterLily.size_u(a)
     for j ∈ 1:n, i ∈ 1:n
         if i==1 && j==2 # lid, Dirichlet cannot be imposed, must interpolate u[i,j+1,1]+u[i,j]/2 = uBC
@@ -23,12 +24,12 @@ end
     a.u⁰ .= a.u; WaterLily.scale_u!(a,0)
     # predictor u → u'
     WaterLily.conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    WaterLily.BDIM!(a); BC_lid!(a.u,a.U)
-    WaterLily.project!(a,b); BC_lid!(a.u,a.U)
+    WaterLily.BDIM!(a); BC_lid!(a.u)
+    WaterLily.project!(a,b); BC_lid!(a.u)
     # corrector u → u¹
     WaterLily.conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    WaterLily.BDIM!(a); WaterLily.scale_u!(a,0.5); BC_lid!(a.u,a.U)
-    WaterLily.project!(a,b,0.5); BC_lid!(a.u,a.U)
+    WaterLily.BDIM!(a); WaterLily.scale_u!(a,0.5); BC_lid!(a.u)
+    WaterLily.project!(a,b,0.5); BC_lid!(a.u)
     push!(a.Δt,WaterLily.CFL(a))
 end
 
