@@ -106,6 +106,7 @@ function sim_step!(sim::Simulation;remeasure=true)
     remeasure && measure!(sim)
     mom_step!(sim.flow,sim.pois)
 end
+
 using NVTX
 function sim_step_profile!(sim::Simulation;remeasure=true)
     NVTX.@range "measure!" begin remeasure && measure!(sim) end
@@ -156,7 +157,6 @@ end
 function __init__()
     @static if !isdefined(Base, :get_extension)
         @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/WaterLilyAMDGPUExt.jl")
-        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
     end
