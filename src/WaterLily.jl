@@ -106,6 +106,11 @@ function sim_step!(sim::Simulation;remeasure=true)
     remeasure && measure!(sim)
     mom_step!(sim.flow,sim.pois)
 end
+using NVTX
+function sim_step_profile!(sim::Simulation;remeasure=true)
+    NVTX.@range "measure!" begin remeasure && measure!(sim) end
+    mom_step_profile!(sim.flow,sim.pois)
+end
 
 """
     measure!(sim::Simulation,t=timeNext(sim))
@@ -117,7 +122,7 @@ function measure!(sim::Simulation,t=sum(sim.flow.Δt))
     update!(sim.pois)
 end
 
-export Simulation,sim_step!,sim_time,measure!
+export Simulation,sim_step!,sim_time,measure!,sim_step_profile!
 
 # default WriteVTK functions
 function vtkWriter end
