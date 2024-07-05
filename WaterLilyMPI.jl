@@ -33,48 +33,44 @@ WaterLily.perBC!(a,::Tuple{})          = perBC!(a, size(a), true)
 WaterLily.perBC!(a, perdir, N=size(a)) = perBC!(a, N, true)
 perBC!(a, N, mpi::Bool) = for d ∈ eachindex(N)
     # get data to transfer @TODO use @views
-    send1 = a[buff(N,-d)]; send2 = a[buff(N,+d)]
+    send1 = @views(a[buff(N,-d)]); send2 = @views(a[buff(N,+d)])
     recv1 = zero(send1);   recv2 = zero(send2)
     # swap 
-    mpi_swap!(send1,recv1,send2,recv2,mpi_grid().neighbors[:,d],mpi_grid().comm)
+    mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
 
     # this sets the BCs
-    if mpi_grid().neighbors[1,d]!=MPI.PROC_NULL # halo swap
-        a[halos(N,-d)] .= recv1
-    end
-    if mpi_grid().neighbors[2,d]!=MPI.PROC_NULL # halo swap
-        a[halos(N,+d)] .= recv2
-    end
+    !mpi_wall(d,1) && (a[halos(N,-d)] .= recv1) # halo swap
+    !mpi_wall(d,2) && (a[halos(N,+d)] .= recv2) # halo swap
 end
 
 function WaterLily.BC!(a,A,saveexit=false,perdir=())
     N,n = WaterLily.size_u(a)
-    for i ∈ 1:n, j ∈ 1:n
+    for i ∈ 1:n, d ∈ 1:n
         # get data to transfer @TODO use @views
-        send1 = a[buff(N,-j),i]; send2 = a[buff(N,+j),i]
+        send1 = @views(a[buff(N,-d),i]); send2 = @views(a[buff(N,+d),i])
         recv1 = zero(send1);     recv2 = zero(send2)
         # swap 
-        mpi_swap!(send1,recv1,send2,recv2,mpi_grid().neighbors[:,j],mpi_grid().comm)
+        mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
 
         # this sets the BCs on the domain boundary and transfers the data
-        if mpi_grid().neighbors[1,j]==MPI.PROC_NULL # left wall
-            if i==j # set flux
-                a[halos(N,-j),i] .= A[i]
-                a[WaterLily.slice(N,3,j),i] .= A[i]
+        if mpi_wall(d,1) # left wall
+            if i==d # set flux
+                a[halos(N,-d),i] .= A[i]
+                a[WaterLily.slice(N,3,d),i] .= A[i]
             else # zero gradient
-                a[halos(N,-j),i] .= reverse(send1; dims=j)
+                a[halos(N,-d),i] .= reverse(send1; dims=d)
             end
         else # neighbor on the left
-            a[halos(N,-j),i] .= recv1
+            a[halos(N,-d),i] .= recv1
         end
-        if mpi_grid().neighbors[2,j]==MPI.PROC_NULL # right wall
-            if i==j && (!saveexit || i>1) # convection exit
-                a[halos(N,+j),i] .= A[i]
+        if mpi_wall(d,2) # right wall
+            if i==d && (!saveexit || i>1) # convection exit
+                a[halos(N,+d),i] .= A[i]
             else # zero gradient
-                a[halos(N,+j),i] .= reverse(send2; dims=j)
+                a[halos(N,+d),i] .= reverse(send2; dims=d)
             end
         else # neighbor on the right
-            a[halos(N,+j),i] .= recv2
+            a[halos(N,+d),i] .= recv2
         end
     end
 end
@@ -125,6 +121,8 @@ finalize_mpi() = MPI.Finalize()
 grid_loc(;grid=MPI_GRID_NULL) = 0
 grid_loc(;grid=mpi_grid()) = grid.global_loc
 me()= mpi_grid().me
+neighbors(dim) = mpi_grid().neighbors[:,dim]
+mpi_wall(dim,i) = mpi_grid().neighbors[i,dim]==MPI.PROC_NULL
 
 # every process must redifine the loc to be global
 @inline function WaterLily.loc(i,I::CartesianIndex{N},T=Float64) where N
@@ -142,6 +140,7 @@ function WaterLily.L₂(p::Poisson)
     end
     MPI.Allreduce(s,+,mpi_grid().comm)
 end
+WaterLily.L∞(a::AbstractArray) = MPI.Allreduce(maximum(abs.(a)),Base.max,mpi_grid().comm)
 WaterLily.L∞(p::Poisson) = MPI.Allreduce(maximum(abs.(p.r)),Base.max,mpi_grid().comm)
 function WaterLily._dot(a::AbstractArray{T},b::AbstractArray{T}) where T
     s = zero(T)
@@ -164,76 +163,3 @@ function WaterLily.sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=type
                                         ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
 end
-
-"""Flow around a circle"""
-function circle(n,m,center,radius;Re=250,U=1)
-    body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, psolver=Poisson)
-end
-
-# local grid size
-nx = 2^6
-ny = 2^5
-
-# init the MPI grid and the simulation
-r = init_mpi((nx,ny))
-sim = circle(nx,ny,SA[ny,ny],nx/4)
-
-(me()==0) && println("nx=$nx, ny=$ny")
-
-# check global coordinates
-xs = loc(0,CartesianIndex(3,3))
-println("I am rank $r, at global coordinate $xs")
-
-# first we chack s imple rank matrix
-sim.flow.σ .= NaN
-sim.flow.μ₀ .= NaN
-sim.flow.σ[inside(sim.flow.σ)] .= reshape(collect(1:length(inside(sim.flow.σ))),size(inside(sim.flow.σ)))
-save("waterlily_0_$(me()).jld2", "sdf", sim.flow.σ)
-
-global_loc_function(i,x) = x[i]
-apply!(global_loc_function,sim.flow.μ₀)
-# check that the measure uses the correct loc function
-measure_sdf!(sim.flow.σ,sim.body,0.0)
-save("waterlily_1_$(me()).jld2", "sdf", sim.flow.σ)
-
-# test norm functions
-sim.pois.r .= 0.0
-me() == 2 && (sim.pois.r[32,32] = 123.456789) # make this the only non-zero element
-println("L∞(pois) : $(WaterLily.L∞(sim.pois))")
-
-# updating the halos should not do anything
-# save("waterlily_1_$(me()).jld2", "sdf", sim.flow.u⁰[inside(sim.flow.σ),:])
-# # save("waterlily_2_$(me()).jld2", "sdf", sim.flow.f)
-
-# # # BC!(sim.flow.μ₀,zeros(SVector{2,Float64}))
-# # # BC!(sim.flow.σ)
-
-# # # sim.flow.σ .= sim.flow.μ₀[:,:,2]
-
-# sim_step!(sim, 10.0; verbose=true)
-
-# # let
-# #     sim.flow.u⁰ .= sim.flow.u; WaterLily.scale_u!(sim.flow,0)
-# #     # predictor u → u'
-# #     U = WaterLily.BCTuple(sim.flow.U,@view(sim.flow.Δt[1:end-1]),2)
-# #     save("waterlily_2_$(me()).jld2", "sdf", sim.flow.u)
-# #     WaterLily.conv_diff!(sim.flow.f,sim.flow.u⁰,sim.flow.σ,ν=sim.flow.ν)
-# #     WaterLily.BDIM!(sim.flow);
-# #     WaterLily.BC!(sim.flow.u,U)
-# #     @inside sim.flow.σ[I] = WaterLily.div(I,sim.flow.u)
-# #     save("waterlily_3_$(me()).jld2", "sdf", sim.flow.σ)
-# #     (me()==0) && println("projecting")
-# #     WaterLily.project!(sim.flow,sim.pois)
-# #     me()==0 && println(sim.pois.n)
-# #     println("L2-pois", WaterLily.L₂(sim.pois))
-# #     WaterLily.BC!(sim.flow.u,U)
-# #     # save("waterlily_3_$(me()).jld2", "sdf", sim.flow.p)
-# # end
-# @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u) * sim.L / sim.U
-# WaterLily.perBC!(sim.flow.σ,())
-# save("waterlily_2_$(me()).jld2", "sdf", sim.flow.σ[inside(sim.flow.σ)])
-# save("waterlily_3_$(me()).jld2", "sdf", sim.flow.p[inside(sim.flow.p)])
-# save("waterlily_4_$(me()).jld2", "sdf", sim.flow.u[inside(sim.flow.σ),:])
-
-finalize_mpi()
