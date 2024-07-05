@@ -6,44 +6,39 @@ rank_0 = load("/home/marin/Workspace/WaterLily/waterlily_1_0.jld2")["sdf"][:,:,d
 rank_1 = load("/home/marin/Workspace/WaterLily/waterlily_1_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
 rank_2 = load("/home/marin/Workspace/WaterLily/waterlily_1_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
 rank_3 = load("/home/marin/Workspace/WaterLily/waterlily_1_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-
-# @assert all(rank_0[:,end-1:end] .≈ rank_0[:,3:4])
-# @assert all(rank_2[:,end-1:end] .≈ rank_3[:,3:4])
-
-
 C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
+p1 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=3, dpi=1200)
 
-p1 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=3)
 
-rank_1_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_2_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_3_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_0_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_0.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_1_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_1.jld2")["sdf"]#[2:end-1,2:end-1]
+rank_2_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_2.jld2")["sdf"]#[2:end-1,2:end-1]
+rank_3_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_3.jld2")["sdf"]#[2:end-1,2:end-1]
+rank_0_1 = load("/home/marin/Workspace/WaterLily/waterlily_2_0.jld2")["sdf"]#[2:end-1,2:end-1]
 
 C = vcat(hcat(rank_0_1,rank_1_1),hcat(rank_2_1,rank_3_1))
 
 # p2 = contourf(C[inside_u(size(C),1)]', cmap=:imola10, aspect_ratio=:equal, levels=3)
-p2 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=3)
+p2 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=20, dpi=1200)
 
 
-rank_1_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_2_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_3_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_0_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_0.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_1_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_1.jld2")["sdf"]#[3:end-2,3:end-2,d]
+rank_2_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_2.jld2")["sdf"]#[3:end-2,3:end-2,d]
+rank_3_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_3.jld2")["sdf"]#[3:end-2,3:end-2,d]
+rank_0_2 = load("/home/marin/Workspace/WaterLily/waterlily_3_0.jld2")["sdf"]#[3:end-2,3:end-2,d]
 
 C = vcat(hcat(rank_0_2,rank_1_2),hcat(rank_2_2,rank_3_2))
 
-p3 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=20)
+p3 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=20, dpi=1200)
 
 
-rank_1_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_1.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_2_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_2.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_3_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_3.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
-rank_0_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_0.jld2")["sdf"][:,:,d]#[4:end-2,4:end-2]
+rank_1_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_1.jld2")["sdf"][:,:,d]#[3:end-2,3:end-2,d]
+rank_2_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_2.jld2")["sdf"][:,:,d]#[3:end-2,3:end-2,d]
+rank_3_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_3.jld2")["sdf"][:,:,d]#[3:end-2,3:end-2,d]
+rank_0_3 = load("/home/marin/Workspace/WaterLily/waterlily_4_0.jld2")["sdf"][:,:,d]#[3:end-2,3:end-2,d]
 
 C = vcat(hcat(rank_0_3,rank_1_3),hcat(rank_2_3,rank_3_3))
 
-p4 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=20)
+p4 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=20, dpi=1200)
 
 
 plot(p1,p2,p3,p4,layout = @layout [a b; c d])

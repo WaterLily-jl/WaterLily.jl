@@ -115,7 +115,9 @@ Note: This runs for general backends, but is _very_ slow to converge.
 end
 
 # needed for MPI later
-⋅(a,b) = dot(a,b); dot(a,b) = LinearAlgebra.dot(a,b)
+using LinearAlgebra: dot
+_dot(a,b) = dot(a,b)
+⋅(a,b) = _dot(a,b)
 """
     pcg!(p::Poisson; it=6)
 

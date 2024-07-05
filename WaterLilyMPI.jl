@@ -143,7 +143,7 @@ function WaterLily.L₂(p::Poisson)
     MPI.Allreduce(s,+,mpi_grid().comm)
 end
 WaterLily.L∞(p::Poisson) = MPI.Allreduce(maximum(abs.(p.r)),Base.max,mpi_grid().comm)
-function WaterLily.dot(a::AbstractArray{T},b::AbstractArray{T}) where T
+function WaterLily._dot(a::AbstractArray{T},b::AbstractArray{T}) where T
     s = zero(T)
     for I ∈ inside(a)
         @inbounds s += a[I]*b[I]
@@ -186,57 +186,54 @@ xs = loc(0,CartesianIndex(3,3))
 println("I am rank $r, at global coordinate $xs")
 
 # first we chack s imple rank matrix
-# sim.flow.σ .= NaN
-# sim.flow.μ₀ .= NaN
-# sim.flow.σ[inside(sim.flow.σ)] .= reshape(collect(1:length(inside(sim.flow.σ))),size(inside(sim.flow.σ)))
+sim.flow.σ .= NaN
+sim.flow.μ₀ .= NaN
+sim.flow.σ[inside(sim.flow.σ)] .= reshape(collect(1:length(inside(sim.flow.σ))),size(inside(sim.flow.σ)))
+save("waterlily_0_$(me()).jld2", "sdf", sim.flow.σ)
 
-# global_loc_function(i,x) = x[i]
-# apply!(global_loc_function,sim.flow.μ₀)
+global_loc_function(i,x) = x[i]
+apply!(global_loc_function,sim.flow.μ₀)
 # check that the measure uses the correct loc function
-# measure_sdf!(sim.flow.σ,sim.body,0.0)
-# save("waterlily_$(me()).jld2", "sdf", sim.flow.σ)
+measure_sdf!(sim.flow.σ,sim.body,0.0)
+save("waterlily_1_$(me()).jld2", "sdf", sim.flow.σ)
 
-# second check is to check the μ₀
-# sim.flow.σ .= sim.flow.μ₀[:,:,2]
-
-# updating the halos should not do anything
-save("waterlily_1_$(me()).jld2", "sdf", sim.flow.u⁰)
-save("waterlily_2_$(me()).jld2", "sdf", sim.flow.f)
-
-# # BC!(sim.flow.μ₀,zeros(SVector{2,Float64}))
-# # BC!(sim.flow.σ)
-
-# # sim.flow.σ .= sim.flow.μ₀[:,:,2]
-
-sim_step!(sim, 10.0; verbose=true)
-
-# let
-#     sim.flow.u⁰ .= sim.flow.u; WaterLily.scale_u!(sim.flow,0)
-#     # predictor u → u'
-#     U = WaterLily.BCTuple(sim.flow.U,@view(sim.flow.Δt[1:end-1]),2)
-#     save("waterlily_2_$(me()).jld2", "sdf", sim.flow.u)
-#     WaterLily.conv_diff!(sim.flow.f,sim.flow.u⁰,sim.flow.σ,ν=sim.flow.ν)
-#     WaterLily.BDIM!(sim.flow);
-#     WaterLily.BC!(sim.flow.u,U)
-#     @inside sim.flow.σ[I] = WaterLily.div(I,sim.flow.u)
-#     save("waterlily_3_$(me()).jld2", "sdf", sim.flow.σ)
-#     (me()==0) && println("projecting")
-#     WaterLily.project!(sim.flow,sim.pois)
-#     me()==0 && println(sim.pois.n)
-#     println("L2-pois", WaterLily.L₂(sim.pois))
-#     WaterLily.BC!(sim.flow.u,U)
-#     # save("waterlily_3_$(me()).jld2", "sdf", sim.flow.p)
-# end
-
-save("waterlily_3_$(me()).jld2", "sdf", sim.flow.p)
-save("waterlily_4_$(me()).jld2", "sdf", sim.flow.u)
-
+# test norm functions
 sim.pois.r .= 0.0
 me() == 2 && (sim.pois.r[32,32] = 123.456789) # make this the only non-zero element
 println("L∞(pois) : $(WaterLily.L∞(sim.pois))")
 
-# WaterLily.smooth!(sim.pois.levels[1])
+# updating the halos should not do anything
+# save("waterlily_1_$(me()).jld2", "sdf", sim.flow.u⁰[inside(sim.flow.σ),:])
+# # save("waterlily_2_$(me()).jld2", "sdf", sim.flow.f)
 
+# # # BC!(sim.flow.μ₀,zeros(SVector{2,Float64}))
+# # # BC!(sim.flow.σ)
+
+# # # sim.flow.σ .= sim.flow.μ₀[:,:,2]
+
+# sim_step!(sim, 10.0; verbose=true)
+
+# # let
+# #     sim.flow.u⁰ .= sim.flow.u; WaterLily.scale_u!(sim.flow,0)
+# #     # predictor u → u'
+# #     U = WaterLily.BCTuple(sim.flow.U,@view(sim.flow.Δt[1:end-1]),2)
+# #     save("waterlily_2_$(me()).jld2", "sdf", sim.flow.u)
+# #     WaterLily.conv_diff!(sim.flow.f,sim.flow.u⁰,sim.flow.σ,ν=sim.flow.ν)
+# #     WaterLily.BDIM!(sim.flow);
+# #     WaterLily.BC!(sim.flow.u,U)
+# #     @inside sim.flow.σ[I] = WaterLily.div(I,sim.flow.u)
+# #     save("waterlily_3_$(me()).jld2", "sdf", sim.flow.σ)
+# #     (me()==0) && println("projecting")
+# #     WaterLily.project!(sim.flow,sim.pois)
+# #     me()==0 && println(sim.pois.n)
+# #     println("L2-pois", WaterLily.L₂(sim.pois))
+# #     WaterLily.BC!(sim.flow.u,U)
+# #     # save("waterlily_3_$(me()).jld2", "sdf", sim.flow.p)
+# # end
 # @inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u) * sim.L / sim.U
+# WaterLily.perBC!(sim.flow.σ,())
+# save("waterlily_2_$(me()).jld2", "sdf", sim.flow.σ[inside(sim.flow.σ)])
+# save("waterlily_3_$(me()).jld2", "sdf", sim.flow.p[inside(sim.flow.p)])
+# save("waterlily_4_$(me()).jld2", "sdf", sim.flow.u[inside(sim.flow.σ),:])
 
 finalize_mpi()

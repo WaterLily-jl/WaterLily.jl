@@ -171,8 +171,10 @@ function BC!(a,A,saveexit=false,perdir=())
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
             #@TODO make sure this is correct
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+            @loop a[I,i] = a[CIj(j,I,N[j]-3),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,N[j]-2),i] over I ∈ slice(N,2,j)
+            @loop a[I,i] = a[CIj(j,I,3),i] over I ∈ slice(N,N[j]-1,j)
+            @loop a[I,i] = a[CIj(j,I,4),i] over I ∈ slice(N,N[j],j)
         else
             if i==j # Normal direction, Dirichlet
                 for s ∈ (1,2,3)
@@ -205,10 +207,12 @@ end
     perBC!(a,perdir)
 Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
-perBC!(a,::Tuple{}) = (println("doing nothing"); nothing)
+perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+    @loop a[I] = a[CIj(j,I,N[j]-3)] over I ∈ slice(N,1,j)
+    @loop a[I] = a[CIj(j,I,N[j]-2)] over I ∈ slice(N,2,j)
+    @loop a[I] = a[CIj(j,I,3)] over I ∈ slice(N,N[j]-1,j)
+    @loop a[I] = a[CIj(j,I,4)] over I ∈ slice(N,N[j],j)
 end
 """
     interp(x::SVector, arr::AbstractArray)
