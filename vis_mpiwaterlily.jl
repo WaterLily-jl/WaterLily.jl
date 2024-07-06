@@ -112,6 +112,7 @@ let # DEBUG POISSON SOLVER
     C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
     p6 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200)
     plot(p1,p2,p3,p4,p5,p6,layout = @layout [a b; c d; e f])
+    savefig("poisson_solver.png")
 end
 
 let
