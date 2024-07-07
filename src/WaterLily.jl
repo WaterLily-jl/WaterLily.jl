@@ -3,7 +3,7 @@ $(README)
 """
 module WaterLily
 
-using DocStringExtensions
+using DocStringExtensions, NVTX
 
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc
@@ -103,14 +103,8 @@ function sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),v
     end
 end
 function sim_step!(sim::Simulation;remeasure=true)
-    remeasure && measure!(sim)
-    mom_step!(sim.flow,sim.pois)
-end
-
-using NVTX
-function sim_step_profile!(sim::Simulation;remeasure=true)
     NVTX.@range "measure!" begin remeasure && measure!(sim) end
-    mom_step_profile!(sim.flow,sim.pois)
+    mom_step!(sim.flow,sim.pois)
 end
 
 """
@@ -123,7 +117,7 @@ function measure!(sim::Simulation,t=sum(sim.flow.Δt))
     update!(sim.pois)
 end
 
-export Simulation,sim_step!,sim_time,measure!,sim_step_profile!
+export Simulation,sim_step!,sim_time,measure!
 
 # default WriteVTK functions
 function vtkWriter end
@@ -157,6 +151,7 @@ end
 function __init__()
     @static if !isdefined(Base, :get_extension)
         @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/WaterLilyAMDGPUExt.jl")
+        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
     end

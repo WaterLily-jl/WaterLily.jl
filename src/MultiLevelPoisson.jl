@@ -70,12 +70,12 @@ end
 function Vcycle!(ml::MultiLevelPoisson;l=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
-    Jacobi!(fine)
-    restrict!(coarse.r,fine.r)
+    NVTX.@range "Jacobi!" begin Jacobi!(fine) end
+    NVTX.@range "restrict!" begin restrict!(coarse.r,fine.r) end
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
-    smooth!(coarse)
+    NVTX.@range "smooth2!" begin smooth!(coarse) end
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
     increment!(fine)
@@ -86,11 +86,12 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
-    residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
+    NVTX.@range "residual!" begin residual!(p) end
+    NVTX.@range "norms" begin r₀ = r₂ = L∞(p); r₂₀ = L₂(p) end
     nᵖ=0
     while r₂>tol && nᵖ<itmx
-        Vcycle!(ml)
-        smooth!(p); r₂ = L∞(p)
+        NVTX.@range "Vcycle!" begin Vcycle!(ml) end
+        NVTX.@range "smooth!" begin smooth!(p); r₂ = L∞(p) end
         nᵖ+=1
     end
     perBC!(p.x,p.perdir)

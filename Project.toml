@@ -4,7 +4,6 @@ authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
 version = "1.1.0"
 
 [deps]
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -19,6 +18,7 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [weakdeps]
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
@@ -29,6 +29,7 @@ WaterLilyWriteVTKExt = "WriteVTK"
 
 [compat]
 AMDGPU = "^0.4.13,0.6"
+CUDA = "4.1.4,5"
 DocStringExtensions = "0.9"
 EllipsisNotation = "1.8"
 ForwardDiff = "^0.10.18"
@@ -41,6 +42,7 @@ julia = "1.6"
 [extras]
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
@@ -53,4 +55,4 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["Test", "BenchmarkTools", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK"]
+test = ["Test", "BenchmarkTools", "AMDGPU", "CUDA", "GPUArrays", "WriteVTK", "ReadVTK"]

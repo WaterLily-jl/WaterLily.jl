@@ -43,8 +43,6 @@ size_u(u) = splitn(size(u))
 L₂ norm of array `a` excluding ghosts.
 """
 L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
-using CUDA: CuArray
-L₂(a::CuArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
 
 """
     @inside <expr>
