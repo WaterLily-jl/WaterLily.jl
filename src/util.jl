@@ -30,7 +30,7 @@ Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _vector_ array on face `j` with size `dims`.
 """
 function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (4:dims[i]-3) : (3:dims[i]-2), N))
+    CartesianIndices(ntuple( i-> i==j ? (4:dims[i]-2) : (3:dims[i]-1), N))
 end
 @inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(3:i-2),dims)...,1:N))
 @inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(3:i-2),Base.front(size(u))))
