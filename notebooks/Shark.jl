@@ -274,7 +274,7 @@ Below you can find links to all the packages used in this notebook. Happy Simula
 1. [Plots.jl](http://docs.juliaplots.org/latest/)
 1. [Pluto.jl](https://github.com/fonsp/Pluto.jl) and [PlutoUI.jl](https://github.com/fonsp/PlutoUI.jl)
 1. [StaticArrays.jl](https://github.com/JuliaArrays/StaticArrays.jl)
-1. [WaterLily.jl](https://github.com/weymouth/WaterLily.jl)
+1. [WaterLily.jl](https://github.com/WaterLily-jl/WaterLily.jl)
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
