@@ -24,7 +24,7 @@ makedocs(
     modules = [WaterLily],
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", nothing) == "true",
-        canonical="https://github.com/WaterLily-jl/WaterLily.jl/",
+        canonical="https://WaterLily-jl.github.io/WaterLily.jl/",
         assets=String[],
         mathengine = MathJax3()
     ),
