@@ -37,7 +37,7 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/weymouth/WaterLily.jl.git",
+    repo = "github.com/WaterLily-jl/WaterLily.jl.git",
     target = "build",
     branch = "gh-pages",
     push_preview = true,
