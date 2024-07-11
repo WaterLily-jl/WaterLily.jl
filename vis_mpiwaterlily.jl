@@ -70,48 +70,34 @@ end
 
 let # DEBUG POISSON SOLVER
     # mom step test_$(string(Pois))_$(me()).jld2
-    rank_0 = load("/home/marin/Workspace/WaterLily/test_Poisson_0_source.jld2")["C"][3:end-1,3:end-2]
-    rank_1 = load("/home/marin/Workspace/WaterLily/test_Poisson_1_source.jld2")["C"][3:end-1,3:end-2]
-    rank_2 = load("/home/marin/Workspace/WaterLily/test_Poisson_2_source.jld2")["C"][3:end-1,3:end-2]
-    rank_3 = load("/home/marin/Workspace/WaterLily/test_Poisson_3_source.jld2")["C"][3:end-1,3:end-2]
+    rank_0 = load("/home/marin/Workspace/WaterLily/test_Poisson_0.jld2")["C"][3:end-2,3:end-2]
+    rank_1 = load("/home/marin/Workspace/WaterLily/test_Poisson_1.jld2")["C"][3:end-2,3:end-2]
+    rank_2 = load("/home/marin/Workspace/WaterLily/test_Poisson_2.jld2")["C"][3:end-2,3:end-2]
+    rank_3 = load("/home/marin/Workspace/WaterLily/test_Poisson_3.jld2")["C"][3:end-2,3:end-2]
     C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
-    p1 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200)
-    # 
-    rank_0 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_0_source.jld2")["C"][3:end-2,3:end-2]
-    rank_1 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_1_source.jld2")["C"][3:end-2,3:end-2]
-    rank_2 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_2_source.jld2")["C"][3:end-2,3:end-2]
-    rank_3 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_3_source.jld2")["C"][3:end-2,3:end-2]
-    C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
-    p2 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200)
-    # mom step test_$(string(Pois))_$(me()).jld2
-    rank_0 = load("/home/marin/Workspace/WaterLily/test_Poisson_0.jld2")["C"][3:end-1,3:end-2]
-    rank_1 = load("/home/marin/Workspace/WaterLily/test_Poisson_1.jld2")["C"][3:end-1,3:end-2]
-    rank_2 = load("/home/marin/Workspace/WaterLily/test_Poisson_2.jld2")["C"][3:end-1,3:end-2]
-    rank_3 = load("/home/marin/Workspace/WaterLily/test_Poisson_3.jld2")["C"][3:end-1,3:end-2]
-    C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
-    p3 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200)
+    p3 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200,title="Poiss sol")
     # 
     rank_0 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_0.jld2")["C"][3:end-2,3:end-2]
     rank_1 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_1.jld2")["C"][3:end-2,3:end-2]
     rank_2 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_2.jld2")["C"][3:end-2,3:end-2]
     rank_3 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_3.jld2")["C"][3:end-2,3:end-2]
     C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
-    p4 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200)
+    p4 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200,title="MultiLevelPois sol")
     #
-    rank_0 = load("/home/marin/Workspace/WaterLily/test_Poisson_0_sol.jld2")["C"][3:end-1,3:end-2]
-    rank_1 = load("/home/marin/Workspace/WaterLily/test_Poisson_1_sol.jld2")["C"][3:end-1,3:end-2]
-    rank_2 = load("/home/marin/Workspace/WaterLily/test_Poisson_2_sol.jld2")["C"][3:end-1,3:end-2]
-    rank_3 = load("/home/marin/Workspace/WaterLily/test_Poisson_3_sol.jld2")["C"][3:end-1,3:end-2]
+    rank_0 = load("/home/marin/Workspace/WaterLily/test_Poisson_0_error.jld2")["C"][3:end-2,3:end-2]
+    rank_1 = load("/home/marin/Workspace/WaterLily/test_Poisson_1_error.jld2")["C"][3:end-2,3:end-2]
+    rank_2 = load("/home/marin/Workspace/WaterLily/test_Poisson_2_error.jld2")["C"][3:end-2,3:end-2]
+    rank_3 = load("/home/marin/Workspace/WaterLily/test_Poisson_3_error.jld2")["C"][3:end-2,3:end-2]
     C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
-    p5 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200)
+    p5 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200,title="Pois error")
     # 
-    rank_0 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_0_sol.jld2")["C"][3:end-2,3:end-2]
-    rank_1 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_1_sol.jld2")["C"][3:end-2,3:end-2]
-    rank_2 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_2_sol.jld2")["C"][3:end-2,3:end-2]
-    rank_3 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_3_sol.jld2")["C"][3:end-2,3:end-2]
+    rank_0 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_0_error.jld2")["C"][3:end-2,3:end-2]
+    rank_1 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_1_error.jld2")["C"][3:end-2,3:end-2]
+    rank_2 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_2_error.jld2")["C"][3:end-2,3:end-2]
+    rank_3 = load("/home/marin/Workspace/WaterLily/test_MultiLevelPoisson_3_error.jld2")["C"][3:end-2,3:end-2]
     C = vcat(hcat(rank_0,rank_1),hcat(rank_2,rank_3))
-    p6 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200)
-    plot(p1,p2,p3,p4,p5,p6,layout = @layout [a b; c d; e f])
+    p6 = contourf(C', cmap=:imola10, aspect_ratio=:equal, lw=0, levels=10, dpi=1200,title="MultiLevelPois error")
+    plot(p3,p4,p5,p6,layout = @layout [a b; c d])
     savefig("poisson_solver.png")
 end
 
