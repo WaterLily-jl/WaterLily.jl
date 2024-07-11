@@ -24,7 +24,7 @@ makedocs(
     modules = [WaterLily],
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", nothing) == "true",
-        canonical="https://weymouth.github.io/WaterLily.jl/",
+        canonical="https://WaterLily-jl.github.io/WaterLily.jl/",
         assets=String[],
         mathengine = MathJax3()
     ),
@@ -37,7 +37,7 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/weymouth/WaterLily.jl.git",
+    repo = "github.com/WaterLily-jl/WaterLily.jl.git",
     target = "build",
     branch = "gh-pages",
     push_preview = true,

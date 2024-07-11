@@ -1,8 +1,8 @@
 # WaterLily.jl
 
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://weymouth.github.io/WaterLily.jl/dev/)
-[![CI](https://github.com/weymouth/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/weymouth/WaterLily.jl/actions)
-[![codecov](https://codecov.io/gh/weymouth/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/weymouth/WaterLily.jl)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/dev/)
+[![CI](https://github.com/WaterLily-jl/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/WaterLily-jl/WaterLily.jl/actions)
+[![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
 
 ![Julia flow](examples/julia.gif)
 
@@ -95,7 +95,7 @@ In this example, the `sdf` function defines a line segment from `-L/2 ≤ x[2] �
 
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation since it eliminates allocations at every grid cell and time step.
 
-### [Circle inside an oscillating flow](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_oscillatingFlowOverCircle.jl)
+### [Circle inside an oscillating flow](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/examples/TwoD_oscillatingFlowOverCircle.jl)
 ![Oscillating flow](examples/oscillating.gif)
 
 This [example](examples/TwoD_oscillatingFlowOverCircle.jl) demonstrates a 2D oscillating periodic flow over a circle.
@@ -107,7 +107,7 @@ function circle(n,m;Re=250,U=1)
 
     # define time-varying body force `g` and periodic direction `perdir`
     accelScale, timeScale = U^2/2radius, radius/U
-    g(i,t) = i==1 ? -2accelScale*sin(t/timeScale) : 0 
+    g(i,t) = i==1 ? -2accelScale*sin(t/timeScale) : 0
     Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, g, perdir=(1,))
 end
 ```
@@ -115,7 +115,7 @@ The `g` argument accepts a function with direction (`i`) and time (`t`) argument
 
 The `perdir` argument is a tuple that specifies the directions to which periodic boundary conditions should be applied. Any number of directions may be defined as periodic, but in this example only the `i=1` direction is used allowing the flow to accelerate freely in this direction.
 
-### [Accelerating reference frame](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_SlowStartCircle.jl)
+### [Accelerating reference frame](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/examples/TwoD_SlowStartCircle.jl)
 
 ![accelerating cylinder](examples/accelerating.gif)
 
@@ -130,7 +130,7 @@ sim = Simulation((256,256), Ut, 32)
 The `Ut` function is used to define the time-varying velocity field. In this example, the velocity in the "x" direction is set to `a0*t` where `a0` is the acceleration of the reference frame. The `Simulation` function is then called with the `Ut` function as the second argument. The simulation will then run with the time-varying velocity field.
 
 
-### [Periodic and convective boundary conditions](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_circle_periodicBC_convectiveBC.jl)
+### [Periodic and convective boundary conditions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/examples/TwoD_circle_periodicBC_convectiveBC.jl)
 
 ![periodic cylinder](examples/periodic.gif)
 
@@ -167,7 +167,7 @@ Simulation((512,384), u_BC=(1,0), L=32; body, exitBC=true)
 ```
 
 
-### [Writing to a VTK file](https://github.com/weymouth/WaterLily.jl/blob/master/examples/ThreeD_cylinder_vtk_restart.jl)
+### [Writing to a VTK file](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/examples/ThreeD_cylinder_vtk_restart.jl)
 
 The following example demonstrates how to write simulation data to a `.pvd` file using the `WriteVTK` package and the WaterLily `vtkwriter` function. The simplest writer can be instantiated with
 
@@ -193,11 +193,11 @@ using WaterLily,WriteVTK
 # make a writer with some attributes, need to output to CPU array to save file (|> Array)
 velocity(a::Simulation) = a.flow.u |> Array;
 pressure(a::Simulation) = a.flow.p |> Array;
-_body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body, WaterLily.time(a)); 
+_body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body, WaterLily.time(a));
                                      a.flow.σ |> Array;)
 lamda(a::Simulation) = (@inside a.flow.σ[I] = WaterLily.λ₂(I, a.flow.u);
                         a.flow.σ |> Array;)
-                        
+
 # this maps field names to values in the file
 custom_attrib = Dict(
     "Velocity" => velocity,
@@ -219,7 +219,7 @@ custom_vtk_function(a::Simulation) = ... |> Array
 the `...` should be replaced with the code that generates the field you want to write to the file. The piping to a (CPU) `Array` is necessary to ensure that the data is written to the CPU before being written to the file for GPU simulations.
 
 
-### [Restarting from a VTK file](https://github.com/weymouth/WaterLily.jl/blob/master/examples/ThreeD_cylinder_vtk_restart.jl)
+### [Restarting from a VTK file](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/examples/ThreeD_cylinder_vtk_restart.jl)
 
 This capability is very usefull to restart a simulation from a previous state. The `ReadVTK` package is used to read simulation data from a `.pvd` file. This `.pvd` __must__ have been writen with the `vtkwriter` function and __must__ contain at least the `velocity` and `pressure` fields. The following example demonstrates how to restart a simulation from a `.pvd` file using the `ReadVTK` package and the WaterLily `vtkreader` function
 ```julia
