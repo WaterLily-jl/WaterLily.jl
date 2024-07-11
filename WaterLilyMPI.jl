@@ -155,6 +155,15 @@ function WaterLily.CFL(a::Flow;Δt_max=10)
     MPI.Allreduce(min(Δt_max,inv(maximum(a.σ)+5a.ν)),Base.min,mpi_grid().comm)
 end
 
+function WaterLily.residual!(p::Poisson) 
+    WaterLily.perBC!(p.x,p.perdir)
+    @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-WaterLily.mult(I,p.L,p.D,p.x))
+    # s = sum(p.r)/length(inside(p.r))
+    s = MPI.Allreduce(sum(p.r)/length(inside(p.r)),+,mpi_grid().comm)
+    abs(s) <= 2eps(eltype(s)) && return
+    @inside p.r[I] = p.r[I]-s
+end
+
 function WaterLily.sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
