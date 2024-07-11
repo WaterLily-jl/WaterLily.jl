@@ -18,6 +18,7 @@ for fname in (:size, :length, :ndims, :eltype) # how to write 4 lines of code in
     end
 end
 Base.getindex(A::MPIArray, i::Int...) = Base.getindex(A.A, i...)
+Base.getindex(A::MPIArray, I::CartesianIndices...) = Base.getindex(A.A, I...)
 Base.setindex!(A::MPIArray, v, i...)  = Base.setindex!(A.A, v, i...)
 Base.copy(A::MPIArray) = (B=MPIArray(eltype(A),size(A)); B.A.=A.A; B)
 Base.similar(A::MPIArray) = MPIArray(eltype(A),size(A))
