@@ -5,7 +5,6 @@ using FileIO,JLD2
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
 const NNEIGHBORS_PER_DIM = 2
 
-
 """return the CI of the halos must only point to halos, otherwise it messes-up 
 the reconstruction"""
 function halos(dims::NTuple{N},j) where N
@@ -15,7 +14,6 @@ end
 function buff(dims::NTuple{N},j) where N
     CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (3:4) : (dims[i]-3:dims[i]-2) : (1:dims[i]), N))
 end
-
 
 function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
     reqs=MPI.Request[]
@@ -33,7 +31,7 @@ WaterLily.perBC!(a,::Tuple{})          = perBC!(a, size(a), true)
 WaterLily.perBC!(a, perdir, N=size(a)) = perBC!(a, N, true)
 perBC!(a, N, mpi::Bool) = for d ∈ eachindex(N)
     # get data to transfer @TODO use @views
-    send1 = @views(a[buff(N,-d)]); send2 = @views(a[buff(N,+d)])
+    send1 = a[buff(N,-d)]; send2 =a[buff(N,+d)]
     recv1 = zero(send1);   recv2 = zero(send2)
     # swap 
     mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
@@ -47,7 +45,7 @@ function WaterLily.BC!(a,A,saveexit=false,perdir=())
     N,n = WaterLily.size_u(a)
     for i ∈ 1:n, d ∈ 1:n
         # get data to transfer @TODO use @views
-        send1 = @views(a[buff(N,-d),i]); send2 = @views(a[buff(N,+d),i])
+        send1 = a[buff(N,-d),i]; send2 = a[buff(N,+d),i]
         recv1 = zero(send1);     recv2 = zero(send2)
         # swap 
         mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
@@ -73,6 +71,19 @@ function WaterLily.BC!(a,A,saveexit=false,perdir=())
             a[halos(N,+d),i] .= recv2
         end
     end
+end
+
+function WaterLily.exitBC!(u,u⁰,U,Δt)
+    N,_ = size_u(u)
+    exitR = slice(N.-2,N[1]-2,1,3) # exit slice excluding ghosts
+    if mpi_wall(1,2) #right wall
+        @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+        ∮udA = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    else
+        ∮udA = 0
+    end
+    ∮u = MPI.Allreduce(⨕udA,+,mpi_grid().comm)           # domain imbalance
+    mpi_wall(1,2) && (@loop u[I,1] -= ∮u over I ∈ exitR) # correct flux only on right wall
 end
 
 struct MPIGrid #{I,C<:MPI.Comm,N<:AbstractVector,M<:AbstractArray,G<:AbstractVector}
@@ -133,7 +144,7 @@ end
 function WaterLily.L₂(a)
     MPI.Allreduce(sum(abs2,@inbounds(a[I]) for I ∈ inside(a)),+,mpi_grid().comm)
 end
-function WaterLily.L₂(p::Poisson)
+function WaterLily.L₂(p::Poisson) # won't work on the GPU
     s = zero(eltype(p.r))
     for I ∈ inside(p.r)
         @inbounds s += p.r[I]*p.r[I]
@@ -154,7 +165,7 @@ function WaterLily.CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = WaterLily.flux_out(I,a.u)
     MPI.Allreduce(min(Δt_max,inv(maximum(a.σ)+5a.ν)),Base.min,mpi_grid().comm)
 end
-
+# this actually add a global comminutation every time residual is called
 function WaterLily.residual!(p::Poisson) 
     WaterLily.perBC!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-WaterLily.mult(I,p.L,p.D,p.x))

@@ -74,7 +74,7 @@ sim = circle(nx,ny,SA[ny,ny],nx/16;psolver=MultiLevelPoisson)
 # save("mom_step_ml_$(me())_u2.jld2","C",sim.flow.u[:,:,2])
 
 # try full sim step
-sim_step!(sim, 20; verbose=true)
+sim_step!(sim, 100; verbose=true)
 me()==0 && println("mom_step! with $(sim.pois.n) MG iters $(typeof(sim.pois))")
 # println("mom_step! residuals $(WaterLily.L₂(sim.pois.levels[1])) tol : 1e-4")
 # println("mom_step! residuals $(WaterLily.L∞(sim.pois.levels[1])) tol : n-a")
