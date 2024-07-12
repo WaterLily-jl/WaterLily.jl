@@ -11,8 +11,8 @@ function circle(n,m,center,radius;Re=250,U=1,psolver=Poisson)
 end
 
 # local grid size
-nx = 2^7
-ny = 2^6
+nx = 2^8
+ny = 2^7
 
 # init the MPI grid and the simulation
 r = init_mpi((nx,ny))
@@ -64,7 +64,7 @@ r = init_mpi((nx,ny))
 # println("L₂(pois) ($(me())) : $(WaterLily.L₂(sim.pois)) true : $(123.456789^2)")
 
 # debug multilevelPoisson
-sim = circle(nx,ny,SA[ny,ny],nx/8;psolver=MultiLevelPoisson)
+sim = circle(nx,ny,SA[ny,ny],nx/16;psolver=MultiLevelPoisson)
 # mom_step!(sim.flow,sim.pois)
 # me()==0 && println("mom_step! with $(sim.pois.n) MG iters $(typeof(sim.pois))")
 # println("mom_step! residuals $(WaterLily.L₂(sim.pois.levels[1])) tol : 1e-4")
@@ -74,12 +74,15 @@ sim = circle(nx,ny,SA[ny,ny],nx/8;psolver=MultiLevelPoisson)
 # save("mom_step_ml_$(me())_u2.jld2","C",sim.flow.u[:,:,2])
 
 # try full sim step
-sim_step!(sim, 8.6; verbose=true)
+sim_step!(sim, 20; verbose=true)
 me()==0 && println("mom_step! with $(sim.pois.n) MG iters $(typeof(sim.pois))")
 # println("mom_step! residuals $(WaterLily.L₂(sim.pois.levels[1])) tol : 1e-4")
 # println("mom_step! residuals $(WaterLily.L∞(sim.pois.levels[1])) tol : n-a")
-# save("sim_step_$(me())_p.jld2","C",sim.flow.p)
-# save("sim_step_$(me())_u1.jld2","C",sim.flow.u[:,:,1])
-# save("sim_step_$(me())_u2.jld2","C",sim.flow.u[:,:,2])
+save("sim_step_$(me())_p.jld2","C",sim.flow.p)
+@inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+WaterLily.perBC!(sim.flow.σ,())
+save("sim_step_$(me())_σ.jld2","C",sim.flow.σ)
+save("sim_step_$(me())_u1.jld2","C",sim.flow.u[:,:,1])
+save("sim_step_$(me())_u2.jld2","C",sim.flow.u[:,:,2])
 
 finalize_mpi()

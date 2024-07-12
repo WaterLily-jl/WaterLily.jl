@@ -110,7 +110,7 @@ Note: This runs for general backends, but is _very_ slow to converge.
 @fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
     # @TODO is that reqired?
-    # perBC!(p.ϵ,p.perdir)
+    perBC!(p.ϵ,p.perdir)
     increment!(p)
 end
 
