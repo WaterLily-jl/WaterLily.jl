@@ -74,16 +74,16 @@ function WaterLily.BC!(a,A,saveexit=false,perdir=())
 end
 
 function WaterLily.exitBC!(u,u⁰,U,Δt)
-    N,_ = size_u(u)
-    exitR = slice(N.-2,N[1]-2,1,3) # exit slice excluding ghosts
+    N,_ = Waterlily.size_u(u)
+    exitR = Waterlily.slice(N.-2,N[1]-2,1,3) # exit slice excluding ghosts
     if mpi_wall(1,2) #right wall
-        @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+        @WaterLily.loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
         ∮udA = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
     else
         ∮udA = 0
     end
     ∮u = MPI.Allreduce(⨕udA,+,mpi_grid().comm)           # domain imbalance
-    mpi_wall(1,2) && (@loop u[I,1] -= ∮u over I ∈ exitR) # correct flux only on right wall
+    mpi_wall(1,2) && (@WaterLily.loop u[I,1] -= ∮u over I ∈ exitR) # correct flux only on right wall
 end
 
 struct MPIGrid #{I,C<:MPI.Comm,N<:AbstractVector,M<:AbstractArray,G<:AbstractVector}
