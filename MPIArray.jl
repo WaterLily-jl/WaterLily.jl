@@ -6,22 +6,22 @@ struct MPIArray{T,N,V<:AbstractArray{T,N},W<:AbstractVector{T}} <: AbstractArray
     send :: W
     recv :: W
     function MPIArray(::Type{T}, dims::NTuple{N, Integer}) where {T,N}
-        A = Array{T,N}(undef, dims); fill!(A, zero(T))
-        send, recv = zeros(T,maximum(dims)), zeros(T,maximum(dims))
+        A = Array{T,N}(undef, dims)
+        send, recv = Array{T}(undef,maximum(dims)),Array{T}(undef,maximum(dims))
         new{T,N,typeof(A),typeof(send)}(A,send,recv)
     end
-    MPIArray(A::AbstractArray{T}) where T = MPIArray(T,size(A))
+    MPIArray(A::AbstractArray{T}) where T = (B=MPIArray(T,size(A)); B.A.=A; B)
 end
 for fname in (:size, :length, :ndims, :eltype) # how to write 4 lines of code in 5...
     @eval begin
         Base.$fname(A::MPIArray) = Base.$fname(A.A)
     end
 end
-Base.getindex(A::MPIArray, i...)            = Base.getindex(A.A, i...)
-Base.setindex!(A::MPIArray, v, i...)        = Base.setindex!(A.A, v, i...)
-Base.copy(A::MPIArray) = (B=MPIArray(eltype(A),size(A)); B.A.=A.A; B)
-Base.similar(A::MPIArray)                   = MPIArray(eltype(A),size(A))
-Base.similar(A::MPIArray, dims::Tuple)      = MPIArray(eltype(A),dims)
+Base.getindex(A::MPIArray, i...)       = Base.getindex(A.A, i...)
+Base.setindex!(A::MPIArray, v, i...)   = Base.setindex!(A.A, v, i...)
+Base.copy(A::MPIArray)                 = MPIArray(A)
+Base.similar(A::MPIArray)              = MPIArray(eltype(A),size(A))
+Base.similar(A::MPIArray, dims::Tuple) = MPIArray(eltype(A),dims)
 # required for the @loop function
 KernelAbstractions.get_backend(A::MPIArray) = KernelAbstractions.get_backend(A.A)
 
