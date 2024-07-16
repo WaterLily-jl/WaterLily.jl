@@ -1,42 +1,11 @@
-#mpiexecjl --project=examples/ -n 4 julia ParallelVTK.jl
+#mpiexecjl --project=examples/ -n 4 julia TwoD_CircleMPI.jl
 
 using WaterLily
 using WriteVTK
 using MPI
 using StaticArrays
 using Printf: @sprintf
-
-# include("WaterLilyMPI.jl")
-
-
-# make a writer with some attributes
-velocity(a::Simulation) = a.flow.u |> Array;
-pressure(a::Simulation) = a.flow.p |> Array;
-_body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body); 
-                        a.flow.σ |> Array;)
-vorticity(a::Simulation) = (@inside a.flow.σ[I] = 
-                            WaterLily.curl(3,I,a.flow.u)*a.L/a.U;
-                            a.flow.σ |> Array;)
-_vbody(a::Simulation) = a.flow.V |> Array;
-mu0(a::Simulation) = a.flow.μ₀ |> Array;
-
-custom_attrib = Dict(
-    "u" => velocity,
-    "p" => pressure,
-    "d" => _body,
-    "ω" => vorticity,
-    "v" => _vbody,
-    "μ₀" => mu0
-)# this maps what to write to the name in the file
-
-
-components_first(a::AbstractArray{T,N}) where {T,N} = permutedims(a,[N,1:N-1...])
-
-"""Flow around a circle"""
-function circle(n,m,center,radius;Re=250,U=1,psolver=Poisson)
-    body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, mem=MPIArray, psolver=psolver)
-end
+# include("../WaterLilyMPI.jl") # this uses the old functions
 
 function WriteVTK.pvtk_grid(
         filename::AbstractString, args...;
@@ -161,12 +130,14 @@ function WriteVTK._init_pvtk!(pvtk::WriteVTK.PVTKFile, extents)
     pvtk
 end
 
-function write!(w,a::Simulation)
-    k = w.count[1]; N = size(inside(sim.flow.p))
+components_first(a::AbstractArray{T,N}) where {T,N} = permutedims(a,[N,1:N-1...])
+# function write!(w,a::Simulation{D,T,S};N=size(inside(sim.flow.p))) where {D,T,S<:MPIArray{T}}
+function write!(w,a::Simulation;N=size(inside(sim.flow.p))) 
+    k = w.count[1]
     xs = Tuple(ifelse(x==0,1,x+3):ifelse(x==0,n+4,n+x+6) for (n,x) in zip(N,grid_loc()))
     extents = MPI.Allgather(xs, mpi_grid().comm)
     part = Int(me()+1)
-    pvtk = pvtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), extents[part]; part=part, extents=extents, ghost_level=2)
+    pvtk = pvtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), extents[part]; part=part, extents=extents, ghost_level=0)
     for (name,func) in w.output_attrib
         # this seems bad, but I @benchmark it and it's the same as just calling func()
         pvtk[name] = size(func(a))==size(sim.flow.p) ? func(a) : components_first(func(a))
@@ -175,14 +146,32 @@ function write!(w,a::Simulation)
     w.collection[round(sim_time(a),digits=4)]=pvtk
 end
 
-function WaterLily.sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false)
-    steps₀ = length(sim.flow.Δt)
-    while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure)
-        (verbose && me()==0) && println("tU/L=",round(sim_time(sim),digits=4),
-                                        ", Δt=",round(sim.flow.Δt[end],digits=3))
-    end
+
+"""Flow around a circle"""
+function circle(n,m,center,radius;Re=250,U=1,psolver=Poisson,mem=Array)
+    body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
+    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, mem=mem, psolver=psolver)
 end
+
+# make a writer with some attributes
+velocity(a::Simulation) = a.flow.u |> Array;
+pressure(a::Simulation) = a.flow.p |> Array;
+_body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body); 
+                        a.flow.σ |> Array;)
+vorticity(a::Simulation) = (@inside a.flow.σ[I] = 
+                            WaterLily.curl(3,I,a.flow.u)*a.L/a.U;
+                            a.flow.σ |> Array;)
+_vbody(a::Simulation) = a.flow.V |> Array;
+mu0(a::Simulation) = a.flow.μ₀ |> Array;
+
+custom_attrib = Dict(
+    "u" => velocity,
+    "p" => pressure,
+    "d" => _body,
+    "ω" => vorticity,
+    "v" => _vbody,
+    "μ₀" => mu0
+)# this maps what to write to the name in the file
 
 WaterLily.grid_loc() = mpi_grid().global_loc
 
@@ -192,13 +181,12 @@ ny = 2^6
 
 # init the MPI grid and the simulation
 r = init_mpi((nx,ny))
-sim = circle(nx,ny,SA[ny/2,ny/2+2],nx/8)
+sim = circle(nx,ny,SA[ny/2,ny/2+2],nx/8;mem=MPIArray) #use MPIArray to use extension
 
-wr = vtkWriter("fields";attrib=custom_attrib,dir="vtk_data")
-write!(wr,sim)
-# for _ in 1:1
-#     sim_step!(sim,sim_time(sim)+1.0,verbose=true)
-# end
+wr = vtkWriter("WaterLily-circle-2";attrib=custom_attrib,dir="vtk_data")
+for _ in 1:5
+    sim_step!(sim,sim_time(sim)+1.0,verbose=true)
+    write!(wr,sim)
+end
 close(wr)
-
 finalize_mpi()

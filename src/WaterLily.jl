@@ -55,11 +55,11 @@ Constructor for a WaterLily.jl simulation:
 
 See files in `examples` folder for examples.
 """
-struct Simulation
+struct Simulation{D,T,S}
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
-    flow :: Flow
+    flow :: Flow{D,T,S}
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, u_BC, L::Number;
@@ -73,7 +73,7 @@ struct Simulation
         U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
         flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,psolver(flow.p,flow.μ₀,flow.σ;perdir))
+        new{N,T,typeof(flow.p)}(U,L,ϵ,flow,body,psolver(flow.p,flow.μ₀,flow.σ;perdir))
     end
 end
 

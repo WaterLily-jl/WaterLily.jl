@@ -9,7 +9,7 @@ end
 using StaticArrays
 using WaterLily
 import WaterLily: init_mpi,me,mpi_grid,finalize_mpi
-import WaterLily: BC!,perBC!,exitBC!,L₂,L∞,loc,_dot,CFL,residual!
+import WaterLily: BC!,perBC!,exitBC!,L₂,L∞,loc,grid_loc,_dot,CFL,residual!,sim_step!
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
 const NNEIGHBORS_PER_DIM = 2
@@ -55,7 +55,9 @@ end
 
 This function sets the boundary conditions of the array `a` using the MPI grid.
 """
-perBC!(a::MPIArray, N, mpi::Bool) = for d ∈ eachindex(N)
+perBC!(a::MPIArray,::Tuple{})            = _perBC!(a, size(a), true)
+perBC!(a::MPIArray, perdir, N = size(a)) = _perBC!(a, N, true)
+_perBC!(a, N, mpi::Bool) = for d ∈ eachindex(N)
     # get data to transfer @TODO use @views
     send1 = a[buff(N,-d)]; send2 =a[buff(N,+d)]
     recv1 = zero(send1);   recv2 = zero(send2)
@@ -160,8 +162,7 @@ end
 finalize_mpi() = MPI.Finalize()
 
 # global coordinate in grid space
-# grid_loc(;grid=MPI_GRID_NULL) = 0
-grid_loc(;grid=mpi_grid()) = grid.global_loc
+# grid_loc(grid::MPIGrid=mpi_grid()) = grid.global_loc
 me()= mpi_grid().me
 neighbors(dim) = mpi_grid().neighbors[:,dim]
 mpi_wall(dim,i) = mpi_grid().neighbors[i,dim]==MPI.PROC_NULL
@@ -190,13 +191,14 @@ function residual!(p::Poisson{T,S}) where {T,S<:MPIArray{T}}
     @inside p.r[I] = p.r[I]-s
 end
 
-# function sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,mpi=true)
-#     steps₀ = length(sim.flow.Δt)
-#     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-#         sim_step!(sim; remeasure)
-#         (verbose && me()==0) && println("tU/L=",round(sim_time(sim),digits=4),
-#                                         ", Δt=",round(sim.flow.Δt[end],digits=3))
-#     end
-# end
+function sim_step!(sim::Simulation{D,T,S},t_end;remeasure=true,
+                   max_steps=typemax(Int),verbose=false) where {D,T,S<:MPIArray{T}}
+    steps₀ = length(sim.flow.Δt)
+    while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
+        sim_step!(sim; remeasure)
+        (verbose && me()==0) && println("tU/L=",round(sim_time(sim),digits=4),
+                                        ", Δt=",round(sim.flow.Δt[end],digits=3))
+    end
+end
 
 end # module
