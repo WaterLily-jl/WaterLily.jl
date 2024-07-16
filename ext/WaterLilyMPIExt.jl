@@ -8,7 +8,8 @@ end
 
 using StaticArrays
 using WaterLily
-import WaterLily: init_mpi,me,BC!,perBC!,L₂,L∞,loc,⋅,finalize_mpi
+import WaterLily: init_mpi,me,mpi_grid,finalize_mpi
+import WaterLily: BC!,perBC!,exitBC!,L₂,L∞,loc,_dot,CFL,residual!
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
 const NNEIGHBORS_PER_DIM = 2
@@ -50,62 +51,70 @@ function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
 end
 
 """
+    perBC!(a)
+
+This function sets the boundary conditions of the array `a` using the MPI grid.
+"""
+perBC!(a::MPIArray, N, mpi::Bool) = for d ∈ eachindex(N)
+    # get data to transfer @TODO use @views
+    send1 = a[buff(N,-d)]; send2 =a[buff(N,+d)]
+    recv1 = zero(send1);   recv2 = zero(send2)
+    # swap 
+    mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
+
+    # this sets the BCs
+    !mpi_wall(d,1) && (a[halos(N,-d)] .= recv1) # halo swap
+    !mpi_wall(d,2) && (a[halos(N,+d)] .= recv2) # halo swap
+end
+
+"""
     BC!(a)
 
 This function sets the boundary conditions of the array `a` using the MPI grid.
 """
-function perBC!(a, perdir, mpi, N = size(a)) # single function of MPI is used
-    for d ∈ eachindex(N)
-        # get data to transfer
-        send1 = a[buff(N,-d)]; send2 = a[buff(N,+d)]
-        recv1 = zero(send1);   recv2 = zero(send2)
+function BC!(a::MPIArray,A,saveexit=false,perdir=())
+    N,n = WaterLily.size_u(a)
+    for i ∈ 1:n, d ∈ 1:n
+        # get data to transfer @TODO use @views
+        send1 = a[buff(N,-d),i]; send2 = a[buff(N,+d),i]
+        recv1 = zero(send1);     recv2 = zero(send2)
         # swap 
-        mpi_swap!(send1,recv1,send2,recv2,mpi_grid().neighbors[:,d],mpi_grid().comm)
+        mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
 
-        # this sets the BCs
-        if mpi_grid().neighbors[1,d]==MPI.PROC_NULL # right wall
-            a[halos(N,-d)] .= reverse(send1; dims=d)
-        else # halo swap
-            a[halos(N,-d)] .= recv1
+        # this sets the BCs on the domain boundary and transfers the data
+        if mpi_wall(d,1) # left wall
+            if i==d # set flux
+                a[halos(N,-d),i] .= A[i]
+                a[WaterLily.slice(N,3,d),i] .= A[i]
+            else # zero gradient
+                a[halos(N,-d),i] .= reverse(send1; dims=d)
+            end
+        else # neighbor on the left
+            a[halos(N,-d),i] .= recv1
         end
-        if mpi_grid().neighbors[2,d]==MPI.PROC_NULL # right wall
-            a[halos(N,+d)] .= reverse(send2; dims=d)
-        else # halo swap
-            a[halos(N,+d)] .= recv2
+        if mpi_wall(d,2) # right wall
+            if i==d && (!saveexit || i>1) # convection exit
+                a[halos(N,+d),i] .= A[i]
+            else # zero gradient
+                a[halos(N,+d),i] .= reverse(send2; dims=d)
+            end
+        else # neighbor on the right
+            a[halos(N,+d),i] .= recv2
         end
     end
 end
 
-function BC!(a,A,mpi,saveexit=false,perdir=())
-    N,n = WaterLily.size_u(a)
-    for i ∈ 1:n, j ∈ 1:n
-        # get data to transfer
-        send1 = a[buff(N,-j),i]; send2 = a[buff(N,+j),i]
-        recv1 = zero(send1);     recv2 = zero(send2)
-        # swap 
-        mpi_swap!(send1,recv1,send2,recv2,mpi_grid().neighbors[:,j],mpi_grid().comm)
-
-        # this sets the BCs on the domain boundary and transfers the data
-        if mpi_grid().neighbors[1,j]==MPI.PROC_NULL # left wall
-            if i==j # set flux
-                a[halos(N,-j),i] .= A[i]
-                a[WaterLily.slice(N,3,j),i] .= A[i]
-            else # zero gradient
-                a[halos(N,-j),i] .= reverse(send1; dims=j)
-            end
-        else # neighbor on the left
-            a[halos(N,-j),i] .= recv1
-        end
-        if mpi_grid().neighbors[2,j]==MPI.PROC_NULL # right wall
-            if i==j && (!saveexit || i>1) # convection exit
-                a[halos(N,+j),i] .= A[i]
-            else # zero gradient
-                a[halos(N,+j),i] .= reverse(send2; dims=j)
-            end
-        else # neighbor on the right
-            a[halos(N,+j),i] .= recv2
-        end
-    end
+function exitBC!(u::MPIArray,u⁰,U,Δt)
+    N,_ = WaterLily.size_u(u)
+    exitR = WaterLily.slice(N.-2,N[1]-2,1,3) # exit slice excluding ghosts
+    # ∮udA = 0
+    # if mpi_wall(1,2) #right wall
+    @WaterLily.loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    # end
+    # ∮u = MPI.Allreduce(∮udA,+,mpi_grid().comm)           # domain imbalance
+    # mpi_wall(1,2) && (@WaterLily.loop u[I,1] -= ∮u over I ∈ exitR) # correct flux only on right wall
+    @WaterLily.loop u[I,1] -= ∮u over I ∈ exitR # correct flux only on right wall
 end
 
 struct MPIGrid #{I,C<:MPI.Comm,N<:AbstractVector,M<:AbstractArray,G<:AbstractVector}
@@ -152,32 +161,42 @@ finalize_mpi() = MPI.Finalize()
 
 # global coordinate in grid space
 # grid_loc(;grid=MPI_GRID_NULL) = 0
-# grid_loc() = mpi_grid().global_loc
+grid_loc(;grid=mpi_grid()) = grid.global_loc
 me()= mpi_grid().me
-neighbor(d,i) = mpi_grid().neighbors[i,d]
-neighbor(d) = mpi_grid().neighbors[:,d]
+neighbors(dim) = mpi_grid().neighbors[:,dim]
+mpi_wall(dim,i) = mpi_grid().neighbors[i,dim]==MPI.PROC_NULL
 
-# every process must redifine the loc to be global
-@inline function loc(i,I::CartesianIndex{N}) where N
-    # global position in the communicator
-    SVector{N}(mpi_grid().global_loc .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
+L₂(a::MPIArray{T}) where T = MPI.Allreduce(sum(T,abs2,@inbounds(a[I]) for I ∈ inside(a)),+,mpi_grid().comm)
+function L₂(p::Poisson{T,S}) where {T,S<:MPIArray{T}} # should work on the GPU
+    MPI.Allreduce(sum(T,@inbounds(p.r[I]*p.r[I]) for I ∈ inside(p.r)),+,mpi_grid().comm)
+end
+L∞(a::MPIArray) = MPI.Allreduce(maximum(abs.(a)),Base.max,mpi_grid().comm)
+L∞(p::Poisson{T,S}) where {T,S<:MPIArray{T}} = MPI.Allreduce(maximum(abs.(p.r)),Base.max,mpi_grid().comm)
+function _dot(a::MPIArray{T},b::MPIArray{T}) where T
+    MPI.Allreduce(sum(T,@inbounds(a[I]*b[I]) for I ∈ inside(a)),+,mpi_grid().comm)
 end
 
-L₂(a) = MPI.Allreduce(sum(abs2,@inbounds(a[I]) for I ∈ inside(a)),+,mpi_grid().comm)
-function L₂(p::Poisson)
-    s = zero(eltype(p.r))
-    for I ∈ inside(p.r)
-        @inbounds s += p.r[I]*p.r[I]
-    end
-    MPI.Allreduce(s,+,mpi_grid().comm)
+function CFL(a::Flow{D,T,S};Δt_max=10) where {D,T,S<:MPIArray{T}}
+    @inside a.σ[I] = WaterLily.flux_out(I,a.u)
+    MPI.Allreduce(min(Δt_max,inv(maximum(a.σ)+5a.ν)),Base.min,mpi_grid().comm)
 end
-L∞(p::Poisson) = MPI.Allreduce(maximum(abs.(p.r)),Base.max,mpi_grid().comm)
-function ⋅(a::AbstractArray{T},b::AbstractArray{T}) where T
-    s = zero(T)
-    for I ∈ inside(a)
-        @inbounds s += a[I]*b[I]
-    end
-    MPI.Allreduce(s,+,mpi_grid().comm)
+# this actually add a global comminutation every time residual is called
+function residual!(p::Poisson{T,S}) where {T,S<:MPIArray{T}}
+    WaterLily.perBC!(p.x,p.perdir)
+    @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-WaterLily.mult(I,p.L,p.D,p.x))
+    # s = sum(p.r)/length(inside(p.r))
+    s = MPI.Allreduce(sum(p.r)/length(inside(p.r)),+,mpi_grid().comm)
+    abs(s) <= 2eps(eltype(s)) && return
+    @inside p.r[I] = p.r[I]-s
 end
+
+# function sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,mpi=true)
+#     steps₀ = length(sim.flow.Δt)
+#     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
+#         sim_step!(sim; remeasure)
+#         (verbose && me()==0) && println("tU/L=",round(sim_time(sim),digits=4),
+#                                         ", Δt=",round(sim.flow.Δt[end],digits=3))
+#     end
+# end
 
 end # module

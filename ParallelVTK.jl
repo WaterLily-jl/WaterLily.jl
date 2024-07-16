@@ -1,16 +1,41 @@
-using MPI
+#mpiexecjl --project=examples/ -n 4 julia ParallelVTK.jl
+
 using WaterLily
 using WriteVTK
+using MPI
+using StaticArrays
 using Printf: @sprintf
 
-include("WaterLilyMPI.jl")
+# include("WaterLilyMPI.jl")
+
+
+# make a writer with some attributes
+velocity(a::Simulation) = a.flow.u |> Array;
+pressure(a::Simulation) = a.flow.p |> Array;
+_body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body); 
+                        a.flow.σ |> Array;)
+vorticity(a::Simulation) = (@inside a.flow.σ[I] = 
+                            WaterLily.curl(3,I,a.flow.u)*a.L/a.U;
+                            a.flow.σ |> Array;)
+_vbody(a::Simulation) = a.flow.V |> Array;
+mu0(a::Simulation) = a.flow.μ₀ |> Array;
+
+custom_attrib = Dict(
+    "u" => velocity,
+    "p" => pressure,
+    "d" => _body,
+    "ω" => vorticity,
+    "v" => _vbody,
+    "μ₀" => mu0
+)# this maps what to write to the name in the file
+
 
 components_first(a::AbstractArray{T,N}) where {T,N} = permutedims(a,[N,1:N-1...])
 
 """Flow around a circle"""
 function circle(n,m,center,radius;Re=250,U=1,psolver=Poisson)
     body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, psolver=psolver)
+    Simulation((n,m), (U,0), radius; ν=U*radius/Re, body, mem=MPIArray, psolver=psolver)
 end
 
 function WriteVTK.pvtk_grid(
@@ -150,19 +175,30 @@ function write!(w,a::Simulation)
     w.collection[round(sim_time(a),digits=4)]=pvtk
 end
 
+function WaterLily.sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false)
+    steps₀ = length(sim.flow.Δt)
+    while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
+        sim_step!(sim; remeasure)
+        (verbose && me()==0) && println("tU/L=",round(sim_time(sim),digits=4),
+                                        ", Δt=",round(sim.flow.Δt[end],digits=3))
+    end
+end
+
+WaterLily.grid_loc() = mpi_grid().global_loc
+
 # local grid size
-nx = 2^8
-ny = 2^8
+nx = 2^6
+ny = 2^6
 
 # init the MPI grid and the simulation
 r = init_mpi((nx,ny))
 sim = circle(nx,ny,SA[ny/2,ny/2+2],nx/8)
 
-wr = vtkWriter("fields";attrib=default_attrib(),dir="vtk_data")
-for _ in 1:100
-    sim_step!(sim,sim_time(sim)+1.0,verbose=true)
-    write!(wr,sim)
-end
+wr = vtkWriter("fields";attrib=custom_attrib,dir="vtk_data")
+write!(wr,sim)
+# for _ in 1:1
+#     sim_step!(sim,sim_time(sim)+1.0,verbose=true)
+# end
 close(wr)
 
 finalize_mpi()
