@@ -8,7 +8,7 @@ end
 
 using StaticArrays
 using WaterLily
-import WaterLily: init_mpi,me,mpi_grid,finalize_mpi
+import WaterLily: init_mpi,me,mpi_grid,finalize_mpi,get_extents
 import WaterLily: BC!,perBC!,exitBC!,L₂,L∞,loc,grid_loc,_dot,CFL,residual!,sim_step!
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
@@ -199,6 +199,12 @@ function sim_step!(sim::Simulation{D,T,S},t_end;remeasure=true,
         (verbose && me()==0) && println("tU/L=",round(sim_time(sim),digits=4),
                                         ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
+end
+
+# hepler function for vtk writer
+function get_extents(a::MPIArray)
+    xs = Tuple(ifelse(x==0,1,x+1):ifelse(x==0,n+4,n+x+4) for (n,x) in zip(size(inside(a)),grid_loc()))
+    MPI.Allgather(xs, mpi_grid().comm)
 end
 
 end # module

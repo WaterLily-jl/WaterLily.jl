@@ -137,8 +137,9 @@ function init_mpi end
 function me end
 function mpi_grid end
 function finalize_mpi end
+function get_extents end
 # export
-export init_mpi,me,mpi_grid,finalize_mpi
+export init_mpi,me,mpi_grid,finalize_mpi,get_extents
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})
