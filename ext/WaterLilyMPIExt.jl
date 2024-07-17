@@ -74,34 +74,67 @@ end
 
 This function sets the boundary conditions of the array `a` using the MPI grid.
 """
+# function BC!(a::MPIArray,A,saveexit=false,perdir=())
+#     N,n = WaterLily.size_u(a)
+#     for i ∈ 1:n, d ∈ 1:n
+#         # get data to transfer @TODO use @views
+#         send1 = a[buff(N,-d),i]; send2 = a[buff(N,+d),i]
+#         recv1 = zero(send1);     recv2 = zero(send2)
+#         # swap 
+#         mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
+
+#         # this sets the BCs on the domain boundary and transfers the data
+#         if mpi_wall(d,1) # left wall
+#             if i==d # set flux
+#                 a[halos(N,-d),i] .= A[i]
+#                 a[WaterLily.slice(N,3,d),i] .= A[i]
+#             else # zero gradient
+#                 a[halos(N,-d),i] .= reverse(send1; dims=d)
+#             end
+#         else # neighbor on the left
+#             a[halos(N,-d),i] .= recv1
+#         end
+#         if mpi_wall(d,2) # right wall
+#             if i==d && (!saveexit || i>1) # convection exit
+#                 a[halos(N,+d),i] .= A[i]
+#             else # zero gradient
+#                 a[halos(N,+d),i] .= reverse(send2; dims=d)
+#             end
+#         else # neighbor on the right
+#             a[halos(N,+d),i] .= recv2
+#         end
+#     end
+# end
+using EllipsisNotation
 function BC!(a::MPIArray,A,saveexit=false,perdir=())
     N,n = WaterLily.size_u(a)
-    for i ∈ 1:n, d ∈ 1:n
+    for d ∈ 1:n # transfer full halos in each direction
         # get data to transfer @TODO use @views
-        send1 = a[buff(N,-d),i]; send2 = a[buff(N,+d),i]
+        send1 = a[buff(N,-d),:]; send2 = a[buff(N,+d),:]
         recv1 = zero(send1);     recv2 = zero(send2)
         # swap 
         mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
 
-        # this sets the BCs on the domain boundary and transfers the data
-        if mpi_wall(d,1) # left wall
-            if i==d # set flux
-                a[halos(N,-d),i] .= A[i]
-                a[WaterLily.slice(N,3,d),i] .= A[i]
-            else # zero gradient
-                a[halos(N,-d),i] .= reverse(send1; dims=d)
+        # mpi boundary swap
+        !mpi_wall(d,1) && (a[halos(N,-d),:] .= recv1) # halo swap
+        !mpi_wall(d,2) && (a[halos(N,+d),:] .= recv2) # halo swap
+        
+        for i ∈ 1:n # this sets the BCs on the physical boundary
+            if mpi_wall(d,1) # left wall
+                if i==d # set flux
+                    a[halos(N,-d),i] .= A[i]
+                    a[WaterLily.slice(N,3,d),i] .= A[i]
+                else # zero gradient
+                    a[halos(N,-d),i] .= reverse(send1[..,i]; dims=d)
+                end
             end
-        else # neighbor on the left
-            a[halos(N,-d),i] .= recv1
-        end
-        if mpi_wall(d,2) # right wall
-            if i==d && (!saveexit || i>1) # convection exit
-                a[halos(N,+d),i] .= A[i]
-            else # zero gradient
-                a[halos(N,+d),i] .= reverse(send2; dims=d)
+            if mpi_wall(d,2) # right wall
+                if i==d && (!saveexit || i>1) # convection exit
+                    a[halos(N,+d),i] .= A[i]
+                else # zero gradient
+                    a[halos(N,+d),i] .= reverse(send2[..,i]; dims=d)
+                end
             end
-        else # neighbor on the right
-            a[halos(N,+d),i] .= recv2
         end
     end
 end

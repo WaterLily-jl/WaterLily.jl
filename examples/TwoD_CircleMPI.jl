@@ -1,11 +1,9 @@
-#mpiexecjl --project= -n 4 julia TwoD_CircleMPI.jl
+#mpiexecjl --project=. -n 2 julia TwoD_CircleMPI.jl
 
 using WaterLily
 using WriteVTK
 using MPI
 using StaticArrays
-using Printf: @sprintf
-# include("../WaterLilyMPI.jl") # this uses the old functions
 
 # make a writer with some attributes, now we need to apply the BCs when writting
 velocity(a::Simulation) = a.flow.u |> Array;
