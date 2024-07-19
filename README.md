@@ -10,7 +10,7 @@
 
 WaterLily.jl is a simple and fast fluid simulator written in pure Julia. This is an experimental project to take advantage of the active scientific community in Julia to accelerate and enhance fluid simulations. Watch the JuliaCon2021 talk here:
 
-[![JuliaCon2024 talk](examples/JuliaCon2024.jpg)](https://youtu.be/YsPkfZqbNSQ)
+[![JuliaCon2024 talk](examples/JuliaCon2024.jpg)](https://www.youtube.com/live/qru5G5Yp77E?t=29074s)
 
 ## Method/capabilities
 
