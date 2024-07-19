@@ -4,7 +4,10 @@
 [![CI](https://github.com/WaterLily-jl/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/WaterLily-jl/WaterLily.jl/actions)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
 
-![Julia flow](examples/julia2024.gif)
+
+<p align="center">
+  <img src="examples/julia2024.gif"/>
+</p>
 
 ## Overview
 
