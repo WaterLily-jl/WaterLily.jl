@@ -4,13 +4,13 @@
 [![CI](https://github.com/WaterLily-jl/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/WaterLily-jl/WaterLily.jl/actions)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
 
-![Julia flow](examples/julia.gif)
+![Julia flow](examples/julia2024.gif)
 
 ## Overview
 
 WaterLily.jl is a simple and fast fluid simulator written in pure Julia. This is an experimental project to take advantage of the active scientific community in Julia to accelerate and enhance fluid simulations. Watch the JuliaCon2021 talk here:
 
-[![JuliaCon2021 Youtube still and link](examples/JuliaCon2021.jpg)](https://youtu.be/YsPkfZqbNSQ)
+[![JuliaCon2024 talk](examples/JuliaCon2024.jpg)](https://youtu.be/YsPkfZqbNSQ)
 
 ## Method/capabilities
 
