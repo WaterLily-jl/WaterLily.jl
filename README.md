@@ -6,7 +6,7 @@
 
 
 <p align="center">
-  <img src="examples/julia2024.gif" width="400"/>
+  <img src="examples/julia.gif" width="400"/>
 </p>
 
 ## Overview
