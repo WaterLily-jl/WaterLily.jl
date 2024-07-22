@@ -55,7 +55,7 @@ Constructor for a WaterLily.jl simulation:
 
 See files in `examples` folder for examples.
 """
-struct Simulation
+mutable struct Simulation
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
