@@ -28,12 +28,10 @@ WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = "WriteVTK"
 
 [compat]
-AMDGPU = "^0.4.13,0.6"
-CUDA = "4.1.4,5"
 DocStringExtensions = "0.9"
 EllipsisNotation = "1.8"
 ForwardDiff = "^0.10.18"
-KernelAbstractions = "^0.9.1"
+KernelAbstractions = "0.9.1"
 Reexport = "^1.2.2"
 Requires = "1.3"
 StaticArrays = "^1.1.0"
