@@ -221,7 +221,7 @@ end
     for f ∈ arrays
         p = zeros(4,5) |> f; measure_sdf!(p,body1)
         I = CartesianIndex(2,3)
-        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I),0.0)
+        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I,eltype(p)),0.0)
     end
 end
 
@@ -305,7 +305,7 @@ import WaterLily: ×
         # test force routines
         N = 32
         p = zeros(N,N) |> f; df₂ = zeros(N,N,2) |> f; df₃ = zeros(N,N,N,3) |> f
-        @inside p[I] = loc(0, I)[2]
+        @inside p[I] = loc(0, I, eltype(p))[2]
         body = AutoBody((x,t)->√sum(abs2,x.-(N/2))-N÷4,(x,t)->x)
         force = WaterLily.pressure_force(p,df₂,body)
         @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
