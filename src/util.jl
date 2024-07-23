@@ -146,7 +146,7 @@ a function `f(x)` to the center of a uniform array `c`.
 """
 apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
 applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ CartesianIndices(c)
-applyS!(f,c) = @loop c[I] = f(loc(0,I),eltype(c)) over I ∈ CartesianIndices(c)
+applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
 """
     slice(dims,i,j,low=1)
 
