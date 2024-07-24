@@ -9,7 +9,7 @@ recursive_find(directory, pattern) =
 
 image_files = []
 
-for pattern in [r"\.gif", r"\.jpg"]
+for pattern in [r"\.gif", r"\.jpg", r"\.png"]
     global image_files = vcat(image_files, recursive_find(joinpath(@__DIR__, "../examples"), pattern))
 end
 
