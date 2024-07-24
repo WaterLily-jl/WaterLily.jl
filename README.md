@@ -17,14 +17,16 @@
   <a href="https://www.youtube.com/live/qru5G5Yp77E?t=29074s"><img src="examples/JuliaCon2024.png" width="800"/></a>
 </p>
 
-If you have used WaterLily for research, please __cite us__! The following manuscript describes the main features of the solver and provides benchmarking, validation, and profiling results
+If you have used WaterLily for research, please __cite us__! The following manuscript describes the main features of the solver and provides benchmarking, validation, and profiling results.
 ```
 @misc{WeymouthFont2024,
-    title     = {WaterLily.jl: A differentiable and backend-agnostic Julia solver to simulate incompressible fluid flow and dynamic bodies},
-    author    = {Gabriel D. Weymouth and Bernat Font},
-    DOI       = {},
-    publisher = {arXiv},
-    year      = {2024}
+    title         = {WaterLily.jl: A differentiable and backend-agnostic Julia solver to simulate incompressible viscous flow and dynamic bodies},
+    author        = {Gabriel D. Weymouth and Bernat Font},
+    url           = {https://arxiv.org/abs/2407.16032},
+    eprint        = {2407.16032},
+    archivePrefix = {arXiv},
+    year          = {2024},
+    primaryClass  = {physics.flu-dyn}
 }
 ```
 
