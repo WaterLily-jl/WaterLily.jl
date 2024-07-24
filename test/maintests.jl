@@ -282,7 +282,7 @@ end
 end
 import WaterLily: ×
 @testset "Metrics.jl" begin
-    J = CartesianIndex(2,3,4); x = loc(0,J); px = prod(x)
+    J = CartesianIndex(2,3,4); x = loc(0,J,Float64); px = prod(x)
     for f ∈ arrays
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
