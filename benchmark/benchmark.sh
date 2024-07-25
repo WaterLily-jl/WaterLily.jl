@@ -22,7 +22,7 @@ join_array_tuple_comma () {
 }
 # Check if juliaup exists in environment
 check_if_juliaup () {
-    if ! command -v juliaup &> /dev/null
+    if ! [ command -v juliaup ] &> /dev/null || [ $JULIAUP ]
     then # juliaup does not exist, return false
         return 1
     else # juliaup exists, return true
@@ -70,8 +70,9 @@ display_info () {
 }
 
 # Default backends
+JULIAUP=true
 JULIA_USER_VERSION=$(julia_version)
-VERSIONS=('release')
+VERSIONS=($JULIA_USER_VERSION)
 BACKENDS=('Array' 'CuArray')
 THREADS=('1' '6')
 # Default cases. Arrays below must be same length (specify each case individually)
@@ -83,6 +84,10 @@ FTYPE=('Float32' 'Float32')
 # Parse arguments
 while [ $# -gt 0 ]; do
 case "$1" in
+    --juliaup|-ju)
+    JULIAUP=($2)
+    shift
+    ;;
     --versions|-v)
     VERSIONS=($2)
     shift
@@ -154,7 +159,7 @@ args_cases="--cases=$CASES --log2p=$LOG2P --max_steps=$MAXSTEPS --ftype=$FTYPE"
 # Benchmarks
 for version in "${VERSIONS[@]}" ; do
     if ! check_if_juliaup; then
-        echo "juliaup could not be found, running with default Julia version $( julia_version )"
+        echo "Running with default Julia version $( julia_version ) from $( which julia )"
     else
         echo "Julia $version benchmaks"
     fi
