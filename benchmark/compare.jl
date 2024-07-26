@@ -7,12 +7,12 @@ include("util.jl")
 
 # Parse CLA and load benchmarks
 sort_idx = !isnothing(iarg("sort", ARGS)) ? arg_value("sort", ARGS) |> metaparse : 0
-_plot = !isnothing(iarg("plot", ARGS)) ? arg_value("plot", ARGS) : nothing
-datadir = !isnothing(iarg("dir", ARGS)) ? arg_value("dir", ARGS) : false
+plotdir = !isnothing(iarg("plotdir", ARGS)) ? arg_value("plotdir", ARGS) : nothing
+datadir = !isnothing(iarg("datadir", ARGS)) ? arg_value("datadir", ARGS) : false
 patterns = !isnothing(iarg("patterns", ARGS)) ? arg_value("patterns", ARGS) |> parsepatterns |> metaparse : String["tgv", "sphere", "cylinder"]
 !isa(datadir, String) && !isnothing(iarg("cases", ARGS)) && @error "Data directory needed if --cases are passed as command line argument."
-benchmarks_list = isa(datadir, AbstractString) ? rdir(datadir, patterns) : [f for f in ARGS if !occursin("--sort", f)]
-println("Processing the following benchmarks")
+benchmarks_list = isa(datadir, AbstractString) ? rdir(datadir, patterns) : [f for f in ARGS if !any(occursin.(["--sort","--datadir","--plotdir"], f))]
+println("Processing the following benchmarks:")
 for f in benchmarks_list
     println("    ", f)
 end
@@ -28,15 +28,8 @@ for b in benchmarks_all
     push!(benchmarks_all_dict[b.tags[1]], b)
 end
 
-# Output
-println("With cases ordered by: ", cases_ordered)
-
 # Table and plots
-p_cost = nothing
-if !isa(_plot, Nothing)
-    mkpath(_plot)
-    p_cost = plot()
-end
+!isa(plotdir, Nothing) &&  mkpath(plotdir)
 for (kk, case) in enumerate(cases_ordered)
     benchmarks = benchmarks_all_dict[case]
     # Get backends string vector and assert same case sizes for the different backends
@@ -74,22 +67,27 @@ for (kk, case) in enumerate(cases_ordered)
     end
 
     # Plotting
-    if !isa(_plot, Nothing)
-        if any(contains(v,"GPU") for v in backends_str) # Cost plot for GPU backend
-            N = prod(tests_dets[case]["size"]) .* 2 .^ (3 .* eval(Meta.parse.(log2p_str)))
-            N_str = (N./1e6) .|> x -> @sprintf("%.2f", x)
-            scatter!(p_cost, N./1e6, data_plot[:,end,2], yaxis=:log10, xaxis=:log10, yminorgrid=true, xminorgrid=true,
-                ms=10, ma=1, xlims=(0.1,400), ylims=(1,30),
-                label=tests_dets[case]["title"], xlabel="DOF [M]", lw=0, framestyle=:box, grid=:xy, size=(600, 600), legend=true,
-                legendfontsize=15, tickfontsize=18, labelfontsize=18, left_margin=Plots.Measures.Length(:mm, 5),
-                ylabel="Cost [ns/DOF/dt]"
-            )
-        end
-
-        # Speedup plot
+    if !isa(plotdir, Nothing)
         N = prod(tests_dets[case]["size"]) .* 2 .^ (3 .* eval(Meta.parse.(log2p_str)))
         N_str = (N./1e6) .|> x -> @sprintf("%.2f", x)
-        groups = repeat(N_str, inner=length(backends_str)) |> CategoricalArray
+
+        # Cost plot
+        p_cost = plot()
+        for (i,bstr) in enumerate(backends_str)
+            scatter!(p_cost, N./1e6, data_plot[:,i,2], label=backends_str[i], ms=10, ma=1)
+        end
+        scatter!(p_cost, yaxis=:log10, xaxis=:log10, yminorgrid=true, xminorgrid=true,
+            ylims=(1,600), xlims=(0.1,600),
+            xlabel="DOF [M]", lw=0, framestyle=:box, grid=:xy, size=(600, 600),
+            # legendfontsize=15, tickfontsize=18, labelfontsize=18,
+            left_margin=Plots.Measures.Length(:mm, 5), right_margin=Plots.Measures.Length(:mm, 5),
+            ylabel="Cost [ns/DOF/dt]", title=tests_dets[case]["title"], legend=:bottomleft
+        )
+        fancylogscale!(p_cost)
+        savefig(p_cost, joinpath(string(@__DIR__), plotdir, "$(case)_cost.pdf"))
+
+        # Speedup plot
+        global groups = repeat(N_str, inner=length(backends_str)) |> CategoricalArray
         levels!(groups, N_str)
         ctg = repeat(backends_str, outer=length(log2p_str)) |> CategoricalArray
         levels!(ctg, backends_str)
@@ -102,11 +100,6 @@ for (kk, case) in enumerate(cases_ordered)
             )...
         )
         plot!(p, ylabel="Time [s]", legend=:topleft, left_margin=Plots.Measures.Length(:mm, 0))
-        savefig(p, joinpath(string(@__DIR__), _plot, "$(case)_benchmark.pdf"))
+        savefig(p, joinpath(string(@__DIR__), plotdir, "$(case)_benchmark.pdf"))
     end
 end
-if !isa(_plot, Nothing) && p_cost.n > 0
-    fancylogscale!(p_cost)
-    savefig(p_cost, joinpath(string(@__DIR__), _plot, "cost.pdf"))
-end
-

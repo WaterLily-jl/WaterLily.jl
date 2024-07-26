@@ -74,7 +74,7 @@ JULIAUP=true
 JULIA_USER_VERSION=$(julia_version)
 VERSIONS=($JULIA_USER_VERSION)
 BACKENDS=('Array' 'CuArray')
-THREADS=('1' '6')
+THREADS=('1' '4')
 # Default cases. Arrays below must be same length (specify each case individually)
 CASES=('tgv' 'jelly')
 LOG2P=('6,7' '5,6')

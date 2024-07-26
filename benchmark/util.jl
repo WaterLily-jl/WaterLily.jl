@@ -115,7 +115,7 @@ function get_tickslogscale(lims::Tuple{T, T}; skiplog::Bool=false) where {T<:Abs
         total_tickvalues = vcat(total_tickvalues, tickvalues[indexlb:indexhb])
         total_ticknames = vcat(total_ticknames, ticknames[indexlb:indexhb])
     end
-    return (total_tickvalues, total_ticknames)
+    return (total_tickvalues[1:end-1], total_ticknames[1:end-1])
 end
 
 """
