@@ -69,9 +69,9 @@ for (kk, case) in enumerate(cases_ordered)
     # Plotting
     if !isa(plotdir, Nothing)
         # For plotting, we need cases to have the same WaterLily version, Julia version, and precision
-        @assert length(unique(b.tags[end-1] for b in benchmarks)) != 1 "Cannot plot for different WaterLily versions."
-        @assert length(unique(b.tags[end] for b in benchmarks)) != 1 "Cannot plot for different Julia versions."
-        @assert length(unique(b.tags[end-3] for b in benchmarks)) != 1 "Cannot plot for different precisions."
+        @assert length(unique(b.tags[end-1] for b in benchmarks)) == 1 "Cannot plot for different WaterLily versions."
+        @assert length(unique(b.tags[end] for b in benchmarks)) == 1 "Cannot plot for different Julia versions."
+        @assert length(unique(b.tags[end-3] for b in benchmarks)) == 1 "Cannot plot for different precisions."
 
         # Get cases size
         N = prod(tests_dets[case]["size"]) .* 2 .^ (3 .* eval(Meta.parse.(log2p_str)))
