@@ -22,10 +22,10 @@ join_array_tuple_comma () {
 }
 # Check if juliaup exists in environment
 check_if_juliaup () {
-    if ! [ command -v juliaup ] &> /dev/null || [ $JULIAUP ]
-    then # juliaup does not exist, return false
+    if [ command -v juliaup ] &> /dev/null || [ ! $JULIAUP ]
+    then # juliaup does not exist or $JULIAUP is false
         return 1
-    else # juliaup exists, return true
+    else # run with juliaup
         return 0
     fi
 }
@@ -158,10 +158,10 @@ args_cases="--cases=$CASES --log2p=$LOG2P --max_steps=$MAXSTEPS --ftype=$FTYPE"
 
 # Benchmarks
 for version in "${VERSIONS[@]}" ; do
-    if ! check_if_juliaup; then
-        echo "Running with default Julia version $( julia_version ) from $( which julia )"
+    if check_if_juliaup; then
+        echo "Julia $version benchmarks"
     else
-        echo "Julia $version benchmaks"
+        echo "Running with default Julia version $( julia_version ) from $( which julia )"
     fi
     update_environment
     for backend in "${BACKENDS[@]}" ; do

@@ -1,3 +1,5 @@
+using Plots, StatsPlots, LaTeXStrings, CategoricalArrays, Printf, ColorSchemes
+
 iarg(arg, args) = occursin.(arg, args) |> findfirst
 arg_value(arg, args) = split(args[iarg(arg, args)], "=")[end]
 metaparse(x) = eval(Meta.parse(x))
@@ -22,14 +24,14 @@ macro add_benchmark(args...)
     end |> esc
 end
 
-function add_to_suite!(suite, sim_function; p=(3,4,5), s=100, ft=Float32, backend=Array, backend_str=Dict(Array => "CPUx$(Threads.nthreads())"))
-    bstr = backend_str[backend]
+function add_to_suite!(suite, sim_function; p=(3,4,5), s=100, ft=Float32, backend=Array, bstr="CPU", remeasure=false)
     suite[bstr] = BenchmarkGroup([bstr])
     for n in p
         sim = sim_function(n, backend; T=ft)
-        sim_step!(sim, typemax(ft); max_steps=5, verbose=false, remeasure=false) # warm up
+        sim_step!(sim, typemax(ft); max_steps=5, verbose=false, remeasure=remeasure) # warm up
         suite[bstr][repr(n)] = BenchmarkGroup([repr(n)])
-        @add_benchmark sim_step!($sim, $typemax($ft); max_steps=$s, verbose=true, remeasure=false) $(get_backend(sim.flow.p)) suite[bstr][repr(n)] "sim_step!"
+        KA_backend = get_backend(sim.flow.p)
+        @add_benchmark sim_step!($sim, $typemax($ft); max_steps=$s, verbose=false, remeasure=$remeasure) $KA_backend suite[bstr][repr(n)] "sim_step!"
     end
 end
 
@@ -37,7 +39,7 @@ waterlily_dir = get(ENV, "WATERLILY_ROOT", "")
 git_hash = read(`git -C $waterlily_dir rev-parse --short HEAD`, String) |> x -> strip(x, '\n')
 getf(str) = eval(Symbol(str))
 
-backend_str = Dict(Array => "CPUx$(Threads.nthreads())")
+backend_str = Dict(Array => "CPUx"*@sprintf("%.2d", Threads.nthreads()))
 check_compiler(compiler,parse_str) = try occursin(parse_str, read(`$compiler --version`, String)) catch _ false end
 _cuda = check_compiler("nvcc","release")
 _rocm = check_compiler("hipcc","version")

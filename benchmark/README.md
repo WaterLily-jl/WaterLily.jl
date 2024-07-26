@@ -20,12 +20,12 @@ julia --project compare.jl --plotsdir="plots" $(find data/ \( -name "tgv*json" -
 ## Usage information
 
 The accepted command line arguments are (parenthesis for short version):
- - Backend arguments: `--juliaup(-ju)`, `--versions(-v)`, `--backends(-b)`, `--threads(-t)`. Respectively: usage of juliaup or not, Julia version, backend types, number of threads (when `--backends` contains `Array`). The latter 3 arguments accept a list of different parameters, for example:
+ - Backend arguments: `--juliaup(-ju)`, `--versions(-v)`, `--backends(-b)`, `--threads(-t)`. Respectively: usage of juliaup or not (`true` by default, but use `false` to run with default Julia in system), Julia version, backend types, number of threads (when `--backends` contains `Array`). The latter 3 arguments accept a list of different parameters, for example:
     ```sh
     -v "1.8.5 1.9.4" -b "Array CuArray" -t "1 6"
     ```
     which would generate benchmark for all these combinations of parameters.
- - Case arguments: `--cases(-c)`, `--log2p(-p)`, `--max_steps(-s)`, `--ftype(-ft)`. The `--cases` argument specifies which cases to benchmark, and it can be again a list of different cases. The name of the cases needs to be defined in [benchmark.jl](./benchmark.jl), for example `tgv` or `jelly`. The current available cases are `"tgv sphere cylinder jelly"`. Hence, to add a new case first define the function that returns a `Simulation` in [benchmark.jl](./benchmark.jl), and then it can be called using the `--cases(-c)` list argument. Case size, number of time steps, and float data type are then defined for each case (`-p`, `-s`, `-ft`, respectively). All case arguments must have an equal length since each element of the array defines the case in different aspects.
+ - Case arguments: `--cases(-c)`, `--log2p(-p)`, `--max_steps(-s)`, `--ftype(-ft)`. The `--cases` argument specifies which cases to benchmark, and it can be again a list of different cases. The name of the cases needs to be defined in [benchmark.jl](./benchmark.jl), for example `tgv` or `jelly`. The current available cases are `"tgv sphere cylinder donut jelly"`. Hence, to add a new case first define the function that returns a `Simulation` in [benchmark.jl](./benchmark.jl), and then it can be called using the `--cases(-c)` list argument. Case size, number of time steps, and float data type are then defined for each case (`-p`, `-s`, `-ft`, respectively). All case arguments must have an equal length since each element of the array defines the case in different aspects.
 
 The following command
 ```sh

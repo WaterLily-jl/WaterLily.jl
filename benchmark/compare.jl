@@ -1,8 +1,8 @@
 # Run with
-# julia --project compare.jl $(find data/ \( -name "tgv*json" -o -name "sphere*json" -o -name "cylinder*json" \) -printf "%T@ %Tc %p\n" | sort -n | awk '{print $7}') --sort=0
-# julia --project compare.jl --dir=data --patterns=["tgv","sphere","cylinder"] --plot=false --sort=0
+# julia --project compare.jl --dir="data" --plot="plots" --patterns=["tgv","sphere","cylinder"] --sort=1
+# julia --project compare.jl  --plot="plots" --sort=1 $(find data/ \( -name "tgv*json" -o -name "sphere*json" -o -name "cylinder*json" \) -printf "%T@ %Tc %p\n" | sort -n | awk '{print $7}')
 
-using BenchmarkTools, PrettyTables, Plots, StatsPlots, LaTeXStrings, CategoricalArrays, Printf, ColorSchemes
+using BenchmarkTools, PrettyTables
 include("util.jl")
 
 # Parse CLA and load benchmarks
@@ -35,7 +35,7 @@ for (kk, case) in enumerate(cases_ordered)
     # Get backends string vector and assert same case sizes for the different backends
     backends_str = [String.(k)[1] for k in keys.(benchmarks)]
     log2p_str = [String.(keys(benchmarks[i][backend_str])) for (i, backend_str) in enumerate(backends_str)]
-    @assert length(unique(log2p_str)) == 1
+    length(unique(log2p_str)) != 1 && @error "Case sizes missmatch."
     log2p_str = sort(log2p_str[1])
     f_test = benchmarks[1].tags[2]
     # Get data for PrettyTables
@@ -68,6 +68,12 @@ for (kk, case) in enumerate(cases_ordered)
 
     # Plotting
     if !isa(plotdir, Nothing)
+        # For plotting, we need cases to have the same WaterLily version, Julia version, and precision
+        @assert length(unique(b.tags[end-1] for b in benchmarks)) != 1 "Cannot plot for different WaterLily versions."
+        @assert length(unique(b.tags[end] for b in benchmarks)) != 1 "Cannot plot for different Julia versions."
+        @assert length(unique(b.tags[end-3] for b in benchmarks)) != 1 "Cannot plot for different precisions."
+
+        # Get cases size
         N = prod(tests_dets[case]["size"]) .* 2 .^ (3 .* eval(Meta.parse.(log2p_str)))
         N_str = (N./1e6) .|> x -> @sprintf("%.2f", x)
 
