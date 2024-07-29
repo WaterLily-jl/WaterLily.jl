@@ -198,4 +198,5 @@ tests_dets = Dict(
     "sphere" => Dict("size" => (16, 6, 6), "title" => "Sphere"),
     "cylinder" => Dict("size" => (12, 6, 2), "title" => "Moving cylinder"),
     "donut" => Dict("size" => (2, 1, 1), "title" => "Donut"),
+    "jelly" => Dict("size" => (1, 1, 4), "title" => "Jelly"),
 )
