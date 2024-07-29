@@ -35,7 +35,7 @@ would allow running benchmarks with 4 backends: CPUx01 (serial), CPUx03, CPUx06,
 
 Benchmarks are saved in JSON format with the following nomenclature: `casename_sizes_maxsteps_ftype_backend_waterlilyHEADhash_juliaversion.json`. Benchmarks can be finally compared using [`compare.jl`](./compare.jl) as follows
 ```sh
-julia --project compare.jlbenchmark_1.json benchmark_2.json benchmark_3.json ...
+julia --project compare.jl benchmark_1.json benchmark_2.json benchmark_3.json ...
 ```
 or by using pattern syntax
 ```sh
@@ -45,4 +45,4 @@ for which only TGV benchmarks on a CPU backend found in the `"data"` directory w
 ```sh
 julia --project compare.jl $(find data -name "tgv*CPU.json" -printf "%T@ %Tc %p\n" | sort -n | awk '{print $7}') --sort=1
 ```
-which would take all the `tgv` JSON files, sort them by creation time, and pass them as arguments to the `compare.jl` program. Finally, note that the first benchmark passed as argument is taken as reference to compute speedups of other benchmarks: `speedup_x = time(benchmark_1) / time(benchmark_x)`. The `--sort=<1 to 8>` argument can also be used when running the comparison. It will sort the benchmark table rows by the values corresponding to the column index passed as argument. `--sort=1` corresponds to sorting by backend. The baseline row is highlighted in blue, and the fastest run in a table is highlighted in green.
+which would take all the `tgv` JSON files, sort them by creation time, and pass them as arguments to the `compare.jl` program. Finally, note that the first benchmark passed as argument is taken as reference to compute speed-ups of other benchmarks: `speedup_x = time(benchmark_1) / time(benchmark_x)`. The `--sort=<1 to 8>` argument can also be used when running the comparison. It will sort the benchmark table rows by the values corresponding to the column index passed as argument. `--sort=1` corresponds to sorting by backend. The baseline row is highlighted in blue, and the fastest run in a table is highlighted in green.
