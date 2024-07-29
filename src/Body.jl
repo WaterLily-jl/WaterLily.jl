@@ -8,10 +8,11 @@ Immersed body Abstract Type. Any `AbstractBody` subtype must implement
 
 and
 
-    d,n,V = measure(body::AbstractBody, x, t=0)
+    d,n,V = measure(body::AbstractBody, x, t=0, fastd²=Inf)
 
 where `d` is the signed distance from `x` to the body at time `t`,
 and `n` & `V` are the normal and velocity vectors implied at `x`.
+A fast-approximate method can return `≈d,zero(x),zero(x)` if `d^2>fastd²`.
 """
 abstract type AbstractBody end
 """
@@ -28,12 +29,12 @@ at time `t` using an immersion kernel of size `ϵ`.
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
 function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
-    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T)
+    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=(2+ϵ)^2
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
-        d[I] = sdf(body,loc(0,I,T),t)
-        if abs(d[I])<2+ϵ
+        d[I] = sdf(body,loc(0,I,T),t,fastd²=d²)
+        if d[I]^2<d²
             for i ∈ 1:N
-                dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T),t)
+                dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T),t,fastd²=d²)
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
                 for j ∈ 1:N
@@ -64,7 +65,7 @@ end
 
 Uses `sdf(body,x,t)` to fill `a`.
 """
-measure_sdf!(a::AbstractArray,body::AbstractBody,t=0) = @inside a[I] = sdf(body,loc(0,I,eltype(a)),t)
+measure_sdf!(a::AbstractArray,body::AbstractBody,t=0;kwargs...) = @inside a[I] = sdf(body,loc(0,I,eltype(a)),t;kwargs...)
 
 """
     NoBody
