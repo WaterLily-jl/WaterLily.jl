@@ -8,7 +8,7 @@ Usage example
 sh benchmark.sh -v "1.9.4 1.10.0" -t "1 4" -b "Array CuArray" -c "tgv jelly" -p "6,7 5,6" -s "100 100" -ft "Float32 Float64"
 julia --project compare.jl --datadir="data" --plotdir="plots" --patterns=["tgv","jelly"] --sort=1
 ```
-runs both the TGV and jelly benchmarks (`-c`) in 2 different Julia versions (1.9.4 and 1.10.0-rc1, noting that these need to be available in juliaup), and 3 different backends (CPUx01, CPUx04, GPU-NVIDIA). The cases size `-p`, number of time steps `-s`, and float type `-ft` are bash (ordered) arrays which need to be equally sized to `-c` and specify each benchmark case (respectively).
+runs both the TGV and jelly benchmarks (`-c`) in 2 different Julia versions (1.9.4 and 1.10.0-rc1, noting that these need to be available in juliaup), and 3 different backends (CPUx01, CPUx04, CUDA). The cases size `-p`, number of time steps `-s`, and float type `-ft` are bash (ordered) arrays which need to be equally sized to `-c` and specify each benchmark case (respectively).
 The default benchmarks launch (`sh benchmark.sh`) is equivalent to:
 ```sh
 sh benchmark.sh --juliaup=true -v release -t "1 4" -b "Array CuArray" -c "tgv jelly" -p "6,7 5,6" -s "100 100" -ft "Float32 Float32"

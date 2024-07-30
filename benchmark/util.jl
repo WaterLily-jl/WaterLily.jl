@@ -43,8 +43,8 @@ backend_str = Dict(Array => "CPUx"*@sprintf("%.2d", Threads.nthreads()))
 check_compiler(compiler,parse_str) = try occursin(parse_str, read(`$compiler --version`, String)) catch _ false end
 _cuda = check_compiler("nvcc","release")
 _rocm = check_compiler("hipcc","version")
-_cuda && (using CUDA: CuArray; backend_str[CuArray] = "GPU-NVIDIA")
-_rocm && (using AMDGPU: ROCArray; backend_str[ROCArray] = "GPU-AMD")
+_cuda && (using CUDA: CuArray; backend_str[CuArray] = "CUDA")
+_rocm && (using AMDGPU: ROCArray; backend_str[ROCArray] = "ROCm")
 (_cuda || _rocm) && (using GPUArrays: allowscalar; allowscalar(false))
 
 # Plotting utils
