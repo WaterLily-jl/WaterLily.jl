@@ -41,13 +41,8 @@ for (kk, case) in enumerate(cases_ordered)
     # Get data for PrettyTables
     header = ["Backend", "WaterLily", "Julia", "Precision", "Allocations", "GC [%]", "Time [s]", "Cost [ns/DOF/dt]", "Speed-up"]
     data, base_speedup = Matrix{Any}(undef, length(benchmarks), length(header)), 1.0
-
-    s1 = unique(b.tags[end-1] for b in benchmarks)
-    s2 = unique(b.tags[end] for b in benchmarks)
-    s3 = unique(b.tags[end-3] for b in benchmarks)
-    plotting_matrix = collect(Iterators.product(s1, s2, s3))
-    # plotting_dict = Dict[plotting_matrix][backend, log2p, {3}] # times, cost, speedups
-    plotting_dict = Dict{NTuple, Any}(k => Array{Float64}(undef, length(log2p_str), length(unique(backends_str)), 3) for k in plotting_matrix)
+    # plotting_dir := Dict[("WaterLily version", "Julia version", "precision")][backend, log2p, {3}] # times, cost, speedups
+    plotting_dict = Dict{NTuple, Array{Float64}}()
 
     printstyled("Benchmark environment: $case $f_test (max_steps=$(benchmarks[1].tags[4]))\n", bold=true)
     for (k, n) in enumerate(log2p_str)
@@ -61,6 +56,8 @@ for (kk, case) in enumerate(cases_ordered)
                 datap.allocs, (datap.gctimes[1] / datap.times[1]) * 100.0, datap.times[1] / 1e9, cost, speedup]
             versions_key = (benchmark.tags[end-1], benchmark.tags[end], benchmark.tags[end-3])
             backend_idx = findall(x -> x == backends_str[i], unique(backends_str))[1]
+            !(versions_key in keys(plotting_dict)) &&
+                (plotting_dict[versions_key] = zeros(length(log2p_str), length(unique(backends_str)), 3))
             plotting_dict[versions_key][k, backend_idx, :] = data[i, end-2:end]
         end
         sorted_cond, sorted_idx = 0 < sort_idx <= length(header), nothing
@@ -90,7 +87,7 @@ for (kk, case) in enumerate(cases_ordered)
                 scatter!(p_cost, N./1e6, data_plot[:, i, 2], label=unique_backends_str[i], ms=10, ma=1)
             end
             scatter!(p_cost, yaxis=:log10, xaxis=:log10, yminorgrid=true, xminorgrid=true,
-                ylims=(1, 600), xlims=(0.1, 600),
+                ylims=(1, 1000), xlims=(0.1, 600),
                 xlabel="DOF [M]", lw=0, framestyle=:box, grid=:xy, size=(600, 600),
                 left_margin=Plots.Measures.Length(:mm, 5), right_margin=Plots.Measures.Length(:mm, 5),
                 ylabel="Cost [ns/DOF/dt]", title=tests_dets[case]["title"], legend=:bottomleft
