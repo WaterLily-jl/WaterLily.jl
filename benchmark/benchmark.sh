@@ -34,10 +34,22 @@ julia_version () {
     julia_v=($(julia -v))
     echo "${julia_v[2]}"
 }
+# Get current WaterLily version
+waterlily_version () {
+    waterlily_v=($(git -C $WATERLILY_ROOT rev-parse --short HEAD))
+    echo "${waterlily_v}"
+}
+
 # Update project environment with new Julia version: Mark WaterLily as a development packag, then update dependencies and precompile.
 update_environment () {
+    if $WATERLILY_CHECKOUT; then
+        echo "Git checkout to WaterLily $wl_version"
+        cd $WATERLILY_ROOT
+        git checkout $wl_version
+        cd $THIS_DIR
+    fi
     if check_if_juliaup; then
-        echo "Updating environment to Julia $version"
+        echo "Updating environment to Julia $version and compiling WaterLily"
         julia +${version} --project=$THIS_DIR -e "using Pkg; Pkg.develop(PackageSpec(path=get(ENV, \"WATERLILY_ROOT\", \"\"))); Pkg.update();"
     fi
 }
@@ -72,7 +84,8 @@ display_info () {
 # Default backends
 JULIAUP=true
 JULIA_USER_VERSION=$(julia_version)
-VERSIONS=($JULIA_USER_VERSION)
+WL_CURRENT_VERSION=$(waterlily_version)
+WL_VERSIONS=()
 BACKENDS=('Array' 'CuArray')
 THREADS=('1' '4')
 # Default cases. Arrays below must be same length (specify each case individually)
@@ -86,6 +99,10 @@ while [ $# -gt 0 ]; do
 case "$1" in
     --juliaup|-ju)
     JULIAUP=($2)
+    shift
+    ;;
+    --waterlily|-w)
+    WL_VERSIONS=($2)
     shift
     ;;
     --versions|-v)
@@ -146,6 +163,14 @@ if [ $st != 0 ]; then
     exit 1
 fi
 
+# Check if specific WaterLily version have been specified
+if (( ${#WL_VERSIONS[@]} != 0 )); then
+    WATERLILY_CHECKOUT=true
+else
+    WATERLILY_CHECKOUT=false
+    WL_VERSIONS=($WL_CURRENT_VERSION)
+fi
+
 # Display information
 display_info
 
@@ -163,17 +188,19 @@ for version in "${VERSIONS[@]}" ; do
     else
         echo "Running with default Julia version $( julia_version ) from $( which julia )"
     fi
-    update_environment
-    for backend in "${BACKENDS[@]}" ; do
-        if [ "${backend}" == "Array" ]; then
-            for thread in "${THREADS[@]}" ; do
-                args="-t $thread ${THIS_DIR}/benchmark.jl --backend=$backend $args_cases"
+    for wl_version in "${WL_VERSIONS[@]}" ; do
+        update_environment
+        for backend in "${BACKENDS[@]}" ; do
+            if [ "${backend}" == "Array" ]; then
+                for thread in "${THREADS[@]}" ; do
+                    args="-t $thread ${THIS_DIR}/benchmark.jl --backend=$backend $args_cases"
+                    run_benchmark
+                done
+            else
+                args="${THIS_DIR}/benchmark.jl --backend=$backend $args_cases"
                 run_benchmark
-            done
-        else
-            args="${THIS_DIR}/benchmark.jl --backend=$backend $args_cases"
-            run_benchmark
-        fi
+            fi
+        done
     done
     if ! check_if_juliaup; then
         break
