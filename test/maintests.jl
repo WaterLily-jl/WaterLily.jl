@@ -223,6 +223,10 @@ end
         I = CartesianIndex(2,3)
         @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I,eltype(p)),0.0)
     end
+
+    # check fast version
+    @test all(measure(body1,[3.,4.],0.,fastd²=9) .≈ measure(body1,[3.,4.],0.))
+    @test all(measure(body1,[3.,4.],0.,fastd²=8) .≈ (sdf(body1,[3.,4.],0.,fastd²=9),zeros(2),zeros(2)))
 end
 
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))

@@ -253,10 +253,20 @@ Note that multi-threading requires _starting_ Julia with the `--threads` argumen
 
 Finally, KernelAbstractions does incur some CPU allocations for every loop, but other than this `sim_step!` is completely non-allocating. This is one reason why the speed-up improves as the size of the simulation increases.
 
+## Contributing and issues
+
+We always appreciate new contributions, so please [submit a pull request](https://github.com/WaterLily-jl/WaterLily.jl/compare) with your changes and help us make WaterLily even better! Note that contributions need to be submitted together with benchmark results - WaterLily should always be fast! ;) For this, we have a [fully automated benchmarking suite](https://github.com/WaterLily-jl/WaterLily-Benchmarks) that conducts performance tests. In short, to compare your changes with the latest WaterLily, clone the that repo and run the benchmarks with
+``` sh
+git clone https://github.com/WaterLily-jl/WaterLily-Benchmarks && cd WaterLily-Benchmarks
+sh benchmark.sh -wd "<your/waterlily/path>" -w "<your_waterlily_branch> master"
+julia --project compare.jl
+```
+This will run benchmarks for CPU and GPU backends. If you do not have a GPU, simply pass `-b "Array"` when runnning `benchmark.sh`. More information on the benchmark suite is available in that [README](https://github.com/WaterLily-jl/WaterLily-Benchmarks/blob/main/README.md).
+
+Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
+
 ## Development goals
  - Immerse obstacles defined by 3D meshes using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl).
  - Multi-CPU/GPU simulations.
  - Free-surface physics with Volume-of-Fluid or Level-Set.
  - External potential-flow domain boundary conditions.
-
-If you have other suggestions or want to help, please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose).
