@@ -106,7 +106,7 @@ As you can see, WaterLily correctly predicts that the flow is unsteady, with an 
 
 ## Multi-threading and GPU backends
 
-WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) to multi-thread on CPU and run on GPU backends. The implementation method and speed-up are documented in our [preprint](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend). In summary, a single macro `WaterLily.@loop` is used for nearly every loop in the code base, and this uses KernelAbstractactions to generate optimized code for each back-end. The speed-up with respect to a serial (single thread) execution is more pronounce for large simulations, and we have measure up to x8 speedups when multi-threading on an Intel Xeon Platinum 8460Y @ 2.3GHz backend, and up to 200x speedup on an NVIDIA Hopper H100 64GB HBM2 GPU. When maximizing the GPU load, a cost of 1.44 nano-seconds has been measured per degree of freedom and time step.
+WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) to multi-thread on CPU and run on GPU backends. The implementation method and speed-up are documented in our [paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend), with costs as low as 1.44 nano-seconds measured per degree of freedom and time step!
 
 Note that multi-threading requires _starting_ Julia with the `--threads` argument, see [the multi-threading section](https://docs.julialang.org/en/v1/manual/multi-threading/) of the manual. If you are running Julia with multiple threads, KernelAbstractions will detect this and multi-thread the loops automatically. 
 
