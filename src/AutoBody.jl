@@ -53,7 +53,7 @@ The operators vector `ops` specifies the operation to call between two consecuti
 Note that `+` (or the alias `∪`) is the only operation supported between `Bodies`.
 """
 struct Bodies <: AbstractBody
-    bodies::Vector{AutoBody}
+    bodies::Vector{AbstractBody}
     ops::Vector{Function}
     function Bodies(bodies, ops::AbstractVector)
         all(x -> x==Base.:+ || x==Base.:- || x==Base.:∩ || x==Base.:∪, ops) &&
@@ -66,37 +66,31 @@ Bodies(bodies) = Bodies(bodies,repeat([+],length(bodies)-1))
 Bodies(bodies, op::Function) = Bodies(bodies,repeat([op],length(bodies)-1))
 Base.:+(a::Bodies, b::Bodies) = Bodies(vcat(a.bodies, b.bodies), vcat(a.ops, b.ops))
 Base.:∪(a::Bodies, b::Bodies) = a+b
+Base.copy(b::Bodies) = Bodies(copy(b.bodies),copy(b.ops))
 
-"""
-    sdf_map_d(ab::Bodies,x,t)
-
-Returns the `sdf` and `map` functions, and the distance `d` (`d=sdf(x,t)`) for the `Bodies` type.
-"""
-function sdf_map_d(bodies,ops,x,t)
-    sdf, map, d = bodies[1].sdf, bodies[1].map, bodies[1].sdf(x,t)
-    for i ∈ eachindex(bodies)[begin+1:end]
-        sdf2, map2, d2 = bodies[i].sdf, bodies[i].map, bodies[i].sdf(x,t)
-        sdf, map, d = reduce_sdf_map(sdf,map,d,sdf2,map2,d2,ops[i-1])
-    end
-    return sdf, map, d
-end
-"""
-    reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op,x,t)
-
-Reduces two different `sdf` and `map` functions, and `d` value.
-"""
-function reduce_sdf_map(sdf_a,map_a,d_a,sdf_b,map_b,d_b,op)
-    (Base.:+ == op || Base.:∪ == op) && d_b < d_a && return (sdf_b, map_b, d_b)
-    Base.:- == op && -d_b > d_a && return ((y,u)->-sdf_b(y,u), map_b, -d_b)
-    Base.:∩ == op && d_b > d_a && return (sdf_b, map_b, d_b)
-    return sdf_a, map_a, d_a
-end
 """
     d = sdf(a::Bodies,x,t)
 
 Computes distance for `Bodies` type.
 """
-sdf(a::Bodies,x,t;kwargs...) = sdf_map_d(a.bodies,a.ops,x,t)[end]
+function sdf(b::Bodies,x,t;kwargs...)
+    d₁ = sdf(b.bodies[1],x,t;kwargs...)
+    for i in 2:length(b.bodies)
+        d₁ = reduce_d(d₁,sdf(b.bodies[i],x,t;kwargs...),b.ops[i-1])
+    end
+    return d₁
+end
+"""
+    reduce_d(d₁,d₂,op)
+
+Reduces two different `d` value depending on the `op` between them.
+"""
+function reduce_d(d₁,d₂,op)
+    (Base.:+ == op || Base.:∪ == op) && return min(d₁,d₂)
+    Base.:- == op && return max(d₁,-d₂)
+    Base.:∩ == op && return max(d₁,d₂)
+    return d₁
+end
 
 using ForwardDiff
 """
@@ -107,16 +101,30 @@ The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
 The velocity is determined _solely_ from the optional `map` function.
 Skips the `n,V` calculation when `d²>fastd²`.
 """
-measure(body::AutoBody,x,t;kwargs...) = measure(body.sdf,body.map,x,t;kwargs...)
-function measure(a::Bodies,x,t;kwargs...)
-    sdf, map, _ = sdf_map_d(a.bodies,a.ops,x,t)
-    measure(sdf,map,x,t;kwargs...)
+function measure(body::Bodies,x,t;fastd²=Inf)
+    d,n,V = measure(body.bodies[1],x,t;fastd²)
+    for i in 2:length(body.bodies)
+        dᵢ,nᵢ,Vᵢ = measure(body.bodies[i],x,t;fastd²)
+        d,n,V = reduce_bodies(d,n,V,dᵢ,nᵢ,Vᵢ,body.ops[i-1])
+    end
+    return d,n,V
 end
-function measure(sdf,map,x,t;fastd²=Inf)
+"""
+    reduce_bodies(d₁,n₁,v₁,d₂,n₂,v₂,op)
+
+Reduces two different `d`, `n` and `v` values depending on the operation applied between them.
+"""
+function reduce_bodies(d₁,n₁,v₁,d₂,n₂,v₂,op)
+    (Base.:+ == op || Base.:∪ == op) && d₁ > d₂ && return (d₂,n₂,v₂)
+    Base.:- == op && d₁ < -d₂ && return (-d₂,-n₂,v₂) # velocity is not inverted
+    Base.:∩ == op && d₁ < d₂ && return (d₂,n₂,v₂)
+    return d₁,n₁,v₁
+end
+function measure(body::AutoBody,x,t;fastd²=Inf)
     # eval d=f(x,t), and n̂ = ∇f
-    d = sdf(x,t)
+    d = body.sdf(x,t)
     d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
-    n = ForwardDiff.gradient(x->sdf(x,t), x)
+    n = ForwardDiff.gradient(x->body.sdf(x,t), x)
     any(isnan.(n)) && return (d,zero(x),zero(x))
 
     # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
@@ -125,8 +133,8 @@ function measure(sdf,map,x,t;fastd²=Inf)
 
     # The velocity depends on the material change of ξ=m(x,t):
     #   Dm/Dt=0 → ṁ + (dm/dx)ẋ = 0 ∴  ẋ =-(dm/dx)\ṁ
-    J = ForwardDiff.jacobian(x->map(x,t), x)
-    dot = ForwardDiff.derivative(t->map(x,t), t)
+    J = ForwardDiff.jacobian(x->body.map(x,t), x)
+    dot = ForwardDiff.derivative(t->body.map(x,t), t)
     return (d,n,-J\dot)
 end
 
