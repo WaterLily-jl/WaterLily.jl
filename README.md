@@ -52,7 +52,7 @@ The circle geometry is defined using a [signed distance function](https://en.wik
 
 The code block above return a `Simulation` with the parameters we've defined. Now we can initialize a simulation (first line) and step it forward in time (second line)
 ```julia
-circ = circle(3*2^6,2^7)
+circ = circle(3*2^5,2^6)
 sim_step!(circ)
 ```
 Note we've set `n,m` to be multiples of powers of 2, which is important when using the (very fast) geometric multi-grid solver.
@@ -110,23 +110,31 @@ WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstrac
 
 Note that multi-threading requires _starting_ Julia with the `--threads` argument, see [the multi-threading section](https://docs.julialang.org/en/v1/manual/multi-threading/) of the manual. If you are running Julia with multiple threads, KernelAbstractions will detect this and multi-thread the loops automatically. 
 
-Running on a GPU requires initializing the `Simulation` memory on the GPU, and care needs to be taken to move the data back to the CPU for visualization. For example, the cylinder example above could be run `using CUDA` by
+Running on a GPU requires initializing the `Simulation` memory on the GPU, and care needs to be taken to move the data back to the CPU for visualization. As an example, let's compare a 3D GPU simulation of a sphere to the 2D multi-threaded CPU circle defined above
 ```Julia
-function circle(n,m;Re=100,U=1,T=Float64,mem=Array)
+using CUDA,WaterLily
+function sphere(n,m;Re=100,U=1,T=Float64,mem=Array)
     radius, center = m/8, m/2-1
     body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation((n,m),(U,0),2radius;ν=U*2radius/Re,body,
+    Simulation((n,m,m),(U,0,0),2radius; # 3D array size and BCs
                 mem, # memory type
-                T)   # Floating point type
+                T,   # Floating point type
+                ν=U*2radius/Re,body)
 end
 
-using CUDA
-@assert CUDA.functional()   # is your CUDA GPU working?? 
-circGPU = circle(3*2^7,2^8;T=Float32,mem=CuArray); # GPU like big
-sim_step!(circGPU,100,remeasure=false) # still much faster
-contourf(Array(circGPU.flow.u[:,:,1])') # copy to CPU before plotting
+@assert CUDA.functional()      # is your CUDA GPU working?? 
+GPUsim = sphere(3*2^5,2^6;T=Float32,mem=CuArray); # 3D GPU sim!
+println(length(GPUsim.flow.u)) # 1.3M degrees-of freedom!
+sim_step!(GPUsim)              # compile GPU code & run one step
+@time sim_step!(GPUsim,50,remeasure=false) # 40s!!
+
+CPUsim = circle(3*2^5,2^6);    # 2D CPU sim
+println(length(CPUsim.flow.u)) # 0.013M degrees-of freedom!
+sim_step!(CPUsim)              # compile GPU code & run one step
+println(Threads.nthreads())    # I'm using 8 threads
+@time sim_step!(CPUsim,50,remeasure=false) # 28s!!
 ```
-See the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
+As you can see, the 3D sphere set-up is almost identical to the 2D circle, but using 3D arrays means there are almost 1.3M degrees-of-freedom, 100x bigger than in 2D. Never the less, the simulation is quite fast on the GPU, only around 40% slower than the much smaller 2D simulation on a CPU with 8 threads. See the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
 
 Finally, KernelAbstractions does incur some CPU allocations for every loop, but other than this `sim_step!` is completely non-allocating. This is one reason why the speed-up improves as the size of the simulation increases.
 
