@@ -33,10 +33,10 @@ WaterLily solves the unsteady incompressible 2D or 3D [Navier-Stokes equations](
 
 WaterLily lets the user can set the domain size and boundary conditions, the fluid viscosity (which determines the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number)), and immerse solid obstacles. A large selection of examples, notebooks, and tutorials are found in the [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) repository. Here, we will illustrate the basics by simulating and plotting the flow over a circle.
 
-We define the size of the simulation domain as `n`$\times$`m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U,0)`, where we set `U=1`, and the Reynolds number is `Re=U*radius/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid.
+We define the size of the simulation domain as `n` by `m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U,0)`, where we set `U=1`, and the Reynolds number is `Re=U*radius/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid.
 ```julia
 using WaterLily
-function circle(n,m;Re=250,U=1)
+function circle(n,m;Re=100,U=1)
     # signed distance function to circle
     radius, center = m/8, m/2-1
     sdf(x,t) = √sum(abs2, x .- center) - radius
@@ -110,16 +110,16 @@ WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstrac
 
 Note that multi-threading requires _starting_ Julia with the `--threads` argument, see [the multi-threading section](https://docs.julialang.org/en/v1/manual/multi-threading/) of the manual. If you are running Julia with multiple threads, KernelAbstractions will detect this and multi-thread the loops automatically. 
 
-Running on a GPU requires initializing the `Simulation` memory on the GPU, and care needs to be taken to move the data back to the CPU for visualization. As an example, let's compare a 3D GPU simulation of a sphere to the 2D multi-threaded CPU circle defined above
+Running on a GPU requires initializing the `Simulation` memory on the GPU, and care needs to be taken to move the data back to the CPU for visualization. As an example, let's compare a **3D** GPU simulation of a sphere to the **2D** multi-threaded CPU circle defined above
 ```Julia
 using CUDA,WaterLily
 function sphere(n,m;Re=100,U=1,T=Float64,mem=Array)
     radius, center = m/8, m/2-1
     body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation((n,m,m),(U,0,0),2radius; # 3D array size and BCs
-                mem, # memory type
+    Simulation((n,m,m),(U,0,0), # 3D array size and BCs
+                2radius;ν=U*2radius/Re,body, # no change
                 T,   # Floating point type
-                ν=U*2radius/Re,body)
+                mem) # memory type
 end
 
 @assert CUDA.functional()      # is your CUDA GPU working?? 
