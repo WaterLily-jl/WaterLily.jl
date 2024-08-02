@@ -48,7 +48,7 @@ function circle(n,m;Re=250,U=1)
                body=AutoBody(sdf)) # geometry
 end
 ```
-The circle geometry is defined using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameters of the body automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Donut.jl) or the [Julia logo](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/TwoD_Julia.jl). For more complex geometries the 
+The circle geometry is defined using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameters of the body automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Donut.jl) or the [Julia logo](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/TwoD_Julia.jl). For more complex geometries, [ParametricBodies.jl](https://github.com/WaterLily-jl/ParametricBodies.jl) defines a `body` using any parametric curve, such as a spline. See that repo (and the video above) for examples. 
 
 The code block above return a `Simulation` with the parameters we've defined.Now we can initialize a simulation (first line) and step it forward in time (second line)
 ```julia
