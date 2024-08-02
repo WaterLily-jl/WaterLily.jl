@@ -38,19 +38,19 @@ We define the size of the simulation domain as `n`$\times$`m` cells. The circle 
 using WaterLily
 function circle(n,m;Re=250,U=1)
     # signed distance function to circle
-    radius, center = m÷8, m÷2
+    radius, center = m/8, m/2-1
     sdf(x,t) = √sum(abs2, x .- center) - radius
 
-    Simulation((n,m),  # domain size 
-               (U,0),  # domain velocity (& velocity scale)
-               radius; # length scale
-               ν=U*radius/Re,      # fluid viscosity 
+    Simulation((n,m),   # domain size 
+               (U,0),   # domain velocity (& velocity scale)
+               2radius; # length scale
+               ν=U*2radius/Re,     # fluid viscosity 
                body=AutoBody(sdf)) # geometry
 end
 ```
-The second line defines the circle geometry using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameters of the body automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Donut.jl) or the [Julia logo](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/TwoD_Julia.jl). Finally, the last line defines the `Simulation` by passing in parameters we've defined.
+The circle geometry is defined using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameters of the body automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Donut.jl) or the [Julia logo](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/TwoD_Julia.jl). For more complex geometries the 
 
-Now we can initialize a simulation (first line) and step it forward in time (second line)
+The code block above return a `Simulation` with the parameters we've defined.Now we can initialize a simulation (first line) and step it forward in time (second line)
 ```julia
 circ = circle(3*2^6,2^7)
 sim_step!(circ)
@@ -59,9 +59,9 @@ Note we've set `n,m` to be multiples of powers of 2, which is important when usi
 
 We can now access and plot whatever variables we like. For example, we can plot the x-component of the velocity field using
 ```julia
-using Plots,EllipsisNotation
-u = circ.flow.u[..,1] # first component is x
-contourf(u')
+using Plots
+u = circ.flow.u[:,:,1] # first component is x
+contourf(u') # transpose the array for the plot
 ```
 ![Initial velocity field](assets/u0.png)
 
@@ -76,7 +76,7 @@ function get_forces!(sim,t)
 end
 
 # Simulate through the time range and get forces
-time = 1:0.1:100 # time scale is sim.L/sim.U
+time = 1:0.1:50 # time scale is sim.L/sim.U
 forces = [get_forces!(circ,t) for t in time];
 
 #Plot it
@@ -106,7 +106,7 @@ As you can see, WaterLily correctly predicts that the flow is unsteady, with an 
 
 ## Multi-threading and GPU backends
 
-WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) to multi-thread on CPU and run on GPU backends. The implementation method and speed-up are documented in our [preprint](https://arxiv.org/abs/2407.16032). In summary, a single macro `WaterLily.@loop` is used for nearly every loop in the code base, and this uses KernelAbstractactions to generate optimized code for each back-end. The speed-up with respect to a serial (single thread) execution is more pronounce for large simulations, and we have measure up to x8 speedups when multi-threading on an Intel Xeon Platinum 8460Y @ 2.3GHz backend, and up to 200x speedup on an NVIDIA Hopper H100 64GB HBM2 GPU. When maximizing the GPU load, a cost of 1.44 nano-seconds has been measured per degree of freedom and time step.
+WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) to multi-thread on CPU and run on GPU backends. The implementation method and speed-up are documented in our [preprint](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend). In summary, a single macro `WaterLily.@loop` is used for nearly every loop in the code base, and this uses KernelAbstractactions to generate optimized code for each back-end. The speed-up with respect to a serial (single thread) execution is more pronounce for large simulations, and we have measure up to x8 speedups when multi-threading on an Intel Xeon Platinum 8460Y @ 2.3GHz backend, and up to 200x speedup on an NVIDIA Hopper H100 64GB HBM2 GPU. When maximizing the GPU load, a cost of 1.44 nano-seconds has been measured per degree of freedom and time step.
 
 Note that multi-threading requires _starting_ Julia with the `--threads` argument, see [the multi-threading section](https://docs.julialang.org/en/v1/manual/multi-threading/) of the manual. If you are running Julia with multiple threads, KernelAbstractions will detect this and multi-thread the loops automatically. 
 
@@ -115,18 +115,18 @@ Running on a GPU requires initializing the `Simulation` memory on the GPU, and c
 function circle(n,m;Re=100,U=1,T=Float64,mem=Array)
     radius, center = m/8, m/2-1
     body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation((n,m),(U,0),radius;ν=U*radius/Re,body,
+    Simulation((n,m),(U,0),2radius;ν=U*2radius/Re,body,
                 mem, # memory type
                 T)   # Floating point type
 end
 
 using CUDA
 @assert CUDA.functional()   # is your CUDA GPU working?? 
-circGPU = circle(3*2^7,2^8;T=Float32,mem=CuArray); # bigger simulation
+circGPU = circle(3*2^7,2^8;T=Float32,mem=CuArray); # GPU like big
 sim_step!(circGPU,100,remeasure=false) # still much faster
-contourf(Array(circGPU.flow.u[..,1])') # copy to CPU before plotting
+contourf(Array(circGPU.flow.u[:,:,1])') # copy to CPU before plotting
 ```
-See [jelly fish](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Jelly.jl) for a non-trivial example.
+See [the paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
 
 Finally, KernelAbstractions does incur some CPU allocations for every loop, but other than this `sim_step!` is completely non-allocating. This is one reason why the speed-up improves as the size of the simulation increases.
 
@@ -143,7 +143,6 @@ This will run benchmarks for CPU and GPU backends. If you do not have a GPU, sim
 Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
 
 ## Development goals
- - Immerse obstacles defined by 3D meshes using [GeometryBasics](https://github.com/JuliaGeometry/GeometryBasics.jl).
- - Multi-CPU/GPU simulations.
- - Free-surface physics with Volume-of-Fluid or Level-Set.
- - External potential-flow domain boundary conditions.
+ - Immerse obstacles defined by 3D meshes ([Meshing.jl](https://github.com/JuliaGeometry/Meshing.jl))
+ - Multi-CPU/GPU simulations (https://github.com/WaterLily-jl/WaterLily.jl/pull/141)
+ - Free-surface physics with ([Volume-of-Fluid](https://github.com/TzuYaoHuang/WaterLily.jl/blob/master/src/Multiphase.jl)) or other methods.
