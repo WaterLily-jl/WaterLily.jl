@@ -37,9 +37,6 @@ function circle(dims,center,radius;Re=250,U=1,psolver=MultiLevelPoisson,mem=Arra
     Simulation(dims, (U,0), radius; ν=U*radius/Re, body, mem=mem, psolver=psolver)
 end
 
-# last one standing...
-WaterLily.grid_loc() = mpi_grid().global_loc
-
 # local grid size
 L = 2^6
 

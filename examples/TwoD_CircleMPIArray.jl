@@ -1,5 +1,4 @@
 using WaterLily
-# using MPI
 
 # circle simulation
 function circle(n,m;Re=250,U=1)

@@ -161,9 +161,7 @@ loc(i,I) = loc(Ii)
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-grid_loc(::Nothing) = 0
-grid_loc(grid) = grid.grid_loc
-@inline loc(i,I::CartesianIndex{N}) where N = SVector{N}(grid_loc() .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
+@inline loc(i,I::CartesianIndex{N}) where N = SVector{N}(I.I .- 2.5 .- 0.5 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex) = loc(last(Ii),Base.front(Ii))
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
