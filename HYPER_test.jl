@@ -6,29 +6,61 @@ using WaterLily
 using Revise
 include("examples/TwoD_plots.jl")
 
+
+# struct PrecondConjugateGradient{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+#     L :: V # Lower diagonal coefficients
+#     D :: S # Diagonal coefficients
+#     iD :: S # 1/Diagonal
+#     x :: S # approximate solution
+#     ϵ :: S # increment/error
+#     r :: S # residual
+#     z :: S # source
+#     n :: Vector{Int16} # pressure solver iterations
+#     perdir :: NTuple # direction of periodic boundary condition
+#     function PrecondConjugateGradient(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
+#         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
+#         r = similar(x); fill!(r,0)
+#         ϵ,D,iD = copy(r),copy(r),copy(r)
+#         WaterLily.set_diag!(D,iD,L)
+#         new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
+#     end
+# end
+# function CholeskyPreconditioner(A)
+#     L = copy(A)
+#     @inbounds for j in 1:size(L, 2)
+#         d = sqrt(L[j,j])
+#         L[j,j] = d
+#         for i in Base.Iterators.drop(nzrange(L,j), 1)
+#             L *= 1.0/d
+#         end
+#     end
+#     return L
+# end
+
+
 struct HYPREPoisson{T,V<:AbstractVector{T},M<:AbstractArray{T},
                     Vf<:AbstractArray{T},Mf<:AbstractArray{T},
                     SO<:HYPRE.HYPRESolver} <: AbstractPoisson{T,Vf,Mf}
-    x::V   # Hypre.Vector
+    ϵ::V   # Hypre.Vector (increment/error)
     A::M   # Hypre.SparseMatrixCSC
-    b::V   # Hypre.Vector
-    r::Vf  # WaterLily.σ
-    L::Mf  # WaterLily.L
-    z::Vf  # WaterLily.x
+    r::V   # Hypre.Vector (residual)
+    x::Vf  # WaterLily approximate solution
+    L::Mf  # WaterLily lower diagonal coefficients
+    z::Vf  # WaterLily source
     solver::SO
-    function HYPREPoisson(r::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};
-                          MaxIter=1000, Tol=1e-9, PrintLevel=2, Logging=1, 
+    function HYPREPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};
+                          MaxIter=1000, Tol=1e-9, PrintLevel=0, Logging=0, 
                           Precond=HYPRE.BoomerAMG(), perdir=()) where T
         # create the vectors and the matrix
-        x = Vector{T}(undef, prod(size(r)))
-        b = Vector{T}(undef, prod(size(z)))
-        A = SparseMatrixCSC{T,Int}(undef, prod(size(r)), prod(size(r)))
-        J = LinearIndices(r) # useful
-        for I in CartesianIndices(r) # fill the vectors entirely
-            x[J[I]] = r[I]; b[J[I]] = z[I]
-            # A[J[I],J[I]] = eps(T)
+        ϵ = Vector{T}(undef, prod(size(x)))
+        r = Vector{T}(undef, prod(size(z)))
+        A = SparseMatrixCSC{T,Int}(undef, prod(size(x)), prod(size(x)))
+        J = LinearIndices(x) # useful
+        for I in CartesianIndices(x) # fill the vectors entirely
+            ϵ[J[I]] = x[I]; r[J[I]] = z[I]
         end
-        for I in inside(r) # fill inside the domain only otherwise we will go outside with ±δ
+        # ϵ .= reduce(vcat, @views(x[:])); r .= reduce(vcat, @views(z[:]))
+        for I in inside(x) # fill inside the domain only otherwise we will go outside with ±δ
             A[J[I],J[I]] = WaterLily.diag(I,L)
             for i in 1:last(size(L)) # fill diagonal terms
                 A[J[I-δ(i,I)],J[I]] = L[I,i]        # x[I-δ(i,I)]*L[I,i]
@@ -39,18 +71,12 @@ struct HYPREPoisson{T,V<:AbstractVector{T},M<:AbstractArray{T},
         for i ∈ 1:size(A,1)
             all(A[i,:].≈0) && push!(zero_idx,i)
         end
-        A_ = SparseMatrixCSC{T,Int}(undef, size(A,1)-length(zero_idx), size(A,2)-length(zero_idx))
-        k=1
-        for i ∈ 1:size(A,1)
-            if !(i in zero_idx)
-                A_[k,:] .= 1 #A[i,setdiff(1:size(A,2),zero_idx)]
-                k+=1
-            end
-        end
-        deleteat!(x,zero_idx); deleteat!(b,zero_idx)
+        idx = collect(1:size(A,1))
+        deleteat!(idx,zero_idx); deleteat!(ϵ,zero_idx); deleteat!(r,zero_idx)
+        A_ = copy(A[idx,idx])
         HYPRE.Init() # Init and create a conjugate gradients solver
-        solver = HYPRE.PCG(;MaxIter,Tol,PrintLevel,Logging,Precond)
-        new{T,typeof(x),typeof(A_),typeof(r),typeof(L),typeof(solver)}(x,A_,b,copy(r),copy(L),copy(z),solver)
+        solver = HYPRE.GMRES(;MaxIter,Tol,PrintLevel,Logging,Precond)
+        new{T,typeof(ϵ),typeof(A_),typeof(x),typeof(L),typeof(solver)}(ϵ,A_,r,x,L,z,solver)
     end
 end
 export HYPREPoisson
@@ -58,15 +84,23 @@ export HYPREPoisson
 Fill back the solution `hp.x` and `hp.z` from the solution `hp.e` and `hp.r`.
 """
 function putback!(hp::HYPREPoisson)
-    J = LinearIndices(hp.r)
-    for I in CartesianIndices(hp.r)
-        hp.r[I] = hp.x[J[I]]; hp.z[I] = hp.b[J[I]]
-    end
+    # J = LinearIndices(hp.r)
+    # for I in CartesianIndices(hp.x)
+    #     hp.x[I] = hp.ϵ[J[I]]; hp.z[I] = hp.r[J[I]]
+    # end
+    hp.x .= 0.; hp.z .= 0.
+    hp.x[inside(hp.x)] .= reshape(hp.ϵ,size(hp.x[inside(hp.x)]));
+    hp.z[inside(hp.z)] .= reshape(hp.r,size(hp.z[inside(hp.z)]));
 end
 function Base.fill!(hp::HYPREPoisson)
-    J = LinearIndices(hp.r)
-    for I in CartesianIndices(hp.r) # fill the vectors entirely
-        hp.x[J[I]] = hp.r[I]; hp.b[J[I]] = hp.z[I]
+    # J = LinearIndices(hp.r)
+    # for I in CartesianIndices(hp.x) # fill the vectors entirely
+    #     hp.ϵ[J[I]] = hp.x[I]; hp.r[J[I]] = hp.z[I]
+    # end
+    hp.ϵ .= reduce(vcat, hp.x[inside(hp.x)])
+    hp.r .= reduce(vcat, hp.z[inside(hp.z)])
+    for I in inside(hp.x) # fill the vectors entirely
+        hp.ϵ[J[I]] = hp.x[I]; hp.r[J[I]] = hp.z[I]
     end
 end
 update!(hp::HYPREPoisson) = nothing
@@ -75,31 +109,41 @@ Solve the poisson problem and puts back the solution where it is expected.
 """
 function WaterLily.solver!(hp::HYPREPoisson;kwargs...)
     fill!(hp)
-    HYPRE.solve!(hp.solver, hp.x, hp.A, hp.b)
-    putback!(hp)
+    HYPRE.solve!(hp.solver, hp.ϵ, hp.A, hp.r)
+    putback!(hp); 
+    # scale the solution for zero mean
+    mean = @inbounds(sum(hp.x[inside(hp.x)]))/length(inside(hp.x))
+    @WaterLily.loop hp.x[I] -= mean over I ∈ inside(hp.x)
+    return nothing
 end
 
-N = 8+2
+N = 2^6+2
 p = zeros(N,N) #Array{Float64}(reshape(1:N^2,(N,N)))
 L = ones(N,N,2); WaterLily.BC!(L,zeros(2))
 σ = zeros(N,N)
-pois = MultiLevelPoisson(p,L,σ)
-hypre = HYPREPoisson(p,L,σ)
+pois = MultiLevelPoisson(copy(p),copy(L),copy(σ))
+hypre = HYPREPoisson(copy(p),copy(L),copy(σ))
 
 # matrix mult does the same, this means the coefficient are at the correct spot
 x = Array{Float64}(reshape(1:N^2,(N,N)))
 result = WaterLily.mult!(pois,x)
-println(pois.z)
+println(pois.z) # same as result
 # fill the hypre vectors
-hypre.r.=x; fill!(hypre)
-hypre.b .= hypre.A*hypre.x
+hypre.z.=x; fill!(hypre)
+hypre.ϵ .= hypre.A*hypre.r
 putback!(hypre) # make a field again
-println(Matrix(hypre.z))
-@show norm(result-hypre.z)
+println(Matrix(hypre.x))
+@show norm(result.-hypre.x)
 
+# hydrostatic pressure test case
+hyrostatic!(p) = @WaterLily.inside p.z[I] = WaterLily.∂(1,I,p.L) # zero v contribution everywhere
+
+hyrostatic!(pois)
+hyrostatic!(hypre); fill!(hypre)
 # solve back
-# WaterLily.solver!(pois)
+WaterLily.solver!(pois;tol=1e-9)
 WaterLily.solver!(hypre)
+
 
 # # Initialize HYPRE
 # HYPRE.Init()
@@ -120,27 +164,27 @@ WaterLily.solver!(hypre)
 # # @show x
 # @show norm(A*x - b)
 
-
+# WaterLily.solver!(pois::MultiLevelPoisson) = WaterLily.solver!(pois;tol=1e-9)
 
 # # the classic...
-# function TGV(; pow=6, Re=1000, T=Float64, mem=Array)
-#     # Taylor-Green-Vortex initial velocity field
-#     function u_TGV(i,x,t,ν,κ)
-#         i==1 && return sin(κ*x[1])*cos(κ*x[2])*exp(-2κ^2*ν*t) # u_x
-#         return  -cos(κ*x[1])*sin(κ*x[2])*exp(-2κ^2*ν*t)       # u_y
-#     end
-#     # Define vortex size, velocity, viscosity
-#     L = 2^pow; U = 1; ν = U*L/Re
-#     # make the function
-#     uλ(i,xy) = u_TGV(i,xy,0,ν,2π/L)
-#     # Initialize simulation
-#     return Simulation((L,L), (0,0), L; U, uλ, ν, perdir=(1,2), T, mem, psolver=HYPREPoisson)
-# end
+function TGV(; pow=6, Re=1000, T=Float64, mem=Array)
+    # Taylor-Green-Vortex initial velocity field
+    function u_TGV(i,x,t,ν,κ)
+        i==1 && return sin(κ*x[1])*cos(κ*x[2])*exp(-2κ^2*ν*t) # u_x
+        return  -cos(κ*x[1])*sin(κ*x[2])*exp(-2κ^2*ν*t)       # u_y
+    end
+    # Define vortex size, velocity, viscosity
+    L = 2^pow; U = 1; ν = U*L/Re
+    # make the function
+    uλ(i,xy) = u_TGV(i,xy,0,ν,2π/L)
+    # Initialize simulation
+    return Simulation((L,L), (0,0), L; U, uλ, ν, T, mem, psolver=HYPREPoisson)
+end
 
-# # Initialize and run
-# sim = TGV()
-# mom_step!(sim.flow,sim.pois)
-# sim_gif!(sim,duration=10,clims=(-5,5),plotbody=true)
+# Initialize and run
+sim = TGV()
+mom_step!(sim.flow,sim.pois)
+sim_gif!(sim,duration=10,clims=(-5,5))
 
 
 # # # GMRES
