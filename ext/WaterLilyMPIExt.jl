@@ -8,7 +8,7 @@ end
 
 using StaticArrays
 using WaterLily
-import WaterLily: init_mpi,me,mpi_grid,finalize_mpi,get_extents
+import WaterLily: init_mpi,me,global_loc,mpi_grid,finalize_mpi,get_extents
 import WaterLily: BC!,perBC!,exitBC!,L₂,L∞,_dot,CFL,residual!,sim_step!,applyV!,applyS!,measure!,@loop,measure_sdf!
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
@@ -199,8 +199,8 @@ finalize_mpi() = MPI.Finalize()
 
 # global coordinate in grid space
 @inline grid_loc() = mpi_grid().global_loc
-@inline global_loc(i,I) = mpi_grid().global_loc .+ loc(i,I)
-@inline global_loc(Ii) = mpi_grid().global_loc .+ loc(last(Ii),Base.front(Ii))
+@inline global_loc(i::Int,I::CartesianIndex,T=Float32) = grid_loc() .+ loc(i,I,T)
+@inline global_loc(Ii::CartesianIndex,T=Float32) = grid_loc() .+ loc(Ii,T)
 me()= mpi_grid().me
 neighbors(dim) = mpi_grid().neighbors[:,dim]
 mpi_wall(dim,i) = mpi_grid().neighbors[i,dim]==MPI.PROC_NULL
@@ -240,25 +240,29 @@ function sim_step!(sim::Simulation{D,T,S},t_end;remeasure=true,
 end
 
 function WaterLily.measure!(a::Flow{N,T,S},body::AbstractBody;t=zero(T),ϵ=1) where {N,T,S<:MPIArray{T}}
-    a.V .= 0; a.μ₀ .= 1; a.μ₁ .= 0
+    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=(2+ϵ)^2
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
-        d[I] = sdf(body,global_loc(0,I),t)
-        if abs(d[I])<2+ϵ
+        d[I] = sdf(body,global_loc(0,I,T),t,fastd²=d²)
+        if d[I]^2<d²
             for i ∈ 1:N
-                dᵢ,nᵢ,Vᵢ = measure(body,global_loc(i,I),t)
+                dᵢ,nᵢ,Vᵢ = measure(body,global_loc(i,I,T),t,fastd²=d²)
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
-                μ₁[I,i,:] .= WaterLily.μ₁(dᵢ,ϵ)*nᵢ
+                for j ∈ 1:N
+                    μ₁[I,i,j] = WaterLily.μ₁(dᵢ,ϵ)*nᵢ[j]
+                end
             end
-        elseif d[I]<0
-            μ₀[I,:] .= 0
+        elseif d[I]<zero(T)
+            for i ∈ 1:N
+                μ₀[I,i] = zero(T)
+            end
         end
     end
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
 end
-WaterLily.measure_sdf!(a::MPIArray,body::AbstractBody,t=0) = @inside a[I] = sdf(body,global_loc(0,I),t)
+WaterLily.measure_sdf!(a::MPIArray,body::AbstractBody,t=0;kwargs...) = @inside a[I] = sdf(body,global_loc(0,I,eltype(a)),t;kwargs...)
 
 # hepler function for vtk writer
 function get_extents(a::MPIArray)

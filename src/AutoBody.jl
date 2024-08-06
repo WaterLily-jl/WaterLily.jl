@@ -36,7 +36,7 @@ Base.:-(x::AutoBody, y::AutoBody) = x ∩ -y
 """
     d = sdf(body::AutoBody,x,t) = body.sdf(x,t)
 """
-sdf(body::AutoBody,x,t) = body.sdf(x,t)
+sdf(body::AutoBody,x,t;kwargs...) = body.sdf(x,t)
 
 """
     Bodies(bodies, ops::AbstractVector)
@@ -96,27 +96,26 @@ end
 
 Computes distance for `Bodies` type.
 """
-sdf(a::Bodies,x,t) = sdf_map_d(a.bodies,a.ops,x,t)[end]
+sdf(a::Bodies,x,t;kwargs...) = sdf_map_d(a.bodies,a.ops,x,t)[end]
 
 using ForwardDiff
 """
-    d,n,V = measure(body::AutoBody,x,t;fast=false)
-    d,n,V = measure(body::Bodies,x,t;fast=false)
+    d,n,V = measure(body::AutoBody||Bodies,x,t;fastd²=Inf)
 
 Determine the implicit geometric properties from the `sdf` and `map`.
 The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
 The velocity is determined _solely_ from the optional `map` function.
-Using `fast=true` skips the `n,V` calculation when |d|>1.
+Skips the `n,V` calculation when `d²>fastd²`.
 """
-measure(body::AutoBody,x,t;fast=false) = measure(body.sdf,body.map,x,t,fast)
-function measure(a::Bodies,x,t;fast=false)
+measure(body::AutoBody,x,t;kwargs...) = measure(body.sdf,body.map,x,t;kwargs...)
+function measure(a::Bodies,x,t;kwargs...)
     sdf, map, _ = sdf_map_d(a.bodies,a.ops,x,t)
-    measure(sdf,map,x,t,fast)
+    measure(sdf,map,x,t;kwargs...)
 end
-function measure(sdf,map,x,t,fast)
+function measure(sdf,map,x,t;fastd²=Inf)
     # eval d=f(x,t), and n̂ = ∇f
     d = sdf(x,t)
-    fast && abs(d)>1 && return (d,zero(x),zero(x)) # skip n,V
+    d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
     n = ForwardDiff.gradient(x->sdf(x,t), x)
     any(isnan.(n)) && return (d,zero(x),zero(x))
 

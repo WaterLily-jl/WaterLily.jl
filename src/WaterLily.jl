@@ -6,7 +6,7 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,MPIArray,grid_loc
+export L₂,BC!,@inside,inside,δ,apply!,loc,MPIArray
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
@@ -55,7 +55,7 @@ Constructor for a WaterLily.jl simulation:
 
 See files in `examples` folder for examples.
 """
-struct Simulation{D,T,S}
+mutable struct Simulation{D,T,S}
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
@@ -135,11 +135,12 @@ export restart_sim!
 # # @TODO add default MPI function
 function init_mpi end
 function me end
+function global_loc end
 function mpi_grid end
 function finalize_mpi end
 function get_extents end
 # export
-export init_mpi,me,mpi_grid,finalize_mpi,get_extents
+export init_mpi,me,global_loc,mpi_grid,finalize_mpi,get_extents
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})

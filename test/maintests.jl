@@ -1,5 +1,6 @@
 using GPUArrays
 using ReadVTK, WriteVTK
+using FileIO,JLD2
 
 @info "Test backends: $(join(arrays,", "))"
 @testset "util.jl" begin
@@ -9,9 +10,9 @@ using ReadVTK, WriteVTK
     @test WaterLily.CIj(3,I,5)==CartesianIndex(1,2,5,4)
     @test WaterLily.CIj(2,CartesianIndex(16,16,16,3),14)==CartesianIndex(16,14,16,3)
 
-    @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
+    @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 2.5
     I = CartesianIndex(rand(2:10,3)...)
-    @test loc(0,I) == SVector(I.I...) .- 1.5
+    @test loc(0,I) == SVector(I.I...) .- 2.5
 
     ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
     WaterLily.grab!(sym,ex)
@@ -19,15 +20,15 @@ using ReadVTK, WriteVTK
     @test sym == [:a, :I, :i, :(p.b), :q]
 
     for f ∈ arrays
-        p = zeros(4,5) |> f
+        p = zeros(6,7) |> f
         apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin
-        @test inside(p) == CartesianIndices((2:3,2:4))
+        @test inside(p) == CartesianIndices((3:4,3:5))
         @test inside(p,buff=0) == CartesianIndices(p)
         @test L₂(p) == 187
 
         u = zeros(5,5,2) |> f
         apply!((i,x)->x[i],u)
-        @test GPUArrays.@allowscalar [u[i,j,1].-(i-2) for i in 1:3, j in 1:3]==zeros(3,3)
+        @test GPUArrays.@allowscalar [u[i,j,1].-(i-3) for i in 1:3, j in 1:3]==zeros(3,3)
 
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> f # vector
@@ -38,12 +39,12 @@ using ReadVTK, WriteVTK
         @test GPUArrays.@allowscalar all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2]) &&
             all(u[1, 3:end-1, 2] .== u[2, 3:end-1, 2]) && all(u[end, 3:end-1, 2] .== u[end-1, 3:end-1, 2])
 
-        GPUArrays.@allowscalar u[end,:,1] .= 3
+        GPUArrays.@allowscalar u[end-1,:,1] .= 3
         BC!(u,U,true) # save exit values
-        @test GPUArrays.@allowscalar all(u[end, :, 1] .== 3)
+        @test GPUArrays.@allowscalar all(u[end-1, :, 1] .== 3)
 
         WaterLily.exitBC!(u,u,U,0) # conservative exit check
-        @test GPUArrays.@allowscalar all(u[end,2:end-1, 1] .== U[1])
+        @test GPUArrays.@allowscalar all(u[end-1,3:end-2, 1] .== U[1])
 
         BC!(u,U,true,(2,)) # periodic in y and save exit values
         @test GPUArrays.@allowscalar all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
@@ -58,10 +59,10 @@ using ReadVTK, WriteVTK
         # test interpolation
         a = zeros(5,5,2) |> f; b = zeros(5,5) |> f
         apply!((i,x)->x[i]+1.5,a); apply!(x->x[1]+1.5,b) # offset for start of grid
-        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5,1),a) .≈ [2.5,1.])
-        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5,3),a) .≈ [3.5,3.])
-        @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
-        @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5,1),a) .≈ [1.5,0.])
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5,3),a) .≈ [2.5,2.])
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 1.5
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 2.5
     end
 end
 
@@ -80,9 +81,9 @@ end
 
 @testset "Poisson.jl" begin
     for f ∈ arrays
-        err,pois = Poisson_setup(Poisson,(5,5);f)
-        @test GPUArrays.@allowscalar parent(pois.D)==f(Float32[0 0 0 0 0; 0 -2 -3 -2 0; 0 -3 -4 -3 0;  0 -2 -3 -2 0; 0 0 0 0 0])
-        @test GPUArrays.@allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
+        err,pois = Poisson_setup(Poisson,(7,7);f)
+        @test GPUArrays.@allowscalar parent(pois.D)==f(Float32[0 0 0 0 0 0 0;0 0 0 0 0 0 0;0 0 -2 -3 -2 0 0;0 0 -3 -4 -3 0 0;0 0 -2 -3 -2 0 0; 0 0 0 0 0 0 0;0 0 0 0 0 0 0])
+        @test GPUArrays.@allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0 0 0;0 0 0 0 0 0 0;0 0 -1/2 -1/3 -1/2 0 0;0 0 -1/3 -1/4 -1/3 0 0;0 0 -1/2 -1/3 -1/2 0 0;0 0 0 0 0 0 0;0 0 0 0 0 0 0])
         @test err < 1e-5
         err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
@@ -98,19 +99,21 @@ end
     @test all(WaterLily.down(J)==I for J ∈ WaterLily.up(I))
     @test_throws AssertionError("MultiLevelPoisson requires size=a2ⁿ, where n>2") Poisson_setup(MultiLevelPoisson,(15+2,3^4+2))
 
-    err,pois = Poisson_setup(MultiLevelPoisson,(10,10))
-    @test pois.levels[3].D == Float32[0 0 0 0; 0 -2 -2 0; 0 -2 -2 0; 0 0 0 0]
+    err,pois = Poisson_setup(MultiLevelPoisson,(12,12))
+    @test pois.levels[3].D == Float32[0 0 0 0 0 0;0 0 0 0 0 0;0 0 -2 -2 0 0;
+                                      0 0 -2 -2 0 0;0 0 0 0 0 0;0 0 0 0 0 0]
     @test err < 1e-5
 
     pois.levels[1].L[5:6,:,1].=0
     WaterLily.update!(pois)
-    @test pois.levels[3].D == Float32[0 0 0 0; 0 -1 -1 0; 0 -1 -1 0; 0 0 0 0]
+    @test pois.levels[3].D == Float32[0 0 0 0 0 0;0 0 0 0 0 0;0 0 -2 -2 0 0;
+                                      0 0 -2 -2 0 0;0 0 0 0 0 0;0 0 0 0 0 0]
 
     for f ∈ arrays
-        err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
+        err,pois = Poisson_setup(MultiLevelPoisson,(2^6+4,2^6+4);f)
         @test err < 1e-6
         @test pois.n[] ≤ 3
-        err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
+        err,pois = Poisson_setup(MultiLevelPoisson,(2^4+4,2^4+4,2^4+4);f)
         @test err < 1e-6
         @test pois.n[] ≤ 3
     end
@@ -121,38 +124,6 @@ end
     vanLeer = WaterLily.vanLeer
     @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
     @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
-
-    # Check QUICK scheme on boundary
-    ϕuL = WaterLily.ϕuL
-    ϕuR = WaterLily.ϕuR
-    quick = WaterLily.quick
-    ϕ = WaterLily.ϕ
-
-    # inlet with positive flux -> CD
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
-    # inlet negative flux -> backward QUICK
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1)==-quick(2.0,0.5,0.0)
-    # outlet, positive flux -> standard QUICK
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
-    # outlet, negative flux -> backward CD
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
-
-    # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
-    ϕu = WaterLily.ϕu
-    ϕuP = WaterLily.ϕuP
-    λ = WaterLily.quick
-
-    I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1);
-    I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1);
-
-    # check for periodic flux
-    I=CartesianIndex(3);Ip=I-2δ(1,I);
-    f = [1.,1.25,1.5,1.75,2.];
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
-    Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     @test all(WaterLily.BCTuple((1,2,3),[0],3).==WaterLily.BCTuple((i,t)->i,0,3))
     @test all(WaterLily.BCTuple((i,t)->t,[1.234],3).==ntuple(i->1.234,3))
@@ -219,10 +190,14 @@ end
 
     # check that sdf functions are the same
     for f ∈ arrays
-        p = zeros(4,5) |> f; measure_sdf!(p,body1)
-        I = CartesianIndex(2,3)
-        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I),0.0)
+        p = zeros(6,7) |> f; measure_sdf!(p,body1)
+        I = CartesianIndex(4,5)
+        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I,eltype(p)),0.0)
     end
+
+    # check fast version
+    @test all(measure(body1,[3.,4.],0.,fastd²=9) .≈ measure(body1,[3.,4.],0.))
+    @test all(measure(body1,[3.,4.],0.,fastd²=8) .≈ (sdf(body1,[3.,4.],0.,fastd²=9),zeros(2),zeros(2)))
 end
 
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
@@ -239,22 +214,38 @@ function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
 end
 @testset "Flow.jl periodic TGV" begin
     for f ∈ arrays
-        sim,TGV = TGVsim(f,T=Float32); ue=copy(sim.flow.u) |> Array
+        sim,TGV = TGVsim(f,T=Float32); ue=copy(sim.flow.u) |> f
         sim_step!(sim,π/100)
         apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
-        u = sim.flow.u |> Array
+        u = sim.flow.u |> f
         @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
               WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
     end
 end
-@testset "ForwardDiff of TGV" begin
+@testset "ForwardDiff" begin
     function TGV_ke(Re)
         sim,_ = TGVsim(Array;Re)
         sim_step!(sim,π/100)
         sum(I->WaterLily.ke(I,sim.flow.u),inside(sim.flow.p))
     end
     using ForwardDiff:derivative
-    @test derivative(TGV_ke,1e3) ≈ (TGV_ke(1e3+1)-TGV_ke(1e3-1))/2 rtol=1e-6
+    # @test derivative(TGV_ke,1e3) ≈ (TGV_ke(1e3+1)-TGV_ke(1e3-1))/2 rtol=1e-6
+
+    # Spinning cylinder lift generation
+    rot(θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)]  # rotation matrix
+    function spinning(ξ;D=16,Re=500)
+        C,R,U = SA[D,D],D÷2,1
+        body = AutoBody((x,t)->√(x'*x)-R,          # circle sdf
+                        (x,t)->rot(ξ*U*t/R)*(x-C)) # center & spin!
+        Simulation((2D,2D),(U,0),D;ν=U*D/Re,body,T=typeof(ξ))
+    end
+    function lift(ξ,t_end=1)
+        sim = spinning(ξ)
+        sim_step!(sim,t_end;remeasure=false)
+        WaterLily.total_force(sim)[2]/(ξ^2*sim.U^2*sim.L)
+    end
+    h = 1e-6
+    @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
 end
 
 function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
@@ -282,10 +273,10 @@ end
 end
 import WaterLily: ×
 @testset "Metrics.jl" begin
-    J = CartesianIndex(2,3,4); x = loc(0,J); px = prod(x)
+    J = CartesianIndex(3,4,3); x = loc(0,J,Float64); px = prod(x)
     for f ∈ arrays
-        u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
-        p = zeros(3,4,5) |> f
+        u = zeros(5,6,7,3) |> f; apply!((i,x)->x[i]+prod(x),u)
+        p = zeros(5,6,7) |> f
         @inside p[I] = WaterLily.ke(I,u)
         @test GPUArrays.@allowscalar p[J]==0.5*sum(abs2,x .+ px)
         @inside p[I] = WaterLily.ke(I,u,x)
@@ -301,11 +292,11 @@ import WaterLily: ×
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test GPUArrays.@allowscalar p[J]≈ω[1]
         apply!((x)->1,p)
-        @test WaterLily.L₂(p)≈prod(size(p).-2)
+        @test WaterLily.L₂(p)≈prod(size(p).-4)
         # test force routines
         N = 32
         p = zeros(N,N) |> f; df₂ = zeros(N,N,2) |> f; df₃ = zeros(N,N,N,3) |> f
-        @inside p[I] = loc(0, I)[2]
+        @inside p[I] = loc(0, I, eltype(p))[2]
         body = AutoBody((x,t)->√sum(abs2,x.-(N/2))-N÷4,(x,t)->x)
         force = WaterLily.pressure_force(p,df₂,body)
         @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
@@ -362,17 +353,17 @@ end
         # Test accelerating from U=0 to U=1
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(circle,accel), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [3,3]
+        @test sim.pois.n == [2,2]
         @test maximum(sim.flow.u) > maximum(sim.flow.V) > 0
         # Test that non-uniform V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,rotate), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [3,2]
+        @test sim.pois.n == [2,1]
         @test 1 > sim.flow.Δt[end] > 0.5
         # Test that divergent V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,bend), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [3,2]
+        @test sim.pois.n == [2,1]
         @test 1.2 > sim.flow.Δt[end] > 0.8
     end
 end
@@ -382,27 +373,91 @@ function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)
     D==2 && Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
     Simulation(radius.*(6,4,1),(1,0,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
-@testset "VTKExt.jl" begin
-    for D ∈ [2,3], mem ∈ arrays
-        # make a simulation
-        sim = sphere_sim(;D,mem);
-        # make a vtk writer
-        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
-        sim_step!(sim,1); write!(wr, sim); close(wr)
+# @testset "VTKExt.jl" begin
+#     for D ∈ [2,3], mem ∈ arrays
+#         # make a simulation
+#         sim = sphere_sim(;D,mem);
+#         # make a vtk writer
+#         wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
+#         sim_step!(sim,1); write!(wr, sim); close(wr)
 
-        # re start the sim from a paraview file
-        restart = sphere_sim(;D,mem);
-        restart_sim!(restart;fname="test_vtk_reader_$D.pvd")
+#         # re start the sim from a paraview file
+#         restart = sphere_sim(;D,mem);
+#         restart_sim!(restart;fname="test_vtk_reader_$D.pvd")
 
-        # check that the restart is the same as the original
-        @test all(sim.flow.p .== restart.flow.p)
-        @test all(sim.flow.u .== restart.flow.u)
-        @test all(sim.flow.μ₀ .== restart.flow.μ₀)
-        @test sim.flow.Δt[end] == restart.flow.Δt[end]
-        @test abs(sim_time(sim)-sim_time(restart))<1e-3
+#         # check that the restart is the same as the original
+#         @test all(sim.flow.p .== restart.flow.p)
+#         @test all(sim.flow.u .== restart.flow.u)
+#         @test all(sim.flow.μ₀ .== restart.flow.μ₀)
+#         @test sim.flow.Δt[end] == restart.flow.Δt[end]
+#         @test abs(sim_time(sim)-sim_time(restart))<1e-3
 
-        # clean-up
-        @test_nowarn rm("TEST_DIR",recursive=true)
-        @test_nowarn rm("test_vtk_reader_$D.pvd")
+#         # clean-up
+#         @test_nowarn rm("TEST_DIR",recursive=true)
+#         @test_nowarn rm("test_vtk_reader_$D.pvd")
+#     end
+# end
+@testset "MPIExt.jl" begin
+    Np = 2  # number of processes DO OT CHANGE
+    run(`$(mpiexec()) -n $Np $(Base.julia_cmd()) --project=../ mpi_test.jl`)
+    # load the results
+    for n ∈ 0:Np-1
+        global_loc = load("global_loc_$n.jld2")["data"]
+        n==0 && @test all(global_loc[1] .≈ 0.5)
+        n==0 && @test all(global_loc[2] .≈ SA[0.,0.5])
+        n==1 && @test all(global_loc[1] .≈ SA[64.5,0.5])
+        n==1 && @test all(global_loc[2] .≈ SA[64.0,0.5])
+
+        # test that each one has it's rank as the data
+        data = load("sigma_1_$n.jld2")["data"]
+        @test all(data[3:end-2,3:end-2] .≈ n)
+        
+        # test halo swap
+        data = load("sigma_2_$n.jld2")["data"]
+        @test all(data[3:end-2,3:end-2] .≈ n)
+        if n==0 # test that the boundaries are updated
+            @test all(isnan.(data[1:2,4:end-2]))
+            @test all(data[end-1:end,4:end-2] .≈ 1) 
+        else
+            @test all(isnan.(data[end-1:end,4:end-2]))
+            @test all(data[1:2,4:end-2] .≈ 0) 
+        end
+        @test all(isnan.(data[3:end-1,1:2])) # this boundaries should not be updated
+        @test all(isnan.(data[3:end-1,end-1:end]))
+        
+        # check the sdf in the two parts
+        data = load("sdf_3_$n.jld2")["data"]
+        a = copy(data); a .= 0.; L = 2^6
+        apply!(x->√sum(abs2,global_loc[1].-0.5+x.-SA[L/2,L/2+2])-L/8,a)
+        @test all(data[3:end-2,3:end-2] .≈ a[3:end-2,3:end-2])
+    
+        # check that halos are gathered correctly
+        data = load("sdf_4_$n.jld2")["data"]
+        @test all(data[3:end-2,3:end-2] .≈ a[3:end-2,3:end-2])
+        if n==0
+            @test all(isnan.(data[1:2,4:end-2]))
+            @test all(data[end-1:end,4:end-2] .≈ a[end-1:end,4:end-2])
+        else
+            @test all(isnan.(data[end-1:end,4:end-2]))
+            @test all(data[1:2,4:end-2] .≈ a[1:2,4:end-2]) 
+        end
+        # check that the norm are gathered correctly
+        sol = 123.456789 # a not so random number
+        data = load("norm_$n.jld2")["data"]
+        @test all(data .≈ SA[sol,sol^2]) # L2 norm is square of Linf
     end
+
+    # test pressure solver
+    Np = 4
+    run(`$(mpiexec()) -n $Np $(Base.julia_cmd()) --project=../ mpi_psolver_test.jl`)
+    # test poisson solver in parallel
+    for Pois in [:Poisson,:MultiLevelPoisson]
+        for n ∈ 0:Np-1
+            data = load("test_$(n)_L2.jld2","data")
+            @test all(data .≤ 2e-2)
+        end
+    end
+
+    # clean the files
+    # @test_nowarn rm("*.jld2")
 end

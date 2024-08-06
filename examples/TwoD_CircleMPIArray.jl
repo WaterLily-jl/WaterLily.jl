@@ -8,6 +8,6 @@ function circle(n,m;Re=250,U=1)
 end
 
 # test on sim
-include("TwoD_plots.jl")
+include("/home/marin/Workspace/Tutorials-WaterLily/src/TwoD_plots.jl")
 sim = circle(3*2^6,2^7)
 sim_gif!(sim,duration=10,clims=(-5,5),plotbody=true)

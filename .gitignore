@@ -3,10 +3,10 @@
 .DS_Store
 Manifest.toml
 /docs/build/
-/docs/src/examples/*.jpg
 
 # gfx
 *.png
+*.jpg
 *.gif
 *.mp4
 *.svg
@@ -22,3 +22,11 @@ Manifest.toml
 # paraview
 *.vti
 *.pvd
+
+# exceptions
+!/examples/JuliaCon2021.jpg
+!/examples/JuliaCon2024.png
+!/examples/julia.gif
+!/examples/julia2024.gif
+!/examples/hover.gif
+!/examples/oscillating.gif
