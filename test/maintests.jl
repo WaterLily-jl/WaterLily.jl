@@ -373,41 +373,42 @@ function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)
     D==2 && Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
     Simulation(radius.*(6,4,1),(1,0,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
-# @testset "VTKExt.jl" begin
-#     for D ∈ [2,3], mem ∈ arrays
-#         # make a simulation
-#         sim = sphere_sim(;D,mem);
-#         # make a vtk writer
-#         wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
-#         sim_step!(sim,1); write!(wr, sim); close(wr)
+@testset "VTKExt.jl" begin
+    for D ∈ [2,3], mem ∈ arrays
+        # make a simulation
+        sim = sphere_sim(;D,mem);
+        # make a vtk writer
+        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
+        sim_step!(sim,1); write!(wr, sim); close(wr)
 
-#         # re start the sim from a paraview file
-#         restart = sphere_sim(;D,mem);
-#         restart_sim!(restart;fname="test_vtk_reader_$D.pvd")
+        # re start the sim from a paraview file
+        restart = sphere_sim(;D,mem);
+        restart_sim!(restart;fname="test_vtk_reader_$D.pvd")
 
-#         # check that the restart is the same as the original
-#         @test all(sim.flow.p .== restart.flow.p)
-#         @test all(sim.flow.u .== restart.flow.u)
-#         @test all(sim.flow.μ₀ .== restart.flow.μ₀)
-#         @test sim.flow.Δt[end] == restart.flow.Δt[end]
-#         @test abs(sim_time(sim)-sim_time(restart))<1e-3
+        # check that the restart is the same as the original
+        @test all(sim.flow.p .== restart.flow.p)
+        @test all(sim.flow.u .== restart.flow.u)
+        @test all(sim.flow.μ₀ .== restart.flow.μ₀)
+        @test sim.flow.Δt[end] == restart.flow.Δt[end]
+        @test abs(sim_time(sim)-sim_time(restart))<1e-3
 
-#         # clean-up
-#         @test_nowarn rm("TEST_DIR",recursive=true)
-#         @test_nowarn rm("test_vtk_reader_$D.pvd")
-#     end
-# end
+        # clean-up
+        @test_nowarn rm("TEST_DIR",recursive=true)
+        @test_nowarn rm("test_vtk_reader_$D.pvd")
+    end
+end
+using MPI
 @testset "MPIExt.jl" begin
     Np = 2  # number of processes DO OT CHANGE
     run(`$(mpiexec()) -n $Np $(Base.julia_cmd()) --project=../ mpi_test.jl`)
     # load the results
     for n ∈ 0:Np-1
-        global_loc = load("global_loc_$n.jld2")["data"]
-        n==0 && @test all(global_loc[1] .≈ 0.5)
-        n==0 && @test all(global_loc[2] .≈ SA[0.,0.5])
-        n==1 && @test all(global_loc[1] .≈ SA[64.5,0.5])
-        n==1 && @test all(global_loc[2] .≈ SA[64.0,0.5])
-
+        g_loc = load("global_loc_$n.jld2")["data"]
+        n==0 && @test all(g_loc[1] .≈ 0.5)
+        n==0 && @test all(g_loc[2] .≈ SA[0.,0.5])
+        n==1 && @test all(g_loc[1] .≈ SA[64.5,0.5])
+        n==1 && @test all(g_loc[2] .≈ SA[64.0,0.5])
+    
         # test that each one has it's rank as the data
         data = load("sigma_1_$n.jld2")["data"]
         @test all(data[3:end-2,3:end-2] .≈ n)
@@ -428,7 +429,8 @@ end
         # check the sdf in the two parts
         data = load("sdf_3_$n.jld2")["data"]
         a = copy(data); a .= 0.; L = 2^6
-        apply!(x->√sum(abs2,global_loc[1].-0.5+x.-SA[L/2,L/2+2])-L/8,a)
+        f(x)=√sum(abs2,g_loc[1].-0.5+x.-SA[L/2,L/2+2])-L/8
+        @WaterLily.loop a[I] = f(loc(0,I,eltype(a))) over I ∈ CartesianIndices(a)
         @test all(data[3:end-2,3:end-2] .≈ a[3:end-2,3:end-2])
     
         # check that halos are gathered correctly
@@ -453,11 +455,11 @@ end
     # test poisson solver in parallel
     for Pois in [:Poisson,:MultiLevelPoisson]
         for n ∈ 0:Np-1
-            data = load("test_$(n)_L2.jld2","data")
+            data = load("test_$(string(Pois))_$(n)_L2.jld2","data")
             @test all(data .≤ 2e-2)
         end
     end
 
     # clean the files
-    # @test_nowarn rm("*.jld2")
+    @test_nowarn foreach(rm, filter(endswith(".jld2"), readdir())) 
 end
