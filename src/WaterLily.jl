@@ -137,6 +137,10 @@ function HyprePoisson end
 function putback! end
 export HyprePoisson,putback!,HYPREPoisson
 
+# default GeometricMultigrid functions
+function GeomMultigridPoisson end
+export GeomMultigridPoisson
+
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})
@@ -160,6 +164,7 @@ function __init__()
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
         @require HYPRE = "b5ffcf37-a2bd-41ab-a3da-4bd9bc8ad771" include("../ext/WaterLilyHYPREExt.jl")
+        @require GeometricMultigrid = "ec3bce20-3e4b-4d8a-a801-89defc82be1c" include("../ext/WaterLilyGeometricMultigridExt.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end

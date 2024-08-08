@@ -1,7 +1,7 @@
 name = "WaterLily"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
-version = "1.2"
+version = "1.2.0"
 
 [deps]
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
@@ -22,6 +22,7 @@ CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 HYPRE = "b5ffcf37-a2bd-41ab-a3da-4bd9bc8ad771"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+GeometricMultigrid = "ec3bce20-3e4b-4d8a-a801-89defc82be1c"
 
 [extensions]
 WaterLilyAMDGPUExt = "AMDGPU"
@@ -29,6 +30,7 @@ WaterLilyCUDAExt = "CUDA"
 WaterLilyHYPREExt = "HYPRE"
 WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = "WriteVTK"
+WaterLilyGeometricMultigridExt = "GeometricMultigrid"
 
 [compat]
 DocStringExtensions = "0.9"
@@ -55,6 +57,8 @@ ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+GeometricMultigrid = "ec3bce20-3e4b-4d8a-a801-89defc82be1c"
 
 [targets]
-test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "HYPRE"]
+test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK",
+        "ReadVTK", "HYPRE", "GeometricMultigrid"]
