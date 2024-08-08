@@ -132,6 +132,11 @@ function restart_sim! end
 # export
 export restart_sim!
 
+#default HYPRE functions
+function HyprePoisson end
+function putback! end
+export HyprePoisson,putback!,HYPREPoisson
+
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})
@@ -154,6 +159,7 @@ function __init__()
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
+        @require HYPRE = "b5ffcf37-a2bd-41ab-a3da-4bd9bc8ad771" include("../ext/WaterLilyHYPREExt.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end

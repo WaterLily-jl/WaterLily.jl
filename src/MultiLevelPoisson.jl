@@ -81,6 +81,9 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     increment!(fine)
 end
 
+L₂(p::MultiLevelPoisson) = L₂(p.levels[1])
+L∞(p::MultiLevelPoisson) = L∞(p.levels[1])
+
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
