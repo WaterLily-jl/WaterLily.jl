@@ -221,8 +221,12 @@ end
     for f ∈ arrays
         p = zeros(4,5) |> f; measure_sdf!(p,body1)
         I = CartesianIndex(2,3)
-        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I),0.0)
+        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I,eltype(p)),0.0)
     end
+
+    # check fast version
+    @test all(measure(body1,[3.,4.],0.,fastd²=9) .≈ measure(body1,[3.,4.],0.))
+    @test all(measure(body1,[3.,4.],0.,fastd²=8) .≈ (sdf(body1,[3.,4.],0.,fastd²=9),zeros(2),zeros(2)))
 end
 
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
@@ -247,7 +251,7 @@ end
               WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
     end
 end
-@testset "ForwardDiff of TGV" begin
+@testset "ForwardDiff" begin
     function TGV_ke(Re)
         sim,_ = TGVsim(Array;Re)
         sim_step!(sim,π/100)
@@ -255,6 +259,22 @@ end
     end
     using ForwardDiff:derivative
     @test derivative(TGV_ke,1e3) ≈ (TGV_ke(1e3+1)-TGV_ke(1e3-1))/2 rtol=1e-6
+
+    # Spinning cylinder lift generation
+    rot(θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)]  # rotation matrix
+    function spinning(ξ;D=16,Re=500)
+        C,R,U = SA[D,D],D÷2,1
+        body = AutoBody((x,t)->√(x'*x)-R,          # circle sdf
+                        (x,t)->rot(ξ*U*t/R)*(x-C)) # center & spin!
+        Simulation((2D,2D),(U,0),D;ν=U*D/Re,body,T=typeof(ξ))
+    end
+    function lift(ξ,t_end=1)
+        sim = spinning(ξ)
+        sim_step!(sim,t_end;remeasure=false)
+        WaterLily.total_force(sim)[2]/(ξ^2*sim.U^2*sim.L)
+    end
+    h = 1e-6
+    @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
 end
 
 function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
@@ -282,7 +302,7 @@ end
 end
 import WaterLily: ×
 @testset "Metrics.jl" begin
-    J = CartesianIndex(2,3,4); x = loc(0,J); px = prod(x)
+    J = CartesianIndex(2,3,4); x = loc(0,J,Float64); px = prod(x)
     for f ∈ arrays
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
@@ -305,7 +325,7 @@ import WaterLily: ×
         # test force routines
         N = 32
         p = zeros(N,N) |> f; df₂ = zeros(N,N,2) |> f; df₃ = zeros(N,N,N,3) |> f
-        @inside p[I] = loc(0, I)[2]
+        @inside p[I] = loc(0, I, eltype(p))[2]
         body = AutoBody((x,t)->√sum(abs2,x.-(N/2))-N÷4,(x,t)->x)
         force = WaterLily.pressure_force(p,df₂,body)
         @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
