@@ -11,17 +11,17 @@ using WaterLily
 import WaterLily: inside,size_u,@loop
 import WaterLily: AbstractPoisson,solver!,update!,HyprePoisson,putback!,L₂,L∞
 
-@inline insidep(a::AbstractArray,perdir=()) = CartesianIndices(ntuple( i-> i ∈ perdir ? (1:size(a,i)) : (2:size(a,i)-1), length(axes(a))))
+# @inline insidep(a::AbstractArray,perdir=()) = CartesianIndices(ntuple( i-> i ∈ perdir ? (1:size(a,i)) : (2:size(a,i)-1), length(axes(a))))
 
-@fastmath @inline function filldiag(I::CartesianIndex{d},x,L,perdir) where {d}
-    s = zero(eltype(L))
-    for i in 1:d
-        Ip = I+δ(i,I)
-        (i ∈ perdir && Ip ∉ insidep(x,perdir)) && (Ip = WaterLily.CIj(i,Ip,1))
-        s -= @inbounds(L[I,i]+L[Ip,i])
-    end
-    return s
-end
+# @fastmath @inline function filldiag(I::CartesianIndex{d},x,L,perdir) where {d}
+#     s = zero(eltype(L))
+#     for i in 1:d
+#         Ip = I+δ(i,I)
+#         (i ∈ perdir && Ip ∉ insidep(x,perdir)) && (Ip = WaterLily.CIj(i,Ip,1))
+#         s -= @inbounds(L[I,i]+L[Ip,i])
+#     end
+#     return s
+# end
 
 struct HYPREPoisson{T,V<:AbstractVector{T},M<:AbstractArray{T},
                     Vf<:AbstractArray{T},Mf<:AbstractArray{T},
@@ -48,21 +48,18 @@ function HyprePoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T
         ϵ[J[I]] = x[I]; r[J[I]] = z[I]
         A[J[I],J[I]] = one(T) # set all diagonals to one
     end
-    for I in insidep(x,perdir)
-        A[J[I],J[I]] = filldiag(I,x,L,perdir)
+    for I in inside(x)
+        A[J[I],J[I]] = WaterLily.diag(I,L)
         for i in 1:n # fill diagonal terms
             Im = I-δ(i,I); Ip = I+δ(i,I)
-            if i ∈ perdir
-                Im ∉ insidep(x,perdir) && (Im = WaterLily.CIj(i,Im,N[i]))
-                Ip ∉ insidep(x,perdir) && (Ip = WaterLily.CIj(i,Ip,1))
-            end
             A[J[Im],J[I]] = L[I,i]  # x[I-δ(i,I)]*L[I,i]
             A[J[Ip],J[I]] = L[Ip,i] # x[I+δ(i,I)]*L[I+δ(i,I),i]
         end
     end
     # if we have a purely Neumann problem, we must fix the pressure at one spot to satisfiability
     # the system, we choose the first block
-    length(perdir) == n && (A[1,1] = one(T); A[1,2:end] .= zero(T))
+    # length(perdir) == n && (A[1,1] = one(T); A[1,2:end] .= zero(T);
+    #                         A[1,1] = one(T); A[1,2:end] .= zero(T))
     HYPRE.Init() # Init and create a conjugate gradients solver
     solver = HYPRE.GMRES(;MaxIter,Tol,PrintLevel,Logging,Precond)
     return HYPREPoisson(ϵ,A,r,x,L,z,solver)
