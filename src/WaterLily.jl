@@ -65,7 +65,7 @@ mutable struct Simulation
     function Simulation(dims::NTuple{N}, u_BC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
-                        T=Float32, mem=Array) where N
+                        T=Float32, mem=Array, psolver=:MultiLevelPoisson) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
         isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zero(T)),N)).==T) "`u_BC` is not type stable"
@@ -73,7 +73,7 @@ mutable struct Simulation
         U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
         flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
+        new(U,L,ϵ,flow,body,eval(psolver)(flow.p,flow.μ₀,flow.σ;perdir))
     end
 end
 
@@ -132,6 +132,15 @@ function restart_sim! end
 # export
 export restart_sim!
 
+#default HYPRE functions
+function HyprePoisson end
+function putback! end
+export HyprePoisson,putback!,HYPREPoisson
+
+# default GeometricMultigrid functions
+function GeomMultigridPoisson end
+export GeomMultigridPoisson
+
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})
@@ -154,6 +163,8 @@ function __init__()
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
+        @require HYPRE = "b5ffcf37-a2bd-41ab-a3da-4bd9bc8ad771" include("../ext/WaterLilyHYPREExt.jl")
+        @require GeometricMultigrid = "ec3bce20-3e4b-4d8a-a801-89defc82be1c" include("../ext/WaterLilyGeometricMultigridExt.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end
