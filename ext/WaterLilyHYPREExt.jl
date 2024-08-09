@@ -81,7 +81,7 @@ update!(hp::HYPREPoisson) = nothing
 """
 Solve the poisson problem and puts back the solution where it is expected.
 """
-function solver!(hp::HYPREPoisson;T=promote_type(Float64,eltype(hp.x)),kwargs...)
+function solver!(hp::HYPREPoisson;kwargs...)
     fill!(hp)
     HYPRE.solve!(hp.solver, hp.ϵ,hp.A, hp.r)
     putback!(hp); 
