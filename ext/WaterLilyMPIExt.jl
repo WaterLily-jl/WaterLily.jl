@@ -8,9 +8,9 @@ end
 
 using StaticArrays
 using WaterLily
-import WaterLily: init_mpi,me,global_loc,mpi_grid,finalize_mpi,get_extents
+import WaterLily: init_mpi,me,global_loc,mpi_grid,mpi_dims,finalize_mpi,get_extents
 import WaterLily: BC!,perBC!,exitBC!,L₂,L∞,_dot,CFL,residual!,sim_step!
-import WaterLily: applyV!,applyS!,measure!,@loop,measure_sdf!,grid_loc
+import WaterLily: applyV!,applyS!,measure!,@loop,measure_sdf!,grid_loc,master
 
 const NDIMS_MPI = 3           # Internally, we set the number of dimensions always to 3 for calls to MPI. This ensures a fixed size for MPI coords, neigbors, etc and in general a simple, easy to read code.
 const NNEIGHBORS_PER_DIM = 2
@@ -70,12 +70,12 @@ _perBC!(a, N, mpi::Bool) = for d ∈ eachindex(N)
     !mpi_wall(d,2) && (a[halos(N,+d)] .= recv2) # halo swap
 end
 
+using EllipsisNotation
 """
     BC!(a)
 
 This function sets the boundary conditions of the array `a` using the MPI grid.
 """
-using EllipsisNotation
 function BC!(a::MPIArray,A,saveexit=false,perdir=())
     N,n = WaterLily.size_u(a)
     for d ∈ 1:n # transfer full halos in each direction
@@ -109,17 +109,19 @@ function BC!(a::MPIArray,A,saveexit=false,perdir=())
     end
 end
 
-function exitBC!(u::MPIArray,u⁰,U,Δt)
+function exitBC!(u::MPIArray{T},u⁰,U,Δt) where T
     N,_ = WaterLily.size_u(u)
-    exitR = WaterLily.slice(N.-2,N[1]-2,1,3) # exit slice excluding ghosts
-    # ∮udA = 0
-    # if mpi_wall(1,2) #right wall
-    @WaterLily.loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
-    # end
-    # ∮u = MPI.Allreduce(∮udA,+,mpi_grid().comm)           # domain imbalance
-    # mpi_wall(1,2) && (@WaterLily.loop u[I,1] -= ∮u over I ∈ exitR) # correct flux only on right wall
-    @WaterLily.loop u[I,1] -= ∮u over I ∈ exitR # correct flux only on right wall
+    exitR = WaterLily.slice(N.-2,N[1]-1,1,3) # exit slice excluding ghosts
+    ∮udA = zero(T)
+    if mpi_wall(1,2) # right wall
+        @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+        @loop u[I+δ(1,I),1] = u[I,1] over I ∈ exitR
+        ∮udA = sum(@view(u[exitR,1]))/length(exitR)-U[1]   # mass flux imbalance
+    end
+    ∮u = MPI.Allreduce(∮udA,+,mpi_grid().comm)           # domain imbalance
+    N = prod(mpi_dims()[2:end]) # for now we only have 1D exit
+    mpi_wall(1,2) && (@loop u[I,1] -= ∮u/N over I ∈ exitR;
+                      @loop u[I+δ(1,I),1] -= ∮u/N over I ∈ exitR) # correct flux only on right wall
 end
 
 struct MPIGrid #{I,C<:MPI.Comm,N<:AbstractVector,M<:AbstractArray,G<:AbstractVector}
@@ -166,9 +168,11 @@ finalize_mpi() = MPI.Finalize()
 
 # helper functions
 me()= mpi_grid().me
+master(::Val{:WaterLily_MPIExt}) = me()==0
 grid_loc(::Val{:WaterLily_MPIExt}) = mpi_grid().global_loc
 neighbors(dim) = mpi_grid().neighbors[:,dim]
 mpi_wall(dim,i) = mpi_grid().neighbors[i,dim]==MPI.PROC_NULL
+mpi_dims() = MPI.Cart_get(mpi_grid().comm)[1]
 
 L₂(a::MPIArray{T}) where T = MPI.Allreduce(sum(T,abs2,@inbounds(a[I]) for I ∈ inside(a)),+,mpi_grid().comm)
 function L₂(p::Poisson{T,S}) where {T,S<:MPIArray{T}} # should work on the GPU

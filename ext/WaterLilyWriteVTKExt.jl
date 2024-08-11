@@ -33,7 +33,7 @@ struct VTKWriter
     extents       #:: Tuple{UnitRange}# cannot figure out what type to put here
 end
 function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32,extents=[(1:1,1:1)])
-    !isdir(dir) && mkdir(dir)
+    (WaterLily.master() && !isdir(dir)) && mkdir(dir)
     VTKWriter(fname,dir,pvd_collection(fname),attrib,[0],extents)
 end
 function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k,extents)

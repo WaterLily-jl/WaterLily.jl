@@ -137,10 +137,11 @@ function init_mpi end
 function me end
 function global_loc end
 function mpi_grid end
+function mpi_dims end
 function finalize_mpi end
 function get_extents end
 # export
-export init_mpi,me,global_loc,mpi_grid,finalize_mpi,get_extents
+export init_mpi,me,global_loc,mpi_grid,mpi_dims,finalize_mpi,get_extents
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})
