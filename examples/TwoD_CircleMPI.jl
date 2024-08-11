@@ -43,8 +43,6 @@ L = 2^6
 # init the MPI grid and the simulation
 r = init_mpi((L,L))
 
-@show mpi_grid().global_loc .+ loc(1,CartesianIndex(1,1))
-
 sim = circle((L,L),SA[L/2,L/2+2],L/8;mem=MPIArray) #use MPIArray to use extension
 
 wr = vtkWriter("WaterLily-MPI-circle";attrib=custom_attrib,dir="vtk_data",

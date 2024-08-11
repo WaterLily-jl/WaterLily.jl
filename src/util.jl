@@ -161,7 +161,9 @@ loc(i,I) = loc(Ii)
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 2.5 .- 0.5 .* δ(i,I).I)
+grid_loc(arg) = 0
+global_loc() = grid_loc(Val(:WaterLily_MPIExt))
+@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(global_loc() .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
