@@ -34,16 +34,15 @@ custom_attrib = Dict(
 """Flow around a circle"""
 function circle(dims,center,radius;Re=250,U=1,psolver=MultiLevelPoisson,mem=Array)
     body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
-    Simulation(dims, (U,0), radius; ν=U*radius/Re, body, mem=mem, psolver=psolver)
+    Simulation(dims, (U,0), radius; ν=U*radius/Re, body, exitBC=false, mem=mem, psolver=psolver)
 end
 
 # local grid size
 L = 2^6
 
 # init the MPI grid and the simulation
-r = init_mpi((L,L))
-
-sim = circle((L,L),SA[L/2,L/2+2],L/8;mem=MPIArray) #use MPIArray to use extension
+r = init_mpi((L,2L))
+sim = circle((L,2L),SA[L/2,L+2],L/8;mem=MPIArray) #use MPIArray to use extension
 
 wr = vtkWriter("WaterLily-MPI-circle";attrib=custom_attrib,dir="vtk_data",
                extents=get_extents(sim.flow.p))

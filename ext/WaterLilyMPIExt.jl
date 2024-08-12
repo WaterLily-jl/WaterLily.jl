@@ -31,6 +31,41 @@ Return the CartesianIndices of the buffer in dimension `±d` of an array of size
 function buff(dims::NTuple{N},j) where N
     CartesianIndices(ntuple( i-> i==abs(j) ? j<0 ? (3:4) : (dims[i]-3:dims[i]-2) : (1:dims[i]), N))
 end
+#@TODO these can be cleaned up
+function send_flat(I,N,n,d)
+    J = LinearIndices(buff(N,d)); Is=buff(N,d)[1]
+    J[I-Is+oneunit(I)] + n*length(J)
+end
+function fill_send!(a::MPIArray,d,::Val{:Scalar}) # fill scalar field
+    N=size(a)
+    @loop a.send[1][send_flat(I,N,0,-d)] = a[I] over I ∈ buff(N,-d)
+    @loop a.send[2][send_flat(I,N,0,+d)] = a[I] over I ∈ buff(N,+d)
+    # @loop a.send[1][I] = a[buff(N,-d)[I]] over I ∈ CartesianIndices(a.send[1])
+    # @loop a.send[2][I] = a[buff(N,+d)[I]] over I ∈ CartesianIndices(a.send[2])
+end
+function fill_send!(a::MPIArray,d,::Val{:Vector})# fill vector field
+    N,n = WaterLily.size_u(a)
+    for i ∈ 1:n # copy every component in that direction
+        @loop a.send[1][send_flat(I,N,i-1,-d)] = a[I,i] over I ∈ buff(N,-d)
+        @loop a.send[2][send_flat(I,N,i-1,+d)] = a[I,i] over I ∈ buff(N,+d)
+    end
+end
+function recv_flat(I,N,n,d)
+    J = LinearIndices(halos(N,d)); Is=halos(N,d)[1]
+    J[I-Is+oneunit(I)] + n*length(J)
+end
+function copyto!(a::MPIArray,d,::Val{:Scalar}) # copy scalar field back from rcv buffer
+    N=size(a); i = d<0 ? 1 : 2
+    # @loop a[halos(N,d)[I]] = a.recv[i][I]  over I ∈ CartesianIndices(a.recv[i])
+    @loop a[I] = a.recv[i][recv_flat(I,N,0,d)] over I ∈ halos(N,d)
+end
+function copyto!(a::MPIArray,d,::Val{:Vector}) # copy scalar field back from rcv buffer
+    N,n = WaterLily.size_u(a); i = d<0 ? 1 : 2
+    for j ∈ 1:n # copy every component in that direction
+        @loop a[I,j] = a.recv[i][recv_flat(I,N,j-1,d)] over I ∈ halos(N,d)
+    end
+end
+
 
 """
     mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
@@ -50,6 +85,18 @@ function mpi_swap!(send1,recv1,send2,recv2,neighbor,comm)
     # wair for all transfer to be done
     MPI.Waitall!(reqs)
 end
+function mpi_swap!(a::MPIArray,neighbor,comm)
+    # prepare the transfer
+    reqs=MPI.Request[]
+    # Send to / receive from neighbor 1 in dimension d
+    push!(reqs,MPI.Isend(a.send[1],  neighbor[1], 0, comm))
+    push!(reqs,MPI.Irecv!(a.recv[1], neighbor[1], 1, comm))
+    # Send to / receive from neighbor 2 in dimension d
+    push!(reqs,MPI.Irecv!(a.recv[2], neighbor[2], 0, comm))
+    push!(reqs,MPI.Isend(a.send[2],  neighbor[2], 1, comm))
+    # wair for all transfer to be done
+    MPI.Waitall!(reqs)
+end
 
 """
     perBC!(a)
@@ -59,15 +106,15 @@ This function sets the boundary conditions of the array `a` using the MPI grid.
 perBC!(a::MPIArray,::Tuple{})            = _perBC!(a, size(a), true)
 perBC!(a::MPIArray, perdir, N = size(a)) = _perBC!(a, N, true)
 _perBC!(a, N, mpi::Bool) = for d ∈ eachindex(N)
-    # get data to transfer @TODO use @views
-    send1 = a[buff(N,-d)]; send2 =a[buff(N,+d)]
-    recv1 = zero(send1);   recv2 = zero(send2)
-    # swap 
-    mpi_swap!(send1,recv1,send2,recv2,neighbors(d),mpi_grid().comm)
+    # fill with data to transfer
+    fill_send!(a,d,Val(:Scalar))
+
+    # swap
+    mpi_swap!(a,neighbors(d),mpi_grid().comm)
 
     # this sets the BCs
-    !mpi_wall(d,1) && (a[halos(N,-d)] .= recv1) # halo swap
-    !mpi_wall(d,2) && (a[halos(N,+d)] .= recv2) # halo swap
+    !mpi_wall(d,1) && copyto!(a,-d,Val(:Scalar)) # halo swap
+    !mpi_wall(d,2) && copyto!(a,+d,Val(:Scalar)) # halo swap
 end
 
 using EllipsisNotation
@@ -167,7 +214,7 @@ end
 finalize_mpi() = MPI.Finalize()
 
 # helper functions
-me()= mpi_grid().me
+me() = mpi_grid().me
 master(::Val{:WaterLily_MPIExt}) = me()==0
 grid_loc(::Val{:WaterLily_MPIExt}) = mpi_grid().global_loc
 neighbors(dim) = mpi_grid().neighbors[:,dim]

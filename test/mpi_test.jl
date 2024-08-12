@@ -18,8 +18,8 @@ r = init_mpi((L,L))
 sim = circle((L,L),SA[L/2,L/2+2],L/8;mem=MPIArray)
 
 # check global coordinates
-x1 = global_loc(0,CartesianIndex(3,3))
-x2 = global_loc(CartesianIndex(3,3,1))
+x1 = loc(0,CartesianIndex(3,3))
+x2 = loc(CartesianIndex(3,3,1))
 save("global_loc_$(me()).jld2", "data", [x1,x2])
 
 # first we check simple rank matrix

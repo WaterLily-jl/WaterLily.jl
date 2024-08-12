@@ -398,6 +398,50 @@ end
     end
 end
 using MPI
+@testset "MPIArray.jl" begin
+    buff = Base.get_extension(WaterLily, :WaterLilyMPIExt).buff
+    halos = Base.get_extension(WaterLily, :WaterLilyMPIExt).halos
+    copyto! = Base.get_extension(WaterLily, :WaterLilyMPIExt).copyto!
+    fill_send! = Base.get_extension(WaterLily, :WaterLilyMPIExt).fill_send!
+    for N ∈ [(16,8)] # not yet 3D
+        for T in [Float32]
+            a = zeros(T,N) |> MPIArray; a .= 1.0
+            @test isa(a, MPIArray) && all(a .== 1.0)
+            @test length(a.send[1])==length(a.send[2])==(length(N)-1)*2prod(ntuple(i->N[i],length(N)-1))
+            a .= reshape(collect(1:prod(N)),N)
+            a.send[1] .= 0; a.send[2] .= 0
+            b = copy(a)
+            @test all(a .== b) && size(a) == N && length(a) == prod(N) && ndims(a) == length(N) &&
+                  eltype(a) == T && eltype(a.send[1]) == T && eltype(a.send[2]) == T
+            # test halo filling
+            fill_send!(a,1,Val(:Scalar))
+            # check that they contain the right things
+            @test all(reshape(a.send[1][1:2N[2]],(2,:)) .≈ a[buff(N,-1)]) # left
+            @test all(reshape(a.send[2][1:2N[2]],(2,:)) .≈ a[buff(N,+1)]) # right
+            fill_send!(a,2,Val(:Scalar)) # same but fill in the other way
+            @test all(reshape(a.send[1][1:2N[1]],(:,2)) .≈ a[buff(N,-2)]) # bottom
+            @test all(reshape(a.send[2][1:2N[1]],(:,2)) .≈ a[buff(N,+2)]) # top
+            # reset the recv halos
+            a.recv[1] .= 888.; a.recv[2] .= 999.
+            copyto!(a,-1,Val(:Scalar))
+            copyto!(a,+1,Val(:Scalar))
+            @test all(a[halos(N,-1)] .≈ 888.) && all(a[halos(N,+1)] .≈ 999.)
+            copyto!(a,-2,Val(:Scalar))
+            copyto!(a,+2,Val(:Scalar))
+            @test all(a[halos(N,-2)] .≈ 888.) && all(a[halos(N,+2)] .≈ 999.)
+            # vector test
+            v = zeros(T,(N...,length(N))) |> MPIArray; v.send[1] .= 0; v.send[2] .= 0
+            v[:,:,1] .= reshape(collect(1:prod(N)),N)
+            v[:,:,2] .= reshape(collect(prod(N):-1:1),N)
+            fill_send!(v,1,Val(:Vector))
+            @test all(reshape(v.send[1][1:4N[2]],(2,N[2],2)) .≈ v[buff(N,-1),:]) # left
+            @test all(reshape(v.send[2][1:4N[2]],(2,N[2],2)) .≈ v[buff(N,+1),:]) # left
+            fill_send!(v,2,Val(:Vector))
+            @test all(reshape(v.send[1][1:4N[1]],(N[1],2,2)) .≈ v[buff(N,-2),:]) # bottom
+            @test all(reshape(v.send[2][1:4N[1]],(N[1],2,2)) .≈ v[buff(N,+2),:]) # top
+        end
+    end
+end
 @testset "MPIExt.jl" begin
     Np = 2  # number of processes DO OT CHANGE
     run(`$(mpiexec()) -n $Np $(Base.julia_cmd()) --project=../ mpi_test.jl`)
@@ -430,7 +474,8 @@ using MPI
         data = load("sdf_3_$n.jld2")["data"]
         a = copy(data); a .= 0.; L = 2^6
         f(x)=√sum(abs2,g_loc[1].-0.5+x.-SA[L/2,L/2+2])-L/8
-        @WaterLily.loop a[I] = f(loc(0,I,eltype(a))) over I ∈ CartesianIndices(a)
+        @inline lloc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 2.5 .- 0.5 .* δ(i,I).I)
+        @WaterLily.loop a[I] = f(lloc(0,I,eltype(a))) over I ∈ CartesianIndices(a)
         @test all(data[3:end-2,3:end-2] .≈ a[3:end-2,3:end-2])
     
         # check that halos are gathered correctly

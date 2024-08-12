@@ -2,12 +2,13 @@ using KernelAbstractions: get_backend, @index, @kernel
 
 struct MPIArray{T,N,V<:AbstractArray{T,N},W<:AbstractVector{T}} <: AbstractArray{T,N}
     A :: V
-    send :: W
-    recv :: W
+    send :: Vector{W}
+    recv :: Vector{W}
     function MPIArray(::Type{T}, dims::NTuple{N, Integer}) where {T,N}
-        A = Array{T,N}(undef, dims)
-        send, recv = Array{T}(undef,maximum(dims)),Array{T}(undef,maximum(dims))
-        new{T,N,typeof(A),typeof(send)}(A,send,recv)
+        A = Array{T,N}(undef, dims); M,n = last(dims)==N-1 ? (N-1,dims[1:end-1]) : (1,dims)
+        send = Array{T}(undef,M*2max(prod(n).÷n...))
+        recv = Array{T}(undef,M*2max(prod(n).÷n...))
+        new{T,N,typeof(A),typeof(send)}(A,[send,copy(send)],[recv,copy(recv)])
     end
     MPIArray(A::AbstractArray{T}) where T = (B=MPIArray(T,size(A)); B.A.=A; B)
 end
@@ -25,7 +26,6 @@ Base.similar(A::MPIArray, dims::Tuple) = MPIArray(eltype(A),dims)
 # required for the @loop function
 using KernelAbstractions
 KernelAbstractions.get_backend(A::MPIArray) = KernelAbstractions.get_backend(A.A)
-
 
 @inline CI(a...) = CartesianIndex(a...)
 """
