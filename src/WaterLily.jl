@@ -132,6 +132,15 @@ function restart_sim! end
 # export
 export restart_sim!
 
+#default Plots functions
+function flood end
+function addbody end
+function body_plot! end
+function sim_gif! end
+function plot_logger end
+# export
+export flood,addbody,body_plot!,sim_gif!,plot_logger
+
 #default HYPRE functions
 function HyprePoisson end
 function putback! end
@@ -163,6 +172,7 @@ function __init__()
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
+        @require Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" include("../ext/WaterLilyPlotsExt.jl")
         @require HYPRE = "b5ffcf37-a2bd-41ab-a3da-4bd9bc8ad771" include("../ext/WaterLilyHYPREExt.jl")
         @require GeometricMultigrid = "ec3bce20-3e4b-4d8a-a801-89defc82be1c" include("../ext/WaterLilyGeometricMultigridExt.jl")
     end
