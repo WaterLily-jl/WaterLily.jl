@@ -166,7 +166,7 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-function BC!(a,A,saveexit=false,perdir=())
+function BC!(a,A,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
@@ -175,9 +175,9 @@ function BC!(a,A,saveexit=false,perdir=())
         else
             if i==j # Normal direction, Dirichlet
                 for s ∈ (1,2)
-                    @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
+                    @loop a[I,i] = uBC(i,A,I,t) over I ∈ slice(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
+                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,A,I,t) over I ∈ slice(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
                 @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
                 @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
@@ -185,16 +185,20 @@ function BC!(a,A,saveexit=false,perdir=())
         end
     end
 end
+uBC(i,A,I,t) = A[i]
+uBC(i,A::Function,I,t) = A(i,loc(i,I),t)
+
 """
     exitBC!(u,u⁰,U,Δt)
 
 Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
-function exitBC!(u,u⁰,U,Δt)
+function exitBC!(u,u⁰,Δt)
     N,_ = size_u(u)
     exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    U = sum(@views(u[slice(N,2,1,2),1]))      # inflow mass
+    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    ∮u = sum(@views(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
 end
 """

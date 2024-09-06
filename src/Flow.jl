@@ -65,11 +65,11 @@ using EllipsisNotation
 
 Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
 """
-accelerate!(r,dt,g::Function,::Tuple,t=sum(dt)) = for i ∈ 1:last(size(r))
-    r[..,i] .+= g(i,t)
+accelerate!(r,dt,::Tuple,U::Function,t=sum(dt)) = for i ∈ 1:last(size(r))
+    @loop r[I,i] += U(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(r)
 end
-accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(i,t)->ForwardDiff.derivative(τ->U(i,τ),t),())
-accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(i,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,τ),t),())
+accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(),(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
+accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(),(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,dt,::Nothing,::Tuple) = nothing
 """
     BCTuple(U,dt,N)
@@ -112,7 +112,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
-        BC!(u,BCTuple(U,0.,D),exitBC,perdir); exitBC!(u,u,BCTuple(U,0.,D),0.)
+        BC!(u,U,exitBC,perdir); exitBC!(u,u,0.)
         u⁰ = copy(u);
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
@@ -153,18 +153,18 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson) where N
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
-    U = BCTuple(a.U,@view(a.Δt[1:end-1]),N)
+    t = sum(@view(a.Δt[1:end-1]))
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U)
-    BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
-    a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
+    BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t)
+    a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
+    project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     # corrector u → u¹
-    U = BCTuple(a.U,a.Δt,N)
+    t = sum(a.Δt)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     accelerate!(a.f,a.Δt,a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
-    project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
+    project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
