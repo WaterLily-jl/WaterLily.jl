@@ -196,9 +196,9 @@ Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 function exitBC!(u,u⁰,Δt)
     N,_ = size_u(u)
     exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    U = sum(@views(u[slice(N,2,1,2),1]))      # inflow mass
+    U = sum(@view(u[slice(N,2,1,2),1]))/length(exitR) # inflow mass flux
     @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(@views(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
+    ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
 end
 """
