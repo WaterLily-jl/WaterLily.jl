@@ -70,14 +70,8 @@ accelerate!(r,dt,::Tuple,U::Function,t=sum(dt)) = for i ∈ 1:last(size(r))
 end
 accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(),(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(),(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
+accelerate!(r,dt,g::Function,::Tuple) = accelerate!(r,dt,(),(i,x,t)->g(i,t))
 accelerate!(r,dt,::Nothing,::Tuple) = nothing
-"""
-    BCTuple(U,dt,N)
-
-Return BC tuple `U(i∈1:N, t=sum(dt))`.
-"""
-BCTuple(f::Function,dt,N,t=sum(dt))=ntuple(i->f(i,t),N)
-BCTuple(f::Tuple,dt,N)=f
 
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
