@@ -65,13 +65,13 @@ using EllipsisNotation
 
 Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
 """
-accelerate!(r,dt,::Tuple,U::Function,t=sum(dt)) = for i ∈ 1:last(size(r))
-    @loop r[I,i] += U(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(r)
+accelerate!(r,U::Function,t) = for i ∈ 1:last(size(r))
+    @loop r[I,i] += U(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
 end
-accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(),(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
-accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(),(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
-accelerate!(r,dt,g::Function,::Tuple) = accelerate!(r,dt,(),(i,x,t)->g(i,t))
-accelerate!(r,dt,::Nothing,::Tuple) = nothing
+accelerate!(r,t,g::Nothing,U::Function) = accelerate!(r,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t),t)
+accelerate!(r,t,g::Function,U::Function) = accelerate!(r,(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t),t)
+accelerate!(r,t,g::Function,::Tuple) = accelerate!(r,(i,x,t)->g(i,t),t)
+accelerate!(r,t,::Nothing,::Tuple) = nothing
 
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
@@ -149,14 +149,14 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # predictor u → u'
     t = sum(@view(a.Δt[1:end-1]))
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U)
+    accelerate!(a.f,t,a.g,a.U)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     # corrector u → u¹
     t = sum(a.Δt)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,a.Δt,a.g,a.U)
+    accelerate!(a.f,t,a.g,a.U)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     push!(a.Δt,CFL(a))

@@ -42,8 +42,12 @@ using ReadVTK, WriteVTK
         BC!(u,U,true) # save exit values
         @test GPUArrays.@allowscalar all(u[end, :, 1] .== 3)
 
-        WaterLily.exitBC!(u,u,U,0) # conservative exit check
+        WaterLily.exitBC!(u,u,0) # conservative exit check
         @test GPUArrays.@allowscalar all(u[end,2:end-1, 1] .== U[1])
+
+        A = [1.,2.,3]; Af(i,x,t) = i
+        @test all([WaterLily.uBC(i,A,CartesianIndex(1,1,1),0) for i in 1:3] .== A)
+        @test all([WaterLily.uBC(i,Af,CartesianIndex(1,1,1),0) for i in 1:3] .== A)
 
         BC!(u,U,true,(2,)) # periodic in y and save exit values
         @test GPUArrays.@allowscalar all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
@@ -154,9 +158,6 @@ end
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
     @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
-    @test all(WaterLily.BCTuple((1,2,3),[0],3).==WaterLily.BCTuple((i,t)->i,0,3))
-    @test all(WaterLily.BCTuple((i,t)->t,[1.234],3).==ntuple(i->1.234,3))
-
     # check applying acceleration
     for f ∈ arrays
         N = 4; a = zeros(N,N,2) |> f
@@ -164,9 +165,9 @@ end
         @test all(a .== 0)
         WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,())
         @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
-        WaterLily.accelerate!(a,[1],nothing,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,[1],nothing,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
     end
     # Impulsive flow in a box
