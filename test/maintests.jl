@@ -161,13 +161,13 @@ end
     # check applying acceleration
     for f ∈ arrays
         N = 4; a = zeros(N,N,2) |> f
-        WaterLily.accelerate!(a,[1],nothing,())
+        WaterLily.accelerate!(a,1,nothing,())
         @test all(a .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,())
+        WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t,())
         @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
-        WaterLily.accelerate!(a,[1],nothing,(i,x,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1,nothing,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
     end
     # Impulsive flow in a box
