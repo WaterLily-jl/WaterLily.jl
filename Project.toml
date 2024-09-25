@@ -1,7 +1,7 @@
 name = "WaterLily"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
-version = "1.2"
+version = "1.2.0"
 
 [deps]
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
@@ -18,12 +18,14 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 [weakdeps]
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [extensions]
 WaterLilyAMDGPUExt = "AMDGPU"
 WaterLilyCUDAExt = "CUDA"
+WaterLilyMPIExt = "MPI"
 WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = "WriteVTK"
 
@@ -41,9 +43,12 @@ julia = "1.6"
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 Makie = "537997a7-5e4e-5d89-9595-2241ea00577e"
 PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
@@ -53,4 +58,5 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK"]
+test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "MPI",
+        "FileIO", "JLD2"]

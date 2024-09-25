@@ -6,7 +6,7 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc
+export L₂,BC!,@inside,inside,δ,apply!,loc,MPIArray
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
@@ -55,17 +55,17 @@ Constructor for a WaterLily.jl simulation:
 
 See files in `examples` folder for examples.
 """
-mutable struct Simulation
+mutable struct Simulation{D,T,S}
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
-    flow :: Flow
+    flow :: Flow{D,T,S}
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, u_BC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
-                        T=Float32, mem=Array) where N
+                        T=Float32, mem=Array, psolver=MultiLevelPoisson) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
         isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zero(T)),N)).==T) "`u_BC` is not type stable"
@@ -73,7 +73,7 @@ mutable struct Simulation
         U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
         flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
+        new{N,T,typeof(flow.p)}(U,L,ϵ,flow,body,psolver(flow.p,flow.μ₀,flow.σ;perdir))
     end
 end
 
@@ -125,13 +125,23 @@ function write! end
 function default_attrib end
 function pvd_collection end
 # export
-export vtkWriter, write!, default_attrib
+export vtkWriter,write!,default_attrib
 
 # default ReadVTK functions
 function restart_sim! end
 # export
 export restart_sim!
 
+# # @TODO add default MPI function
+function init_mpi end
+function me end
+function global_loc end
+function mpi_grid end
+function mpi_dims end
+function finalize_mpi end
+function get_extents end
+# export
+export init_mpi,me,global_loc,mpi_grid,mpi_dims,finalize_mpi,get_extents
 # Check number of threads when loading WaterLily
 """
     check_nthreads(::Val{1})
@@ -154,6 +164,7 @@ function __init__()
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
+        @require MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195" include("../ext/WaterLilyMPIExt.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end

@@ -1,5 +1,32 @@
 using KernelAbstractions: get_backend, @index, @kernel
 
+struct MPIArray{T,N,V<:AbstractArray{T,N},W<:AbstractVector{T}} <: AbstractArray{T,N}
+    A :: V
+    send :: Vector{W}
+    recv :: Vector{W}
+    function MPIArray(::Type{T}, dims::NTuple{N, Integer}) where {T,N}
+        A = Array{T,N}(undef, dims); M,n = last(dims)==N-1 ? (N-1,dims[1:end-1]) : (1,dims)
+        send = Array{T}(undef,M*2max(prod(n).÷n...))
+        recv = Array{T}(undef,M*2max(prod(n).÷n...))
+        new{T,N,typeof(A),typeof(send)}(A,[send,copy(send)],[recv,copy(recv)])
+    end
+    MPIArray(A::AbstractArray{T}) where T = (B=MPIArray(T,size(A)); B.A.=A; B)
+end
+export MPIArray
+for fname in (:size, :length, :ndims, :eltype) # how to write 4 lines of code in 5...
+    @eval begin
+        Base.$fname(A::MPIArray) = Base.$fname(A.A)
+    end
+end
+Base.getindex(A::MPIArray, i...)       = Base.getindex(A.A, i...)
+Base.setindex!(A::MPIArray, v, i...)   = Base.setindex!(A.A, v, i...)
+Base.copy(A::MPIArray)                 = MPIArray(A)
+Base.similar(A::MPIArray)              = MPIArray(eltype(A),size(A))
+Base.similar(A::MPIArray, dims::Tuple) = MPIArray(eltype(A),dims)
+# required for the @loop function
+using KernelAbstractions
+KernelAbstractions.get_backend(A::MPIArray) = KernelAbstractions.get_backend(A.A)
+
 @inline CI(a...) = CartesianIndex(a...)
 """
     CIj(j,I,jj)
@@ -19,9 +46,9 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 """
     inside(a)
 
-Return CartesianIndices range excluding a single layer of cells on all boundaries.
+Return CartesianIndices range excluding the double layer of cells on all boundaries.
 """
-@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
+@inline inside(a::AbstractArray;buff=2) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
 """
     inside_u(dims,j)
@@ -30,10 +57,10 @@ Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _vector_ array on face `j` with size `dims`.
 """
 function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
+    CartesianIndices(ntuple( i-> i==j ? (4:dims[i]-2) : (3:dims[i]-1), N))
 end
-@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
-@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(2:i-1),size(u)[1:end-1]))
+@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(3:i-2),dims)...,1:N))
+@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(3:i-2),Base.front(size(u))))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
@@ -129,12 +156,16 @@ rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 
 using StaticArrays
 """
-    loc(i,I) = loc(Ii)
+loc(i,I) = loc(Ii)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
+grid_loc(arg) = 0 # no offset in serial
+global_loc() = grid_loc(Val(:WaterLily_MPIExt))
+master(arg) = true # always on master in serial
+master() = master(Val(:WaterLily_MPIExt))
+@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(global_loc() .+ I.I .- 2.5 .- 0.5 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
@@ -170,17 +201,23 @@ function BC!(a,A,saveexit=false,perdir=())
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+            #@TODO make sure this is correct
+            @loop a[I,i] = a[CIj(j,I,N[j]-3),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,N[j]-2),i] over I ∈ slice(N,2,j)
+            @loop a[I,i] = a[CIj(j,I,3),i] over I ∈ slice(N,N[j]-1,j)
+            @loop a[I,i] = a[CIj(j,I,4),i] over I ∈ slice(N,N[j],j)
         else
             if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2)
+                for s ∈ (1,2,3)
                     @loop a[I,i] = A[i] over I ∈ slice(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
+                (!saveexit || i>1) && (@loop a[I,i] = A[i] over I ∈ slice(N,N[j]-1,j);
+                                       @loop a[I,i] = A[i] over I ∈ slice(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
-                @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
-                @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,2,j)
+                @loop a[I,i] = a[I+2δ(j,I),i] over I ∈ slice(N,1,j)
+                @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j]-1,j)
+                @loop a[I,i] = a[I-2δ(j,I),i] over I ∈ slice(N,N[j],j)
             end
         end
     end
@@ -192,9 +229,9 @@ Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
 function exitBC!(u,u⁰,U,Δt)
     N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
+    exitR = slice(N.-2,N[1]-1,1,3)            # exit slice excluding ghosts
     @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    ∮u = sum(@view(u[exitR,1]))/length(exitR)-U[1]   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
 end
 """
@@ -203,8 +240,10 @@ Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+    @loop a[I] = a[CIj(j,I,N[j]-3)] over I ∈ slice(N,1,j)
+    @loop a[I] = a[CIj(j,I,N[j]-2)] over I ∈ slice(N,2,j)
+    @loop a[I] = a[CIj(j,I,3)] over I ∈ slice(N,N[j]-1,j)
+    @loop a[I] = a[CIj(j,I,4)] over I ∈ slice(N,N[j],j)
 end
 """
     interp(x::SVector, arr::AbstractArray)
