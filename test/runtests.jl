@@ -7,10 +7,14 @@ _cuda = check_compiler("nvcc","release")
 _rocm = check_compiler("hipcc","version")
 _cuda && using CUDA
 _rocm && using AMDGPU
+using pocl_jll
+using OpenCL
+
 function setup_backends()
     arrays = [Array]
     _cuda && CUDA.functional() && push!(arrays, CUDA.CuArray)
     _rocm && AMDGPU.functional() && push!(arrays, AMDGPU.ROCArray)
+    push!(arrays, OpenCL.CLArray)
     return arrays
 end
 
