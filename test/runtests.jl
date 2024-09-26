@@ -16,3 +16,4 @@ end
 
 arrays = setup_backends()
 Threads.nthreads() > 1 ? include("maintests.jl") : include("alloctest.jl")
+include("pressure_solver_test.jl")
