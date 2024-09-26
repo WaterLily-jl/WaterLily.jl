@@ -2,7 +2,7 @@ using KernelAbstractions: get_backend, @index, @kernel
 using LoggingExtras
 
 # custom log macro
-_psolver = Logging.LogLevel(123) # custom log level for pressure solver
+_psolver = Logging.LogLevel(-123) # custom log level for pressure solver, needs the negative sign
 macro log(exs...)
     quote
         @logmsg _psolver $(map(x -> esc(x), exs)...)
