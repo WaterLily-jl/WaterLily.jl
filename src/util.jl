@@ -1,4 +1,27 @@
 using KernelAbstractions: get_backend, @index, @kernel
+using LoggingExtras
+
+# custom log macro
+_psolver = Logging.LogLevel(-123) # custom log level for pressure solver, needs the negative sign
+macro log(exs...)
+    quote
+        @logmsg _psolver $(map(x -> esc(x), exs)...)
+    end
+end
+"""
+    logger(fname="WaterLily")
+
+Set up a logger to write the pressure solver data to a logging file named `WaterLily.log`.
+"""
+function logger(fname::String="WaterLily")
+    ENV["JULIA_DEBUG"] = all
+    logger = FormatLogger(ifelse(fname[end-3:end]==".log",fname[1:end-4],fname)*".log"; append=false) do io, args
+        args.level == _psolver && print(io, args.message)
+    end;
+    global_logger(logger);
+    # put header in file
+    @log "p/c, iter, r∞, r₂\n"
+end
 
 @inline CI(a...) = CartesianIndex(a...)
 """
