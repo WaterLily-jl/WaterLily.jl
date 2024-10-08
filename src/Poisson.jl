@@ -158,16 +158,14 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
+function solver!(p::Poisson;tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)
-    log && (res = [r₂])
-    nᵖ=0
-    while r₂>tol && nᵖ<itmx
-        smooth!(p); r₂ = L₂(p)
-        log && push!(res,r₂)
-        nᵖ+=1
+    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+    while nᵖ<itmx
+        smooth!(p); r₂ = L₂(p); nᵖ+=1
+        @log ", $nᵖ, $(L∞(p)), $r₂\n"
+        r₂<tol && break
     end
     perBC!(p.x,p.perdir)
     push!(p.n,nᵖ)
-    log && return res
 end
