@@ -25,7 +25,7 @@ The time step is also updated to match the time step of the vtk file, such that
 the simulation can be restarted and continued.
 """
 squeeze(a::AbstractArray) = dropdims(a,dims=tuple(findall(size(a).==1)...))
-function restart_sim!(a::Simulation;fname::String="WaterLily.pvd",attrib=default_attrib())
+function restart_sim!(a::AbstractSimulation;fname::String="WaterLily.pvd",attrib=default_attrib())
     vtk = VTKFile(PVDFile(fname).vtk_filenames[end])
     extent = filter(!iszero,ReadVTK.get_whole_extent(vtk)[2:2:end]); 
     # check dimensions match
