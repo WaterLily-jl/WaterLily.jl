@@ -72,6 +72,13 @@ accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(i,t)->ForwardDiff.d
 accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(i,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,τ),t),())
 accelerate!(r,dt,::Nothing,::Tuple) = nothing
 """
+    body_force!(r,force)
+
+Adds a body force to the RHS
+"""
+body_force!(_,::Nothing) = nothing
+body_force!(r,force::AbstractArray) = r .+= force
+"""
     BCTuple(U,dt,N)
 
 Return BC tuple `U(i∈1:N, t=sum(dt))`.
@@ -150,11 +157,12 @@ end
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson; CFL_f=CFL) where N
+@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson; bf=nothing, CFL_f=CFL) where N
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
     U = BCTuple(a.U,@view(a.Δt[1:end-1]),N)
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    body_force!(a.f,bf)
     accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U)
     BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
     a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
@@ -162,6 +170,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # corrector u → u¹
     U = BCTuple(a.U,a.Δt,N)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
+    body_force!(a.f,bf)
     accelerate!(a.f,a.Δt,a.g,a.U)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
     project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
