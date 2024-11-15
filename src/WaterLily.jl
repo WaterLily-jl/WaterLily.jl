@@ -97,7 +97,7 @@ Can be set to `false` for static geometries to speed up simulation.
 function sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),bf=nothing,CFL_f=CFL,verbose=false)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, CFL_f)
+        sim_step!(sim; remeasure, bf, CFL_f)
         verbose && println("tU/L=",round(sim_time(sim),digits=4),
             ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
