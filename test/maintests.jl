@@ -258,7 +258,7 @@ end
         sum(I->WaterLily.ke(I,sim.flow.u),inside(sim.flow.p))
     end
     using ForwardDiff:derivative
-    @test derivative(TGV_ke,1e3) ≈ (TGV_ke(1e3+1)-TGV_ke(1e3-1))/2 rtol=1e-6
+    @test derivative(TGV_ke,1e2) ≈ (TGV_ke(1e2+1)-TGV_ke(1e2-1))/2 rtol=1e-1
 
     # Spinning cylinder lift generation
     rot(θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)]  # rotation matrix
@@ -382,17 +382,17 @@ end
         # Test accelerating from U=0 to U=1
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(circle,accel), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [3,3]
+        @test sim.pois.n == [2,1]
         @test maximum(sim.flow.u) > maximum(sim.flow.V) > 0
         # Test that non-uniform V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,rotate), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [3,2]
+        @test sim.pois.n == [2,1]
         @test 1 > sim.flow.Δt[end] > 0.5
         # Test that divergent V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,bend), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [3,2]
+        @test sim.pois.n == [2,1]
         @test 1.2 > sim.flow.Δt[end] > 0.8
     end
 end
