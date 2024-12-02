@@ -300,6 +300,21 @@ end
         )
     end
 end
+
+@testset "Circle in accelerating flow" begin
+    for f ∈ arrays
+        make_accel_circle(radius=32,H=16) = Simulation(radius.*(2H,2H), 
+            (i,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
+            body=AutoBody((x,t)->√sum(abs2,x .-H*radius)-radius))
+        sim = make_accel_circle(); sim_step!(sim)
+        @test isapprox(WaterLily.pressure_force(sim)/(π*sim.L^2),[-1,0],atol=0.04)
+        @test maximum(sim.flow.u)/sim.flow.u[2,2,1] > 1.91 # ≈ 2U
+        foreach(i->sim_step!(sim),1:3)
+        @test all(sim.pois.n .≤ 2)
+        @test !any(isnan.(sim.pois.n))
+    end
+end
+
 import WaterLily: ×
 @testset "Metrics.jl" begin
     J = CartesianIndex(2,3,4); x = loc(0,J,Float64); px = prod(x)
