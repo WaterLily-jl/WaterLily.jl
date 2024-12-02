@@ -160,6 +160,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson; bf=nothing, CFL_f=CFL) where N
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
+    @log "p"
     U = BCTuple(a.U,@view(a.Δt[1:end-1]),N)
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
     body_force!(a.f,bf)
@@ -168,6 +169,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
     # corrector u → u¹
+    @log "c"
     U = BCTuple(a.U,a.Δt,N)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     body_force!(a.f,bf)
