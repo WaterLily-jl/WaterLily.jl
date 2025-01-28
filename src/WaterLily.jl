@@ -147,7 +147,7 @@ export flood,addbody,body_plot!,sim_gif!,plot_logger
     check_nthreads(::Val{1})
 
 Check the number of threads available for the Julia session that loads WaterLily.
-A warning is shown when running in serial (`JULIA_NUM_THREADS=1``).
+A warning is shown when running in serial (`JULIA_NUM_THREADS=1`).
 """
 check_nthreads(::Val{1}) = @warn("\nUsing WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because \
     it disables the GPU backend and defaults to serial CPU."*
