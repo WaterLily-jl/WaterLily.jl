@@ -151,21 +151,28 @@ Integrate the `Flow` one time step using the [Boundary Data Immersion Method](ht
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson) where N
-    a.u⁰ .= a.u; scale_u!(a,0); U = BCTuple(a.U,a.Δt,N)
+    NVTX.@range "copy_u0!" begin a.u⁰ .= a.u end
+    NVTX.@range "scale_u!" begin scale_u!(a,0) end
+    NVTX.@range "BCTuple" begin U = BCTuple(a.U,a.Δt,N) end
     # predictor u → u'
     @log "p"
-    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U)
-    BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
-    a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
+    NVTX.@range "conv_diff!" begin conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir) end
+    NVTX.@range "accelerate!" begin accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U) end
+    NVTX.@range "BDIM!" begin BDIM!(a) end
+    NVTX.@range "BC!" begin BC!(a.u,U,a.exitBC,a.perdir) end
+    NVTX.@range "exitBC!" begin a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) end # convective exit
+    NVTX.@range "project!" begin project!(a,b) end
+    NVTX.@range "BC!" begin BC!(a.u,U,a.exitBC,a.perdir) end
     # corrector u → u¹
     @log "c"
-    conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,a.Δt,a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
-    project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
-    push!(a.Δt,CFL(a))
+    NVTX.@range "conv_diff!" begin conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir) end
+    NVTX.@range "accelerate!" begin accelerate!(a.f,a.Δt,a.g,a.U) end
+    NVTX.@range "BDIM!" begin BDIM!(a) end
+    NVTX.@range "scale_u!" begin scale_u!(a,0.5) end
+    NVTX.@range "BC!" begin BC!(a.u,U,a.exitBC,a.perdir) end
+    NVTX.@range "project!" begin project!(a,b,0.5) end
+    NVTX.@range "BC!" begin BC!(a.u,U,a.exitBC,a.perdir) end
+    NVTX.@range "CFL!" begin push!(a.Δt,CFL(a)) end
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 

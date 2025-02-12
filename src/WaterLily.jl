@@ -3,7 +3,7 @@ $(README)
 """
 module WaterLily
 
-using DocStringExtensions
+using DocStringExtensions, NVTX
 
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc,@log
@@ -104,7 +104,7 @@ function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typema
     end
 end
 function sim_step!(sim::AbstractSimulation;remeasure=true)
-    remeasure && measure!(sim)
+    NVTX.@range "measure!" begin remeasure && measure!(sim) end
     mom_step!(sim.flow,sim.pois)
 end
 
