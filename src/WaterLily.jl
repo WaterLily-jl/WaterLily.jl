@@ -94,17 +94,17 @@ Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `remeasure=true`, the body is remeasured at every time step.
 Can be set to `false` for static geometries to speed up simulation.
 """
-function sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false)
+function sim_step!(sim::Simulation,t_end;remeasure=true,max_steps=typemax(Int),body_force=nothing,verbose=false)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure)
+        sim_step!(sim; remeasure, body_force)
         verbose && println("tU/L=",round(sim_time(sim),digits=4),
             ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
 end
-function sim_step!(sim::Simulation;remeasure=true)
+function sim_step!(sim::Simulation;remeasure=true,body_force=nothing)
     remeasure && measure!(sim)
-    mom_step!(sim.flow,sim.pois)
+    mom_step!(sim.flow, sim.pois; body_force)
 end
 
 """

@@ -61,18 +61,28 @@ upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I
 
 using EllipsisNotation
 """
-    accelerate!(r,dt,g)
+    accelerate!(r,t,g)
 
 Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
 """
-accelerate!(r,U::Function,t) = for i ∈ 1:last(size(r))
-    @loop r[I,i] += U(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
+accelerate!(r,g::Function,t) = for i ∈ 1:last(size(r))
+    @loop r[I,i] += g(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
 end
 accelerate!(r,t,g::Nothing,U::Function) = accelerate!(r,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t),t)
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t),t)
 accelerate!(r,t,g::Function,::Tuple) = accelerate!(r,(i,x,t)->g(i,t),t)
 accelerate!(r,t,::Nothing,::Tuple) = nothing
+"""
+    body_force!(r,force,t)
 
+Adds a body force to the RHS
+
+- `force` is either a vector field or a function `f(i,x,t)` that returns the component
+  `i` of the vector field at time `t` and position `x`.
+"""
+body_force!(r,::Nothing,t=0) = nothing
+body_force!(r,force::AbstractArray,t=0) = r .+= force
+body_force!(r,force::Function,t) = accelerate!(r,force,t)
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
@@ -144,11 +154,12 @@ end
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson) where N
+@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;body_force=nothing) where N
     a.u⁰ .= a.u; scale_u!(a,0)
     # predictor u → u'
     t = sum(@view(a.Δt[1:end-1]))
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    body_force!(a.f,body_force,t)
     accelerate!(a.f,t,a.g,a.U)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
@@ -156,6 +167,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # corrector u → u¹
     t = sum(a.Δt)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
+    body_force!(a.f,body_force,t)
     accelerate!(a.f,t,a.g,a.U)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
