@@ -61,16 +61,13 @@ upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I
 
 using EllipsisNotation
 """
-    accelerate!(r,t,g)
+    accelerate!(r,t,g,U)
 
 Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
 """
-accelerate!(r,g::Function,t) = for i ∈ 1:last(size(r))
-    @loop r[I,i] += g(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
-end
-accelerate!(r,t,g::Nothing,U::Function) = accelerate!(r,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t),t)
-accelerate!(r,t,g::Function,U::Function) = accelerate!(r,(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t),t)
-accelerate!(r,t,g::Function,::Tuple) = accelerate!(r,(i,x,t)->g(i,t),t)
+accelerate!(r,t,g::Nothing,U::Function) = body_force!(r,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t),t)
+accelerate!(r,t,g::Function,U::Function) = body_force!(r,(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t),t)
+accelerate!(r,t,g::Function,::Tuple) = body_force!(r,(i,x,t)->g(i,t),t)
 accelerate!(r,t,::Nothing,::Tuple) = nothing
 """
     body_force!(r,force,t)
@@ -82,7 +79,9 @@ Adds a body force to the RHS
 """
 body_force!(r,::Nothing,t=0) = nothing
 body_force!(r,force::AbstractArray,t=0) = r .+= force
-body_force!(r,force::Function,t) = accelerate!(r,force,t)
+body_force!(r,force::Function,t) = for i ∈ 1:last(size(r))
+    @loop r[I,i] += force(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
+end
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 

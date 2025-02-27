@@ -178,17 +178,17 @@ end
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
         # check applying body force
         b = zeros(N,N,2) |> f; bf = ones(N,N,2) |> f
-        WaterLily.body_force!(b,nothing)
+        WaterLily.body_force!(b, nothing)
         @test all(b .== 0)
         WaterLily.body_force!(b, bf)
         @test all(b .== 1)
         apply!((i,x)->x[i], bf)
         WaterLily.body_force!(b, bf)
-        a .= 0 # reset
-        WaterLily.accelerate!(a,(i,x,t)->x[i]+1.0,1.)
+        a .= 0 # reset and accelerate using a non-uniform velocity field
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
         @test all(b .== a)
         WaterLily.body_force!(b,(i,x,t)->x[i]+1.0,1.)
-        WaterLily.accelerate!(a,(i,x,t)->x[i]+1.0,1.)
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
         @test all(b .== a)
     end
     # Impulsive flow in a box
