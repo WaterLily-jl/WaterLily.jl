@@ -4,6 +4,7 @@
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
 [![CI](https://github.com/WaterLily-jl/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/WaterLily-jl/WaterLily.jl/actions)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
+[![DOI](https://zenodo.org/badge/DOI/10.48550/arXiv.2407.16032.svg)](https://doi.org/10.48550/arXiv.2407.16032)
 
 ![Julia flow](assets/julia.gif)
 
@@ -11,7 +12,7 @@
 
 **WaterLily.jl** is a simple and fast fluid simulator written in pure Julia. This project is supported by awesome libraries developed within the Julia scientific community, and it aims to accelerate and enhance fluid simulations. Watch the JuliaCon2024 talk here:
 
-[![JuliaCon2024 still and link](assets/JuliaCon2024.png)](https://www.youtube.com/live/qru5G5Yp77E?t=29074s)
+[![JuliaCon2024 still and link](assets/JuliaCon2024.png)](https://www.youtube.com/watch?v=FwMh2rq9kOU)
 
 If you have used WaterLily for research, please __cite us__! The [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) describes the main features of the solver and provides benchmarking, validation, and profiling results.
 ```
@@ -42,14 +43,14 @@ function circle(n,m;Re=100,U=1)
     radius, center = m/8, m/2-1
     sdf(x,t) = √sum(abs2, x .- center) - radius
 
-    Simulation((n,m),   # domain size 
+    Simulation((n,m),   # domain size
                (U,0),   # domain velocity (& velocity scale)
                2radius; # length scale
-               ν=U*2radius/Re,     # fluid viscosity 
+               ν=U*2radius/Re,     # fluid viscosity
                body=AutoBody(sdf)) # geometry
 end
 ```
-The circle geometry is defined using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameters of the body automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Donut.jl) or the [Julia logo](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/TwoD_Julia.jl). For more complex geometries, [ParametricBodies.jl](https://github.com/WaterLily-jl/ParametricBodies.jl) defines a `body` using any parametric curve, such as a spline. See that repo (and the video above) for examples. 
+The circle geometry is defined using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameters of the body automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Donut.jl) or the [Julia logo](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/TwoD_Julia.jl). For more complex geometries, [ParametricBodies.jl](https://github.com/WaterLily-jl/ParametricBodies.jl) defines a `body` using any parametric curve, such as a spline. See that repo (and the video above) for examples.
 
 The code block above return a `Simulation` with the parameters we've defined. Now we can initialize a simulation (first line) and step it forward in time (second line)
 ```julia
@@ -66,9 +67,9 @@ contourf(u') # transpose the array for the plot
 ```
 ![Initial velocity field](assets/u0.png)
 
-As you can see, the velocity within the circle is zero, the velocity far from the circle is one, and there are accelerated and decelerated regions around the circle. The `sim_step!` has only taken a single time step, and this initial flow around our circle looks similar to the potential flow because the viscous boundary layer has not separated yet. 
+As you can see, the velocity within the circle is zero, the velocity far from the circle is one, and there are accelerated and decelerated regions around the circle. The `sim_step!` has only taken a single time step, and this initial flow around our circle looks similar to the potential flow because the viscous boundary layer has not separated yet.
 
-A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the force on the immersed body. The function is applied over a time range, and the forces are plotted. 
+A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the force on the immersed body. The function is applied over a time range, and the forces are plotted.
 ```Julia
 function get_forces!(sim,t)
     sim_step!(sim,t,remeasure=false)
@@ -81,7 +82,7 @@ time = 1:0.1:50 # time scale is sim.L/sim.U
 forces = [get_forces!(circ,t) for t in time];
 
 #Plot it
-plot(time,[first.(forces), last.(forces)], 
+plot(time,[first.(forces), last.(forces)],
     labels=permutedims(["drag","lift"]),
     xlabel="tU/L",
     ylabel="Pressure force coefficients")
@@ -109,7 +110,7 @@ As you can see, WaterLily correctly predicts that the flow is unsteady, with an 
 
 WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) to multi-thread on CPU and run on GPU backends. The implementation method and speed-up are documented in the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend), with costs as low as 1.44 nano-seconds measured per degree of freedom and time step!
 
-Note that multi-threading requires _starting_ Julia with the `--threads` argument, see [the multi-threading section](https://docs.julialang.org/en/v1/manual/multi-threading/) of the manual. If you are running Julia with multiple threads, KernelAbstractions will detect this and multi-thread the loops automatically. 
+Note that multi-threading requires _starting_ Julia with the `--threads` argument, see [the multi-threading section](https://docs.julialang.org/en/v1/manual/multi-threading/) of the manual. If you are running Julia with multiple threads, KernelAbstractions will detect this and multi-thread the loops automatically.
 
 Running on a GPU requires initializing the `Simulation` memory on the GPU, and care needs to be taken to move the data back to the CPU for visualization. As an example, let's compare a **3D** GPU simulation of a sphere to the **2D** multi-threaded CPU circle defined above
 ```Julia
@@ -123,7 +124,7 @@ function sphere(n,m;Re=100,U=1,T=Float64,mem=Array)
                 mem) # memory type
 end
 
-@assert CUDA.functional()      # is your CUDA GPU working?? 
+@assert CUDA.functional()      # is your CUDA GPU working??
 GPUsim = sphere(3*2^5,2^6;T=Float32,mem=CuArray); # 3D GPU sim!
 println(length(GPUsim.flow.u)) # 1.3M degrees-of freedom!
 sim_step!(GPUsim)              # compile GPU code & run one step

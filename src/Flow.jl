@@ -154,9 +154,9 @@ Integrate the `Flow` one time step using the [Boundary Data Immersion Method](ht
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;body_force=nothing) where N
-    a.u⁰ .= a.u; scale_u!(a,0)
+    a.u⁰ .= a.u; scale_u!(a,0); t = sum(@view(a.Δt[1:end-1]))
     # predictor u → u'
-    t = sum(@view(a.Δt[1:end-1]))
+    @log "p"
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
     body_force!(a.f,body_force,t)
     accelerate!(a.f,t,a.g,a.U)
@@ -164,6 +164,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t)
     # corrector u → u¹
+    @log "c"
     t = sum(a.Δt)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     body_force!(a.f,body_force,t)
