@@ -69,16 +69,15 @@ mutable struct Simulation <: AbstractSimulation
                         T=Float32, mem=Array) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
-        uλ = (isnothing(uλ) && !isa(u_BC,Function)) ? (i,x)->u_BC[i] : uλ
-        if hasmethod(u_BC, Tuple{Int,Number}) # uniform case
-            @assert all(typeof.(ntuple(i->u_BC(i,zero(T)),N)).==T) "`u_BC` is not type stable"
-            uλ = (i,x)->u_BC(i,zero(T))
-        elseif hasmethod(u_BC, Tuple{Int,SVector,Number}) # non-uniform case
-            @assert all(typeof.(ntuple(i->u_BC(i,zeros(SVector{N}),zero(T)),N)).==T) "`u_BC` is not type stable"
-            uλ = (i,x)->u_BC(i,x,zero(T))
-        end
+        hasmethod(u_BC,Tuple{Int,Number}) && (uBC(i,x,t) = u_BC(i,t))
+        hasmethod(u_BC,Tuple{Int,SVector,Number}) && (uBC(i,x,t) = u_BC(i,x,t))
+        # u_BC = hasmethod(u_BC,Tuple{Int,Number}) ? (tmp=u_BC; (i,x,t)->tmp(i,t)) : u_BC # map to non-uniform case
+        # @show hasmethod(u_BC,Tuple{Int,Number})
+        # @show hasmethod(u_BC,Tuple{Int,SVector,Number})
+        isa(u_BC,Function) && @assert all(typeof.(ntuple(i->uBC(i,zeros(SVector{N}),zero(T)),N)).==T) "`u_BC` is not type stable"
+        uλ = isnothing(uλ) ? ifelse(isa(u_BC,Function),(i,x)->uBC(i,x,zero(T)),(i,x)->u_BC[i]) : uλ
         U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
-        flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
+        flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
     end
