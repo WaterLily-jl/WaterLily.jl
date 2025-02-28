@@ -40,7 +40,7 @@ Constructor for a WaterLily.jl simulation:
 
   - `dims`: Simulation domain dimensions.
   - `u_BC`: Simulation domain velocity boundary conditions, either a
-            tuple `u_BC[i]=uᵢ, i=eachindex(dims)`, or a time-varying function `f(i,t)`
+            tuple `u_BC[i]=uᵢ, i=eachindex(dims)`, or a time and space-varying function `u_BC(i,x,t)`
   - `L`: Simulation length scale.
   - `U`: Simulation velocity scale.
   - `Δt`: Initial time step.
@@ -69,10 +69,15 @@ mutable struct Simulation <: AbstractSimulation
                         T=Float32, mem=Array) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
-        isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zero(T)),N)).==T) "`u_BC` is not type stable"
-        uλ = isnothing(uλ) ? ifelse(isa(u_BC,Function),(i,x)->u_BC(i,0.),(i,x)->u_BC[i]) : uλ
+        hasmethod(u_BC,Tuple{Int,Number}) && (uBC(i,x,t) = u_BC(i,t))
+        hasmethod(u_BC,Tuple{Int,SVector,Number}) && (uBC(i,x,t) = u_BC(i,x,t))
+        # u_BC = hasmethod(u_BC,Tuple{Int,Number}) ? (tmp=u_BC; (i,x,t)->tmp(i,t)) : u_BC # map to non-uniform case
+        # @show hasmethod(u_BC,Tuple{Int,Number})
+        # @show hasmethod(u_BC,Tuple{Int,SVector,Number})
+        isa(u_BC,Function) && @assert all(typeof.(ntuple(i->uBC(i,zeros(SVector{N}),zero(T)),N)).==T) "`u_BC` is not type stable"
+        uλ = isnothing(uλ) ? ifelse(isa(u_BC,Function),(i,x)->uBC(i,x,zero(T)),(i,x)->u_BC[i]) : uλ
         U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
-        flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
+        flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
     end
@@ -95,17 +100,17 @@ Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `remeasure=true`, the body is remeasured at every time step.
 Can be set to `false` for static geometries to speed up simulation.
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false)
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),body_force=nothing,verbose=false)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure)
+        sim_step!(sim; remeasure, body_force)
         verbose && println("tU/L=",round(sim_time(sim),digits=4),
             ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true)
+function sim_step!(sim::AbstractSimulation;remeasure=true,body_force=nothing)
     remeasure && measure!(sim)
-    mom_step!(sim.flow,sim.pois)
+    mom_step!(sim.flow, sim.pois; body_force)
 end
 
 """

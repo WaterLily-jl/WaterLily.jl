@@ -42,8 +42,19 @@ using ReadVTK, WriteVTK
         BC!(u,U,true) # save exit values
         @test GPUArrays.@allowscalar all(u[end, :, 1] .== 3)
 
-        WaterLily.exitBC!(u,u,U,0) # conservative exit check
+        WaterLily.exitBC!(u,u,0) # conservative exit check
         @test GPUArrays.@allowscalar all(u[end,2:end-1, 1] .== U[1])
+
+        # test BC with function
+        Ubc(i,x,t) = i==1 ? 1.0 : 0.5
+        v = rand(Ng..., D) |> f # vector
+        BC!(v,Ubc,false); BC!(u,U,false) # make sure we apply the same
+        @test all(v[1, :, 1] .≈ u[1, :, 1]) && all(v[2, :, 1] .≈ u[2, :, 1]) && all(v[end, :, 1] .≈ u[end, :, 1])
+        @test all(v[:, 1, 2] .≈ u[:, 1, 2]) && all(v[:, 2, 2] .≈ u[:, 2, 2]) && all(v[:, end, 2] .≈ u[:, end, 2])
+        # test exit bc
+        GPUArrays.@allowscalar v[end,:,1] .= 3
+        BC!(v,Ubc,true) # save exit values
+        @test GPUArrays.@allowscalar all(v[end, :, 1] .== 3)
 
         BC!(u,U,true,(2,)) # periodic in y and save exit values
         @test GPUArrays.@allowscalar all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
@@ -154,20 +165,31 @@ end
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
     @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
-    @test all(WaterLily.BCTuple((1,2,3),[0],3).==WaterLily.BCTuple((i,t)->i,0,3))
-    @test all(WaterLily.BCTuple((i,t)->t,[1.234],3).==ntuple(i->1.234,3))
-
     # check applying acceleration
     for f ∈ arrays
         N = 4; a = zeros(N,N,2) |> f
-        WaterLily.accelerate!(a,[1],nothing,())
+        WaterLily.accelerate!(a,1,nothing,())
         @test all(a .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,())
+        WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t,())
         @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
-        WaterLily.accelerate!(a,[1],nothing,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1,nothing,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
+        # check applying body force
+        b = zeros(N,N,2) |> f; bf = ones(N,N,2) |> f
+        WaterLily.body_force!(b, nothing)
+        @test all(b .== 0)
+        WaterLily.body_force!(b, bf)
+        @test all(b .== 1)
+        apply!((i,x)->x[i], bf)
+        WaterLily.body_force!(b, bf)
+        a .= 0 # reset and accelerate using a non-uniform velocity field
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
+        @test all(b .== a)
+        WaterLily.body_force!(b,(i,x,t)->x[i]+1.0,1.)
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
+        @test all(b .== a)
     end
     # Impulsive flow in a box
     U = (2/3, -1/3)
