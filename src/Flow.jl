@@ -154,23 +154,22 @@ Integrate the `Flow` one time step using the [Boundary Data Immersion Method](ht
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;body_force=nothing) where N
-    a.u⁰ .= a.u; scale_u!(a,0); t = sum(@view(a.Δt[1:end-1]))
+    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end] 
     # predictor u → u'
     @log "p"
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    body_force!(a.f,body_force,t)
-    accelerate!(a.f,t,a.g,a.U)
-    BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t)
+    body_force!(a.f,body_force,t₀)
+    accelerate!(a.f,t₀,a.g,a.U)
+    BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t)
+    project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
     # corrector u → u¹
     @log "c"
-    t = sum(a.Δt)
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    body_force!(a.f,body_force,t)
-    accelerate!(a.f,t,a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
-    project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t)
+    body_force!(a.f,body_force,t₁)
+    accelerate!(a.f,t₁,a.g,a.U)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
+    project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))

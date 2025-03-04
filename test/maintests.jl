@@ -326,7 +326,7 @@ end
 @testset "Circle in accelerating flow" begin
     for f ∈ arrays
         make_accel_circle(radius=32,H=16) = Simulation(radius.*(2H,2H),
-            (i,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
+            (i,x,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
             body=AutoBody((x,t)->√sum(abs2,x .-H*radius)-radius))
         sim = make_accel_circle(); sim_step!(sim)
         @test isapprox(WaterLily.pressure_force(sim)/(π*sim.L^2),[-1,0],atol=0.04)
