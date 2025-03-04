@@ -69,10 +69,10 @@ mutable struct Simulation <: AbstractSimulation
                         T=Float32, mem=Array) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
-        isa(u_BC,Function) && @assert hasmethod(u_BC,Tuple{Int,SVector,Number}) "`u_BC` must be a function of (i,x,t)"
+        isa(u_BC,Function) && @assert first(methods(u_BC)).nargs==4 "u_BC as a function need to be defined as u_BC(i,x,t)"
         isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zeros(SVector{N}),zero(T)),N)).==T) "`u_BC` is not type stable"
-        uλ = isnothing(uλ) ? ifelse(isa(u_BC,Function),(i,x)->u_BC(i,x,zero(T)),(i,x)->u_BC[i]) : uλ
-        U = isnothing(U) ? √sum(abs2,u_BC) : U # default if not specified
+        isnothing(uλ) && (uλ = isa(u_BC, Function) ? uλ = (i,x)->u_BC(i,x,zero(T)) : uλ = (i,_)->u_BC[i])
+        isnothing(U) && (U = √sum(abs2,u_BC))
         flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
