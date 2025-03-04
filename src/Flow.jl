@@ -77,8 +77,8 @@ Adds a body force to the RHS
 - `force` is either a vector field or a function `f(i,x,t)` that returns the component
   `i` of the vector field at time `t` and position `x`.
 """
-body_force!(r,::Nothing,t=0) = nothing
-body_force!(r,force::AbstractArray,t=0) = r .+= force
+body_force!(_,::Nothing,_) = nothing
+body_force!(r,force::AbstractArray,_) = r .+= force
 body_force!(r,force::Function,t) = for i ∈ 1:last(size(r))
     @loop r[I,i] += force(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
 end
@@ -153,12 +153,12 @@ end
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;body_force=nothing) where N
+@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;body_force=nothing,udf=nothing,kwargs...) where N
     a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    body_force!(a.f,body_force,t₀)
+    body_force!(a.f,body_force,t₀); udf!(a,udf,t₀; kwargs...)
     accelerate!(a.f,t₀,a.g,a.U)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
@@ -166,7 +166,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # corrector u → u¹
     @log "c"
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    body_force!(a.f,body_force,t₁)
+    body_force!(a.f,body_force,t₁); udf!(a,udf,t₁; kwargs...)
     accelerate!(a.f,t₁,a.g,a.U)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
@@ -185,3 +185,12 @@ end
     end
     return s
 end
+
+"""
+    udf!(flow::Flow,udf::Function,t)
+
+User defined function using `udf::Function` to operate on `flow::Flow` during the predictor and corrector step, in sync with time `t`.
+Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
+"""
+udf!(_,::Nothing,_) = nothing
+udf!(flow::Flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)

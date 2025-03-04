@@ -69,7 +69,7 @@ mutable struct Simulation <: AbstractSimulation
                         T=Float32, mem=Array) where N
         @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
-        isa(u_BC,Function) && @assert first(methods(u_BC)).nargs==4 "u_BC as a function need to be defined as u_BC(i,x,t)"
+        isa(u_BC,Function) && @assert first(methods(u_BC)).nargs==4 "u_BC::Function needs to be defined as u_BC(i,x,t)"
         isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zeros(SVector{N}),zero(T)),N)).==T) "`u_BC` is not type stable"
         isnothing(uλ) && (uλ = isa(u_BC, Function) ? uλ = (i,x)->u_BC(i,x,0) : uλ = (i,_)->u_BC[i])
         isnothing(U) && (U = √sum(abs2,u_BC))
@@ -95,18 +95,20 @@ sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `remeasure=true`, the body is remeasured at every time step.
 Can be set to `false` for static geometries to speed up simulation.
+A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` during the predictor and corrector steps.
+If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),body_force=nothing,verbose=false)
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),body_force=nothing,udf=nothing,verbose=false,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, body_force)
+        sim_step!(sim; remeasure, body_force, udf, kwargs...)
         verbose && println("tU/L=",round(sim_time(sim),digits=4),
             ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,body_force=nothing)
+function sim_step!(sim::AbstractSimulation;remeasure=true,body_force=nothing,udf=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; body_force)
+    mom_step!(sim.flow, sim.pois; body_force, udf, kwargs...)
 end
 
 """

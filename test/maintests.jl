@@ -299,26 +299,39 @@ end
     @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
 end
 
-function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
+function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
     # periodic in x, Neumann in y
     # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
     UScale = √N  # this is also initial U
     # constant jerk in x, zero acceleration in y
     g(i,t) = i==1 ? t*jerk : 0
+    !use_g && (g = nothing)
     return WaterLily.Simulation(
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
     ),jerk
 end
+gravity!(flow::Flow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
+    WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
+end
 @testset "Flow.jl with increasing body force" begin
     for f ∈ arrays
         N = 8
-        sim,jerk = acceleratingFlow(N;mem=f)
+        sim,jerk = acceleratingFlow(N;use_g=true,mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
         uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4
+        )
+
+        # Test with user defined function instead of acceleration
+        sim_udf,_ = acceleratingFlow(N;mem=f)
+        sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
+        uFinal = sim_udf.flow.U[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
+        @test (
+            WaterLily.L₂(u_udf[:,:,1].-uFinal) < 1e-4 &&
+            WaterLily.L₂(u_udf[:,:,2].-0) < 1e-4
         )
     end
 end
