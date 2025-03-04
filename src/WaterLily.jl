@@ -71,7 +71,7 @@ mutable struct Simulation <: AbstractSimulation
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
         isa(u_BC,Function) && @assert first(methods(u_BC)).nargs==4 "u_BC as a function need to be defined as u_BC(i,x,t)"
         isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zeros(SVector{N}),zero(T)),N)).==T) "`u_BC` is not type stable"
-        isnothing(uλ) && (uλ = isa(u_BC, Function) ? uλ = (i,x)->u_BC(i,x,zero(T)) : uλ = (i,_)->u_BC[i])
+        isnothing(uλ) && (uλ = isa(u_BC, Function) ? uλ = (i,x)->u_BC(i,x,0) : uλ = (i,_)->u_BC[i])
         isnothing(U) && (U = √sum(abs2,u_BC))
         flow = Flow(dims,u_BC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
