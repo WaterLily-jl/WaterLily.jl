@@ -63,25 +63,15 @@ using EllipsisNotation
 """
     accelerate!(r,t,g,U)
 
-Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
+Adds a space-time acceleration field g(i,x,t) and velocity field U(i,x,t) such that `rᵢ += gᵢ(i,x,t)+dUᵢ(i,x,t)/dt` at time `t=sum(dt)` to vector field `r`.
 """
-accelerate!(r,t,g::Nothing,U::Function) = body_force!(r,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t),t)
-accelerate!(r,t,g::Function,U::Function) = body_force!(r,(i,x,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,x,τ),t),t)
-accelerate!(r,t,g::Function,::Tuple) = body_force!(r,(i,x,t)->g(i,t),t)
-accelerate!(r,t,::Nothing,::Tuple) = nothing
-"""
-    body_force!(r,force,t)
-
-Adds a body force to the RHS
-
-- `force` is either a vector field or a function `f(i,x,t)` that returns the component
-  `i` of the vector field at time `t` and position `x`.
-"""
-body_force!(_,::Nothing,_) = nothing
-body_force!(r,force::AbstractArray,_) = r .+= force
-body_force!(r,force::Function,t) = for i ∈ 1:last(size(r))
-    @loop r[I,i] += force(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
+accelerate!(_,_,::Nothing,::Union{Nothing,Tuple}) = nothing
+accelerate!(r,t,f) = for i ∈ 1:last(size(r))
+    @loop r[I,i] += f(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
 end
+accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
+accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
@@ -153,12 +143,12 @@ end
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;body_force=nothing,udf=nothing,kwargs...) where N
+@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;udf=nothing,kwargs...) where N
     a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    body_force!(a.f,body_force,t₀); udf!(a,udf,t₀; kwargs...)
+    udf!(a,udf,t₀; kwargs...)
     accelerate!(a.f,t₀,a.g,a.U)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
@@ -166,7 +156,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # corrector u → u¹
     @log "c"
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    body_force!(a.f,body_force,t₁); udf!(a,udf,t₁; kwargs...)
+    udf!(a,udf,t₁; kwargs...)
     accelerate!(a.f,t₁,a.g,a.U)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
     project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)

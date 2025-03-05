@@ -98,17 +98,17 @@ Can be set to `false` for static geometries to speed up simulation.
 A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),body_force=nothing,udf=nothing,verbose=false,kwargs...)
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),udf=nothing,verbose=false,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, body_force, udf, kwargs...)
+        sim_step!(sim; remeasure, udf, kwargs...)
         verbose && println("tU/L=",round(sim_time(sim),digits=4),
             ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,body_force=nothing,udf=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; body_force, udf, kwargs...)
+    mom_step!(sim.flow, sim.pois; udf, kwargs...)
 end
 
 """

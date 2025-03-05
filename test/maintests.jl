@@ -170,24 +170,21 @@ end
         N = 4; a = zeros(N,N,2) |> f
         WaterLily.accelerate!(a,1,nothing,())
         @test all(a .== 0)
-        WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t,())
+        WaterLily.accelerate!(a,1,(i,x,t)->i==1 ? t : 2*t,())
         @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
         WaterLily.accelerate!(a,1,nothing,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-        WaterLily.accelerate!(a,1,(i,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1,(i,x,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-        # check applying body force
-        b = zeros(N,N,2) |> f; bf = ones(N,N,2) |> f
-        WaterLily.body_force!(b, nothing, 0)
-        @test all(b .== 0)
-        WaterLily.body_force!(b, bf, 0)
+        # check applying body force (changes in x but not t)
+        b = zeros(N,N,2) |> f
+        WaterLily.accelerate!(b,0,(i,x,t)->1,nothing)
         @test all(b .== 1)
-        apply!((i,x)->x[i], bf)
-        WaterLily.body_force!(b, bf, 0)
         a .= 0 # reset and accelerate using a non-uniform velocity field
-        WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
+        WaterLily.accelerate!(a,0.,nothing,(i,x,t)->t*(x[i]+1.0))
+        WaterLily.accelerate!(b,0,(i,x,t)->x[i],nothing)
         @test all(b .== a)
-        WaterLily.body_force!(b,(i,x,t)->x[i]+1.0,1.)
+        WaterLily.accelerate!(b,1.,(i,x,t)->x[i]+1.0,nothing)
         WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
         @test all(b .== a)
     end
@@ -304,7 +301,7 @@ function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
     # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
     UScale = √N  # this is also initial U
     # constant jerk in x, zero acceleration in y
-    g(i,t) = i==1 ? t*jerk : 0
+    g(i,x,t) = i==1 ? t*jerk : 0
     !use_g && (g = nothing)
     return WaterLily.Simulation(
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
