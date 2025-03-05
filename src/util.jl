@@ -253,6 +253,7 @@ function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
     end
     return s
 end
+using EllipsisNotation
 function interp(x::SVector{D}, varr::AbstractArray) where {D}
     # Shift to align with each staggered grid component and interpolate
     @inline shift(i) = SVector{D}(ifelse(i==j,0.5,0.0) for j in 1:D)
