@@ -381,16 +381,16 @@ import WaterLily: ×
         # stress tensor
         u₂ = zeros(N,N,2) |> f
         u₃ = zeros(N,N,N,3) |> f
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ 0)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
+        @test GPUArrays.@allowscalar all(WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ 0)
+        @test GPUArrays.@allowscalar all(WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
         apply!((i,x)->x[i],u₂) # uniform gradient
         apply!((i,x)->x[i],u₃)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
+        @test GPUArrays.@allowscalar all(WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
+        @test GPUArrays.@allowscalar all(WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
         apply!((i,x)->x[i%2+1],u₂) # shear
         apply!((i,x)->x[i%3+1],u₃)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
+        @test GPUArrays.@allowscalar all(WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
+        @test GPUArrays.@allowscalar all(WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
         # viscous force
         u₂ .= 0; u₃ .= 0
         @test all(WaterLily.viscous_force(u₂,1.0,df₂,body) .≈ 0)
