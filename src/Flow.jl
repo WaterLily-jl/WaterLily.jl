@@ -64,7 +64,7 @@ upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I
 
 Adds a space-time acceleration field g(i,x,t) and velocity field U(i,x,t) such that `rᵢ += gᵢ(i,x,t)+dUᵢ(i,x,t)/dt` at time `t=sum(dt)` to vector field `r`.
 """
-accelerate!(_,_,::Nothing,::Union{Nothing,Tuple}) = nothing
+accelerate!(r,t,::Nothing,::Union{Nothing,Tuple}) = nothing
 accelerate!(r,t,f) = for i ∈ 1:last(size(r))
     @loop r[I,i] += f(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
 end
@@ -181,5 +181,5 @@ end
 User defined function using `udf::Function` to operate on `flow::Flow` during the predictor and corrector step, in sync with time `t`.
 Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
 """
-udf!(_,::Nothing,_) = nothing
-udf!(flow::Flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)
+udf!(flow,::Nothing,t; kwargs...) = nothing
+udf!(flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)

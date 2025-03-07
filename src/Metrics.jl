@@ -100,12 +100,12 @@ function pressure_force(p,df,body,t=0,T=promote_type(Float64,eltype(p)))
 end
 
 """
-    ∇²u(I::CartesianIndex,u)
+    S(I::CartesianIndex,u)
 
 Rate-of-strain tensor.
 """
-∇²u(I::CartesianIndex{2},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:2, j ∈ 1:2]
-∇²u(I::CartesianIndex{3},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:3, j ∈ 1:3]
+S(I::CartesianIndex{2},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:2, j ∈ 1:2]
+S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:3, j ∈ 1:3]
 """
    viscous_force(sim::Simulation)
 
