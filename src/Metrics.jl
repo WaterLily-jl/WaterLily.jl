@@ -9,6 +9,13 @@ Base.@propagate_inbounds @fastmath function permute(f,i)
     f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
+@fastmath @inline function dot(a,b)
+    init=zero(eltype(a))
+    @inbounds for ij in eachindex(a)
+     init += a[ij] * b[ij]
+    end
+    return init
+end
 
 """
     ke(I::CartesianIndex,u,U=0)
