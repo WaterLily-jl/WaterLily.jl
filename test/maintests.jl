@@ -303,7 +303,7 @@ function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
     # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
     UScale = √N  # this is also initial U
     # constant jerk in x, zero acceleration in y
-    g(i,x,t) = i==1 ? t*jerk : 0
+    g(i,x,t) = i==1 ? t*jerk : 0.
     !use_g && (g = nothing)
     return WaterLily.Simulation(
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
