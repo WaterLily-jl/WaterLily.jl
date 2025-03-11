@@ -34,7 +34,7 @@ function median(a,b,c)
 end
 
 function conv_diff!(r,u,Φ;ν=0.1,perdir=())
-    r .= 0.
+    r .= zero(eltype(r))
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         # if it is periodic direction
