@@ -42,8 +42,8 @@ function conv_diff!(r,u,Φ;ν=0.1,perdir=())
         # treatment for bottom boundary with BCs
         lowerBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
         # inner cells
-        @loop Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u) over I ∈ inside_u(N,j)
-        @loop r[I,i] += Φ[I] over I ∈ inside_u(N,j)
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u);
+               r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         # treatment for upper boundary with BCs
         upperBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
