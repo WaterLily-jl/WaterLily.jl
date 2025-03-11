@@ -42,8 +42,8 @@ function conv_diff!(r,u,Φ;ν=0.1,perdir=())
         # treatment for bottom boundary with BCs
         lowerBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
         # inner cells
-        @loop Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u) over I ∈ inside_u(N,j)
-        @loop r[I,i] += Φ[I] over I ∈ inside_u(N,j)
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u);
+               r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         # treatment for upper boundary with BCs
         upperBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
@@ -107,8 +107,8 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
-    function Flow(N::NTuple{D}, U; f=Array, Δt=T(0.25), ν=zero(T), g=nothing,
-                  uλ::Function=(i, x) -> zero(T), perdir=(), exitBC=false, T=Float64) where D
+    function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
+                  uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
