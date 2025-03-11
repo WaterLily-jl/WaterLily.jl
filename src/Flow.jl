@@ -107,8 +107,8 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
-    function Flow(N::NTuple{D}, U; f=Array, Δt=T(0.25), ν=zero(T), g=nothing,
-                  uλ::Function=(i, x) -> zero(T), perdir=(), exitBC=false, T=Float64) where D
+    function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
+                  uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float64) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
