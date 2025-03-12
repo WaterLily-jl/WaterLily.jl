@@ -49,8 +49,8 @@ using ReadVTK, WriteVTK
         Ubc(i,x,t) = i==1 ? 1.0 : 0.5
         v = rand(Ng..., D) |> f # vector
         BC!(v,Ubc,false); BC!(u,U,false) # make sure we apply the same
-        @test all(v[1, :, 1] .≈ u[1, :, 1]) && all(v[2, :, 1] .≈ u[2, :, 1]) && all(v[end, :, 1] .≈ u[end, :, 1])
-        @test all(v[:, 1, 2] .≈ u[:, 1, 2]) && all(v[:, 2, 2] .≈ u[:, 2, 2]) && all(v[:, end, 2] .≈ u[:, end, 2])
+        @test GPUArrays.@allowscalar all(v[1, :, 1] .== u[1, :, 1]) && all(v[2, :, 1] .== u[2, :, 1]) && all(v[end, :, 1] .== u[end, :, 1])
+        @test GPUArrays.@allowscalar all(v[:, 1, 2] .== u[:, 1, 2]) && all(v[:, 2, 2] .== u[:, 2, 2]) && all(v[:, end, 2] .== u[:, end, 2])
         # test exit bc
         GPUArrays.@allowscalar v[end,:,1] .= 3
         BC!(v,Ubc,true) # save exit values
@@ -65,6 +65,20 @@ using ReadVTK, WriteVTK
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @test GPUArrays.@allowscalar all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
                            all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
+        # test non-uniform BCs
+        Ubc_1(i,x,t) = i==1 ? x[2] : x[1]
+        v .= 0; BC!(v,Ubc_1)
+        # the tangential BC change the value of the ghost cells on the other axis, so we cannot check it
+        @test GPUArrays.@allowscalar all(v[1,2:end-1,1] .≈ v[end,2:end-1,1])
+        @test GPUArrays.@allowscalar all(v[2:end-1,1,2] .≈ v[2:end-1,end,2])
+        # more complex
+        Ng, D = (8, 8, 8), 3
+        u = zeros(Ng..., D) |> f # vector
+        Ubc_2(i,x,t) = i==1 ? cos(2π*x[1]/8) : i==2 ? sin(2π*x[2]/8) : tan(π*x[3]/16)
+        BC!(u,Ubc_2)
+        @test GPUArrays.@allowscalar all(u[1,:,:,1] .≈ cos(-1π/4))  && all(u[2,:,:,1] .≈ cos(0)) && all(u[end,:,:,1] .≈ cos(6π/4))
+        @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
+        @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
         # test interpolation
         a = zeros(5,5,2) |> f; b = zeros(5,5) |> f
@@ -334,7 +348,16 @@ end
         )
     end
 end
-
+@testset "Boundary Layer Flow" begin
+    for f ∈ arrays
+        make_bl_flow(L=32;T=Float32) = Simulation((L,L),
+            (i,x,t)-> i==1 ? convert(Float32,4.0*(((x[2]+0.5)/2L)-((x[2]+0.5)/2L)^2)) : 0.f0,
+            L;ν=0.001,U=1,mem=f,T,exitBC=false) # fails with exitBC=true, but the profile is maintained
+        sim = make_bl_flow(32)
+        sim_step!(sim,10)
+        @test GPUArrays.@allowscalar all(sim.flow.u[1,:,1] .≈ sim.flow.u[end,:,1])
+    end
+end
 @testset "Circle in accelerating flow" begin
     for f ∈ arrays
         make_accel_circle(radius=32,H=16) = Simulation(radius.*(2H,2H),
