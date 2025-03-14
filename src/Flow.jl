@@ -62,12 +62,10 @@ upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I
 """
     accelerate!(r,t,g,U)
 
-Adds a space-time acceleration field g(i,x,t) and velocity field U(i,x,t) such that `rᵢ += gᵢ(i,x,t)+dUᵢ(i,x,t)/dt` at time `t=sum(dt)` to vector field `r`.
+Accounts for applied and reference-frame acceleration using `rᵢ += g(i,x,t)+dU(i,x,t)/dt`
 """
 accelerate!(r,t,::Nothing,::Union{Nothing,Tuple}) = nothing
-accelerate!(r,t,f) = for i ∈ 1:last(size(r))
-    @loop r[I,i] += f(i,loc(i,I,eltype(r)),t) over I ∈ CartesianIndices(Base.front(size(r)))
-end
+accelerate!(r,t,f::Function) = @loop r[Ii] += f(last(Ii),loc(Ii,eltype(r)),t) over Ii ∈ CartesianIndices(r)
 accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))

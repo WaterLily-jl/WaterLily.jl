@@ -203,8 +203,8 @@ function BC!(a,u_BC::Function,saveexit=false,perdir=(),t=0)
                 end
                 (!saveexit || i>1) && (@loop a[I,i] = u_BC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
-                @loop a[I,i] = a[I+δ(j,I),i] over I ∈ slice(N,1,j)
-                @loop a[I,i] = a[I-δ(j,I),i] over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = u_BC(i,loc(i,I),t)+a[I+δ(j,I),i]-u_BC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
+                @loop a[I,i] = u_BC(i,loc(i,I),t)+a[I-δ(j,I),i]-u_BC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
             end
         end
     end

@@ -358,6 +358,26 @@ end
         @test GPUArrays.@allowscalar all(sim.flow.u[1,:,1] .≈ sim.flow.u[end,:,1])
     end
 end
+
+@testset "Rotating reference frame" begin
+    function rotating_reference(N,x₀::SVector{2,T},ω::T,mem=Array) where T
+        function velocity(i,x,t)
+            s,c = sincos(ω*t); y = ω*(x-x₀)
+            i==1 ? s*y[1]+c*y[2] : -c*y[1]+s*y[2]
+        end
+        coriolis(i,x,t) = i==1 ? 2ω*velocity(2,x,t) : -2ω*velocity(1,x,t)
+        centrifugal(i,x,t) = ω^2*(x-x₀)[i]
+        g(i,x,t) = coriolis(i,x,t)+centrifugal(i,x,t)
+        udf(a::Flow,t) = WaterLily.@loop a.f[Ii] += g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
+        simg = Simulation((N,N),velocity,N; g, U=1, T, mem) # use g
+        simg,Simulation((N,N),velocity,N; U=1, T, mem),udf
+    end
+    L = 4
+    simg,sim,udf = rotating_reference(2L,SA_F64[L,L],1/L,Array)
+    sim_step!(simg);sim_step!(sim;udf)
+    @test L₂(simg.flow.p)==L₂(simg.flow.p)<3e-3 # should be zero
+end
+
 @testset "Circle in accelerating flow" begin
     for f ∈ arrays
         make_accel_circle(radius=32,H=16) = Simulation(radius.*(2H,2H),
