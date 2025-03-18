@@ -82,8 +82,8 @@ time = 1:0.1:50 # time scale is sim.L/sim.U
 forces = [get_forces!(circ,t) for t in time];
 
 #Plot it
-plot(time,[first.(forces), last.(forces)],
-    labels=permutedims(["drag","lift"]),
+plot(time,[first.(forces) last.(forces)],
+    labels=["drag" "lift"],
     xlabel="tU/L",
     ylabel="Pressure force coefficients")
 ```
@@ -96,14 +96,12 @@ We can also plot the vorticity field instead of the u-velocity to see a snap-sho
 ω = zeros(size(u));
 @inside ω[I] = WaterLily.curl(3,I,circ.flow.u)*circ.L/circ.U
 
-# Plot it
-clims = (-6,6)
-contourf(clamp.(ω,clims...)'; clims,
-    color=palette(:RdBu,9),linewidth=0,levels=8,
-    aspect_ratio=:equal,border=:none)
+# Plot it using WaterLily's Plots Extension
+flood(ω,clims = (-10,10),border=:none)
 ```
 ![Vorticity field](assets/vort.png)
 
+Note that `flood` is a convience function within WaterLily to create 2D flood plots. 
 As you can see, WaterLily correctly predicts that the flow is unsteady, with an alternating vortex street wake, leading to an oscillating side force and drag force.
 
 ## Multi-threading and GPU backends
