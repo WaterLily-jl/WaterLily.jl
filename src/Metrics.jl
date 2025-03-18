@@ -9,6 +9,13 @@ Base.@propagate_inbounds @fastmath function permute(f,i)
     f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
+@fastmath @inline function dot(a,b)
+    init=zero(eltype(a))
+    @inbounds for ij in eachindex(a)
+     init += a[ij] * b[ij]
+    end
+    return init
+end
 
 """
     ke(I::CartesianIndex,u,U=0)
@@ -100,12 +107,12 @@ function pressure_force(p,df,body,t=0,T=promote_type(Float64,eltype(p)))
 end
 
 """
-    ∇²u(I::CartesianIndex,u)
+    S(I::CartesianIndex,u)
 
 Rate-of-strain tensor.
 """
-∇²u(I::CartesianIndex{2},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:2, j ∈ 1:2]
-∇²u(I::CartesianIndex{3},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:3, j ∈ 1:3]
+S(I::CartesianIndex{2},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:2, j ∈ 1:2]
+S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:3, j ∈ 1:3]
 """
    viscous_force(sim::Simulation)
 
@@ -115,7 +122,7 @@ viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0,T=promote_type(Float64,eltype(u)))
     df .= zero(eltype(u))
-    @loop df[I,:] .= -ν*∇²u(I,u)*nds(body,loc(0,I,T),t) over I ∈ inside_u(u)
+    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,T),t) over I ∈ inside_u(u)
     sum(T,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
