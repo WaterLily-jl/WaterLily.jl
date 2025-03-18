@@ -67,7 +67,7 @@ mutable struct Simulation <: AbstractSimulation
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array) where N
-        @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` and `uλ` cannot be both specified as Function"
+        @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` will be used to generate `uλ=u_BC(t=0)` do not provide both"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
         isa(g,Function) && @assert first(methods(g)).nargs==4 "g::Function needs to be defined as g(i,x,t)"
         isa(g,Function) && @assert all(typeof.(ntuple(i->g(i,zeros(SVector{N}),zero(T)),N)).==T) "`g` is not type stable"
