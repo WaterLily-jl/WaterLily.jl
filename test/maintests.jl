@@ -375,7 +375,7 @@ end
     L = 4
     simg,sim,udf = rotating_reference(2L,SA_F64[L,L],1/L,Array)
     sim_step!(simg);sim_step!(sim;udf)
-    @test L₂(simg.flow.p)==L₂(simg.flow.p)<3e-3 # should be zero
+    @test L₂(simg.flow.p)==L₂(sim.flow.p)<3e-3 # should be zero
 end
 
 @testset "Circle in accelerating flow" begin
