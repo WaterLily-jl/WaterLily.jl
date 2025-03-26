@@ -274,19 +274,19 @@ and we add -∂ⱼ(τᵃᵢⱼ) to the RHS as a body force (the isotropic part o
 Users need to define the turbulent viscosity function `νₜ` and pass it as a keyword argument to this function together with rate-of-strain
     tensor array buffer `S` and model constant `C`. For example, the standard Smagorinsky–Lilly model for the sub-grid scale stresses
 
-    νₜ = (CΔ)²|√(2S̅ᵢⱼS̅ᵢⱼ)|
+    νₜ = (CΔ)²|S̅ᵢⱼ|=(CΔ)²√(2S̅ᵢⱼS̅ᵢⱼ)
 
 could be defined as
-    `smagorinsky(I::CartesianIndex{m} where m, S; C=0.16) = @views C^2*sqrt(2dot(S[I,:,:],S[I,:,:]))`
-and passed into `sim_step!` as a keyword argument:
+    `smagorinsky(I::CartesianIndex{m} where m, S; C) = @views C^2*sqrt(2dot(S[I,:,:],S[I,:,:]))`
+and passed into `sim_step!` as a keyword argument together with the varibles than the function needs (`S` and `C`):
     `sim_step!(sim, ...; udf=sgs, νₜ=smagorinsky, S, C)`
 """
-function sgs!(flow, t; νₜ, S, C=0.16)
+function sgs!(flow, t; νₜ, S, C)
     N,n = size_u(flow.u)
     @loop S[I,:,:] .= WaterLily.S(I,flow.u) over I ∈ inside(flow.σ)
     for i ∈ 1:n, j ∈ 1:n
         WaterLily.@loop (
-            flow.σ[I] = -νₜ(I,S;C)*∂(j,CI(I,i),flow.u);
+            flow.σ[I] = -νₜ(I;S,C)*∂(j,CI(I,i),flow.u);
             flow.f[I,i] += flow.σ[I];
         ) over I ∈ inside_u(N,j)
         WaterLily.@loop flow.f[I-δ(j,I),i] -= flow.σ[I] over I ∈ WaterLily.inside_u(N,j)
