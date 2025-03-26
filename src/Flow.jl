@@ -1,8 +1,9 @@
 @inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
 @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
-@inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
+@inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])/2
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
+@fastmath cds(u,c,d) = (c+d)/2
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @inline ϕuP(a,Ip,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @inline ϕuL(a,I,f,u,λ=quick) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
@@ -33,31 +34,31 @@ function median(a,b,c)
     return a
 end
 
-function conv_diff!(r,u,Φ;ν=0.1,perdir=())
+function conv_diff!(r,u,Φ;ν=0.1,λ=quick,perdir=())
     r .= 0.
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         # if it is periodic direction
         tagper = (j in perdir)
         # treatment for bottom boundary with BCs
-        lowerBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
+        lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
         # inner cells
-        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u);
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
                r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         # treatment for upper boundary with BCs
-        upperBoundary!(r,u,Φ,ν,i,j,N,Val{tagper}())
+        upperBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
     end
 end
 
 # Neumann BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u)) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u)) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
+upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
 
 # Periodic BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u)) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
+lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
+    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
+upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
 """
     accelerate!(r,t,g,U)
@@ -94,11 +95,12 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     U :: Union{NTuple{D,Number},Function} # domain boundary values
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
+    λ :: Function # kinematic viscosity
     g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
-                  uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float32) where D
+                  uλ::Function=(i, x) -> 0., λ=quick, perdir=(), exitBC=false, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
@@ -107,7 +109,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,λ,g,exitBC,perdir)
     end
 end
 
@@ -144,7 +146,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
-    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
+    conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,λ=a.λ,perdir=a.perdir)
     udf!(a,udf,t₀; kwargs...)
     accelerate!(a.f,t₀,a.g,a.U)
     BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
@@ -152,7 +154,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
     # corrector u → u¹
     @log "c"
-    conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
+    conv_diff!(a.f,a.u,a.σ,ν=a.ν,λ=a.λ,perdir=a.perdir)
     udf!(a,udf,t₁; kwargs...)
     accelerate!(a.f,t₁,a.g,a.U)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
