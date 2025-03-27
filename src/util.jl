@@ -262,7 +262,7 @@ end
 
 # Turbulence modelling utils
 """
-    sgs!(flow, t; νₜ, S, C, Δ)
+    sgs!(flow, t; νₜ, S, Cs, Δ)
 
 Implements a user-defined function `udf` to model subgrid-scale LES stresses based on the Boussinesq approximation
     τᵃᵢⱼ = τʳᵢⱼ - (1/3)τʳₖₖδᵢⱼ = -2νₜS̅ᵢⱼ
