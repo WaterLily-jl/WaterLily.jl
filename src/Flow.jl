@@ -98,10 +98,11 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
-                  uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float32) where D
+                  perdir=(), exitBC=false, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
-        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
+        u = Array{T}(undef, Nd...) |> f
+        isa(U, Function) ? apply!((i,x)->U(i,x,0.), u) : apply!((i,x)->U[i], u)
         BC!(u,U,exitBC,perdir); exitBC!(u,u,0.)
         u⁰ = copy(u);
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f

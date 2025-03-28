@@ -266,7 +266,7 @@ end
 
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
     # Define vortex size, velocity, viscosity
-    L = 64; κ=2π/L; ν = 1/(κ*Re);
+    L = 64; κ = T(2π/L); ν = T(1/(κ*Re));
     # TGV vortex in 2D
     function TGV(i,xy,t,κ,ν)
         x,y = @. (xy)*κ  # scaled coordinates
@@ -274,7 +274,7 @@ function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
         return          cos(x)*sin(y)*exp(-2*κ^2*ν*t) # u_y
     end
     # Initialize simulation
-    return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
+    return Simulation((L,L),(i,x,t)->TGV(i,x,t,κ,ν),L;U=1,ν,T,mem,perdir),TGV
 end
 @testset "Flow.jl periodic TGV" begin
     for f ∈ arrays
