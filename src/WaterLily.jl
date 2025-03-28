@@ -67,13 +67,11 @@ mutable struct Simulation <: AbstractSimulation
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array) where N
-        # @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` will be used to generate `uλ=u_BC(t=0)` do not provide both"
         @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
         isa(g,Function) && @assert first(methods(g)).nargs==4 "g::Function needs to be defined as g(i,x,t)"
         isa(g,Function) && @assert all(typeof.(ntuple(i->g(i,zeros(SVector{N,T}),zero(T)),N)).==T) "`g` is not type stable"
         isa(u_BC,Function) && @assert first(methods(u_BC)).nargs==4 "u_BC::Function needs to be defined as u_BC(i,x,t)"
         isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zeros(SVector{N,T}),zero(T)),N)).==T) "`u_BC` is not type stable"
-        # @assert !isnothing(uλ) && (uλ = isa(u_BC, Function) ? uλ = (i,x)->u_BC(i,x,0) : uλ = (i,_)->u_BC[i])
         isnothing(U) && (U = √sum(abs2,u_BC))
         flow = Flow(dims,u_BC;Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
