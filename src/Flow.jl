@@ -91,10 +91,10 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
     # Non-fields
-    U :: Union{NTuple{D,Number},Function} # domain boundary values
+    U :: Union{NTuple{D,Number},Function} # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
+    g :: Union{Function,Nothing} # acceleration field funciton
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
