@@ -39,8 +39,8 @@ abstract type AbstractSimulation end
 Constructor for a WaterLily.jl simulation:
 
   - `dims`: Simulation domain dimensions.
-  - `Uλ`: Domain velocity applied to the initial, boundary and acceleration conditions.
-        Defined by `Uλ[i]::NTuple`, or function of space and time `Uλ(i,x,t)`.
+  - `Uλ`: Domain velocity field applied to the initial, boundary and acceleration conditions.
+        Define a uniform field by `Uλ[i]::NTuple`, or supply a function of space and time `Uλ(i,x,t)`.
   - `L`: Simulation length scale.
   - `U`: Simulation velocity scale. Required if using `Uλ::Function`.
   - `Δt`: Initial time step.
