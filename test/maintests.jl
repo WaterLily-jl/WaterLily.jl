@@ -122,6 +122,15 @@ end
     @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
     @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
 
+    # test Sweby and Superbee flux limiter
+    Sweby = WaterLily.Sweby
+    superbee = WaterLily.superbee
+    @test Sweby(1,0,1) == 0 && Sweby(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
+    @test Sweby(1,2,3) == 2.5 && Sweby(3,2,1) == 1.5 # degenerate to center if slope is same
+    @test Sweby(1,2.5,3) == 2.875 && Sweby(1,1.5,3)==1.875
+    @test superbee(1,2.5,3) == 3 && superbee(1,1.5,3)==2 # superbee will go extreme
+
+
     # Check QUICK scheme on boundary
     ϕuL = WaterLily.ϕuL
     ϕuR = WaterLily.ϕuR
