@@ -190,7 +190,7 @@ boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann conditi
 is applied to the tangential components.
 """
 BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-function BC!(a,u_BC::Function,saveexit=false,perdir=(),t=0)
+function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
@@ -199,12 +199,12 @@ function BC!(a,u_BC::Function,saveexit=false,perdir=(),t=0)
         else
             if i==j # Normal direction, Dirichlet
                 for s ∈ (1,2)
-                    @loop a[I,i] = u_BC(i,loc(i,I),t) over I ∈ slice(N,s,j)
+                    @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = u_BC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
+                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
-                @loop a[I,i] = u_BC(i,loc(i,I),t)+a[I+δ(j,I),i]-u_BC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = u_BC(i,loc(i,I),t)+a[I-δ(j,I),i]-u_BC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
+                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
             end
         end
     end
@@ -259,3 +259,14 @@ function interp(x::SVector{D}, varr::AbstractArray) where {D}
     @inline shift(i) = SVector{D}(ifelse(i==j,0.5,0.0) for j in 1:D)
     return SVector{D}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end
+
+check_fn(f,N,T,nargs) = nothing
+function check_fn(f::Function,N,T,nargs)
+    @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
+    @assert all(typeof.(ntuple(i->f(i,xtargs(Val{}(nargs),N,T)...),N)).==T) "$f is not type stable"
+end
+xtargs(::Val{2},N,T) = (zeros(SVector{N,T}),)
+xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
+
+ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
+ic_function(uBC::Tuple) = (i,x)->uBC[i]

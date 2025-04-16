@@ -332,7 +332,7 @@ end
         sim,jerk = acceleratingFlow(N;use_g=true,mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
-        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
+        uFinal = sim.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4
@@ -341,7 +341,7 @@ end
         # Test with user defined function instead of acceleration
         sim_udf,_ = acceleratingFlow(N;mem=f)
         sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
-        uFinal = sim_udf.flow.U[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
+        uFinal = sim_udf.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
         @test (
             WaterLily.L₂(u_udf[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u_udf[:,:,2].-0) < 1e-4
