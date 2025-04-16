@@ -95,6 +95,8 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
     g :: Union{Function,Nothing} # acceleration field funciton
+    nBCbuffer :: Union{Vector{Vector{Sf}},Nothing} # normal BC buffer
+    tBCbuffer :: Union{Matrix{Vector{Sf}},Nothing} # tangential BC buffer
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
@@ -102,13 +104,21 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         Ng = N .+ 2
         Nd = (Ng..., D)
         u = Array{T}(undef, Nd...) |> f
-        isa(U, Function) ? apply!((i,x)->U(i,x,0.), u) : apply!((i,x)->U[i], u)
-        BC!(u,U,exitBC,perdir); exitBC!(u,u,0.)
+        nBCbuffer, tBCbuffer = nothing, nothing
+        if isa(U, Function)
+            apply!((i,x)->U(i,x,0.), u)
+            if all(ForwardDiff.derivative(t->U(i,rand(D),t), rand(1)[1]) .≈ 0 for i in 1:D) # U does not depend on t (only on x)
+                nBCbuffer, tBCbuffer = get_buffers(u, U; T, mem=f)
+            end
+        else
+            apply!((i,x)->U[i], u)
+        end
+        BC!(u,U,nBCbuffer,tBCbuffer,exitBC,perdir); exitBC!(u,u,0.)
         u⁰ = copy(u);
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,g,nBCbuffer,tBCbuffer,exitBC,perdir)
     end
 end
 
@@ -148,16 +158,16 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
     udf!(a,udf,t₀; kwargs...)
     accelerate!(a.f,t₀,a.g,a.U)
-    BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
+    BDIM!(a); BC!(a.u,a.U,a.nBCbuffer,a.tBCbuffer,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
+    project!(a,b); BC!(a.u,a.U,a.nBCbuffer,a.tBCbuffer,a.exitBC,a.perdir,t₁)
     # corrector u → u¹
     @log "c"
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
     udf!(a,udf,t₁; kwargs...)
     accelerate!(a.f,t₁,a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
-    project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.nBCbuffer,a.tBCbuffer,a.exitBC,a.perdir,t₁)
+    project!(a,b,0.5); BC!(a.u,a.U,a.nBCbuffer,a.tBCbuffer,a.exitBC,a.perdir,t₁)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))

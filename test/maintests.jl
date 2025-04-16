@@ -80,6 +80,20 @@ using ReadVTK, WriteVTK
         @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
         @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
+        # test BC buffers
+        function Uλ(i,xyz,t)
+            x,y,z = @. xyz
+            i==1 && return -sin(x)*cos(y)*cos(z)
+            i==2 && return  cos(x)*sin(y)*cos(z)
+            return 0
+        end
+        u = rand(Ng..., D) |> f # vector
+        normal_buffers, tangential_buffers = WaterLily.get_buffers(u, Uλ; T=eltype(u), mem=f)
+        a, b = copy(u), copy(u)
+        BC!(a, Uλ, nothing, nothing)
+        BC!(b, normal_buffers, tangential_buffers)
+        @test isapprox(a, b, atol=10eps(eltype(u)))
+
         # test interpolation
         a = zeros(5,5,2) |> f; b = zeros(5,5) |> f
         apply!((i,x)->x[i]+1.5,a); apply!(x->x[1]+1.5,b) # offset for start of grid

@@ -189,8 +189,11 @@ condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domai
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
 is applied to the tangential components.
 """
-BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-function BC!(a,u_BC::Function,saveexit=false,perdir=(),t=0)
+BC!(a,u_BC,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->u_BC[i],saveexit,perdir,t)
+BC!(a,u_BC,::Union{AbstractArray,Nothing},::Union{AbstractArray,Nothing},saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->u_BC[i],saveexit,perdir,t)
+BC!(a,u_BC::Function,::Nothing,::Nothing,saveexit=false,perdir=(),t=0) = BC!(a,u_BC,saveexit,perdir,t)
+BC!(a,::Function,nBCbuffer::AbstractArray,tBCbuffer::AbstractArray,saveexit=false,perdir=(),t=0) = BC!(a,nBCbuffer,tBCbuffer,saveexit,perdir)
+function BC!(a,u_BC::Function,saveexit=false,perdir=(),t=0) # should only be called when `u_BC` actually depends on `t`
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
@@ -208,6 +211,62 @@ function BC!(a,u_BC::Function,saveexit=false,perdir=(),t=0)
             end
         end
     end
+end
+function BC!(a,normal_buffer::AbstractArray,tangential_buffer::AbstractArray,saveexit=false,perdir=())
+    N,n = size_u(a)
+    for i ∈ 1:n, j ∈ 1:n
+        if j in perdir
+            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+        else
+            if i==j # Normal direction, Dirichlet
+                for s ∈ (1,2)
+                    b = normal_buffer[i][s]
+                    @loop a[I,i] = b[I-δ(j,I)*(s-1)] over I ∈ slice(N,s,j)
+                end
+                if !saveexit || i>1
+                    b = normal_buffer[i][3]
+                    @loop a[I,i] = b[I-δ(i,I)*(N[i]-1)] over I ∈ slice(N,N[j],j)  # overwrite exit
+                end
+            else    # Tangential directions, Neumann
+                b = tangential_buffer[i,j][1]
+                @loop a[I,i] = a[I+δ(j,I),i] + b[I] over I ∈ slice(N,1,j)
+                b = tangential_buffer[i,j][2]
+                @loop a[I,i] = a[I-δ(j,I),i] + b[I-δ(j,I)*(N[j]-1)] over I ∈ slice(N,N[j],j)
+            end
+        end
+    end
+end
+"""
+    get_buffers(a, u_BC::Function)
+
+Evaluate the `u_BC(i,x,t)` function at the boundaries and return the normal and tangential BC buffers.
+The `normal_buffers` has a type of `Vector{Vector{Sf}}`, so `normal_buffers[1][2]` is the normal buffer for the
+`u[...,1]` velocity component at the lower boundary (s=2). `normal_buffers[1][3]` is the upper normal buffer instead.
+The `tangential_buffers` has a type of `Vector{Matrix{Sf}}`, so `tangential_buffers[1,2][1]` is the lower tangential buffer for the
+`u[...,1]` velocity component tangential with component `2`.
+"""
+function get_buffers(a, u_BC::Function; T=Float32, mem=Array)
+    N,n = size_u(a)
+    normal_buffer = collect(mem{T,n}[] for i ∈ 1:n)
+    tangential_buffer = collect(mem{T,n}[] for i ∈ 1:n, j ∈ 1:n)
+    for i ∈ 1:n, j ∈ 1:n
+        b = zeros(eltype(a), size(slice(N,1,j))...) |> mem
+        if i == j
+            for s ∈ (1,2)
+                @loop b[I-δ(j,I)*(s-1)] = u_BC(i,loc(i,I),0) over I ∈ slice(N,s,j)
+                push!(normal_buffer[i], copy(b))
+            end
+            @loop b[I-δ(j,I)*(N[j]-1)] = u_BC(i,loc(i,I),0) over I ∈ slice(N,N[j],j)
+            push!(normal_buffer[i], copy(b))
+        else
+            @loop b[I] = u_BC(i,loc(i,I),0)-u_BC(i,loc(i,I+δ(j,I)),0) over I ∈ slice(N,1,j)
+            push!(tangential_buffer[i,j], copy(b))
+            @loop b[I-δ(j,I)*(N[j]-1)] = u_BC(i,loc(i,I),0)-u_BC(i,loc(i,I-δ(j,I)),0) over I ∈ slice(N,N[j],j)
+            push!(tangential_buffer[i,j], copy(b))
+        end
+    end
+    return normal_buffer, tangential_buffer
 end
 
 """

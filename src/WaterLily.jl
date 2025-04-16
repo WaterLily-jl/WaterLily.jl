@@ -31,7 +31,7 @@ include("Metrics.jl")
 abstract type AbstractSimulation end
 """
     Simulation(dims::NTuple, Uλ::Union{NTuple,Function}, L::Number;
-               U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing, 
+               U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
                perdir=(), exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array)
