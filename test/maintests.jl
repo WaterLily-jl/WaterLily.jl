@@ -42,8 +42,19 @@ using ReadVTK, WriteVTK
         BC!(u,U,true) # save exit values
         @test GPUArrays.@allowscalar all(u[end, :, 1] .== 3)
 
-        WaterLily.exitBC!(u,u,U,0) # conservative exit check
+        WaterLily.exitBC!(u,u,0) # conservative exit check
         @test GPUArrays.@allowscalar all(u[end,2:end-1, 1] .== U[1])
+
+        # test BC with function
+        Ubc(i,x,t) = i==1 ? 1.0 : 0.5
+        v = rand(Ng..., D) |> f # vector
+        BC!(v,Ubc,false); BC!(u,U,false) # make sure we apply the same
+        @test GPUArrays.@allowscalar all(v[1, :, 1] .== u[1, :, 1]) && all(v[2, :, 1] .== u[2, :, 1]) && all(v[end, :, 1] .== u[end, :, 1])
+        @test GPUArrays.@allowscalar all(v[:, 1, 2] .== u[:, 1, 2]) && all(v[:, 2, 2] .== u[:, 2, 2]) && all(v[:, end, 2] .== u[:, end, 2])
+        # test exit bc
+        GPUArrays.@allowscalar v[end,:,1] .= 3
+        BC!(v,Ubc,true) # save exit values
+        @test GPUArrays.@allowscalar all(v[end, :, 1] .== 3)
 
         BC!(u,U,true,(2,)) # periodic in y and save exit values
         @test GPUArrays.@allowscalar all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
@@ -54,6 +65,20 @@ using ReadVTK, WriteVTK
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @test GPUArrays.@allowscalar all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
                            all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
+        # test non-uniform BCs
+        Ubc_1(i,x,t) = i==1 ? x[2] : x[1]
+        v .= 0; BC!(v,Ubc_1)
+        # the tangential BC change the value of the ghost cells on the other axis, so we cannot check it
+        @test GPUArrays.@allowscalar all(v[1,2:end-1,1] .≈ v[end,2:end-1,1])
+        @test GPUArrays.@allowscalar all(v[2:end-1,1,2] .≈ v[2:end-1,end,2])
+        # more complex
+        Ng, D = (8, 8, 8), 3
+        u = zeros(Ng..., D) |> f # vector
+        Ubc_2(i,x,t) = i==1 ? cos(2π*x[1]/8) : i==2 ? sin(2π*x[2]/8) : tan(π*x[3]/16)
+        BC!(u,Ubc_2)
+        @test GPUArrays.@allowscalar all(u[1,:,:,1] .≈ cos(-1π/4))  && all(u[2,:,:,1] .≈ cos(0)) && all(u[end,:,:,1] .≈ cos(6π/4))
+        @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
+        @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
         # test interpolation
         a = zeros(5,5,2) |> f; b = zeros(5,5) |> f
@@ -154,20 +179,30 @@ end
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
     @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
-    @test all(WaterLily.BCTuple((1,2,3),[0],3).==WaterLily.BCTuple((i,t)->i,0,3))
-    @test all(WaterLily.BCTuple((i,t)->t,[1.234],3).==ntuple(i->1.234,3))
-
     # check applying acceleration
     for f ∈ arrays
         N = 4; a = zeros(N,N,2) |> f
-        WaterLily.accelerate!(a,[1],nothing,())
+        WaterLily.accelerate!(a,1,nothing,())
         @test all(a .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,())
+        WaterLily.accelerate!(a,1.,(i,x,t)->i==1 ? t : 2*t,())
         @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
-        WaterLily.accelerate!(a,[1],nothing,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1.,(i,x,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
+        # check applying body force (changes in x but not t)
+        b = zeros(N,N,2) |> f
+        WaterLily.accelerate!(b,0.,(i,x,t)->1,nothing)
+        @test all(b .== 1)
+        WaterLily.accelerate!(b,1.,(i,x,t)->0,(i,x,t)->t)
+        @test all(b .== 2)
+        a .= 0; b .= 1 # reset and accelerate using a non-uniform velocity field
+        WaterLily.accelerate!(a,0.,nothing,(i,x,t)->t*(x[i]+1.0))
+        WaterLily.accelerate!(b,0,(i,x,t)->x[i],nothing)
+        @test all(b .== a)
+        WaterLily.accelerate!(b,1.,(i,x,t)->x[i]+1.0,nothing)
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
+        @test all(b .== a)
     end
     # Impulsive flow in a box
     U = (2/3, -1/3)
@@ -231,7 +266,7 @@ end
 
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
     # Define vortex size, velocity, viscosity
-    L = 64; κ=2π/L; ν = 1/(κ*Re);
+    L = 64; κ = T(2π/L); ν = T(1/(κ*Re));
     # TGV vortex in 2D
     function TGV(i,xy,t,κ,ν)
         x,y = @. (xy)*κ  # scaled coordinates
@@ -239,7 +274,7 @@ function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
         return          cos(x)*sin(y)*exp(-2*κ^2*ν*t) # u_y
     end
     # Initialize simulation
-    return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
+    return Simulation((L,L),(i,x,t)->TGV(i,x,t,κ,ν),L;U=1,ν,T,mem,perdir),TGV
 end
 @testset "Flow.jl periodic TGV" begin
     for f ∈ arrays
@@ -277,34 +312,76 @@ end
     @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
 end
 
-function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
+function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
     # periodic in x, Neumann in y
     # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
     UScale = √N  # this is also initial U
     # constant jerk in x, zero acceleration in y
-    g(i,t) = i==1 ? t*jerk : 0
+    g(i,x,t) = i==1 ? t*jerk : 0.
+    !use_g && (g = nothing)
     return WaterLily.Simulation(
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
     ),jerk
 end
+gravity!(flow::Flow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
+    WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
+end
 @testset "Flow.jl with increasing body force" begin
     for f ∈ arrays
         N = 8
-        sim,jerk = acceleratingFlow(N;mem=f)
+        sim,jerk = acceleratingFlow(N;use_g=true,mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
-        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
+        uFinal = sim.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4
         )
+
+        # Test with user defined function instead of acceleration
+        sim_udf,_ = acceleratingFlow(N;mem=f)
+        sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
+        uFinal = sim_udf.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
+        @test (
+            WaterLily.L₂(u_udf[:,:,1].-uFinal) < 1e-4 &&
+            WaterLily.L₂(u_udf[:,:,2].-0) < 1e-4
+        )
     end
+end
+@testset "Boundary Layer Flow" begin
+    for f ∈ arrays
+        make_bl_flow(L=32;T=Float32) = Simulation((L,L),
+            (i,x,t)-> i==1 ? convert(Float32,4.0*(((x[2]+0.5)/2L)-((x[2]+0.5)/2L)^2)) : 0.f0,
+            L;ν=0.001,U=1,mem=f,T,exitBC=false) # fails with exitBC=true, but the profile is maintained
+        sim = make_bl_flow(32)
+        sim_step!(sim,10)
+        @test GPUArrays.@allowscalar all(sim.flow.u[1,:,1] .≈ sim.flow.u[end,:,1])
+    end
+end
+
+@testset "Rotating reference frame" begin
+    function rotating_reference(N,x₀::SVector{2,T},ω::T,mem=Array) where T
+        function velocity(i,x,t)
+            s,c = sincos(ω*t); y = ω*(x-x₀)
+            i==1 ? s*y[1]+c*y[2] : -c*y[1]+s*y[2]
+        end
+        coriolis(i,x,t) = i==1 ? 2ω*velocity(2,x,t) : -2ω*velocity(1,x,t)
+        centrifugal(i,x,t) = ω^2*(x-x₀)[i]
+        g(i,x,t) = coriolis(i,x,t)+centrifugal(i,x,t)
+        udf(a::Flow,t) = WaterLily.@loop a.f[Ii] += g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
+        simg = Simulation((N,N),velocity,N; g, U=1, T, mem) # use g
+        simg,Simulation((N,N),velocity,N; U=1, T, mem),udf
+    end
+    L = 4
+    simg,sim,udf = rotating_reference(2L,SA_F64[L,L],1/L,Array)
+    sim_step!(simg);sim_step!(sim;udf)
+    @test L₂(simg.flow.p)==L₂(sim.flow.p)<3e-3 # should be zero
 end
 
 @testset "Circle in accelerating flow" begin
     for f ∈ arrays
         make_accel_circle(radius=32,H=16) = Simulation(radius.*(2H,2H),
-            (i,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
+            (i,x,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
             body=AutoBody((x,t)->√sum(abs2,x .-H*radius)-radius))
         sim = make_accel_circle(); sim_step!(sim)
         @test isapprox(WaterLily.pressure_force(sim)/(π*sim.L^2),[-1,0],atol=0.04)
@@ -347,16 +424,16 @@ import WaterLily: ×
         # stress tensor
         u₂ = zeros(N,N,2) |> f
         u₃ = zeros(N,N,N,3) |> f
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ 0)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ 0)
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
         apply!((i,x)->x[i],u₂) # uniform gradient
         apply!((i,x)->x[i],u₃)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
         apply!((i,x)->x[i%2+1],u₂) # shear
         apply!((i,x)->x[i%3+1],u₃)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
         # viscous force
         u₂ .= 0; u₃ .= 0
         @test all(WaterLily.viscous_force(u₂,1.0,df₂,body) .≈ 0)
