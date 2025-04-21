@@ -266,7 +266,7 @@ end
 
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
     # Define vortex size, velocity, viscosity
-    L = 64; κ=2π/L; ν = 1/(κ*Re);
+    L = 64; κ = T(2π/L); ν = T(1/(κ*Re));
     # TGV vortex in 2D
     function TGV(i,xy,t,κ,ν)
         x,y = @. (xy)*κ  # scaled coordinates
@@ -274,7 +274,7 @@ function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
         return          cos(x)*sin(y)*exp(-2*κ^2*ν*t) # u_y
     end
     # Initialize simulation
-    return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
+    return Simulation((L,L),(i,x,t)->TGV(i,x,t,κ,ν),L;U=1,ν,T,mem,perdir),TGV
 end
 @testset "Flow.jl periodic TGV" begin
     for f ∈ arrays
@@ -332,7 +332,7 @@ end
         sim,jerk = acceleratingFlow(N;use_g=true,mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
-        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
+        uFinal = sim.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4
@@ -341,7 +341,7 @@ end
         # Test with user defined function instead of acceleration
         sim_udf,_ = acceleratingFlow(N;mem=f)
         sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
-        uFinal = sim_udf.flow.U[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
+        uFinal = sim_udf.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
         @test (
             WaterLily.L₂(u_udf[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u_udf[:,:,2].-0) < 1e-4

@@ -35,7 +35,7 @@ function median(a,b,c)
 end
 
 function conv_diff!(r,u,Φ;ν=0.1,λ=quick,perdir=())
-    r .= 0.
+    r .= zero(eltype(r))
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         # if it is periodic direction
@@ -92,24 +92,26 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
     # Non-fields
-    U :: Union{NTuple{D,Number},Function} # domain boundary values
+    uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    λ :: Function # kinematic viscosity
-    g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
+    λ :: Function # face reconstruction scheme
+    g :: Union{Function,Nothing} # acceleration field funciton
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
-    function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
-                  uλ::Function=(i, x) -> 0., λ=quick, perdir=(), exitBC=false, T=Float32) where D
+    function Flow(N::NTuple{D}, uBC; f=Array, Δt=0.25, ν=0., g=nothing,
+            uλ=nothing, λ=quick, perdir=(), exitBC=false, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
-        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
-        BC!(u,U,exitBC,perdir); exitBC!(u,u,0.)
-        u⁰ = copy(u);
+        isnothing(uλ) && (uλ = ic_function(uBC))
+        u = Array{T}(undef, Nd...) |> f
+        isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
+        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
+        u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,λ,g,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),λ,g,exitBC,perdir)
     end
 end
 
@@ -148,17 +150,17 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     @log "p"
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,λ=a.λ,perdir=a.perdir)
     udf!(a,udf,t₀; kwargs...)
-    accelerate!(a.f,t₀,a.g,a.U)
-    BDIM!(a); BC!(a.u,a.U,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
+    accelerate!(a.f,t₀,a.g,a.uBC)
+    BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
+    project!(a,b); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     # corrector u → u¹
     @log "c"
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,λ=a.λ,perdir=a.perdir)
     udf!(a,udf,t₁; kwargs...)
-    accelerate!(a.f,t₁,a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
-    project!(a,b,0.5); BC!(a.u,a.U,a.exitBC,a.perdir,t₁)
+    accelerate!(a.f,t₁,a.g,a.uBC)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))

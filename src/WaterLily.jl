@@ -30,26 +30,27 @@ include("Metrics.jl")
 
 abstract type AbstractSimulation end
 """
-    Simulation(dims::NTuple, u_BC::Union{NTuple,Function}, L::Number;
-               U=norm2(u_BC), Δt=0.25, ν=0., ϵ=1, perdir=()
-               uλ::nothing, g=nothing, exitBC=false,
+    Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
+               U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
+               perdir=(), exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array)
 
 Constructor for a WaterLily.jl simulation:
 
   - `dims`: Simulation domain dimensions.
-  - `u_BC`: Simulation domain velocity boundary conditions, either a
-            tuple `u_BC[i]=uᵢ, i=eachindex(dims)`, or a time and space-varying function `u_BC(i,x,t)`
+  - `uBC`: Velocity field applied to boundary and acceleration conditions.
+        Define a `Tuple` for constant BCs, or a `Function` for space and time varying BCs `uBC(i,x,t)`.
   - `L`: Simulation length scale.
-  - `U`: Simulation velocity scale.
+  - `U`: Simulation velocity scale. Required if using `Uλ::Function`.
   - `Δt`: Initial time step.
   - `ν`: Scaled viscosity (`Re=UL/ν`).
-  - `g`: Domain acceleration, `g(i,t)=duᵢ/dt`
+  - `g`: Domain acceleration, `g(i,x,t)=duᵢ/dt`
   - `ϵ`: BDIM kernel width.
   - `perdir`: Domain periodic boundary condition in the `(i,)` direction.
+  - `uλ`: Velocity field applied to the initial condition.
+        Define a Tuple for homogeneous (per direction) IC, or a `Function` for space varying IC `uλ(i,x)`.
   - `exitBC`: Convective exit boundary condition in the `i=1` direction.
-  - `uλ`: Function to generate the initial velocity field.
   - `body`: Immersed geometry.
   - `T`: Array element type.
   - `mem`: memory location. `Array`, `CuArray`, `ROCm` to run on CPU, NVIDIA, or AMD devices, respectively.
@@ -63,19 +64,14 @@ mutable struct Simulation <: AbstractSimulation
     flow :: Flow
     body :: AbstractBody
     pois :: AbstractPoisson
-    function Simulation(dims::NTuple{N}, u_BC, L::Number;
+    function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., λ=quick, g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array) where N
-        @assert !(isa(u_BC,Function) && isa(uλ,Function)) "`u_BC` will be used to generate `uλ=u_BC(t=0)` do not provide both"
-        @assert !(isnothing(U) && isa(u_BC,Function)) "`U` must be specified if `u_BC` is a Function"
-        isa(g,Function) && @assert first(methods(g)).nargs==4 "g::Function needs to be defined as g(i,x,t)"
-        isa(g,Function) && @assert all(typeof.(ntuple(i->g(i,zeros(SVector{N}),zero(T)),N)).==T) "`g` is not type stable"
-        isa(u_BC,Function) && @assert first(methods(u_BC)).nargs==4 "u_BC::Function needs to be defined as u_BC(i,x,t)"
-        isa(u_BC,Function) && @assert all(typeof.(ntuple(i->u_BC(i,zeros(SVector{N}),zero(T)),N)).==T) "`u_BC` is not type stable"
-        isnothing(uλ) && (uλ = isa(u_BC, Function) ? uλ = (i,x)->u_BC(i,x,0) : uλ = (i,_)->u_BC[i])
-        isnothing(U) && (U = √sum(abs2,u_BC))
-        flow = Flow(dims,u_BC;uλ,Δt,ν,λ,g,T,f=mem,perdir,exitBC)
+        @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
+        isnothing(U) && (U = √sum(abs2,uBC))
+        check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
+        flow = Flow(dims,uBC;uλ,Δt,ν,λ,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
     end
