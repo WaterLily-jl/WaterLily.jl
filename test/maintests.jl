@@ -81,8 +81,8 @@ using ReadVTK, WriteVTK
         @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
         # test interpolation
-        a = zeros(5,5,2) |> f; b = zeros(5,5) |> f
-        apply!((i,x)->x[i]+1.5,a); apply!(x->x[1]+1.5,b) # offset for start of grid
+        a = zeros(8,8,2) |> f; b = zeros(8,8) |> f
+        apply!((i,x)->x[i],a); apply!(x->x[1],b) # offset for start of grid
         @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5,1),a) .≈ [2.5,1.])
         @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5,3),a) .≈ [3.5,3.])
         @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
