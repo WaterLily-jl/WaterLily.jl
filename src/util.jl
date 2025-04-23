@@ -235,7 +235,7 @@ end
 """
     interp(x::SVector, arr::AbstractArray)
 
-    Linear interpolation from array `arr` at iCartesian-coordinate `x`.
+    Linear interpolation from array `arr` at Cartesian-coordinate `x`.
     Note: This routine works for any number of dimensions.
 """
 function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
