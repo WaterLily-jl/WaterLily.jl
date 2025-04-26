@@ -238,11 +238,11 @@ end
     Linear interpolation from array `arr` at Cartesian-coordinate `x`.
     Note: This routine works for any number of dimensions.
 """
-function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
+function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
     x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
-
-    # CartesianIndices around x
+    
+    # CartesianIndices around x 
     I = CartesianIndex(i...); R = I:I+oneunit(I)
 
     # Linearly weighted sum over arr[R] (in serial)
@@ -254,10 +254,10 @@ function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
     return s
 end
 using EllipsisNotation
-function interp(x::SVector{D}, varr::AbstractArray) where {D}
+function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
     # Shift to align with each staggered grid component and interpolate
-    @inline shift(i) = SVector{D}(ifelse(i==j,0.5,0.0) for j in 1:D)
-    return SVector{D}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
+    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
+    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end
 
 check_fn(f,N,T,nargs) = nothing
