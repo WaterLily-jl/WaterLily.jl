@@ -1,9 +1,9 @@
 module WaterLilyGLMakieExt
 
 if isdefined(Base, :get_extension)
-    using GLMakie; gr()
+    using GLMakie; GLMakie.activate!(inline=false)
 else
-    using ..GLMakie; gr()
+    using ..GLMakie; GLMakie.activate!(inline=false)
 end
 
 using WaterLily
@@ -115,7 +115,7 @@ function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasur
             GLMakie.record(fig, video_fname; framerate, compression) do frame
                 while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
                     sim_step!(sim; remeasure)
-                    verbose && WaterLily.sim_info(sim)
+                    verbose && sim_info(sim)
                     if mod(length(sim.flow.Δt), skipframes) == 0
                         update_data()
                         recordframe!(frame)
@@ -126,7 +126,7 @@ function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasur
             display(fig)
             while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
                 sim_step!(sim; remeasure)
-                verbose && print_info(sim)
+                verbose && sim_info(sim)
                 if mod(length(sim.flow.Δt), skipframes) == 0
                     update_data()
                 end
