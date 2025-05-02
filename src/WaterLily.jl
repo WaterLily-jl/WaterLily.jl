@@ -124,7 +124,13 @@ Prints information on the current state of a simulation.
 """
 sim_info(sim::AbstractSimulation) = println("tU/L=",round(sim_time(sim),digits=4),", Δt=",round(sim.flow.Δt[end],digits=3))
 
-export AbstractSimulation,Simulation,sim_step!,sim_time,measure!,sim_info
+"""
+    perturb!(sim; noise=0.1)
+Perturb the velocity field of a simulation with `noise` level with respect to velocity scale `U`.
+"""
+perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flow.u))*sim.U*noise |> typeof(sim.flow.u).name.wrapper
+
+export AbstractSimulation,Simulation,sim_step!,sim_time,measure!,sim_info, perturb
 
 # default WriteVTK functions
 function vtkWriter end
