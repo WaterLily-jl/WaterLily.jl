@@ -55,7 +55,7 @@ Users must pass a function `f!` used to post-process the flow field data and cop
 The interface of `f!` must follow `f!(cpu_array::Array, sim::AbstractSimulation)`. For example, to visualize vorticity magnitude:
 ```
 function f!(cpu_array, sim)
-    a,dt = sim.flow.σ,sim.L/sim.U
+    a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
     copyto!(cpu_array, a[inside(a)]) # copy to CPU
 end
