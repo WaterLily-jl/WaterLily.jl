@@ -21,15 +21,15 @@ end
     plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black)
 Plot the 2D body SDF `b::Observable` at distance 0 in a 2D contourf axis.
 """
-plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black) = Makie.contourf!(ax, b;
+plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black, alpha=0.8) = Makie.contourf!(ax, b;
     levels=[0], colormap=[color], extendlow=:auto
 )
 """
     plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, isorange=0.3)
 Plot the 3D body SDF `b::Observable` at distance 0 in a 3D volume axis.
 """
-plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, isorange=0.3) = Makie.volume!(ax, b;
-    algorithm=:iso, colormap=[color], isovalue=0, isorange, lowclip=color
+plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, alpha=0.8, isorange=0.3) = Makie.volume!(ax, b;
+    algorithm=:iso, colormap=[color], isovalue=0, isorange, lowclip=color, alpha
 )
 """
     plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...)
@@ -44,7 +44,7 @@ plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(
 
 """
     viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasure=false, verbose=true,
-        d=2, CIs=nothing, cut=nothing, body=true, body_color=:black,
+        d=2, CIs=nothing, cut=nothing, body=true, body_color=:black, body_alpha=0.8,
         video=false, skipframes=1, fname="flow.mp4", hideaxis=false, framerate=30, compression=5, kwargs...
     )
 
@@ -70,7 +70,8 @@ Keyword arguments:
     - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render. Defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
     - `body::Bool`: Plot the body.
-    - `body_color`: Color of the body
+    - `body_color`: Body color.
+    - `body_alpha`: Body transparency.
     - `video_fname::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `skipframes::Int`: Only render every `skipframes` time steps.
     - `hideaxis::Bool`: Figures without axis details.
@@ -79,7 +80,7 @@ Keyword arguments:
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasure=false, verbose=true,
-    d=2, CIs=nothing, cut=nothing, body=true, body_color=:black,
+    d=2, CIs=nothing, cut=nothing, body=true, body_color=:black, body_alpha=0.8,
     video_fname=nothing, skipframes=1, hideaxis=false, framerate=30, compression=5, kwargs...)
     function update_data()
         f!(dat, sim)
@@ -106,7 +107,7 @@ function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasur
     fig = Figure(size=(1200,1200), figure_padding=5)
     ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits)
     plot_σ_obs!(ax, σ; kwargs...)
-    body && plot_body_obs!(ax, σb_obs; color=body_color)
+    body && plot_body_obs!(ax, σb_obs; color=body_color, alpha=body_alpha)
     hideaxis && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
 
     if !isnothing(t_end) # time loop for animation
