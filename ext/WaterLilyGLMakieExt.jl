@@ -72,7 +72,7 @@ Keyword arguments:
     - `body::Bool`: Plot the body.
     - `body_color`: Body color.
     - `body_alpha`: Body transparency.
-    - `video_fname::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
+    - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `skipframes::Int`: Only render every `skipframes` time steps.
     - `hideaxis::Bool`: Figures without axis details.
     - `framerate::Int`: Video framerate.
@@ -81,7 +81,7 @@ Keyword arguments:
 """
 function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasure=false, verbose=true,
     d=2, CIs=nothing, cut=nothing, body=true, body_color=:black, body_alpha=0.8,
-    video_fname=nothing, skipframes=1, hideaxis=false, framerate=30, compression=5, kwargs...)
+    video=nothing, skipframes=1, hideaxis=false, framerate=30, compression=5, kwargs...)
     function update_data()
         f!(dat, sim)
         σ[] = WaterLily.squeeze(dat[CIs])
@@ -112,8 +112,8 @@ function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasur
 
     if !isnothing(t_end) # time loop for animation
         steps₀ = length(sim.flow.Δt)
-        if !isnothing(video_fname)
-            GLMakie.record(fig, video_fname; framerate, compression) do frame
+        if !isnothing(video)
+            GLMakie.record(fig, video; framerate, compression) do frame
                 while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
                     sim_step!(sim; remeasure)
                     verbose && sim_info(sim)
