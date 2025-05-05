@@ -75,13 +75,15 @@ Keyword arguments:
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `skipframes::Int`: Only render every `skipframes` time steps.
     - `hideaxis::Bool`: Figures without axis details.
+    - `azimuth::Number`: Camera azimuth angle.
+    - `elevation::Number`: Camera elevation angle.
     - `framerate::Int`: Video framerate.
     - `compression::Int`: Video compression.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasure=false, verbose=true,
     d=2, CIs=nothing, cut=nothing, body=true, body_color=:black, body_alpha=0.8,
-    video=nothing, skipframes=1, hideaxis=false, framerate=30, compression=5, kwargs...)
+    video=nothing, skipframes=1, hideaxis=false, elevation=1/8π, azimuth=1.275π, framerate=30, compression=5, kwargs...)
     function update_data()
         f!(dat, sim)
         σ[] = WaterLily.squeeze(dat[CIs])
@@ -105,7 +107,7 @@ function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasur
     body && (update_body!(dat, sim); σb_obs = WaterLily.squeeze(dat[CIs]) |> Observable)
 
     fig = Figure(size=(1200,1200), figure_padding=5)
-    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits)
+    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color, alpha=body_alpha)
     hideaxis && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
