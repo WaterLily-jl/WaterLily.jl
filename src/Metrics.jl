@@ -93,10 +93,11 @@ Compute the pressure force on an immersed body.
 """
 pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
-function pressure_force(p,df,body,t=0,T=promote_type(Float64,eltype(p)))
-    df .= zero(eltype(p))
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,T),t) over I ∈ inside(p)
-    sum(T,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+function pressure_force(p,df,body,t=0)
+    Tp = eltype(p); To = promote_type(Float64,Tp)
+    df .= zero(Tp)
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I,Tp),t) over I ∈ inside(p)
+    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
 """
@@ -113,10 +114,11 @@ Compute the viscous force on an immersed body.
 """
 viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
-function viscous_force(u,ν,df,body,t=0,T=promote_type(Float64,eltype(u)))
-    df .= zero(eltype(u))
-    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,T),t) over I ∈ inside_u(u)
-    sum(T,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+function viscous_force(u,ν,df,body,t=0)
+    Tu = eltype(u); To = promote_type(Float64,Tu)
+    df .= zero(Tu)
+    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
+    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
 """
@@ -134,8 +136,9 @@ Computes the pressure moment on an immersed body relative to point x₀.
 """
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
-function pressure_moment(x₀,p,df,body,t=0,T=promote_type(Float64,eltype(p)))
-    df .= zero(eltype(p))
-    @loop df[I,:] .= p[I]*cross(loc(0,I,T)-x₀,nds(body,loc(0,I,T),t)) over I ∈ inside(p)
-    sum(T,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+function pressure_moment(x₀,p,df,body,t=0)
+    Tp = eltype(p); To = promote_type(Float64,Tp)
+    df .= zero(Tp)
+    @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
+    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
