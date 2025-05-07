@@ -11,6 +11,7 @@ import WaterLily: viz!
 
 """
     update_body!(a_cpu::Array, sim)
+
 Measure the body SDF and update the CPU buffer arrray.
 """
 function update_body!(a_cpu::Array, sim)
@@ -19,6 +20,7 @@ function update_body!(a_cpu::Array, sim)
 end
 """
     plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black)
+
 Plot the 2D body SDF `b::Observable` at distance 0 in a 2D contourf axis.
 """
 plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black, alpha=0.8) = Makie.contourf!(ax, b;
@@ -26,6 +28,7 @@ plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black, alpha=0.8) =
 )
 """
     plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, isorange=0.3)
+
 Plot the 3D body SDF `b::Observable` at distance 0 in a 3D volume axis.
 """
 plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, alpha=0.8, isorange=0.3) = Makie.volume!(ax, b;
@@ -33,14 +36,16 @@ plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, alpha=0.8, i
 )
 """
     plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...)
+
 Plot the 2D scalar `σ::Observable` in a 2D contour axis.
 """
-plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...) = Makie.contourf!(ax, σ; overdraw=true, kwargs...)
+plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...) = Makie.contourf!(ax, σ; kwargs...)
 """
     plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...)
+
 Plot the 3D scalar `σ::Observable` in a 3D volume axis.
 """
-plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; overdraw=true, kwargs...)
+plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; kwargs...)
 
 """
     viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasure=false, verbose=true,
@@ -49,8 +54,7 @@ plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(
     )
 
 General visualization routine to simulate and render the flow field using GLMakie.
-Works for both 2D and 3D simulations. For 3D simulations, the user can choose to render 3D volumetric scalar data,
-    or a 2D slice.
+Works for both 2D and 3D simulations. For 3D simulations, the user can choose to render 3D volumetric scalar data, or a 2D slice.
 Users must pass a function `f!` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
 The interface of `f!` must follow `f!(cpu_array::Array, sim::AbstractSimulation)`. For example, to visualize vorticity magnitude:
 ```
@@ -62,28 +66,33 @@ end
 ```
 Keyword arguments:
     - `t_end::Number`: Simulation end time.
-    - `max_steps::Int`: Simulation end time.
     - `remeasure::Bool`: Update the body position.
+    - `max_steps::Int`: Simulation end time.
     - `verbose::Bool`: Print simulation information.
-    - `d::Int`: Plot dimension. `d=2` produces a `Makie.contourf`, and `d=3` produces a `Makie.volume`
+    - `d::Int`: Plot dimension. `d=2` produces a `Makie.contourf`, and `d=3` produces a `Makie.volume`.
+        Defaults to simulation number of dimension.
     - `CIs::CartesianIndices`: Range of Cartesian indices to render.
-    - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render. Defaults to (0,0,N[3]/2).
+    - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render, and defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
     - `body::Bool`: Plot the body.
     - `body_color`: Body color.
-    - `body_alpha`: Body transparency.
+    - `body_alpha::Number`: Body transparency.
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `skipframes::Int`: Only render every `skipframes` time steps.
     - `hideaxis::Bool`: Figures without axis details.
-    - `azimuth::Number`: Camera azimuth angle.
-    - `elevation::Number`: Camera elevation angle.
+    - `azimuth::Number`: Camera azimuth angle. Find a suitable angle interactively checking `ax.azimuth.val`
+    - `elevation::Number`: Camera elevation angle. Find a suitable angle interactively checking `ax.elevation.val`.
     - `framerate::Int`: Video framerate.
     - `compression::Int`: Video compression.
+    - `theme::Attributes`: Makie theme, eg. `theme_light()` or `theme_latexfonts()`
+    - `fig_size::Tuple{Int, Int}`: Figure size.
+    - `fig_pad::Int`: Figure padding.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
-function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasure=false, verbose=true,
-    d=2, CIs=nothing, cut=nothing, body=true, body_color=:black, body_alpha=0.8,
-    video=nothing, skipframes=1, hideaxis=false, elevation=1/8π, azimuth=1.275π, framerate=30, compression=5, kwargs...)
+function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
+    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body_alpha=1,
+    video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
+    theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
     function update_data()
         f!(dat, sim)
         σ[] = WaterLily.squeeze(dat[CIs])
@@ -106,7 +115,8 @@ function viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasur
     σ = WaterLily.squeeze(dat[CIs]) |> Observable
     body && (update_body!(dat, sim); σb_obs = WaterLily.squeeze(dat[CIs]) |> Observable)
 
-    fig = Figure(size=(1200,1200), figure_padding=5)
+    !isnothing(theme) && set_theme!(theme)
+    fig = Figure(size=fig_size, figure_padding=fig_pad)
     ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color, alpha=body_alpha)
