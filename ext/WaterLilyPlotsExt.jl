@@ -22,7 +22,7 @@ function flood(f::AbstractArray;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,
         clims = (minimum(f),maximum(f))
     end
     Plots.contourf(axes(f,1).+shift[1],axes(f,2).+shift[2],f'|>Array,
-                   linewidth=0, levels=levels, color=cfill, clims = clims, 
+                   linewidth=0, levels=levels, color=cfill, clims = clims,
                    aspect_ratio=:equal; kv...)
 end
 
@@ -62,8 +62,8 @@ function plot_logger(fname="WaterLily.log")
     open(ifelse(fname[end-3:end]==".log",fname[1:end-4],fname)*".log","r") do f
         readline(f) # read first line and dump it
         which = "p"
-        while ! eof(f)  
-            s = split(readline(f) , ",")          
+        while ! eof(f)
+            s = split(readline(f) , ",")
             which = s[1] != "" ? s[1] : which
             push!(which == "p" ? predictor : corrector, parse.(Float64,s[2:end]))
         end

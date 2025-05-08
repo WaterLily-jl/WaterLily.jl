@@ -270,3 +270,5 @@ xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
 
 ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
 ic_function(uBC::Tuple) = (i,x)->uBC[i]
+
+squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))

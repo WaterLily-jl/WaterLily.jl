@@ -100,8 +100,7 @@ function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typema
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
         sim_step!(sim; remeasure, udf, kwargs...)
-        verbose && println("tU/L=",round(sim_time(sim),digits=4),
-            ", Δt=",round(sim.flow.Δt[end],digits=3))
+        verbose && sim_info(sim)
     end
 end
 function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,kwargs...)
@@ -119,7 +118,19 @@ function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
     update!(sim.pois)
 end
 
-export AbstractSimulation,Simulation,sim_step!,sim_time,measure!
+"""
+    sim_info(sim::AbstractSimulation)
+Prints information on the current state of a simulation.
+"""
+sim_info(sim::AbstractSimulation) = println("tU/L=",round(sim_time(sim),digits=4),", Δt=",round(sim.flow.Δt[end],digits=3))
+
+"""
+    perturb!(sim; noise=0.1)
+Perturb the velocity field of a simulation with `noise` level with respect to velocity scale `U`.
+"""
+perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flow.u))*sim.U*noise |> typeof(sim.flow.u).name.wrapper
+
+export AbstractSimulation,Simulation,sim_step!,sim_time,measure!,sim_info,perturb!
 
 # default WriteVTK functions
 function vtkWriter end
@@ -134,7 +145,7 @@ function restart_sim! end
 # export
 export restart_sim!
 
-#default Plots functions
+# default Plots functions
 function flood end
 function addbody end
 function body_plot! end
@@ -142,6 +153,13 @@ function sim_gif! end
 function plot_logger end
 # export
 export flood,addbody,body_plot!,sim_gif!,plot_logger
+
+# default GLMakie functions
+function viz! end
+function get_body end
+function plot_body_obs! end
+# export
+export viz!, get_body, plot_body_obs!
 
 # Check number of threads when loading WaterLily
 """
@@ -166,6 +184,8 @@ function __init__()
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
         @require Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" include("../ext/WaterLilyPlotsExt.jl")
+        @require GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a" include("../ext/WaterLilyGLMakieExt.jl")
+        @require Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73" include("../ext/WaterLilyMeshingExt.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end
