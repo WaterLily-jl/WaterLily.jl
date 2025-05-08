@@ -156,8 +156,10 @@ export flood,addbody,body_plot!,sim_gif!,plot_logger
 
 # default GLMakie functions
 function viz! end
+function get_body end
+function plot_body_obs! end
 # export
-export viz!
+export viz!, get_body, plot_body_obs!
 
 # Check number of threads when loading WaterLily
 """
@@ -183,6 +185,7 @@ function __init__()
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
         @require Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" include("../ext/WaterLilyPlotsExt.jl")
         @require GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a" include("../ext/WaterLilyGLMakieExt.jl")
+        @require Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73" include("../ext/WaterLilyMeshingExt.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end

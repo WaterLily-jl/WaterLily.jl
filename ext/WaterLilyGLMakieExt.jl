@@ -2,13 +2,12 @@ module WaterLilyGLMakieExt
 
 if isdefined(Base, :get_extension)
     using GLMakie; GLMakie.activate!(inline=false)
-    using Meshing, GeometryBasics
 else
     using ..GLMakie; GLMakie.activate!(inline=false)
 end
 
 using WaterLily
-import WaterLily: viz!
+import WaterLily: viz!, get_body, plot_body_obs!
 
 """
     update_body!(a_cpu::Array, sim)
@@ -19,6 +18,15 @@ function update_body!(a_cpu::Array, sim)
     WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
     copyto!(a_cpu, sim.flow.σ[inside(sim.flow.σ)])
 end
+
+
+"""
+    get_body(sdf_array, ::Val{false})
+
+Identity function that return the same `sdf_array`. Required for compatibility with WaterLilyMeshingExt.
+"""
+get_body(sdf_array, ::Val{false}) = sdf_array
+
 """
     plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black)
 
@@ -27,6 +35,7 @@ Plot the 2D body SDF `b::Observable` at distance 0 in a 2D contourf axis.
 plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=(:grey, 0.9)) = Makie.contourf!(ax, b;
     levels=[0], colormap=[color], extendlow=:auto
 )
+
 """
     plot_body_obs!(ax, sdf_array::Observable{Array{T,3}} where T; color=:black, isorange=0.3)
 
@@ -35,20 +44,14 @@ Plot the 3D body SDF `sdf_array::Observable` at distance 0 in a 3D volume axis.
 plot_body_obs!(ax, sdf_array::Observable{Array{T,3}} where T; color=(:grey, 0.9), isorange=0.3) = Makie.volume!(ax, sdf_array;
     algorithm=:iso, colormap=[color], isovalue=0, isorange, lowclip=color
 )
-"""
-    plot_body_obs!(ax, body_mesh; color=:black)
 
-Plot the 3D body mesh `body_mesh::Observable{GeometryBasics.Mesh}` in a 3D axis.
-"""
-plot_body_obs!(ax, body_mesh; color=(:grey, 0.9)) = Makie.mesh!(ax, body_mesh;
-    shading=MultiLightShading, color
-)
 """
     plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...)
 
 Plot the 2D scalar `σ::Observable` in a 2D contour axis.
 """
 plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...) = Makie.contourf!(ax, σ; kwargs...)
+
 """
     plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...)
 
@@ -86,7 +89,8 @@ Keyword arguments:
     - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render, and defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
     - `body::Bool`: Plot the body.
-    - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a GLMakie.volume (faster)
+    - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a GLMakie.volume (faster).
+        Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `skipframes::Int`: Only render every `skipframes` time steps.
@@ -105,21 +109,16 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
     video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
     theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
-    function get_body_mesh(sdf_array)
-        ranges = range.((0, 0, 0), size(sdf_array))
-        points, faces = Meshing.isosurface(sdf_array, Meshing.MarchingCubes(iso=0), ranges...)
-        p2f = Point3.(points)
-        gltriangles = GLTriangleFace.(faces)
-        GeometryBasics.Mesh(p2f, gltriangles)
-    end
     function update_data()
         f!(dat, sim)
         σ[] = WaterLily.squeeze(dat[CIs])
         if body && remeasure
             update_body!(dat, sim)
-            σb_obs[] = body2mesh ? get_body_mesh(WaterLily.squeeze(dat[CIs])) : WaterLily.squeeze(dat[CIs])
+            σb_obs[] = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
         end
     end
+    @assert ifelse(body2mesh, !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)), true) "If body2mesh=true, Meshing and GeometryBasics must be loaded"
+    @assert ifelse(d==2, body2mesh==false, true) "body2mesh only allowed for 3D plots (d=3)"
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
 
@@ -137,7 +136,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     σ = WaterLily.squeeze(dat[CIs]) |> Observable
     if body
         update_body!(dat, sim)
-        σb_obs = body2mesh ? get_body_mesh(WaterLily.squeeze(dat[CIs])) |> Observable : WaterLily.squeeze(dat[CIs]) |> Observable
+        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> Observable
     end
 
     !isnothing(theme) && set_theme!(theme)
