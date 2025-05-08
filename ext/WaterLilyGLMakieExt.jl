@@ -2,6 +2,7 @@ module WaterLilyGLMakieExt
 
 if isdefined(Base, :get_extension)
     using GLMakie; GLMakie.activate!(inline=false)
+    using Meshing, GeometryBasics
 else
     using ..GLMakie; GLMakie.activate!(inline=false)
 end
@@ -23,16 +24,24 @@ end
 
 Plot the 2D body SDF `b::Observable` at distance 0 in a 2D contourf axis.
 """
-plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black, alpha=0.8) = Makie.contourf!(ax, b;
+plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=(:grey, 0.9)) = Makie.contourf!(ax, b;
     levels=[0], colormap=[color], extendlow=:auto
 )
 """
-    plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, isorange=0.3)
+    plot_body_obs!(ax, sdf_array::Observable{Array{T,3}} where T; color=:black, isorange=0.3)
 
-Plot the 3D body SDF `b::Observable` at distance 0 in a 3D volume axis.
+Plot the 3D body SDF `sdf_array::Observable` at distance 0 in a 3D volume axis.
 """
-plot_body_obs!(ax, b::Observable{Array{T,3}} where T; color=:black, alpha=0.8, isorange=0.3) = Makie.volume!(ax, b;
-    algorithm=:iso, colormap=[color], isovalue=0, isorange, lowclip=color, alpha
+plot_body_obs!(ax, sdf_array::Observable{Array{T,3}} where T; color=(:grey, 0.9), isorange=0.3) = Makie.volume!(ax, sdf_array;
+    algorithm=:iso, colormap=[color], isovalue=0, isorange, lowclip=color
+)
+"""
+    plot_body_obs!(ax, body_mesh; color=:black)
+
+Plot the 3D body mesh `body_mesh::Observable{GeometryBasics.Mesh}` in a 3D axis.
+"""
+plot_body_obs!(ax, body_mesh; color=(:grey, 0.9)) = Makie.mesh!(ax, body_mesh;
+    shading=MultiLightShading, color
 )
 """
     plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...)
@@ -48,9 +57,11 @@ Plot the 3D scalar `σ::Observable` in a 3D volume axis.
 plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; kwargs...)
 
 """
-    viz!(sim, f!::Function; t_end=nothing, max_steps=typemax(Int), remeasure=false, verbose=true,
-        d=2, CIs=nothing, cut=nothing, body=true, body_color=:black, body_alpha=0.8,
-        video=false, skipframes=1, fname="flow.mp4", hideaxis=false, framerate=30, compression=5, kwargs...
+    viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
+        d=ndims(sim.flow.p), CIs=nothing, cut=nothing,
+        body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
+        video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
+        theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...
     )
 
 General visualization routine to simulate and render the flow field using GLMakie.
@@ -75,8 +86,8 @@ Keyword arguments:
     - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render, and defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
     - `body::Bool`: Plot the body.
-    - `body_color`: Body color.
-    - `body_alpha::Number`: Body transparency.
+    - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a GLMakie.volume (faster)
+    - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `skipframes::Int`: Only render every `skipframes` time steps.
     - `hideaxis::Bool`: Figures without axis details.
@@ -90,13 +101,24 @@ Keyword arguments:
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
-    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body_alpha=1,
+    d=ndims(sim.flow.p), CIs=nothing, cut=nothing,
+    body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
     video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
     theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
+    function get_body_mesh(sdf_array)
+        ranges = range.((0, 0, 0), size(sdf_array))
+        points, faces = Meshing.isosurface(sdf_array, Meshing.MarchingCubes(iso=0), ranges...)
+        p2f = Point3.(points)
+        gltriangles = GLTriangleFace.(faces)
+        GeometryBasics.Mesh(p2f, gltriangles)
+    end
     function update_data()
         f!(dat, sim)
         σ[] = WaterLily.squeeze(dat[CIs])
-        body && remeasure && (update_body!(dat, sim); σb_obs[] = WaterLily.squeeze(dat[CIs]))
+        if body && remeasure
+            update_body!(dat, sim)
+            σb_obs[] = body2mesh ? get_body_mesh(WaterLily.squeeze(dat[CIs])) : WaterLily.squeeze(dat[CIs])
+        end
     end
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
@@ -113,13 +135,16 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
 
     f!(dat, sim)
     σ = WaterLily.squeeze(dat[CIs]) |> Observable
-    body && (update_body!(dat, sim); σb_obs = WaterLily.squeeze(dat[CIs]) |> Observable)
+    if body
+        update_body!(dat, sim)
+        σb_obs = body2mesh ? get_body_mesh(WaterLily.squeeze(dat[CIs])) |> Observable : WaterLily.squeeze(dat[CIs]) |> Observable
+    end
 
     !isnothing(theme) && set_theme!(theme)
     fig = Figure(size=fig_size, figure_padding=fig_pad)
     ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
     plot_σ_obs!(ax, σ; kwargs...)
-    body && plot_body_obs!(ax, σb_obs; color=body_color, alpha=body_alpha)
+    body && plot_body_obs!(ax, σb_obs; color=body_color)
     hideaxis && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
 
     if !isnothing(t_end) # time loop for animation
