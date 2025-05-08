@@ -12,7 +12,7 @@ import WaterLily: viz!, get_body, plot_body_obs!
 """
     update_body!(a_cpu::Array, sim)
 
-Measure the body SDF and update the CPU buffer arrray.
+Measure the body SDF and update the CPU buffer array.
 """
 function update_body!(a_cpu::Array, sim)
     WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
@@ -23,14 +23,14 @@ end
 """
     get_body(sdf_array, ::Val{false})
 
-Identity function that return the same `sdf_array`. Required for compatibility with WaterLilyMeshingExt.
+Identity function that returns the same `sdf_array`. Required for compatibility with WaterLilyMeshingExt.
 """
 get_body(sdf_array, ::Val{false}) = sdf_array
 
 """
     plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=:black)
 
-Plot the 2D body SDF `b::Observable` at distance 0 in a 2D contourf axis.
+Plot the 2D body SDF `b::Observable` at value 0 in a 2D contourf axis.
 """
 plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=(:grey, 0.9)) = Makie.contourf!(ax, b;
     levels=[0], colormap=[color], extendlow=:auto
@@ -39,7 +39,7 @@ plot_body_obs!(ax, b::Observable{Array{T,2}} where T; color=(:grey, 0.9)) = Maki
 """
     plot_body_obs!(ax, sdf_array::Observable{Array{T,3}} where T; color=:black, isorange=0.3)
 
-Plot the 3D body SDF `sdf_array::Observable` at distance 0 in a 3D volume axis.
+Plot the 3D body SDF `sdf_array::Observable` at value 0 in a 3D volume axis.
 """
 plot_body_obs!(ax, sdf_array::Observable{Array{T,3}} where T; color=(:grey, 0.9), isorange=0.3) = Makie.volume!(ax, sdf_array;
     algorithm=:iso, colormap=[color], isovalue=0, isorange, lowclip=color
