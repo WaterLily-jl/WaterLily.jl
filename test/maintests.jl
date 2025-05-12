@@ -1,5 +1,5 @@
 using GPUArrays
-using ReadVTK, WriteVTK
+using ReadVTK, WriteVTK, JLD2
 
 @info "Test backends: $(join(arrays,", "))"
 @testset "util.jl" begin
@@ -517,4 +517,21 @@ end
         @test_nowarn rm("TEST_DIR",recursive=true)
         @test_nowarn rm("test_vtk_reader_$D.pvd")
     end
+end
+
+@testset "WaterLilyJLD2Ext.jl" begin
+    test_dir = "TEST_DIR"; mkpath(test_dir)
+    for D ∈ [2,3], mem ∈ arrays
+        sim1 = sphere_sim(;D,mem)
+        sim_step!(sim1, 1)
+        save!("sim1_sphere.jld2", sim1; dir=test_dir)
+
+        sim2 = sphere_sim(;D,mem)
+        load!(sim2, "sim1_sphere.jld2"; dir=test_dir)
+
+        @test all(sim1.flow.p .== sim2.flow.p)
+        @test all(sim1.flow.u .== sim2.flow.u)
+        @test all(sim1.flow.Δt .== sim2.flow.Δt)
+    end
+    @test_nowarn rm(test_dir, recursive=true)
 end
