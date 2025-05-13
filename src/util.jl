@@ -292,6 +292,7 @@ function sgs!(flow, t; νₜ, S, Cs, Δ)
         WaterLily.@loop flow.f[I-δ(j,I),i] -= flow.σ[I] over I ∈ WaterLily.inside_u(N,j)
     end
 end
+
 check_fn(f,N,T,nargs) = nothing
 function check_fn(f::Function,N,T,nargs)
     @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
