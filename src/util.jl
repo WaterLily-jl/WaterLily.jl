@@ -235,12 +235,12 @@ end
 """
     interp(x::SVector, arr::AbstractArray)
 
-    Linear interpolation from array `arr` at index-coordinate `x`.
+    Linear interpolation from array `arr` at Cartesian-coordinate `x`.
     Note: This routine works for any number of dimensions.
 """
 function interp(x::SVector{D}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
-    i = floor.(Int,x); y = x.-i
+    x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
     # CartesianIndices around x
     I = CartesianIndex(i...); R = I:I+oneunit(I)
@@ -302,3 +302,5 @@ xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
 
 ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
 ic_function(uBC::Tuple) = (i,x)->uBC[i]
+
+squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
