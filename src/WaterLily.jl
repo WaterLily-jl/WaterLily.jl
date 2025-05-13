@@ -27,6 +27,7 @@ include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
 include("Metrics.jl")
+export MeanFlow
 
 abstract type AbstractSimulation end
 """

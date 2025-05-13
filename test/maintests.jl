@@ -348,12 +348,14 @@ end
         )
     end
 end
+
+make_bl_flow(L=32;T=Float32,mem=Array) = Simulation((L,L),
+    (i,x,t)-> i==1 ? convert(Float32,4.0*(((x[2]+0.5)/2L)-((x[2]+0.5)/2L)^2)) : 0.f0,
+    L;ν=0.001,U=1,mem,T,exitBC=false
+) # fails with exitBC=true, but the profile is maintained
 @testset "Boundary Layer Flow" begin
     for f ∈ arrays
-        make_bl_flow(L=32;T=Float32) = Simulation((L,L),
-            (i,x,t)-> i==1 ? convert(Float32,4.0*(((x[2]+0.5)/2L)-((x[2]+0.5)/2L)^2)) : 0.f0,
-            L;ν=0.001,U=1,mem=f,T,exitBC=false) # fails with exitBC=true, but the profile is maintained
-        sim = make_bl_flow(32)
+        sim = make_bl_flow(32;mem=f)
         sim_step!(sim,10)
         @test GPUArrays.@allowscalar all(sim.flow.u[1,:,1] .≈ sim.flow.u[end,:,1])
     end
@@ -443,6 +445,22 @@ import WaterLily: ×
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
         @test WaterLily.pressure_moment(SVector{2,Float64}(N/2,N/2),p₂,df₂,body,0)[1] ≈ 0 # no moment in hydrostatic pressure
         @test all(WaterLily.pressure_moment(SVector{3,Float64}(N/2,N/2,N/2),p₃,df₃,body,0) .≈ SA[0 0 0]) # with a 3D field, 3D moments
+        # temporal averages
+        T = Float32
+        sim = make_bl_flow(; T, mem=f)
+        meanflow = MeanFlow(sim.flow; uu_stats=true)
+        sim_step!(sim, 10; meanflow)
+        @test all(isapprox.(Array(sim.flow.u), Array(meanflow.U); atol=√eps(T))) # can't broadcast isapprox for GPUArrays...
+        @test all(isapprox.(Array(sim.flow.p), Array(meanflow.P); atol=√eps(T)))
+        for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
+            @test all(isapprox.(Array(sim.flow.u[:,:,i].*sim.flow.u[:,:,j]), Array(meanflow.UU[:,:,i,j]); atol=√eps(T)))
+        end
+        @test WaterLily.time(sim.flow) == WaterLily.time(meanflow)
+        WaterLily.reset!(meanflow)
+        @test all(meanflow.U .== zero(T))
+        @test all(meanflow.P .== zero(T))
+        @test all(meanflow.UU .== zero(T))
+        @test meanflow.t == T[0]
     end
 end
 
