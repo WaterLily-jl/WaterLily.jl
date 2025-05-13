@@ -132,18 +132,21 @@ perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flo
 
 export AbstractSimulation,Simulation,sim_step!,sim_time,measure!,sim_info,perturb!
 
-# default WriteVTK functions
+# defaults JLD2 and VTK I/O functions
+function load!(sim::AbstractSimulation; kwargs...)
+    fname = get(Dict(kwargs), :fname, "WaterLily.jld2")
+    ext = split(fname, ".")[end] |> Symbol
+    vtk_loaded = !isnothing(Base.get_extension(WaterLily, :WaterLilyReadVTKExt))
+    jld2_loaded = !isnothing(Base.get_extension(WaterLily, :WaterLilyJLD2Ext))
+    ext == :pvd && (@assert vtk_loaded "WriteVTK must be loaded to save .pvd data.")
+    ext == :jdl2 && (@assert jld2_loaded "JLD2 must be loaded to save .jld2 data.")
+    load!(sim, Val{ext}(); kwargs...)
+end
+function save! end
 function vtkWriter end
-function write! end
 function default_attrib end
 function pvd_collection end
-# export
-export vtkWriter, write!, default_attrib
-
-# default ReadVTK functions
-function restart_sim! end
-# export
-export restart_sim!
+export load!, save!, vtkWriter, default_attrib
 
 # default Plots functions
 function flood end
@@ -160,12 +163,6 @@ function get_body end
 function plot_body_obs! end
 # export
 export viz!, get_body, plot_body_obs!
-
-# defaults JLD2 functions
-function save! end
-function load! end
-# export
-export save!, load!
 
 # Check number of threads when loading WaterLily
 """

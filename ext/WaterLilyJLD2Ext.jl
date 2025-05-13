@@ -20,14 +20,17 @@ save!(fname, flow::Flow; dir="./") = jldsave(
     u=Array(flow.u),
     Δt=flow.Δt
 )
-save!(fname, sim::AbstractSimulation; dir="./") = save!(fname, sim.flow; dir)
+save!(fname::String, sim::AbstractSimulation; dir="./") = save!(fname, sim.flow; dir)
 
 """
     load!(flow::Flow, fname::String; dir="./")
 
-Load pressure, velocity, and time steps arrays from a JLD2-formatted binary file `dir/fname` into `flow::Flow`.
+Load pressure, velocity, and time steps arrays from a JLD2-formatted binary file.
+Keyword arguments considered are `fname="WaterLily.jld2"` and `dir="./"`.
 """
-function load!(flow::Flow, fname; dir="./")
+function load!(flow::Flow; kwargs...)
+    fname = get(Dict(kwargs), :fname, "WaterLily.jld2")
+    dir = get(Dict(kwargs), :dir, "./")
     obj = jldopen(joinpath(dir, fname))
     @assert size(flow.p) == size(obj["p"]) "Simulation size does not match the size of the JLD2-stored simulation."
     f = typeof(flow.p).name.wrapper
@@ -37,6 +40,6 @@ function load!(flow::Flow, fname; dir="./")
     push!(flow.Δt, obj["Δt"]...)
     close(obj)
 end
-load!(sim::AbstractSimulation, fname; dir="./") = load!(sim.flow, fname; dir)
+load!(sim::AbstractSimulation, ::Val{:jld2}; kwargs...) = load!(sim.flow; kwargs...)
 
 end # module
