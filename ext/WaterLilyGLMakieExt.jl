@@ -168,9 +168,9 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
                     update_data()
                 end
             end
-            display(fig)
         end
     end
+    display(fig)
     return sim, fig, ax
 end
 
