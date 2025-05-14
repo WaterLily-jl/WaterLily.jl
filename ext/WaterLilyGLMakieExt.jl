@@ -170,7 +170,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
             end
         end
     end
-    display(fig)
+    isnothing!(video) && display(fig)
     return sim, fig, ax
 end
 
