@@ -132,18 +132,21 @@ perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flo
 
 export AbstractSimulation,Simulation,sim_step!,sim_time,measure!,sim_info,perturb!
 
-# default WriteVTK functions
+# defaults JLD2 and VTK I/O functions
+function load!(sim::AbstractSimulation; kwargs...)
+    fname = get(Dict(kwargs), :fname, "WaterLily.jld2")
+    ext = split(fname, ".")[end] |> Symbol
+    vtk_loaded = !isnothing(Base.get_extension(WaterLily, :WaterLilyReadVTKExt))
+    jld2_loaded = !isnothing(Base.get_extension(WaterLily, :WaterLilyJLD2Ext))
+    ext == :pvd && (@assert vtk_loaded "WriteVTK must be loaded to save .pvd data.")
+    ext == :jdl2 && (@assert jld2_loaded "JLD2 must be loaded to save .jld2 data.")
+    load!(sim, Val{ext}(); kwargs...)
+end
+function save! end
 function vtkWriter end
-function write! end
 function default_attrib end
 function pvd_collection end
-# export
-export vtkWriter, write!, default_attrib
-
-# default ReadVTK functions
-function restart_sim! end
-# export
-export restart_sim!
+export load!, save!, vtkWriter, default_attrib
 
 # default Plots functions
 function flood end
@@ -186,6 +189,7 @@ function __init__()
         @require Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" include("../ext/WaterLilyPlotsExt.jl")
         @require GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a" include("../ext/WaterLilyGLMakieExt.jl")
         @require Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73" include("../ext/WaterLilyMeshingExt.jl")
+        @require JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819" include("../ext/WaterLilyJLD2Ext.jl")
     end
     check_nthreads(Val{Threads.nthreads()}())
 end
