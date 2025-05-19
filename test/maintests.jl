@@ -154,13 +154,13 @@ end
     ϕ = WaterLily.ϕ
 
     # inlet with positive flux -> CD
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1,Val{:quick}())==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
     # inlet negative flux -> backward QUICK
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1)==-quick(2.0,0.5,0.0)
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1,Val{:quick}())==-quick(2.0,0.5,0.0)
     # outlet, positive flux -> standard QUICK
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1,Val{:quick}())==quick(0.0,0.5,2.0)
     # outlet, negative flux -> backward CD
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1,Val{:quick}())==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
 
     # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
     ϕu = WaterLily.ϕu
@@ -168,16 +168,16 @@ end
     λ = WaterLily.quick
 
     I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1);
+    @test ϕu(1,I,[0.,0.5,2.],1,Val{:quick}())==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,Val{:quick}());
     I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1);
+    @test ϕu(1,I,[0.,0.5,2.],-1,Val{:quick}())==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,Val{:quick}());
 
     # check for periodic flux
     I=CartesianIndex(3);Ip=I-2δ(1,I);
     f = [1.,1.25,1.5,1.75,2.];
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    @test ϕuP(1,Ip,I,f,1,Val{:quick}())==λ(f[Ip],f[I-δ(1,I)],f[I])
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    @test ϕuP(1,Ip,I,f,1,Val{:quick}())==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     # check applying acceleration
     for f ∈ arrays
