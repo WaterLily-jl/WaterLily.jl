@@ -109,6 +109,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
     video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
     theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
+
     function update_data()
         f!(dat, sim)
         σ[] = WaterLily.squeeze(dat[CIs])
@@ -117,8 +118,9 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
             σb_obs[] = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
         end
     end
-    @assert ifelse(body2mesh, !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)), true) "If body2mesh=true, Meshing and GeometryBasics must be loaded"
-    @assert ifelse(d==2, body2mesh==false, true) "body2mesh only allowed for 3D plots (d=3)"
+
+    d==2 && (@assert !(body2mesh) "body2mesh only allowed for 3D plots (d=3).")
+    body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
 
@@ -170,7 +172,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
             end
         end
     end
-    display(fig)
+    isnothing(video) && display(fig)
     return sim, fig, ax
 end
 
