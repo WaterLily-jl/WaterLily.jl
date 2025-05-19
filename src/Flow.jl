@@ -5,11 +5,6 @@
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @fastmath cds(u,c,d) = (c+d)/2
 
-@inline ϕu(a,I,f,u,λ::F where F) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuP(a,Ip,I,f,u,λ::F where F) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuL(a,I,f,u,λ::F where F) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuR(a,I,f,u,λ::F where F) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
-
 @inline ϕu(a,I,f,u,::Val{:quick}) = @inbounds u>0 ? u*quick(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @inline ϕuP(a,Ip,I,f,u,::Val{:quick}) = @inbounds u>0 ? u*quick(f[Ip],f[I-δ(a,I)],f[I]) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @inline ϕuL(a,I,f,u,::Val{:quick}) = @inbounds u>0 ? u*ϕ(a,I,f) : u*quick(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
@@ -54,8 +49,6 @@ function conv_diff!(r,u,Φ;λ=:quick,ν=0.1,perdir=())
         # treatment for bottom boundary with BCs
         lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
         # inner cells
-        # @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
-        #        r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),Val{λ}()) - ν*∂(j,CI(I,i),u);
                r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
@@ -63,16 +56,6 @@ function conv_diff!(r,u,Φ;λ=:quick,ν=0.1,perdir=())
         upperBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
     end
 end
-
-# # Neumann BC Building block
-# lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-# upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
-
-# # Periodic BC Building block
-# lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-#     Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
-# upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
-
 
 # Neumann BC Building block
 lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),Val{λ}()) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)

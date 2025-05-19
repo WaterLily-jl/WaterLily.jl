@@ -108,7 +108,7 @@ function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=:quick,max_st
 end
 function sim_step!(sim::AbstractSimulation;remeasure=true,λ=:quick,udf=nothing,meanflow=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; udf, kwargs...)
+    mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
     !isnothing(meanflow) && update!(meanflow,sim.flow)
 end
 
