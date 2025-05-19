@@ -66,13 +66,13 @@ mutable struct Simulation <: AbstractSimulation
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, uBC, L::Number;
-                        Δt=0.25, ν=0., λ=quick, g=nothing, U=nothing, ϵ=1, perdir=(),
+                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        flow = Flow(dims,uBC;uλ,Δt,ν,λ,g,T,f=mem,perdir,exitBC)
+        flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
     end
@@ -98,15 +98,15 @@ A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` d
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
 A `::MeanFlow` can also be passed to compute on-the-fly temporal averages.
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=:quick,max_steps=typemax(Int),verbose=false,
         udf=nothing,meanflow=nothing,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, udf, meanflow, kwargs...)
+        sim_step!(sim; remeasure, λ, udf, meanflow, kwargs...)
         verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,meanflow=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,λ=:quick,udf=nothing,meanflow=nothing,kwargs...)
     remeasure && measure!(sim)
     mom_step!(sim.flow, sim.pois; udf, kwargs...)
     !isnothing(meanflow) && update!(meanflow,sim.flow)
