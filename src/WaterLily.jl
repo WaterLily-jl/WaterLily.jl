@@ -169,7 +169,7 @@ Check the number of threads available for the Julia session that loads WaterLily
 A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstractions enabled.
 """
 function check_nthreads()
-    if backend == :KernelAbstractions && Threads.nthreads() == 1
+    if backend == "KernelAbstractions" && Threads.nthreads() == 1
         @warn """
             Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because
             it defaults to serial CPU execution."*
