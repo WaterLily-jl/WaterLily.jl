@@ -144,7 +144,7 @@ macro loop(args...)
                 @fastmath @inbounds $ex
             end
             function $kern($(rep.(sym)...))
-                $kern_(get_backend($(sym[1])))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+                $kern_(get_backend($(sym[1])),(64,64))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
             end
             $kern($(sym...))
         end |> esc
