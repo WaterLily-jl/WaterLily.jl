@@ -1,5 +1,7 @@
 using BenchmarkTools, Printf
 
+backend == "KernelAbstractions" && (set_backend("SIMD"); exit())
+
 @testset "mom_step! allocations" begin
     function Sim(θ;L=32,U=1,Re=100,perdir=())
         function map(x,t)

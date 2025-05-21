@@ -1,6 +1,8 @@
 using GPUArrays
 using ReadVTK, WriteVTK
 
+backend == "SIMD" && (set_backend("KernelAbstractions"); exit())
+
 @info "Test backends: $(join(arrays,", "))"
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)

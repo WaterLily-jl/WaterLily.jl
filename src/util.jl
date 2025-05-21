@@ -91,7 +91,7 @@ end
 
 # Could also use ScopedValues in Julia 1.11+
 using Preferences
-const backend = Symbol(@load_preference("backend", "KernelAbstractions"))
+const backend = @load_preference("backend", "KernelAbstractions")
 function set_backend(new_backend::String)
     if !(new_backend in ("SIMD", "KernelAbstractions"))
         throw(ArgumentError("Invalid backend: \"$(new_backend)\""))
@@ -101,7 +101,6 @@ function set_backend(new_backend::String)
     @set_preferences!("backend" => new_backend)
     @info("New backend set; restart your Julia session for this change to take effect!")
 end
-
 
 """
     @loop <expr> over <I ∈ R>
@@ -132,26 +131,30 @@ Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this e
 """
 macro loop(args...)
     ex,_,itr = args
-    _,I,R = itr.args; sym = []
-    grab!(sym,ex)     # get arguments and replace composites in `ex`
-    setdiff!(sym,[I]) # don't want to pass I as an argument
-    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
-    return quote
-        function $kern($(rep.(sym)...),::Val{:SIMD})
+    _,I,R = itr.args
+    @static if backend == "KernelAbstractions"
+        sym = []
+        grab!(sym,ex)     # get arguments and replace composites in `ex`
+        setdiff!(sym,[I]) # don't want to pass I as an argument
+        @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
+        return quote
+            @kernel function $kern_($(rep.(sym)...),@Const(I0)) # replace composite arguments
+                $I = @index(Global,Cartesian)
+                $I += I0
+                @fastmath @inbounds $ex
+            end
+            function $kern($(rep.(sym)...))
+                $kern_(get_backend($(sym[1])))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+            end
+            $kern($(sym...))
+        end |> esc
+    else # backend == "SIMD"
+        return quote
             @simd for $I ∈ $R
                 @fastmath @inbounds $ex
             end
-        end
-        @kernel function $kern_($(rep.(sym)...),@Const(I0)) # replace composite arguments
-            $I = @index(Global,Cartesian)
-            $I += I0
-            @fastmath @inbounds $ex
-        end
-        function $kern($(rep.(sym)...),::Val{:KernelAbstractions})
-            $kern_(get_backend($(sym[1])))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
-        end
-        $kern($(sym...),Val{$(QuoteNode(backend))}()) # dispatch to SIMD or KA otherwise
-    end |> esc
+        end |> esc
+    end
 end
 function grab!(sym,ex::Expr)
     ex.head == :. && return union!(sym,[ex])      # grab composite name and return
