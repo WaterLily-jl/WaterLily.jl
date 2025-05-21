@@ -171,11 +171,9 @@ A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstr
 function check_nthreads()
     if backend == "KernelAbstractions" && Threads.nthreads() == 1
         @warn """
-            Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because
-            it defaults to serial CPU execution."*
-            Use JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU backends.
-
-            For a low-overhead single-threaded CPU only backend set: `WaterLily.set_backend("SIMD")`
+        Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
+        Use JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU backends.
+        For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")
         """
     end
 end
