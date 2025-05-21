@@ -1,6 +1,6 @@
 @inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
 @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
-@inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])*0.5
+@inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])/2
 @fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @inline ϕu(a,I,f,u,λ=quick) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
@@ -34,7 +34,7 @@ function median(a,b,c)
 end
 
 function conv_diff!(r,u,Φ;ν=0.1,perdir=())
-    r .= 0.
+    r .= zero(eltype(r))
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
         # if it is periodic direction
@@ -59,26 +59,16 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop (
     Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u)) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
-using EllipsisNotation
 """
-    accelerate!(r,dt,g)
+    accelerate!(r,t,g,U)
 
-Add a uniform acceleration `gᵢ+dUᵢ/dt` at time `t=sum(dt)` to field `r`.
+Accounts for applied and reference-frame acceleration using `rᵢ += g(i,x,t)+dU(i,x,t)/dt`
 """
-accelerate!(r,dt,g::Function,::Tuple,t=sum(dt)) = for i ∈ 1:last(size(r))
-    r[..,i] .+= g(i,t)
-end
-accelerate!(r,dt,g::Nothing,U::Function) = accelerate!(r,dt,(i,t)->ForwardDiff.derivative(τ->U(i,τ),t),())
-accelerate!(r,dt,g::Function,U::Function) = accelerate!(r,dt,(i,t)->g(i,t)+ForwardDiff.derivative(τ->U(i,τ),t),())
-accelerate!(r,dt,::Nothing,::Tuple) = nothing
-"""
-    BCTuple(U,dt,N)
-
-Return BC tuple `U(i∈1:N, t=sum(dt))`.
-"""
-BCTuple(f::Function,dt,N,t=sum(dt))=ntuple(i->f(i,t),N)
-BCTuple(f::Tuple,dt,N)=f
-
+accelerate!(r,t,::Nothing,::Union{Nothing,Tuple}) = nothing
+accelerate!(r,t,f::Function) = @loop r[Ii] += f(last(Ii),loc(Ii,eltype(r)),t) over Ii ∈ CartesianIndices(r)
+accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
+accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
@@ -101,23 +91,25 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
     # Non-fields
-    U :: Union{NTuple{D,Number},Function} # domain boundary values
+    uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    g :: Union{Function,Nothing} # (possibly time-varying) uniform acceleration field
+    g :: Union{Function,Nothing} # acceleration field funciton
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
-    function Flow(N::NTuple{D}, U; f=Array, Δt=0.25, ν=0., g=nothing,
-                  uλ::Function=(i, x) -> 0., perdir=(), exitBC=false, T=Float64) where D
+    function Flow(N::NTuple{D}, uBC; f=Array, Δt=0.25, ν=0., g=nothing,
+            uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
-        u = Array{T}(undef, Nd...) |> f; apply!(uλ, u);
-        BC!(u,BCTuple(U,0.,D),exitBC,perdir); exitBC!(u,u,BCTuple(U,0.,D),0.)
-        u⁰ = copy(u);
+        isnothing(uλ) && (uλ = ic_function(uBC))
+        u = Array{T}(undef, Nd...) |> f
+        isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
+        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
+        u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
         V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,U,T[Δt],ν,g,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir)
     end
 end
 
@@ -150,21 +142,23 @@ end
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson) where N
-    a.u⁰ .= a.u; scale_u!(a,0)
+@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;udf=nothing,kwargs...) where N
+    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
-    U = BCTuple(a.U,@view(a.Δt[1:end-1]),N)
+    @log "p"
     conv_diff!(a.f,a.u⁰,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,@view(a.Δt[1:end-1]),a.g,a.U)
-    BDIM!(a); BC!(a.u,U,a.exitBC,a.perdir)
-    a.exitBC && exitBC!(a.u,a.u⁰,U,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,U,a.exitBC,a.perdir)
+    udf!(a,udf,t₀; kwargs...)
+    accelerate!(a.f,t₀,a.g,a.uBC)
+    BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
+    a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
+    project!(a,b); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     # corrector u → u¹
-    U = BCTuple(a.U,a.Δt,N)
+    @log "c"
     conv_diff!(a.f,a.u,a.σ,ν=a.ν,perdir=a.perdir)
-    accelerate!(a.f,a.Δt,a.g,a.U)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,U,a.exitBC,a.perdir)
-    project!(a,b,0.5); BC!(a.u,U,a.exitBC,a.perdir)
+    udf!(a,udf,t₁; kwargs...)
+    accelerate!(a.f,t₁,a.g,a.uBC)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
@@ -180,3 +174,12 @@ end
     end
     return s
 end
+
+"""
+    udf!(flow::Flow,udf::Function,t)
+
+User defined function using `udf::Function` to operate on `flow::Flow` during the predictor and corrector step, in sync with time `t`.
+Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
+"""
+udf!(flow,::Nothing,t; kwargs...) = nothing
+udf!(flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)

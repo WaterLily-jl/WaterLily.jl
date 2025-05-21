@@ -129,9 +129,10 @@ function pcg!(p::Poisson{T};it=6) where T
         perBC!(ϵ,p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
         alpha = rho/(z⋅ϵ)
+        (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
-        (i==it || abs(alpha)<1e-2) && return
+        i==it && return
         @inside z[I] = r[I]*p.iD[I]
         rho2 = r⋅z
         abs(rho2)<10eps(T) && return
@@ -158,16 +159,14 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;log=false,tol=1e-4,itmx=1e3)
+function solver!(p::Poisson;tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)
-    log && (res = [r₂])
-    nᵖ=0
-    while r₂>tol && nᵖ<itmx
-        smooth!(p); r₂ = L₂(p)
-        log && push!(res,r₂)
-        nᵖ+=1
+    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+    while nᵖ<itmx
+        smooth!(p); r₂ = L₂(p); nᵖ+=1
+        @log ", $nᵖ, $(L∞(p)), $r₂\n"
+        r₂<tol && break
     end
     perBC!(p.x,p.perdir)
     push!(p.n,nᵖ)
-    log && return res
 end
