@@ -64,10 +64,11 @@ Makie = "537997a7-5e4e-5d89-9595-2241ea00577e"
 Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73"
 PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2"]
+test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2", "Random"]
