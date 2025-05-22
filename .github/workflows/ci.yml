@@ -33,7 +33,6 @@ jobs:
           - windows-latest
         arch:
           - x64
-          - x86
         nthreads:
           - '1'
           - 'auto'
