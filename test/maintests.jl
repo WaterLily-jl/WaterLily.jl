@@ -1,8 +1,7 @@
 using GPUArrays
 using ReadVTK, WriteVTK
 
-backend == "SIMD" && (set_backend("KernelAbstractions"); exit())
-
+backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
