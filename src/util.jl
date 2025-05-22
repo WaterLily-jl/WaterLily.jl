@@ -1,6 +1,5 @@
 using KernelAbstractions: get_backend, @index, @kernel
 using LoggingExtras
-using Random
 
 # custom log macro
 _psolver = Logging.LogLevel(-123) # custom log level for pressure solver, needs the negative sign
@@ -171,7 +170,8 @@ grab!(sym,ex::Symbol) = union!(sym,[ex])          # grab symbol name
 grab!(sym,ex) = nothing
 rep(ex) = ex
 rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
-symtypes(sym) = [Symbol.(randstring('A':'Z',4)) for _ in 1:length(sym)]
+using Random
+symtypes(sym) = [Symbol.(Random.randstring('A':'Z',4)) for _ in 1:length(sym)]
 joinsymtype(sym::Symbol,symT::Symbol) = Expr(:(::), sym, symT)
 joinsymtype(sym,symT) = zip(sym,symT) .|> x->joinsymtype(x...)
 
