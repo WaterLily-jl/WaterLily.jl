@@ -132,11 +132,11 @@ Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this e
 macro loop(args...)
     ex,_,itr = args
     _,I,R = itr.args
+    sym = []
+    grab!(sym,ex)     # get arguments and replace composites in `ex`
+    setdiff!(sym,[I]) # don't want to pass I as an argument
+    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
     @static if backend == "KernelAbstractions"
-        sym = []
-        grab!(sym,ex)     # get arguments and replace composites in `ex`
-        setdiff!(sym,[I]) # don't want to pass I as an argument
-        @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
         return quote
             @kernel function $kern_($(rep.(sym)...),@Const(I0)) # replace composite arguments
                 $I = @index(Global,Cartesian)
@@ -150,9 +150,12 @@ macro loop(args...)
         end |> esc
     else # backend == "SIMD"
         return quote
-            @simd for $I ∈ $R
-                @fastmath @inbounds $ex
+            function $kern($(rep.(sym)...))
+                @simd for $I ∈ $R
+                    @fastmath @inbounds $ex
+                end
             end
+            $kern($(sym...))
         end |> esc
     end
 end
