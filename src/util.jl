@@ -89,6 +89,19 @@ macro inside(ex)
     end |> esc
 end
 
+# Could also use ScopedValues in Julia 1.11+
+using Preferences
+const backend = @load_preference("backend", "KernelAbstractions")
+function set_backend(new_backend::String)
+    if !(new_backend in ("SIMD", "KernelAbstractions"))
+        throw(ArgumentError("Invalid backend: \"$(new_backend)\""))
+    end
+
+    # Set it in our runtime values, as well as saving it to disk
+    @set_preferences!("backend" => new_backend)
+    @info("New backend set; restart your Julia session for this change to take effect!")
+end
+
 """
     @loop <expr> over <I ∈ R>
 
@@ -118,26 +131,34 @@ Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this e
 """
 macro loop(args...)
     ex,_,itr = args
-    _,I,R = itr.args; sym = []
+    _,I,R = itr.args
+    sym = []
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
+    symT = symtypes(sym) # generate a list of types for each symbol
     @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
-    return quote
-        function $kern($(rep.(sym)...),::Val{1})
-            @simd for $I ∈ $R
+    @static if backend == "KernelAbstractions"
+        return quote
+            @kernel function $kern_($(rep.(sym)...),@Const(I0)) # replace composite arguments
+                $I = @index(Global,Cartesian)
+                $I += I0
                 @fastmath @inbounds $ex
             end
-        end
-        @kernel function $kern_($(rep.(sym)...),@Const(I0)) # replace composite arguments
-            $I = @index(Global,Cartesian)
-            $I += I0
-            @fastmath @inbounds $ex
-        end
-        function $kern($(rep.(sym)...),_)
-            $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
-        end
-        $kern($(sym...),Val{Threads.nthreads()}()) # dispatch to SIMD for -t 1, or KA otherwise
-    end |> esc
+            function $kern($(joinsymtype(rep.(sym),symT)...)) where {$(symT...)}
+                $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+            end
+            $kern($(sym...))
+        end |> esc
+    else # backend == "SIMD"
+        return quote
+            function $kern($(joinsymtype(rep.(sym),symT)...)) where {$(symT...)}
+                @simd for $I ∈ $R
+                    @fastmath @inbounds $ex
+                end
+            end
+            $kern($(sym...))
+        end |> esc
+    end
 end
 function grab!(sym,ex::Expr)
     ex.head == :. && return union!(sym,[ex])      # grab composite name and return
@@ -149,6 +170,10 @@ grab!(sym,ex::Symbol) = union!(sym,[ex])          # grab symbol name
 grab!(sym,ex) = nothing
 rep(ex) = ex
 rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
+using Random
+symtypes(sym) = [Symbol.(Random.randstring('A':'Z',4)) for _ in 1:length(sym)]
+joinsymtype(sym::Symbol,symT::Symbol) = Expr(:(::), sym, symT)
+joinsymtype(sym,symT) = zip(sym,symT) .|> x->joinsymtype(x...)
 
 using StaticArrays
 """
