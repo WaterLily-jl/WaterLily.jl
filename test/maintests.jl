@@ -555,6 +555,19 @@ end
         @test all(sim1.flow.p .== sim2.flow.p)
         @test all(sim1.flow.u .== sim2.flow.u)
         @test all(sim1.flow.Δt .== sim2.flow.Δt)
+
+        # temporal averages
+        sim = make_bl_flow(; T=Float32, mem)
+        meanflow1 = MeanFlow(sim.flow; uu_stats=true)
+        sim_step!(sim, 10; meanflow1)
+        save!("meanflow.jld2", meanflow1; dir=test_dir)
+        meanflow2 = MeanFlow(sim.flow; uu_stats=true)
+        WaterLily.reset!(meanflow2)
+        load!(meanflow2; fname="meanflow.jld2", dir=test_dir)
+        @test all(meanflow1.U .== meanflow2.U)
+        @test all(meanflow1.P .== meanflow2.P)
+        @test all(meanflow1.UU .== meanflow2.UU)
+        @test all(meanflow1.t .== meanflow2.t)
     end
     @test_nowarn rm(test_dir, recursive=true)
 end
