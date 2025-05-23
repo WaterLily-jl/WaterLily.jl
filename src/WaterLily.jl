@@ -98,7 +98,7 @@ A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` d
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
 A `::MeanFlow` can also be passed to compute on-the-fly temporal averages.
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=:quick,max_steps=typemax(Int),verbose=false,
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
         udf=nothing,meanflow=nothing,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
@@ -106,7 +106,7 @@ function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=:quick,max_st
         verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,λ=:quick,udf=nothing,meanflow=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,meanflow=nothing,kwargs...)
     remeasure && measure!(sim)
     mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
     !isnothing(meanflow) && update!(meanflow,sim.flow)

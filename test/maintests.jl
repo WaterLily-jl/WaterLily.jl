@@ -143,10 +143,14 @@ end
 end
 
 @testset "Flow.jl" begin
-    # test than vanLeer behaves correctly
+    # Test vanLeer
     vanLeer = WaterLily.vanLeer
-    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
+    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d, reverts to itself
     @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
+
+    # Test central difference scheme
+    cds = WaterLily.cds
+    @test cds(1,0,1) == 0.5 && cds(1,2,-1) == 0.5 # central difference between downstream and itself
 
     # Check QUICK scheme on boundary
     ϕuL = WaterLily.ϕuL
@@ -155,13 +159,13 @@ end
     ϕ = WaterLily.ϕ
 
     # inlet with positive flux -> CD
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1,Val{:quick}())==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1,quick)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
     # inlet negative flux -> backward QUICK
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1,Val{:quick}())==-quick(2.0,0.5,0.0)
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1,quick)==-quick(2.0,0.5,0.0)
     # outlet, positive flux -> standard QUICK
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1,Val{:quick}())==quick(0.0,0.5,2.0)
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1,quick)==quick(0.0,0.5,2.0)
     # outlet, negative flux -> backward CD
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1,Val{:quick}())==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1,quick)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
 
     # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
     ϕu = WaterLily.ϕu
@@ -169,16 +173,16 @@ end
     λ = WaterLily.quick
 
     I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1,Val{:quick}())==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,Val{:quick}());
+    @test ϕu(1,I,[0.,0.5,2.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,quick);
     I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1,Val{:quick}())==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,Val{:quick}());
+    @test ϕu(1,I,[0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,quick);
 
     # check for periodic flux
     I=CartesianIndex(3);Ip=I-2δ(1,I);
     f = [1.,1.25,1.5,1.75,2.];
-    @test ϕuP(1,Ip,I,f,1,Val{:quick}())==λ(f[Ip],f[I-δ(1,I)],f[I])
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
-    @test ϕuP(1,Ip,I,f,1,Val{:quick}())==λ(f[Ip],f[I-δ(1,I)],f[I])
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     # check applying acceleration
     for f ∈ arrays
