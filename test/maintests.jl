@@ -458,7 +458,7 @@ import WaterLily: ×
         @test all(isapprox.(Array(sim.flow.u), Array(meanflow.U); atol=√eps(T))) # can't broadcast isapprox for GPUArrays...
         @test all(isapprox.(Array(sim.flow.p), Array(meanflow.P); atol=√eps(T)))
         for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
-            @test all(isapprox.(Array(sim.flow.u[:,:,i].*sim.flow.u[:,:,j]), Array(meanflow.UU[:,:,i,j]); atol=√eps(T)))
+            @test all(isapprox.(Array(sim.flow.u)[:,:,i] .* Array(sim.flow.u)[:,:,j], Array(meanflow.UU)[:,:,i,j]; atol=√eps(T)))
         end
         @test WaterLily.time(sim.flow) == WaterLily.time(meanflow)
         WaterLily.reset!(meanflow)

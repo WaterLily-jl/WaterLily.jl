@@ -155,10 +155,10 @@ end
 
 Holds temporal averages of velocity, squared velocity, pressure, and Reynolds stresses.
 """
-struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
     P :: Sf # pressure scalar field
     U :: Vf # velocity vector field
-    UU :: Union{Mf,Nothing} # squared velocity tensor, u_i(x)u_j
+    UU :: Mf # squared velocity tensor, u⊗u
     t :: Vector{T} # time steps vector
     uu_stats :: Bool # flag to compute UU on-the-fly temporal averages
     function MeanFlow(flow::Flow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
@@ -166,8 +166,7 @@ struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray
         P = zeros(T, size(flow.p)) |> f
         U = zeros(T, size(flow.u)) |> f
         UU = uu_stats ? zeros(T, size(flow.p)...,D,D) |> f : nothing
-        UU_type = typeof(zeros(T, size(flow.p)...,D,D))
-        new{T,typeof(P),typeof(U),UU_type}(P,U,UU,T[t_init],uu_stats)
+        new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
     end
 end
 
