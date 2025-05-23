@@ -136,23 +136,23 @@ macro loop(args...)
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
     symT = symtypes(sym) # generate a list of types for each symbol
-    symtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
+    symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
     @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
     @static if backend == "KernelAbstractions"
         return quote
-            @kernel function $kern_($(symtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
+            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
                 $I = @index(Global,Cartesian)
                 $I += I0
                 @fastmath @inbounds $ex
             end
-            function $kern($(symtypes...)) where {$(symT...)}
+            function $kern($(symWtypes...)) where {$(symT...)}
                 $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
             end
             $kern($(sym...))
         end |> esc
     else # backend == "SIMD"
         return quote
-            function $kern($(symtypes...)) where {$(symT...)}
+            function $kern($(symWtypes...)) where {$(symT...)}
                 @simd for $I ∈ $R
                     @fastmath @inbounds $ex
                 end
