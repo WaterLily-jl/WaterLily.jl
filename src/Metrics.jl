@@ -9,6 +9,13 @@ Base.@propagate_inbounds @fastmath function permute(f,i)
     f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
+@fastmath @inline function dot(a,b)
+    init=zero(eltype(a))
+    @inbounds for ij in eachindex(a)
+     init += a[ij] * b[ij]
+    end
+    return init
+end
 
 """
     ke(I::CartesianIndex,u,U=0)
@@ -141,4 +148,60 @@ function pressure_moment(x₀,p,df,body,t=0)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+end
+
+"""
+     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+
+Holds temporal averages of velocity, squared velocity, pressure, and Reynolds stresses.
+"""
+struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
+    P :: Sf # pressure scalar field
+    U :: Vf # velocity vector field
+    UU :: Mf # squared velocity tensor, u⊗u
+    t :: Vector{T} # time steps vector
+    uu_stats :: Bool # flag to compute UU on-the-fly temporal averages
+    function MeanFlow(flow::Flow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
+        f = typeof(flow.u).name.wrapper
+        P = zeros(T, size(flow.p)) |> f
+        U = zeros(T, size(flow.u)) |> f
+        UU = uu_stats ? zeros(T, size(flow.p)...,D,D) |> f : nothing
+        new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
+    end
+end
+
+time(meanflow::MeanFlow) = meanflow.t[end]-meanflow.t[1]
+
+function reset!(meanflow::MeanFlow; t_init=0.0)
+    fill!(meanflow.P, 0); fill!(meanflow.U, 0)
+    !isnothing(meanflow.UU) && fill!(meanflow.UU, 0)
+    deleteat!(meanflow.t, collect(1:length(meanflow.t)))
+    push!(meanflow.t, t_init)
+end
+
+function update!(meanflow::MeanFlow, flow::Flow)
+    dt = time(flow) - meanflow.t[end]
+    ε = dt / (dt + (meanflow.t[end] - meanflow.t[1]) + eps(eltype(flow.p)))
+    @loop meanflow.P[I] = ε * flow.p[I] + (1 - ε) * meanflow.P[I] over I in CartesianIndices(flow.p)
+    @loop meanflow.U[Ii] = ε * flow.u[Ii] + (1 - ε) * meanflow.U[Ii] over Ii in CartesianIndices(flow.u)
+    if meanflow.uu_stats
+        for i in 1:ndims(flow.p), j in 1:ndims(flow.p)
+            @loop meanflow.UU[I,i,j] = ε * (flow.u[I,i] .* flow.u[I,j]) + (1 - ε) * meanflow.UU[I,i,j] over I in CartesianIndices(flow.p)
+        end
+    end
+    push!(meanflow.t, meanflow.t[end] + dt)
+end
+
+uu!(τ,a::MeanFlow) = for i in 1:ndims(a.P), j in 1:ndims(a.P)
+    @loop τ[I,i,j] = a.UU[I,i,j] - a.U[I,i,j] * a.U[I,i,j] over I in CartesianIndices(a.P)
+end
+function uu(a::MeanFlow)
+    τ = zeros(eltype(a.UU), size(a.UU)...) |> typeof(meanflow.UU).name.wrapper
+    uu!(τ,a)
+    return τ
+end
+
+function copy!(a::Flow, b::MeanFlow)
+    a.u .= b.U
+    a.p .= b.P
 end

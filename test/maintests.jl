@@ -147,10 +147,14 @@ end
 end
 
 @testset "Flow.jl" begin
-    # test than vanLeer behaves correctly
+    # Test vanLeer
     vanLeer = WaterLily.vanLeer
-    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
+    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d, reverts to itself
     @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
+
+    # Test central difference scheme
+    cds = WaterLily.cds
+    @test cds(1,0,1) == 0.5 && cds(1,2,-1) == 0.5 # central difference between downstream and itself
 
     # Check QUICK scheme on boundary
     ϕuL = WaterLily.ϕuL
@@ -159,13 +163,13 @@ end
     ϕ = WaterLily.ϕ
 
     # inlet with positive flux -> CD
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1,quick)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
     # inlet negative flux -> backward QUICK
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1)==-quick(2.0,0.5,0.0)
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1,quick)==-quick(2.0,0.5,0.0)
     # outlet, positive flux -> standard QUICK
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1,quick)==quick(0.0,0.5,2.0)
     # outlet, negative flux -> backward CD
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1,quick)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
 
     # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
     ϕu = WaterLily.ϕu
@@ -173,16 +177,16 @@ end
     λ = WaterLily.quick
 
     I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1);
+    @test ϕu(1,I,[0.,0.5,2.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,quick);
     I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1);
+    @test ϕu(1,I,[0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,quick);
 
     # check for periodic flux
     I=CartesianIndex(3);Ip=I-2δ(1,I);
     f = [1.,1.25,1.5,1.75,2.];
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     # check applying acceleration
     for f ∈ arrays
@@ -353,12 +357,14 @@ end
         )
     end
 end
+
+make_bl_flow(L=32;T=Float32,mem=Array) = Simulation((L,L),
+    (i,x,t)-> i==1 ? convert(Float32,4.0*(((x[2]+0.5)/2L)-((x[2]+0.5)/2L)^2)) : 0.f0,
+    L;ν=0.001,U=1,mem,T,exitBC=false
+) # fails with exitBC=true, but the profile is maintained
 @testset "Boundary Layer Flow" begin
     for f ∈ arrays
-        make_bl_flow(L=32;T=Float32) = Simulation((L,L),
-            (i,x,t)-> i==1 ? convert(Float32,4.0*(((x[2]+0.5)/2L)-((x[2]+0.5)/2L)^2)) : 0.f0,
-            L;ν=0.001,U=1,mem=f,T,exitBC=false) # fails with exitBC=true, but the profile is maintained
-        sim = make_bl_flow(32)
+        sim = make_bl_flow(32;mem=f)
         sim_step!(sim,10)
         @test GPUArrays.@allowscalar all(sim.flow.u[1,:,1] .≈ sim.flow.u[end,:,1])
     end
@@ -448,6 +454,22 @@ import WaterLily: ×
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
         @test WaterLily.pressure_moment(SVector{2,Float64}(N/2,N/2),p₂,df₂,body,0)[1] ≈ 0 # no moment in hydrostatic pressure
         @test all(WaterLily.pressure_moment(SVector{3,Float64}(N/2,N/2,N/2),p₃,df₃,body,0) .≈ SA[0 0 0]) # with a 3D field, 3D moments
+        # temporal averages
+        T = Float32
+        sim = make_bl_flow(; T, mem=f)
+        meanflow = MeanFlow(sim.flow; uu_stats=true)
+        sim_step!(sim, 10; meanflow)
+        @test all(isapprox.(Array(sim.flow.u), Array(meanflow.U); atol=√eps(T))) # can't broadcast isapprox for GPUArrays...
+        @test all(isapprox.(Array(sim.flow.p), Array(meanflow.P); atol=√eps(T)))
+        for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
+            @test all(isapprox.(Array(sim.flow.u)[:,:,i] .* Array(sim.flow.u)[:,:,j], Array(meanflow.UU)[:,:,i,j]; atol=√eps(T)))
+        end
+        @test WaterLily.time(sim.flow) == WaterLily.time(meanflow)
+        WaterLily.reset!(meanflow)
+        @test all(meanflow.U .== zero(T))
+        @test all(meanflow.P .== zero(T))
+        @test all(meanflow.UU .== zero(T))
+        @test meanflow.t == T[0]
     end
 end
 
@@ -537,6 +559,19 @@ end
         @test all(sim1.flow.p .== sim2.flow.p)
         @test all(sim1.flow.u .== sim2.flow.u)
         @test all(sim1.flow.Δt .== sim2.flow.Δt)
+
+        # temporal averages
+        sim = make_bl_flow(; T=Float32, mem)
+        meanflow1 = MeanFlow(sim.flow; uu_stats=true)
+        sim_step!(sim, 10; meanflow1)
+        save!("meanflow.jld2", meanflow1; dir=test_dir)
+        meanflow2 = MeanFlow(sim.flow; uu_stats=true)
+        WaterLily.reset!(meanflow2)
+        load!(meanflow2; fname="meanflow.jld2", dir=test_dir)
+        @test all(meanflow1.U .== meanflow2.U)
+        @test all(meanflow1.P .== meanflow2.P)
+        @test all(meanflow1.UU .== meanflow2.UU)
+        @test all(meanflow1.t .== meanflow2.t)
     end
     @test_nowarn rm(test_dir, recursive=true)
 end

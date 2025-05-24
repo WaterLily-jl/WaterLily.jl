@@ -136,22 +136,23 @@ macro loop(args...)
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
     symT = symtypes(sym) # generate a list of types for each symbol
+    symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
     @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
     @static if backend == "KernelAbstractions"
         return quote
-            @kernel function $kern_($(rep.(sym)...),@Const(I0)) # replace composite arguments
+            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
                 $I = @index(Global,Cartesian)
                 $I += I0
                 @fastmath @inbounds $ex
             end
-            function $kern($(joinsymtype(rep.(sym),symT)...)) where {$(symT...)}
+            function $kern($(symWtypes...)) where {$(symT...)}
                 $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
             end
             $kern($(sym...))
         end |> esc
     else # backend == "SIMD"
         return quote
-            function $kern($(joinsymtype(rep.(sym),symT)...)) where {$(symT...)}
+            function $kern($(symWtypes...)) where {$(symT...)}
                 @simd for $I ∈ $R
                     @fastmath @inbounds $ex
                 end
@@ -283,6 +284,39 @@ function interp(x::SVector{D}, varr::AbstractArray) where {D}
     # Shift to align with each staggered grid component and interpolate
     @inline shift(i) = SVector{D}(ifelse(i==j,0.5,0.0) for j in 1:D)
     return SVector{D}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
+end
+
+"""
+    sgs!(flow, t; νₜ, S, Cs, Δ)
+
+Implements a user-defined function `udf` to model subgrid-scale LES stresses based on the Boussinesq approximation
+    τᵃᵢⱼ = τʳᵢⱼ - (1/3)τʳₖₖδᵢⱼ = -2νₜS̅ᵢⱼ
+where
+            ▁▁▁▁
+    τʳᵢⱼ =  uᵢuⱼ - u̅ᵢu̅ⱼ
+
+and we add -∂ⱼ(τᵃᵢⱼ) to the RHS as a body force (the isotropic part of the tensor is automatically modelled by the pressure gradient term).
+Users need to define the turbulent viscosity function `νₜ` and pass it as a keyword argument to this function together with rate-of-strain
+tensor array buffer `S`, Smagorinsky constant `Cs`, and filter width `Δ`.
+For example, the standard Smagorinsky–Lilly model for the sub-grid scale stresses is
+
+    νₜ = (CₛΔ)²|S̅ᵢⱼ|=(CₛΔ)²√(2S̅ᵢⱼS̅ᵢⱼ)
+
+It can be implemented as
+    `smagorinsky(I::CartesianIndex{m} where m; S, Cs, Δ) = @views (Cs*Δ)^2*sqrt(dot(S[I,:,:],S[I,:,:]))`
+and passed into `sim_step!` as a keyword argument together with the varibles than the function needs (`S`, `Cs`, and `Δ`):
+    `sim_step!(sim, ...; udf=sgs, νₜ=smagorinsky, S, Cs, Δ)`
+"""
+function sgs!(flow, t; νₜ, S, Cs, Δ)
+    N,n = size_u(flow.u)
+    @loop S[I,:,:] .= WaterLily.S(I,flow.u) over I ∈ inside(flow.σ)
+    for i ∈ 1:n, j ∈ 1:n
+        WaterLily.@loop (
+            flow.σ[I] = -νₜ(I;S,Cs,Δ)*∂(j,CI(I,i),flow.u);
+            flow.f[I,i] += flow.σ[I];
+        ) over I ∈ inside_u(N,j)
+        WaterLily.@loop flow.f[I-δ(j,I),i] -= flow.σ[I] over I ∈ WaterLily.inside_u(N,j)
+    end
 end
 
 check_fn(f,N,T,nargs) = nothing

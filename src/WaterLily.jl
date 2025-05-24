@@ -18,7 +18,7 @@ include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
-export Flow,mom_step!
+export Flow,mom_step!,quick,cds
 
 include("Body.jl")
 export AbstractBody,measure_sdf!
@@ -27,6 +27,7 @@ include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
 include("Metrics.jl")
+export MeanFlow
 
 abstract type AbstractSimulation end
 """
@@ -88,24 +89,29 @@ scales.
 sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 """
-    sim_step!(sim::Simulation,t_end=sim(time)+Δt;max_steps=typemax(Int),remeasure=true,verbose=false)
+    sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
+        udf=nothing,meanflow=nothing,kwargs...)
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
-If `remeasure=true`, the body is remeasured at every time step.
-Can be set to `false` for static geometries to speed up simulation.
+If `remeasure=true`, the body is remeasured at every time step. Can be set to `false` for static geometries to speed up simulation.
 A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
+A `::MeanFlow` can also be passed to compute on-the-fly temporal averages.
+A `λ::Function` function can be passed as a custom convective scheme, following the interface of `λ(u,c,d)` (for upstream, central,
+downstream points).
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),udf=nothing,verbose=false,kwargs...)
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
+        udf=nothing,meanflow=nothing,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, udf, kwargs...)
+        sim_step!(sim; remeasure, λ, udf, meanflow, kwargs...)
         verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,meanflow=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; udf, kwargs...)
+    mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
+    !isnothing(meanflow) && update!(meanflow,sim.flow)
 end
 
 """

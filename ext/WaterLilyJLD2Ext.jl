@@ -23,7 +23,20 @@ save!(fname, flow::Flow; dir="./") = jldsave(
 save!(fname::String, sim::AbstractSimulation; dir="./") = save!(fname, sim.flow; dir)
 
 """
-    load!(flow::Flow, fname::String; dir="./")
+    save!(fname, meanflow::MeanFlow; dir="./")
+
+Save the `meanflow::MeanFlow` time-averaged pressure, velocity, velocity-squared, and time arrays into a JLD2-formatted binary file (HDF5 compatible).
+"""
+save!(fname, meanflow::MeanFlow; dir="./") = jldsave(
+    joinpath(dir, fname);
+    P=Array(meanflow.P),
+    U=Array(meanflow.U),
+    UU=Array(meanflow.UU),
+    t=meanflow.t
+)
+
+"""
+    load!(flow::Flow; kwargs...)
 
 Load pressure, velocity, and time steps arrays from a JLD2-formatted binary file.
 Keyword arguments considered are `fname="WaterLily.jld2"` and `dir="./"`.
@@ -41,5 +54,25 @@ function load!(flow::Flow; kwargs...)
     close(obj)
 end
 load!(sim::AbstractSimulation, ::Val{:jld2}; kwargs...) = load!(sim.flow; kwargs...)
+
+
+"""
+    load!(meanflow::MeanFlow; kwargs...)
+
+Load time-averaged pressure, velocity, velocity-square, and time arrays from a JLD2-formatted binary file.
+Keyword arguments considered are `fname="WaterLilyMean.jld2"` and `dir="./"`.
+"""
+function load!(meanflow::MeanFlow; kwargs...)
+    fname = get(Dict(kwargs), :fname, "WaterLilyMean.jld2")
+    dir = get(Dict(kwargs), :dir, "./")
+    obj = jldopen(joinpath(dir, fname))
+    @assert size(meanflow.P) == size(obj["P"]) "Simulation size does not match the size of the JLD2-stored simulation."
+    f = typeof(meanflow.P).name.wrapper
+    meanflow.P .= obj["P"] |> f
+    meanflow.U .= obj["U"] |> f
+    empty!(meanflow.t)
+    push!(meanflow.t, obj["t"]...)
+    close(obj)
+end
 
 end # module
