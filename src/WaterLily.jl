@@ -6,7 +6,7 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,@log
+export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
@@ -166,15 +166,21 @@ export viz!, get_body, plot_body_obs!
 
 # Check number of threads when loading WaterLily
 """
-    check_nthreads(::Val{1})
+    check_nthreads()
 
 Check the number of threads available for the Julia session that loads WaterLily.
-A warning is shown when running in serial (`JULIA_NUM_THREADS=1`).
+A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstractions enabled.
 """
-check_nthreads(::Val{1}) = @warn("\nUsing WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because \
-    it disables the GPU backend and defaults to serial CPU."*
-    "\nUse JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU or GPU backends.")
-check_nthreads(_) = nothing
+function check_nthreads()
+    if backend == "KernelAbstractions" && Threads.nthreads() == 1
+        @warn """
+        Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
+        Use JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU backends.
+        For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")
+        """
+    end
+end
+check_nthreads()
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
@@ -191,7 +197,6 @@ function __init__()
         @require Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73" include("../ext/WaterLilyMeshingExt.jl")
         @require JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819" include("../ext/WaterLilyJLD2Ext.jl")
     end
-    check_nthreads(Val{Threads.nthreads()}())
 end
 
 end # module
