@@ -139,7 +139,7 @@ function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
 end
 
 """
-    mom_step!(a::Flow,b::AbstractPoisson)
+    mom_step!(a::Flow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.

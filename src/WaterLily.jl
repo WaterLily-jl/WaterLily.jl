@@ -89,7 +89,7 @@ scales.
 sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 """
-    sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,
+    sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
         udf=nothing,meanflow=nothing,kwargs...)
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
@@ -97,6 +97,8 @@ If `remeasure=true`, the body is remeasured at every time step. Can be set to `f
 A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
 A `::MeanFlow` can also be passed to compute on-the-fly temporal averages.
+A `λ::Function` function can be passed as a custom convective scheme, following the interface of `λ(u,c,d)` (for upstream, central,
+downstream points).
 """
 function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
         udf=nothing,meanflow=nothing,kwargs...)
