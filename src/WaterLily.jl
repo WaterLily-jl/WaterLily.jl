@@ -184,6 +184,7 @@ function check_nthreads()
         """
     end
 end
+check_nthreads()
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
@@ -200,7 +201,6 @@ function __init__()
         @require Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73" include("../ext/WaterLilyMeshingExt.jl")
         @require JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819" include("../ext/WaterLilyJLD2Ext.jl")
     end
-    check_nthreads()
 end
 
 end # module

@@ -1,5 +1,5 @@
 using GPUArrays
-using ReadVTK, WriteVTK, JLD2
+using ReadVTK, WriteVTK, JLD2, Random
 
 backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
@@ -18,6 +18,10 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
     WaterLily.grab!(sym,ex)
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
+    sym = [:a,:b,:c]
+    Random.seed!(99)
+    symT = WaterLily.symtypes(sym)
+    @test WaterLily.joinsymtype(sym,symT) == Expr[:(a::MDFZ), :(b::AXYU), :(c::RFIB)]
 
     for f ∈ arrays
         p = zeros(4,5) |> f
