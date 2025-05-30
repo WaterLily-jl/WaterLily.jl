@@ -1,6 +1,7 @@
 using GPUArrays
-using ReadVTK, WriteVTK
+using ReadVTK, WriteVTK, JLD2, Random
 
+backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
 @testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
@@ -17,6 +18,10 @@ using ReadVTK, WriteVTK
     WaterLily.grab!(sym,ex)
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
+    sym = [:a,:b,:c]
+    Random.seed!(99)
+    symT = WaterLily.symtypes(sym)
+    @test WaterLily.joinsymtype(sym,symT) == Expr[:(a::MDFZ), :(b::AXYU), :(c::RFIB)]
 
     for f ∈ arrays
         p = zeros(4,5) |> f
@@ -42,8 +47,19 @@ using ReadVTK, WriteVTK
         BC!(u,U,true) # save exit values
         @test GPUArrays.@allowscalar all(u[end, :, 1] .== 3)
 
-        WaterLily.exitBC!(u,u,U,0) # conservative exit check
+        WaterLily.exitBC!(u,u,0) # conservative exit check
         @test GPUArrays.@allowscalar all(u[end,2:end-1, 1] .== U[1])
+
+        # test BC with function
+        Ubc(i,x,t) = i==1 ? 1.0 : 0.5
+        v = rand(Ng..., D) |> f # vector
+        BC!(v,Ubc,false); BC!(u,U,false) # make sure we apply the same
+        @test GPUArrays.@allowscalar all(v[1, :, 1] .== u[1, :, 1]) && all(v[2, :, 1] .== u[2, :, 1]) && all(v[end, :, 1] .== u[end, :, 1])
+        @test GPUArrays.@allowscalar all(v[:, 1, 2] .== u[:, 1, 2]) && all(v[:, 2, 2] .== u[:, 2, 2]) && all(v[:, end, 2] .== u[:, end, 2])
+        # test exit bc
+        GPUArrays.@allowscalar v[end,:,1] .= 3
+        BC!(v,Ubc,true) # save exit values
+        @test GPUArrays.@allowscalar all(v[end, :, 1] .== 3)
 
         BC!(u,U,true,(2,)) # periodic in y and save exit values
         @test GPUArrays.@allowscalar all(u[:, 1:2, 1] .== u[:, end-1:end, 1]) && all(u[:, 1:2, 1] .== u[:,end-1:end,1])
@@ -54,10 +70,24 @@ using ReadVTK, WriteVTK
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @test GPUArrays.@allowscalar all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
                            all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
+        # test non-uniform BCs
+        Ubc_1(i,x,t) = i==1 ? x[2] : x[1]
+        v .= 0; BC!(v,Ubc_1)
+        # the tangential BC change the value of the ghost cells on the other axis, so we cannot check it
+        @test GPUArrays.@allowscalar all(v[1,2:end-1,1] .≈ v[end,2:end-1,1])
+        @test GPUArrays.@allowscalar all(v[2:end-1,1,2] .≈ v[2:end-1,end,2])
+        # more complex
+        Ng, D = (8, 8, 8), 3
+        u = zeros(Ng..., D) |> f # vector
+        Ubc_2(i,x,t) = i==1 ? cos(2π*x[1]/8) : i==2 ? sin(2π*x[2]/8) : tan(π*x[3]/16)
+        BC!(u,Ubc_2)
+        @test GPUArrays.@allowscalar all(u[1,:,:,1] .≈ cos(-1π/4))  && all(u[2,:,:,1] .≈ cos(0)) && all(u[end,:,:,1] .≈ cos(6π/4))
+        @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
+        @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
         # test interpolation
-        a = zeros(5,5,2) |> f; b = zeros(5,5) |> f
-        apply!((i,x)->x[i]+1.5,a); apply!(x->x[1]+1.5,b) # offset for start of grid
+        a = zeros(8,8,2) |> f; b = zeros(8,8) |> f
+        apply!((i,x)->x[i],a); apply!(x->x[1],b) # offset for start of grid
         @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5,1),a) .≈ [2.5,1.])
         @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5,3),a) .≈ [3.5,3.])
         @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
@@ -117,10 +147,14 @@ end
 end
 
 @testset "Flow.jl" begin
-    # test than vanLeer behaves correctly
+    # Test vanLeer
     vanLeer = WaterLily.vanLeer
-    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d revetrs to itlsef
+    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d, reverts to itself
     @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
+
+    # Test central difference scheme
+    cds = WaterLily.cds
+    @test cds(1,0,1) == 0.5 && cds(1,2,-1) == 0.5 # central difference between downstream and itself
 
     # Check QUICK scheme on boundary
     ϕuL = WaterLily.ϕuL
@@ -129,13 +163,13 @@ end
     ϕ = WaterLily.ϕ
 
     # inlet with positive flux -> CD
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1,quick)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
     # inlet negative flux -> backward QUICK
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1)==-quick(2.0,0.5,0.0)
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1,quick)==-quick(2.0,0.5,0.0)
     # outlet, positive flux -> standard QUICK
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1)==quick(0.0,0.5,2.0)
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1,quick)==quick(0.0,0.5,2.0)
     # outlet, negative flux -> backward CD
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1,quick)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
 
     # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
     ϕu = WaterLily.ϕu
@@ -143,31 +177,41 @@ end
     λ = WaterLily.quick
 
     I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1);
+    @test ϕu(1,I,[0.,0.5,2.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,quick);
     I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1);
+    @test ϕu(1,I,[0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,quick);
 
     # check for periodic flux
     I=CartesianIndex(3);Ip=I-2δ(1,I);
     f = [1.,1.25,1.5,1.75,2.];
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
     Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
-    @test ϕuP(1,Ip,I,f,1)==λ(f[Ip],f[I-δ(1,I)],f[I])
-
-    @test all(WaterLily.BCTuple((1,2,3),[0],3).==WaterLily.BCTuple((i,t)->i,0,3))
-    @test all(WaterLily.BCTuple((i,t)->t,[1.234],3).==ntuple(i->1.234,3))
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     # check applying acceleration
     for f ∈ arrays
         N = 4; a = zeros(N,N,2) |> f
-        WaterLily.accelerate!(a,[1],nothing,())
+        WaterLily.accelerate!(a,1,nothing,())
         @test all(a .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,())
+        WaterLily.accelerate!(a,1.,(i,x,t)->i==1 ? t : 2*t,())
         @test all(a[:,:,1] .== 1) && all(a[:,:,2] .== 2)
-        WaterLily.accelerate!(a,[1],nothing,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
-        WaterLily.accelerate!(a,[1],(i,t) -> i==1 ? t : 2*t,(i,t) -> i==1 ? -t : -2*t)
+        WaterLily.accelerate!(a,1.,(i,x,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
+        # check applying body force (changes in x but not t)
+        b = zeros(N,N,2) |> f
+        WaterLily.accelerate!(b,0.,(i,x,t)->1,nothing)
+        @test all(b .== 1)
+        WaterLily.accelerate!(b,1.,(i,x,t)->0,(i,x,t)->t)
+        @test all(b .== 2)
+        a .= 0; b .= 1 # reset and accelerate using a non-uniform velocity field
+        WaterLily.accelerate!(a,0.,nothing,(i,x,t)->t*(x[i]+1.0))
+        WaterLily.accelerate!(b,0,(i,x,t)->x[i],nothing)
+        @test all(b .== a)
+        WaterLily.accelerate!(b,1.,(i,x,t)->x[i]+1.0,nothing)
+        WaterLily.accelerate!(a,1.,nothing,(i,x,t)->t*(x[i]+1.0))
+        @test all(b .== a)
     end
     # Impulsive flow in a box
     U = (2/3, -1/3)
@@ -231,7 +275,7 @@ end
 
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
     # Define vortex size, velocity, viscosity
-    L = 64; κ=2π/L; ν = 1/(κ*Re);
+    L = 64; κ = T(2π/L); ν = T(1/(κ*Re));
     # TGV vortex in 2D
     function TGV(i,xy,t,κ,ν)
         x,y = @. (xy)*κ  # scaled coordinates
@@ -239,7 +283,7 @@ function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
         return          cos(x)*sin(y)*exp(-2*κ^2*ν*t) # u_y
     end
     # Initialize simulation
-    return Simulation((L,L),(0,0),L;U=1,uλ=(i,x)->TGV(i,x,0.0,κ,ν),ν,T,mem,perdir),TGV
+    return Simulation((L,L),(i,x,t)->TGV(i,x,t,κ,ν),L;U=1,ν,T,mem,perdir),TGV
 end
 @testset "Flow.jl periodic TGV" begin
     for f ∈ arrays
@@ -277,34 +321,78 @@ end
     @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
 end
 
-function acceleratingFlow(N;T=Float64,perdir=(1,),jerk=4,mem=Array)
+function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
     # periodic in x, Neumann in y
     # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
     UScale = √N  # this is also initial U
     # constant jerk in x, zero acceleration in y
-    g(i,t) = i==1 ? t*jerk : 0
+    g(i,x,t) = i==1 ? t*jerk : 0.
+    !use_g && (g = nothing)
     return WaterLily.Simulation(
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
     ),jerk
 end
+gravity!(flow::Flow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
+    WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
+end
 @testset "Flow.jl with increasing body force" begin
     for f ∈ arrays
         N = 8
-        sim,jerk = acceleratingFlow(N;mem=f)
+        sim,jerk = acceleratingFlow(N;use_g=true,mem=f)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
-        uFinal = sim.flow.U[1] + 0.5*jerk*WaterLily.time(sim)^2
+        uFinal = sim.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim)^2
         @test (
             WaterLily.L₂(u[:,:,1].-uFinal) < 1e-4 &&
             WaterLily.L₂(u[:,:,2].-0) < 1e-4
         )
+
+        # Test with user defined function instead of acceleration
+        sim_udf,_ = acceleratingFlow(N;mem=f)
+        sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
+        uFinal = sim_udf.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
+        @test (
+            WaterLily.L₂(u_udf[:,:,1].-uFinal) < 1e-4 &&
+            WaterLily.L₂(u_udf[:,:,2].-0) < 1e-4
+        )
     end
+end
+
+make_bl_flow(L=32;T=Float32,mem=Array) = Simulation((L,L),
+    (i,x,t)-> i==1 ? convert(Float32,4.0*(((x[2]+0.5)/2L)-((x[2]+0.5)/2L)^2)) : 0.f0,
+    L;ν=0.001,U=1,mem,T,exitBC=false
+) # fails with exitBC=true, but the profile is maintained
+@testset "Boundary Layer Flow" begin
+    for f ∈ arrays
+        sim = make_bl_flow(32;mem=f)
+        sim_step!(sim,10)
+        @test GPUArrays.@allowscalar all(sim.flow.u[1,:,1] .≈ sim.flow.u[end,:,1])
+    end
+end
+
+@testset "Rotating reference frame" begin
+    function rotating_reference(N,x₀::SVector{2,T},ω::T,mem=Array) where T
+        function velocity(i,x,t)
+            s,c = sincos(ω*t); y = ω*(x-x₀)
+            i==1 ? s*y[1]+c*y[2] : -c*y[1]+s*y[2]
+        end
+        coriolis(i,x,t) = i==1 ? 2ω*velocity(2,x,t) : -2ω*velocity(1,x,t)
+        centrifugal(i,x,t) = ω^2*(x-x₀)[i]
+        g(i,x,t) = coriolis(i,x,t)+centrifugal(i,x,t)
+        udf(a::Flow,t) = WaterLily.@loop a.f[Ii] += g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
+        simg = Simulation((N,N),velocity,N; g, U=1, T, mem) # use g
+        simg,Simulation((N,N),velocity,N; U=1, T, mem),udf
+    end
+    L = 4
+    simg,sim,udf = rotating_reference(2L,SA_F64[L,L],1/L,Array)
+    sim_step!(simg);sim_step!(sim;udf)
+    @test L₂(simg.flow.p)==L₂(sim.flow.p)<3e-3 # should be zero
 end
 
 @testset "Circle in accelerating flow" begin
     for f ∈ arrays
         make_accel_circle(radius=32,H=16) = Simulation(radius.*(2H,2H),
-            (i,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
+            (i,x,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
             body=AutoBody((x,t)->√sum(abs2,x .-H*radius)-radius))
         sim = make_accel_circle(); sim_step!(sim)
         @test isapprox(WaterLily.pressure_force(sim)/(π*sim.L^2),[-1,0],atol=0.04)
@@ -347,16 +435,16 @@ import WaterLily: ×
         # stress tensor
         u₂ = zeros(N,N,2) |> f
         u₃ = zeros(N,N,N,3) |> f
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ 0)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ 0)
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ 0)
         apply!((i,x)->x[i],u₂) # uniform gradient
         apply!((i,x)->x[i],u₃)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[2 0; 0 2])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[2 0 0; 0 2 0; 0 0 2])
         apply!((i,x)->x[i%2+1],u₂) # shear
         apply!((i,x)->x[i%3+1],u₃)
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
-        @test GPUArrays.@allowscalar all(WaterLily.∇²u(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2),u₂) .≈ SA[0 2; 2 0])
+        @test GPUArrays.@allowscalar all(2WaterLily.S(CartesianIndex(N÷2,N÷2,N÷2),u₃) .≈ SA[0 1 1; 1 0 1; 1 1 0])
         # viscous force
         u₂ .= 0; u₃ .= 0
         @test all(WaterLily.viscous_force(u₂,1.0,df₂,body) .≈ 0)
@@ -366,6 +454,22 @@ import WaterLily: ×
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
         @test WaterLily.pressure_moment(SVector{2,Float64}(N/2,N/2),p₂,df₂,body,0)[1] ≈ 0 # no moment in hydrostatic pressure
         @test all(WaterLily.pressure_moment(SVector{3,Float64}(N/2,N/2,N/2),p₃,df₃,body,0) .≈ SA[0 0 0]) # with a 3D field, 3D moments
+        # temporal averages
+        T = Float32
+        sim = make_bl_flow(; T, mem=f)
+        meanflow = MeanFlow(sim.flow; uu_stats=true)
+        sim_step!(sim, 10; meanflow)
+        @test all(isapprox.(Array(sim.flow.u), Array(meanflow.U); atol=√eps(T))) # can't broadcast isapprox for GPUArrays...
+        @test all(isapprox.(Array(sim.flow.p), Array(meanflow.P); atol=√eps(T)))
+        for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
+            @test all(isapprox.(Array(sim.flow.u)[:,:,i] .* Array(sim.flow.u)[:,:,j], Array(meanflow.UU)[:,:,i,j]; atol=√eps(T)))
+        end
+        @test WaterLily.time(sim.flow) == WaterLily.time(meanflow)
+        WaterLily.reset!(meanflow)
+        @test all(meanflow.U .== zero(T))
+        @test all(meanflow.P .== zero(T))
+        @test all(meanflow.UU .== zero(T))
+        @test meanflow.t == T[0]
     end
 end
 
@@ -423,11 +527,11 @@ end
         sim = sphere_sim(;D,mem);
         # make a vtk writer
         wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
-        sim_step!(sim,1); write!(wr, sim); close(wr)
+        sim_step!(sim,1); save!(wr, sim); close(wr)
 
         # re start the sim from a paraview file
         restart = sphere_sim(;D,mem);
-        restart_sim!(restart;fname="test_vtk_reader_$D.pvd")
+        load!(restart; fname="test_vtk_reader_$D.pvd")
 
         # check that the restart is the same as the original
         @test all(sim.flow.p .== restart.flow.p)
@@ -440,4 +544,34 @@ end
         @test_nowarn rm("TEST_DIR",recursive=true)
         @test_nowarn rm("test_vtk_reader_$D.pvd")
     end
+end
+
+@testset "WaterLilyJLD2Ext.jl" begin
+    test_dir = "TEST_DIR"; mkpath(test_dir)
+    for D ∈ [2,3], mem ∈ arrays
+        sim1 = sphere_sim(;D,mem)
+        sim_step!(sim1, 1)
+        save!("sim1_sphere.jld2", sim1; dir=test_dir)
+
+        sim2 = sphere_sim(;D,mem)
+        load!(sim2; fname="sim1_sphere.jld2", dir=test_dir)
+
+        @test all(sim1.flow.p .== sim2.flow.p)
+        @test all(sim1.flow.u .== sim2.flow.u)
+        @test all(sim1.flow.Δt .== sim2.flow.Δt)
+
+        # temporal averages
+        sim = make_bl_flow(; T=Float32, mem)
+        meanflow1 = MeanFlow(sim.flow; uu_stats=true)
+        sim_step!(sim, 10; meanflow1)
+        save!("meanflow.jld2", meanflow1; dir=test_dir)
+        meanflow2 = MeanFlow(sim.flow; uu_stats=true)
+        WaterLily.reset!(meanflow2)
+        load!(meanflow2; fname="meanflow.jld2", dir=test_dir)
+        @test all(meanflow1.U .== meanflow2.U)
+        @test all(meanflow1.P .== meanflow2.P)
+        @test all(meanflow1.UU .== meanflow2.UU)
+        @test all(meanflow1.t .== meanflow2.t)
+    end
+    @test_nowarn rm(test_dir, recursive=true)
 end

@@ -14,7 +14,7 @@ import WaterLily: flood,addbody,body_plot!,sim_gif!,plot_logger
 
 Plot a filled contour plot of the 2D array `f`. The keyword arguments are passed to `Plots.contourf`.
 """
-function flood(f::Array;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,kv...)
+function flood(f::AbstractArray;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,kv...)
     if length(clims)==2
         @assert clims[1]<clims[2]
         @. f=min(clims[2],max(clims[1],f))
@@ -22,7 +22,7 @@ function flood(f::Array;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,kv...)
         clims = (minimum(f),maximum(f))
     end
     Plots.contourf(axes(f,1).+shift[1],axes(f,2).+shift[2],f'|>Array,
-                   linewidth=0, levels=levels, color=cfill, clims = clims, 
+                   linewidth=0, levels=levels, color=cfill, clims = clims,
                    aspect_ratio=:equal; kv...)
 end
 
@@ -44,7 +44,7 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
     @time @gif for tᵢ in range(t₀,t₀+duration;step)
         WaterLily.sim_step!(sim,tᵢ;remeasure)
         @WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-        flood(sim.flow.σ[R]|>Array; kv...)
+        flood(sim.flow.σ[R]; kv...)
         plotbody && body_plot!(sim)
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
@@ -62,23 +62,23 @@ function plot_logger(fname="WaterLily.log")
     open(ifelse(fname[end-3:end]==".log",fname[1:end-4],fname)*".log","r") do f
         readline(f) # read first line and dump it
         which = "p"
-        while ! eof(f)  
-            s = split(readline(f) , ",")          
+        while ! eof(f)
+            s = split(readline(f) , ",")
             which = s[1] != "" ? s[1] : which
-            push!(which == "p" ? predictor : corrector,parse.(Float64,s[2:end]))
+            push!(which == "p" ? predictor : corrector, parse.(Float64,s[2:end]))
         end
     end
     predictor = reduce(hcat,predictor)
     corrector = reduce(hcat,corrector)
-
+    # @log p/c, nᵖ, L∞(p), r₂, (nᵇ) this is what is logged
     # get index of all time steps
     idx = findall(==(0.0),@views(predictor[1,:]))
     # plot inital L∞ and L₂ norms of residuals for the predictor step
     p1=plot(1:length(idx),predictor[2,idx],color=:1,ls=:dash,alpha=0.8,label="predictor initial r∞",yaxis=:log,size=(800,400),dpi=600,
             xlabel="Time step",ylabel="L∞-norm",title="Residuals",ylims=(1e-8,1e0),xlims=(0,length(idx)))
-    p2=plot(1:length(idx),predictor[2,idx],color=:1,ls=:dash,alpha=0.8,label="predictor initial r₂",yaxis=:log,size=(800,400),dpi=600,
+    p2=plot(1:length(idx),predictor[3,idx],color=:1,ls=:dash,alpha=0.8,label="predictor initial r₂",yaxis=:log,size=(800,400),dpi=600,
             xlabel="Time step",ylabel="L₂-norm",title="Residuals",ylims=(1e-8,1e0),xlims=(0,length(idx)))
-    # plot final L∞ and L₂norms of residuals for the predictor
+    # plot final L∞ and L₂ norms of residuals for the predictor
     plot!(p1,1:length(idx),vcat(predictor[2,idx[2:end].-1],predictor[2,end]),color=:1,lw=2,alpha=0.8,label="predictor r∞")
     plot!(p2,1:length(idx),vcat(predictor[3,idx[2:end].-1],predictor[3,end]),color=:1,lw=2,alpha=0.8,label="predictor r₂")
     # plot the MG iterations for the predictor
@@ -95,8 +95,17 @@ function plot_logger(fname="WaterLily.log")
     plot!(p2,1:length(idx),vcat(corrector[3,idx[2:end].-1],corrector[3,end]),color=:2,lw=2,alpha=0.8,label="corrector r₂")
     # plot MG iterations of the corrector
     plot!(p3,1:length(idx),clamp.(vcat(corrector[1,idx[2:end].-1],corrector[1,end]),√1/2,32),lw=2,alpha=0.8,label="corrector")
-    # plot all together
-    plot(p1,p2,p3,layout=@layout [a b c])
+    if size(predictor,1) == 3
+        # plot all together
+        plot(p1,p2,p3,layout=@layout [a b c])
+    else # if the BiotSavart is used, we can plot the coupling iterations
+        p4 = plot(1:length(idx),clamp.(vcat(predictor[4,idx[2:end].-1],predictor[4,end]),√1/2,32),lw=2,alpha=0.8,label="predictor",size=(800,400),dpi=600,
+                  xlabel="Time step",ylabel="Iterations",title="Biot-Savart",ylims=(√1/2,32),xlims=(0,length(idx)),yaxis=:log2)
+        yticks!([√1/2,1,2,4,8,16,32],["0","1","2","4","8","16","32"])
+        plot!(p4,1:length(idx),clamp.(vcat(corrector[4,idx[2:end].-1],corrector[4,end]),√1/2,32),lw=2,alpha=0.8,label="corrector")
+        # plot all together
+        plot(p1,p2,p3,p4,layout=@layout [a b c d])
+    end
 end
 
 end # module
