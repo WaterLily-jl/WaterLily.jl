@@ -83,6 +83,11 @@ Keyword arguments:
     - `remeasure::Bool`: Update the body position.
     - `max_steps::Int`: Simulation end time.
     - `verbose::Bool`: Print simulation information.
+    - `λ::Function`: Convective scheme function passed into `sim_step!`.
+    - `meanflow::MeanFlow`: `MeanFlow` object passed into `sim_step!`.
+    - `udf::Function`: User-defined function passed into `sim_step!`.
+    - `udf_kwargs_dict::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
+        `Pair{Symbol,Any}` iterator.
     - `d::Int`: Plot dimension. `d=2` produces a `Makie.contourf`, and `d=3` produces a `Makie.volume`.
         Defaults to simulation number of dimension.
     - `CIs::CartesianIndices`: Range of Cartesian indices to render.
