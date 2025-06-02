@@ -129,7 +129,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
-    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert isa(udf_kwargs,Dict{Symbol}) "udf_kwargs needs to be a Dict or Iterator containing Pair{Symbol,Any} elements.")
+    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(x->isa(x,Pair{Symbol},udf_kwargs)) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> Array
