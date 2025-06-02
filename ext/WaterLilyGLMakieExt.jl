@@ -86,7 +86,7 @@ Keyword arguments:
     - `λ::Function`: Convective scheme function passed into `sim_step!`.
     - `meanflow::MeanFlow`: `MeanFlow` object passed into `sim_step!`.
     - `udf::Function`: User-defined function passed into `sim_step!`.
-    - `udf_kwargs_dict::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
+    - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
         `Pair{Symbol,Any}` iterator.
     - `d::Int`: Plot dimension. `d=2` produces a `Makie.contourf`, and `d=3` produces a `Makie.volume`.
         Defaults to simulation number of dimension.
@@ -110,7 +110,7 @@ Keyword arguments:
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
-    λ=quick, udf=nothing, udf_kwargs_dict=nothing, meanflow=nothing,
+    λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
     video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
@@ -129,7 +129,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
-    !isnothing(udf) && !isnothing(udf_kwargs_dict) && (@assert isa(udf_kwargs_dict,Dict{Symbol}) "udf_kwargs_dict needs to be a Dict or Iterator containing Pair{Symbol,Any} elements.")
+    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert isa(udf_kwargs,Dict{Symbol}) "udf_kwargs needs to be a Dict or Iterator containing Pair{Symbol,Any} elements.")
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> Array
@@ -160,7 +160,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
         if !isnothing(video)
             Makie.record(fig, video; framerate, compression) do frame
                 while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-                    sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs_dict...)
+                    sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs...)
                     verbose && sim_info(sim)
                     if mod(length(sim.flow.Δt), skipframes) == 0
                         update_data()
@@ -171,7 +171,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
         else
             display(fig)
             while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-                sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs_dict...)
+                sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs...)
                 verbose && sim_info(sim)
                 if mod(length(sim.flow.Δt), skipframes) == 0
                     update_data()
