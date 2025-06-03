@@ -1,12 +1,7 @@
-module WaterLilyGLMakieExt
+module WaterLilyMakieExt
 
-if isdefined(Base, :get_extension)
-    using GLMakie; GLMakie.activate!(inline=false)
-else
-    using ..GLMakie; GLMakie.activate!(inline=false)
-end
-
-using WaterLily
+using Makie, WaterLily
+using Makie.GeometryBasics
 import WaterLily: viz!, get_body, plot_body_obs!
 
 """
@@ -67,7 +62,7 @@ plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(
         theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...
     )
 
-General visualization routine to simulate and render the flow field using GLMakie.
+General visualization routine to simulate and render the flow field using Makie.
 Works for both 2D and 3D simulations. For 3D simulations, the user can choose to render 3D volumetric scalar data, or a 2D slice.
 Users must pass a function `f!` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
 The interface of `f!` must follow `f!(cpu_array::Array, sim::AbstractSimulation)`. For example, to visualize vorticity magnitude:
@@ -129,7 +124,8 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
-    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(x->isa(x,Pair{Symbol},udf_kwargs)) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
+    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
+    isnothing(udf) && (udf_kwargs=[])
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> Array

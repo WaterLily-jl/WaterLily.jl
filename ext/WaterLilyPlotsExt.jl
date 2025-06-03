@@ -1,13 +1,8 @@
 module WaterLilyPlotsExt
 
-if isdefined(Base, :get_extension)
-    using Plots; gr()
-else
-    using ..Plots; gr()
-end
-
-using WaterLily
+using Plots, WaterLily
 import WaterLily: flood,addbody,body_plot!,sim_gif!,plot_logger
+gr()
 
 """
     flood(f)

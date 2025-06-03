@@ -1,12 +1,6 @@
 module WaterLilyCUDAExt
 
-if isdefined(Base, :get_extension)
-    using CUDA
-else
-    using ..CUDA
-end
-
-using WaterLily
+using CUDA, WaterLily
 import WaterLily: L₂
 
 """
