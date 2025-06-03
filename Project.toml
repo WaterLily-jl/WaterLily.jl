@@ -41,7 +41,7 @@ WaterLilyWriteVTKExt = "WriteVTK"
 [compat]
 DocStringExtensions = "0.9"
 EllipsisNotation = "1.8"
-ForwardDiff = "^0.10.18"
+ForwardDiff = "0.10.18, 1"
 KernelAbstractions = "0.9.1"
 LoggingExtras = "1.1"
 Preferences = "1.4"
