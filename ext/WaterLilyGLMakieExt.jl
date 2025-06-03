@@ -83,13 +83,18 @@ Keyword arguments:
     - `remeasure::Bool`: Update the body position.
     - `max_steps::Int`: Simulation end time.
     - `verbose::Bool`: Print simulation information.
+    - `λ::Function`: Convective scheme function passed into `sim_step!`.
+    - `meanflow::MeanFlow`: `MeanFlow` object passed into `sim_step!`.
+    - `udf::Function`: User-defined function passed into `sim_step!`.
+    - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
+        `Pair{Symbol,Any}` iterator.
     - `d::Int`: Plot dimension. `d=2` produces a `Makie.contourf`, and `d=3` produces a `Makie.volume`.
         Defaults to simulation number of dimension.
     - `CIs::CartesianIndices`: Range of Cartesian indices to render.
     - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render, and defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
     - `body::Bool`: Plot the body.
-    - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a GLMakie.volume (faster).
+    - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a Makie.volume (faster).
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
@@ -105,6 +110,7 @@ Keyword arguments:
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
+    λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
     video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
@@ -123,6 +129,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
+    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(x->isa(x,Pair{Symbol},udf_kwargs)) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> Array
@@ -151,9 +158,9 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     if !isnothing(t_end) # time loop for animation
         steps₀ = length(sim.flow.Δt)
         if !isnothing(video)
-            GLMakie.record(fig, video; framerate, compression) do frame
+            Makie.record(fig, video; framerate, compression) do frame
                 while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-                    sim_step!(sim; remeasure)
+                    sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs...)
                     verbose && sim_info(sim)
                     if mod(length(sim.flow.Δt), skipframes) == 0
                         update_data()
@@ -164,7 +171,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
         else
             display(fig)
             while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-                sim_step!(sim; remeasure)
+                sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs...)
                 verbose && sim_info(sim)
                 if mod(length(sim.flow.Δt), skipframes) == 0
                     update_data()
