@@ -1,12 +1,6 @@
 module WaterLilyJLD2Ext
 
-if isdefined(Base, :get_extension)
-    using JLD2
-else
-    using ..JLD2
-end
-
-using WaterLily
+using JLD2, WaterLily
 import WaterLily: save!, load!
 
 """

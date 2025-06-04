@@ -1,12 +1,6 @@
 module WaterLilyReadVTKExt
 
-if isdefined(Base, :get_extension)
-    using ReadVTK
-else
-    using ..ReadVTK
-end
-
-using WaterLily
+using ReadVTK, WaterLily
 import WaterLily: load!
 
 """

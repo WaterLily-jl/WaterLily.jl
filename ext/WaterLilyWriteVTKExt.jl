@@ -1,12 +1,6 @@
 module WaterLilyWriteVTKExt
 
-if isdefined(Base, :get_extension)
-    using WriteVTK
-else
-    using ..WriteVTK
-end
-
-using WaterLily
+using WriteVTK, WaterLily
 import WaterLily: vtkWriter, save!, default_attrib, pvd_collection
 using Printf: @sprintf
 import Base: close
