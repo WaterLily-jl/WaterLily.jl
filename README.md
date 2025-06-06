@@ -2,7 +2,7 @@
 
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/dev/)
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
-[![CI](https://github.com/WaterLily-jl/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/WaterLily-jl/WaterLily.jl/actions)
+[![CI](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
 [![DOI](https://zenodo.org/badge/DOI/10.48550/arXiv.2407.16032.svg)](https://doi.org/10.48550/arXiv.2407.16032)
 

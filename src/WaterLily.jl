@@ -6,7 +6,7 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,@log
+export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
@@ -18,7 +18,7 @@ include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
-export Flow,mom_step!
+export Flow,mom_step!,quick,cds
 
 include("Body.jl")
 export AbstractBody,measure_sdf!
@@ -27,6 +27,7 @@ include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
 include("Metrics.jl")
+export MeanFlow
 
 abstract type AbstractSimulation end
 """
@@ -88,25 +89,29 @@ scales.
 sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 """
-    sim_step!(sim::Simulation,t_end=sim(time)+Δt;max_steps=typemax(Int),remeasure=true,verbose=false)
+    sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
+        udf=nothing,meanflow=nothing,kwargs...)
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
-If `remeasure=true`, the body is remeasured at every time step.
-Can be set to `false` for static geometries to speed up simulation.
+If `remeasure=true`, the body is remeasured at every time step. Can be set to `false` for static geometries to speed up simulation.
 A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
+A `::MeanFlow` can also be passed to compute on-the-fly temporal averages.
+A `λ::Function` function can be passed as a custom convective scheme, following the interface of `λ(u,c,d)` (for upstream, central,
+downstream points).
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),udf=nothing,verbose=false,kwargs...)
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
+        udf=nothing,meanflow=nothing,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, udf, kwargs...)
-        verbose && println("tU/L=",round(sim_time(sim),digits=4),
-            ", Δt=",round(sim.flow.Δt[end],digits=3))
+        sim_step!(sim; remeasure, λ, udf, meanflow, kwargs...)
+        verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,meanflow=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; udf, kwargs...)
+    mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
+    !isnothing(meanflow) && update!(meanflow,sim.flow)
 end
 
 """
@@ -119,22 +124,37 @@ function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
     update!(sim.pois)
 end
 
-export AbstractSimulation,Simulation,sim_step!,sim_time,measure!
+"""
+    sim_info(sim::AbstractSimulation)
+Prints information on the current state of a simulation.
+"""
+sim_info(sim::AbstractSimulation) = println("tU/L=",round(sim_time(sim),digits=4),", Δt=",round(sim.flow.Δt[end],digits=3))
 
-# default WriteVTK functions
+"""
+    perturb!(sim; noise=0.1)
+Perturb the velocity field of a simulation with `noise` level with respect to velocity scale `U`.
+"""
+perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flow.u))*sim.U*noise |> typeof(sim.flow.u).name.wrapper
+
+export AbstractSimulation,Simulation,sim_step!,sim_time,measure!,sim_info,perturb!
+
+# defaults JLD2 and VTK I/O functions
+function load!(sim::AbstractSimulation; kwargs...)
+    fname = get(Dict(kwargs), :fname, "WaterLily.jld2")
+    ext = split(fname, ".")[end] |> Symbol
+    vtk_loaded = !isnothing(Base.get_extension(WaterLily, :WaterLilyReadVTKExt))
+    jld2_loaded = !isnothing(Base.get_extension(WaterLily, :WaterLilyJLD2Ext))
+    ext == :pvd && (@assert vtk_loaded "WriteVTK must be loaded to save .pvd data.")
+    ext == :jdl2 && (@assert jld2_loaded "JLD2 must be loaded to save .jld2 data.")
+    load!(sim, Val{ext}(); kwargs...)
+end
+function save! end
 function vtkWriter end
-function write! end
 function default_attrib end
 function pvd_collection end
-# export
-export vtkWriter, write!, default_attrib
+export load!, save!, vtkWriter, default_attrib
 
-# default ReadVTK functions
-function restart_sim! end
-# export
-export restart_sim!
-
-#default Plots functions
+# default Plots functions
 function flood end
 function addbody end
 function body_plot! end
@@ -143,31 +163,29 @@ function plot_logger end
 # export
 export flood,addbody,body_plot!,sim_gif!,plot_logger
 
+# default Makie functions
+function viz! end
+function get_body end
+function plot_body_obs! end
+# export
+export viz!, get_body, plot_body_obs!
+
 # Check number of threads when loading WaterLily
 """
-    check_nthreads(::Val{1})
+    check_nthreads()
 
 Check the number of threads available for the Julia session that loads WaterLily.
-A warning is shown when running in serial (`JULIA_NUM_THREADS=1`).
+A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstractions enabled.
 """
-check_nthreads(::Val{1}) = @warn("\nUsing WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because \
-    it disables the GPU backend and defaults to serial CPU."*
-    "\nUse JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU or GPU backends.")
-check_nthreads(_) = nothing
-
-# Backward compatibility for extensions
-if !isdefined(Base, :get_extension)
-    using Requires
-end
-function __init__()
-    @static if !isdefined(Base, :get_extension)
-        @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/WaterLilyAMDGPUExt.jl")
-        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/WaterLilyCUDAExt.jl")
-        @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
-        @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
-        @require Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" include("../ext/WaterLilyPlotsExt.jl")
+function check_nthreads()
+    if backend == "KernelAbstractions" && Threads.nthreads() == 1
+        @warn """
+        Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
+        Use JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU backends.
+        For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")
+        """
     end
-    check_nthreads(Val{Threads.nthreads()}())
 end
+check_nthreads()
 
 end # module
