@@ -265,8 +265,8 @@ end
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
     x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
-    
-    # CartesianIndices around x 
+
+    # CartesianIndices around x
     I = CartesianIndex(i...); R = I:I+oneunit(I)
 
     # Linearly weighted sum over arr[R] (in serial)
