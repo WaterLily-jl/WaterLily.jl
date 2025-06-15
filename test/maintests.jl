@@ -230,6 +230,9 @@ end
     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
     @test WaterLily.μ₀(0,1)==0.5
     @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
+
+    @test all(measure(WaterLily.NoBody(),[2,1],0) .== (Inf,zeros(2),zeros(2)))
+    @test sdf(WaterLily.NoBody(),[2,1],0) == Inf
 end
 
 @testset "AutoBody.jl" begin
@@ -246,6 +249,9 @@ end
     @test all(measure(body1+body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1∪body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
+
+    # test sdf and exactly equal distance bodies
+    @test sdf(AutoBody(circ)+AutoBody(circ,(x,t)->x.-[6,0]),[3.,0.],0.) == 1
 
     # test scaling
     body = AutoBody(circ)
