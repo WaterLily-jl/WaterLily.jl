@@ -61,14 +61,14 @@ end
 
 Measure only the distance. Defaults to fastd²=0 for quick evaluation.
 """
-sdf(body::AbstractBody,x,t=0;fastd²=0,kwargs...) = measure(body,x,t;fastd²)[1]
+sdf(body::AbstractBody,x,t=0;fastd²=0) = measure(body,x,t;fastd²)[1]
 
 """
-    measure_sdf!(a::AbstractArray, body::AbstractBody, t=0)
+    measure_sdf!(a::AbstractArray, body::AbstractBody, t=0; fastd²=0)
 
-Uses `sdf(body,x,t)` to fill `a`.
+Uses `sdf(body,x,t)` to fill `a`. Defaults to fastd²=0 for quick evaluation.
 """
-measure_sdf!(a::AbstractArray,body::AbstractBody,t=0;kwargs...) = @inside a[I] = sdf(body,loc(0,I,eltype(a)),t;kwargs...)
+measure_sdf!(a::AbstractArray{T},body::AbstractBody,t=zero(T);fastd²=zero(T)) where T = @inside a[I] = sdf(body,loc(0,I,T),t;fastd²)::T
 
 """
     NoBody
@@ -93,10 +93,10 @@ end
 
 # Lazy constructors
 Base.:∪(a::AbstractBody, b::AbstractBody) = SetBody(min,a,b)
-Base.:+(a::AbstractBody, b::AbstractBody) = a∪b
+Base.:+(a::AbstractBody, b::AbstractBody) = a ∪ b
 Base.:∩(a::AbstractBody, b::AbstractBody) = SetBody(max,a,b)
 Base.:-(a::AbstractBody) = SetBody(-,a,NoBody())
-Base.:-(a::AbstractBody, b::AbstractBody) = a∩(-b)
+Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
 
 # Measurements
 measure(body::SetBody,x,t;fastd²=Inf) = mapreduce(bod->measure(bod,x,t;fastd²),body.op,(body.a,body.b))
