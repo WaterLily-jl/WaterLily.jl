@@ -22,7 +22,7 @@ end
 """
     d = sdf(body::AutoBody,x,t) = body.sdf(x,t)
 """
-sdf(body::AutoBody,x,t;kwargs...) = body.sdf(x,t)
+sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(x,t)
 
 using ForwardDiff
 """

@@ -265,11 +265,12 @@ end
     @test all(WaterLily.curvature([1. 0.; 0. 1.]).≈(1.,0.))
     @test all(WaterLily.curvature([2. 1. 0.; 1. 2. 1.; 0. 1. 2.]).≈(3.,10.))
 
-    # check that sdf functions are the same
+    # check sdf on arrays and that it recovers set arithmetic identity
     for f ∈ arrays
-        p = zeros(4,5) |> f; measure_sdf!(p,body1)
-        I = CartesianIndex(2,3)
-        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I,eltype(p)),0.0)
+        p = zeros(Float32,4,5) |> f; measure_sdf!(p,(body1 ∩ body2) ∪ body1)
+        for I ∈ inside(p)
+            @test GPUArrays.@allowscalar p[I]≈sdf(body1,loc(0,I,Float32))
+        end
     end
 
     # check fast version
