@@ -167,9 +167,8 @@ export flood,addbody,body_plot!,sim_gif!,plot_logger
 function viz! end
 function get_body end
 function plot_body_obs! end
-function ω_viz! end
 # export
-export viz!, get_body, plot_body_obs!, ω_viz!
+export viz!, get_body, plot_body_obs!
 
 # Check number of threads when loading WaterLily
 """

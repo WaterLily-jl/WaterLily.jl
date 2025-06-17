@@ -1,7 +1,7 @@
 module WaterLilyMakieExt
 
 using Makie, WaterLily
-using Makie.GeometryBasics
+using Makie.GeometryBasics, Makie.PlotUtils
 import WaterLily: viz!, get_body, plot_body_obs!
 
 """
@@ -18,15 +18,28 @@ end
     default_colormap_and_levels(minv, maxv, threshhold, levels)
 """
 function default_colormap_and_levels(clims; threshhold=0.1, nlevels=20, colormap=:seismic, threshhold_color=RGB(1,1,1))
-    colormap_upperrange(max_val, threshhold, nlevels) = range(threshhold, max_val, (nlevels - 1) ÷ 2)
-    colormap_lowerrange(min_val, threshhold, nlevels) = range(min_val, threshhold, (nlevels - 1) ÷ 2)
-    lowerrange = colormap_lowerrange(clims[0], threshhold, nlevels)
-    upperrange = colormap_upperrange(clims[1], -threshhold, nlevels)
-    levels = [lowerrange; upperrange]
+    lowerrange = range(clims[1], -threshhold, (nlevels - 1) ÷ 2)
+    upperrange = range(threshhold, clims[2], (nlevels - 1) ÷ 2)
     colors = palette(colormap, nlevels).colors.colors
     colors[[(nlevels - 1) ÷ 2 + 1, (nlevels - 1) ÷ 2 + 2]] .= threshhold_color
-    colors, levels
+    colors, [lowerrange; upperrange]
 end
+
+"""
+Default visualization function for 2D/3D simulations
+"""
+
+function ω2D_viz!(cpu_array, sim)
+    a = sim.flow.σ
+    WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
+    copyto!(cpu_array, a[inside(a)])
+end
+function ω3D_viz!(cpu_array, sim)
+    a = sim.flow.σ
+    WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
+    copyto!(cpu_array, a[inside(a)])
+end
+ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
 """
     get_body(sdf_array, ::Val{false})
@@ -68,25 +81,28 @@ Plot the 3D scalar `σ::Observable` in a 3D volume axis.
 plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; kwargs...)
 
 """
-    viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
-        d=ndims(sim.flow.p), CIs=nothing, cut=nothing,
-        body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
-        video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
-        theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...
-    )
+    viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
+        λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
+        d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
+        body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
+        video=nothing, skipframes=1, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
+        theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
 
 General visualization routine to simulate and render the flow field using Makie.
 Works for both 2D and 3D simulations. For 3D simulations, the user can choose to render 3D volumetric scalar data, or a 2D slice.
-Users must pass a function `f!` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
-The interface of `f!` must follow `f!(cpu_array::Array, sim::AbstractSimulation)`. For example, to visualize vorticity magnitude:
+Users ca pass a function `f` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
+The default visualization function returns the vorticity.
+The interface of `f` must follow `f(arr::Array, sim::AbstractSimulation)`, where `arr` is a CPU array.
+For example, to visualize vorticity magnitude:
 ```
-function f!(cpu_array, sim)
+function f(arr, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(cpu_array, a[inside(a)]) # copy to CPU
+    copyto!(arr, a[inside(a)]) # copy to CPU
 end
 ```
 Keyword arguments:
+    - `f::Function`: Visualization function with interface f(arr::Array, sim::AbstractSimulation), where `arr` is the plotted data.
     - `t_end::Number`: Simulation end time.
     - `remeasure::Bool`: Update the body position.
     - `max_steps::Int`: Simulation end time.
@@ -111,7 +127,7 @@ Keyword arguments:
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `skipframes::Int`: Only render every `skipframes` time steps.
-    - `hideaxis::Bool`: Figures without axis details.
+    - `hidedecorations::Bool`: Figures without axis details.
     - `azimuth::Number`: Camera azimuth angle. Find a suitable angle interactively checking `ax.azimuth.val`
     - `elevation::Number`: Camera elevation angle. Find a suitable angle interactively checking `ax.elevation.val`.
     - `framerate::Int`: Video framerate.
@@ -121,15 +137,15 @@ Keyword arguments:
     - `fig_pad::Int`: Figure padding.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
-function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
+function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
     λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
-    video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
+    video=nothing, skipframes=1, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
     theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
 
     function update_data()
-        f!(dat, sim)
+        f(dat, sim)
         σ[] = WaterLily.squeeze(dat[CIs])
         if body && remeasure
             update_body!(dat, sim)
@@ -154,7 +170,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     end
     limits = Tuple((1,n) for n in size(CIs) if n > 1)
 
-    f!(dat, sim)
+    f(dat, sim)
     σ = WaterLily.squeeze(dat[CIs]) |> Observable
     if body
         update_body!(dat, sim)
@@ -165,10 +181,10 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     fig = Figure(size=fig_size, figure_padding=fig_pad)
     ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; limits, azimuth, elevation)
     if d == 2 && tidy_colormap
-        clims = :clims in keys(clims) ? kwargs[:clims] : (-1,1)
-        nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 20
+        clims = :clims in keys(kwargs) ? kwargs[:clims] : (-1,1)
+        nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 10
         colormap = :colormap in keys(kwargs) ? kwargs[:colormap] : :seismic
-        threshhold = :threshhold in keys(kwargs) ? kwargs[:threshhold] : 0.1
+        threshhold = :threshhold in keys(kwargs) ? kwargs[:threshhold] : 0.01
         threshhold_color = :threshhold_color in keys(kwargs) ? kwargs[:threshhold_color] : RGB(1,1,1)
         tidy_colormap, tidy_levels = default_colormap_and_levels(clims; threshhold, nlevels, colormap, threshhold_color)
         kwargs = remove_kwargs(:levels, :colormap, :clims, :threshhold, :threshhold_color, :extendlow, :extendhigh; kwargs...)
@@ -176,7 +192,8 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     end
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color)
-    hideaxis && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
+    hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
+    hidedecorations && d==2 && (hidedecorations!(ax))
 
     if !isnothing(t_end) # time loop for animation
         steps₀ = length(sim.flow.Δt)
@@ -203,13 +220,7 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
         end
     end
     isnothing(video) && display(fig)
-    return sim, fig, ax
-end
-
-function ω_viz!(cpu_array, sim)
-    a = sim.flow.σ
-    WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-    copyto!(cpu_array, a[inside(a)])
+    return fig, ax
 end
 
 # Utils
