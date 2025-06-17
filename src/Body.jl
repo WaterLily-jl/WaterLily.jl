@@ -4,10 +4,6 @@ using StaticArrays
 
 Immersed body Abstract Type. Any `AbstractBody` subtype must implement
 
-    d = sdf(body::AbstractBody, x, t=0)
-
-and
-
     d,n,V = measure(body::AbstractBody, x, t=0, fastd²=Inf)
 
 where `d` is the signed distance from `x` to the body at time `t`,
@@ -61,11 +57,18 @@ end
 μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))
 
 """
-    measure_sdf!(a::AbstractArray, body::AbstractBody, t=0)
+    d = sdf(a::AbstractBody,x,t=0;fastd²=0)
 
-Uses `sdf(body,x,t)` to fill `a`.
+Measure only the distance. Defaults to fastd²=0 for quick evaluation.
 """
-measure_sdf!(a::AbstractArray,body::AbstractBody,t=0;kwargs...) = @inside a[I] = sdf(body,loc(0,I,eltype(a)),t;kwargs...)
+sdf(body::AbstractBody,x,t=0;fastd²=0) = measure(body,x,t;fastd²)[1]
+
+"""
+    measure_sdf!(a::AbstractArray, body::AbstractBody, t=0; fastd²=0)
+
+Uses `sdf(body,x,t)` to fill `a`. Defaults to fastd²=0 for quick evaluation.
+"""
+measure_sdf!(a::AbstractArray{T},body::AbstractBody,t=zero(T);fastd²=zero(T)) where T = @inside a[I] = sdf(body,loc(0,I,T),t;fastd²)::T
 
 """
     NoBody
@@ -73,4 +76,30 @@ measure_sdf!(a::AbstractArray,body::AbstractBody,t=0;kwargs...) = @inside a[I] =
 Use for a simulation without a body.
 """
 struct NoBody <: AbstractBody end
-function measure!(a::Flow,body::NoBody;t=0,ϵ=1) end
+measure(::NoBody,x::AbstractVector,args...;kwargs...)=(Inf,zero(x),zero(x))
+function measure!(::Flow,::NoBody;kwargs...) end # skip measure! entirely
+
+"""
+    SetBody
+
+Body defined as a lazy set operation on two `AbstractBody`s.
+The operations are only evaluated when `measure`d.
+"""
+struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
+    op::O
+    a::Ta
+    b::Tb
+end
+
+# Lazy constructors
+Base.:∪(a::AbstractBody, b::AbstractBody) = SetBody(min,a,b)
+Base.:+(a::AbstractBody, b::AbstractBody) = a ∪ b
+Base.:∩(a::AbstractBody, b::AbstractBody) = SetBody(max,a,b)
+Base.:-(a::AbstractBody) = SetBody(-,a,NoBody())
+Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
+
+# Measurements
+function measure(body::SetBody,x,t;fastd²=Inf)
+    body.op(measure(body.a,x,t;fastd²),measure(body.b,x,t;fastd²)) # can't mapreduce within GPU kernel
+end
+measure(body::SetBody{typeof(-)},x,t;fastd²=Inf) = ((d,n,V) = measure(body.a,x,t;fastd²); (-d,-n,V))
