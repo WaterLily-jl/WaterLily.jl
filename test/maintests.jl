@@ -230,15 +230,18 @@ end
     @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
     @test WaterLily.μ₀(0,1)==0.5
     @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
+
+    @test all(measure(WaterLily.NoBody(),[2,1],0) .== (Inf,zeros(2),zeros(2)))
+    @test sdf(WaterLily.NoBody(),[2,1],0) == Inf
 end
 
 @testset "AutoBody.jl" begin
-    norm2(x) = √sum(abs2,x)
     # test AutoDiff in 2D and 3D
-    body1 = AutoBody((x,t)->norm2(x)-2-t)
+    circ(x,t)=√sum(abs2,x)-2
+    body1 = AutoBody((x,t)->circ(x,t)-t)
+    body2 = AutoBody(circ,(x,t)->x.+t^2)
     @test all(measure(body1,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
     @test all(measure(body1,[2.,0.,0.],1.).≈(-1.,[1.,0.,0.],[0.,0.,0.]))
-    body2 = AutoBody((x,t)->norm2(x)-2,(x,t)->x.+t^2)
     @test all(measure(body2,[√2.,√2.],0.).≈(0,[√.5,√.5],[0.,0.]))
     @test all(measure(body2,[1.,-1.,-1.],1.).≈(0.,[1.,0.,0.],[-2.,-2.,-2.]))
 
@@ -247,27 +250,27 @@ end
     @test all(measure(body1∪body2,[-√2.,-√2.],1.).≈(-√2.,[-√.5,-√.5],[-2.,-2.]))
     @test all(measure(body1-body2,[-√2.,-√2.],1.).≈(√2.,[√.5,√.5],[-2.,-2.]))
 
-    # tests for Bodies
-    @test all(measure(Bodies([body1,body2]),[-√2.,-√2.],1.).≈measure(body1+body2,[-√2.,-√2.],1.))
-    @test all(measure(Bodies([body1,body2],-),[-√2.,-√2.],1.).≈measure(body1-body2,[-√2.,-√2.],1.))
+    # test sdf and exactly equal distance bodies
+    @test sdf(AutoBody(circ)+AutoBody(circ,(x,t)->x.-[6,0]),[3.,0.],0.) == 1
 
-    radius = [1.0, 0.75, 0.5, 0.25]
-    circles = [(x,t) -> √sum(abs2,x)-r for r ∈ radius]
-    body = AutoBody(circles[1])-AutoBody(circles[2])+AutoBody(circles[3])-AutoBody(circles[4])
-    bodies = Bodies(AutoBody[AutoBody(c) for c ∈ circles], [-,+,-])
-    xy = rand(2)
-    @test all(measure(body, xy, 1.).≈measure(bodies, xy, 1.))
+    # test scaling
+    body = AutoBody(circ)
+    for i in 2:20
+        body += AutoBody(circ,(x,t)->x-rand(2))
+        @test sizeof(body) == i
+    end
 
     # test curvature, 2D and 3D
     # A = ForwardDiff.Hessian(y->body1.sdf(y,0.0),[0.,0.])
     @test all(WaterLily.curvature([1. 0.; 0. 1.]).≈(1.,0.))
     @test all(WaterLily.curvature([2. 1. 0.; 1. 2. 1.; 0. 1. 2.]).≈(3.,10.))
 
-    # check that sdf functions are the same
+    # check sdf on arrays and that it recovers set arithmetic identity
     for f ∈ arrays
-        p = zeros(4,5) |> f; measure_sdf!(p,body1)
-        I = CartesianIndex(2,3)
-        @test GPUArrays.@allowscalar p[I]≈body1.sdf(loc(0,I,eltype(p)),0.0)
+        p = zeros(Float32,4,5) |> f; measure_sdf!(p,(body1 ∩ body2) ∪ body1)
+        for I ∈ inside(p)
+            @test GPUArrays.@allowscalar p[I]≈sdf(body1,loc(0,I,Float32))
+        end
     end
 
     # check fast version
