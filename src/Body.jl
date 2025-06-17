@@ -100,7 +100,6 @@ Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
 
 # Measurements
 function measure(body::SetBody,x,t;fastd²=Inf)
-    a,b = map(bod->measure(bod,x,t;fastd²),(body.a,body.b))
-    a==b ? a : body.op(a,b) # required on GPU for some reason!?!
+    body.op(measure(body.a,x,t;fastd²),measure(body.b,x,t;fastd²)) # can't mapreduce within GPU kernel
 end
 measure(body::SetBody{typeof(-)},x,t;fastd²=Inf) = ((d,n,V) = measure(body.a,x,t;fastd²); (-d,-n,V))
