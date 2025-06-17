@@ -179,7 +179,7 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, 
 
     !isnothing(theme) && set_theme!(theme)
     fig = Figure(size=fig_size, figure_padding=fig_pad)
-    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; limits, azimuth, elevation)
+    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
     if d == 2 && tidy_colormap
         clims = :clims in keys(kwargs) ? kwargs[:clims] : (-1,1)
         nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 10
