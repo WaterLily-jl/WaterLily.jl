@@ -142,7 +142,7 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, 
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, skipframes=1, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
-    theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
+    theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
 
     function update_data()
         f(dat, sim)
@@ -169,6 +169,10 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, 
         CIs = Tuple(i == cut_dim ? (cut[i]:cut[i]) : CIs.indices[i] for i in 1:D) |> CartesianIndices
     end
     limits = Tuple((1,n) for n in size(CIs) if n > 1)
+    if isnothing(fig_size)
+        fig_size = (1200, 1200)
+        d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))
+    end
 
     f(dat, sim)
     σ = WaterLily.squeeze(dat[CIs]) |> Observable
