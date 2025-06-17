@@ -81,12 +81,12 @@ Plot the 3D scalar `σ::Observable` in a 3D volume axis.
 plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; kwargs...)
 
 """
-    viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
+    viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, remeasure=true, verbose=true,
         λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
         d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
         body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
-        video=nothing, skipframes=1, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
-        theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
+        video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
+        theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
 
 General visualization routine to simulate and render the flow field using Makie.
 Works for both 2D and 3D simulations. For 3D simulations, the user can choose to render 3D volumetric scalar data, or a 2D slice.
@@ -103,9 +103,8 @@ end
 ```
 Keyword arguments:
     - `f::Function`: Visualization function with interface f(arr::Array, sim::AbstractSimulation), where `arr` is the plotted data.
-    - `t_end::Number`: Simulation end time.
+    - `duration::Number`: Simulation end time.
     - `remeasure::Bool`: Update the body position.
-    - `max_steps::Int`: Simulation end time.
     - `verbose::Bool`: Print simulation information.
     - `λ::Function`: Convective scheme function passed into `sim_step!`.
     - `meanflow::MeanFlow`: `MeanFlow` object passed into `sim_step!`.
@@ -126,7 +125,6 @@ Keyword arguments:
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
-    - `skipframes::Int`: Only render every `skipframes` time steps.
     - `hidedecorations::Bool`: Figures without axis details.
     - `azimuth::Number`: Camera azimuth angle. Find a suitable angle interactively checking `ax.azimuth.val`
     - `elevation::Number`: Camera elevation angle. Find a suitable angle interactively checking `ax.elevation.val`.
@@ -137,11 +135,11 @@ Keyword arguments:
     - `fig_pad::Int`: Figure padding.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
-function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
+function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, remeasure=true, verbose=true,
     λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
-    video=nothing, skipframes=1, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
+    video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
     theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
 
     function update_data()
@@ -151,6 +149,11 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, 
             update_body!(dat, sim)
             σb_obs[] = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
         end
+    end
+    function step_sim_and_viz!(sim, tᵢ)
+        sim_step!(sim, tᵢ; remeasure, λ, udf, meanflow, udf_kwargs...)
+        verbose && sim_info(sim)
+        update_data()
     end
 
     d==2 && (@assert !(body2mesh) "body2mesh only allowed for 3D plots (d=3).")
@@ -199,27 +202,19 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), t_end=nothing, remeasure=true, 
     hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
     hidedecorations && d==2 && (hidedecorations!(ax))
 
-    if !isnothing(t_end) # time loop for animation
-        steps₀ = length(sim.flow.Δt)
+    if !isnothing(duration) # time loop for animation
+        t₀ = round(WaterLily.sim_time(sim))
         if !isnothing(video)
             Makie.record(fig, video; framerate, compression) do frame
-                while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-                    sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs...)
-                    verbose && sim_info(sim)
-                    if mod(length(sim.flow.Δt), skipframes) == 0
-                        update_data()
-                        recordframe!(frame)
-                    end
+                for tᵢ in range(t₀,t₀+duration;step)
+                    step_sim_and_viz!(sim,tᵢ)
+                    recordframe!(frame)
                 end
             end
         else
             display(fig)
-            while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-                sim_step!(sim; remeasure, λ, udf, meanflow, udf_kwargs...)
-                verbose && sim_info(sim)
-                if mod(length(sim.flow.Δt), skipframes) == 0
-                    update_data()
-                end
+            for tᵢ in range(t₀,t₀+duration;step)
+                step_sim_and_viz!(sim,tᵢ)
             end
         end
     end
