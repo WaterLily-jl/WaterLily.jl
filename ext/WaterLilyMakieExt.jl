@@ -14,6 +14,19 @@ function update_body!(a_cpu::Array, sim)
     copyto!(a_cpu, sim.flow.σ[inside(sim.flow.σ)])
 end
 
+"""
+    default_colormap_and_levels(minv, maxv, threshhold, levels)
+"""
+function default_colormap_and_levels(clims; threshhold=0.1, nlevels=20, colormap=:seismic, threshhold_color=RGB(1,1,1))
+    colormap_upperrange(max_val, threshhold, nlevels) = range(threshhold, max_val, (nlevels - 1) ÷ 2)
+    colormap_lowerrange(min_val, threshhold, nlevels) = range(min_val, threshhold, (nlevels - 1) ÷ 2)
+    lowerrange = colormap_lowerrange(clims[0], threshhold, nlevels)
+    upperrange = colormap_upperrange(clims[1], -threshhold, nlevels)
+    levels = [lowerrange; upperrange]
+    colors = palette(colormap, nlevels).colors.colors
+    colors[[(nlevels - 1) ÷ 2 + 1, (nlevels - 1) ÷ 2 + 2]] .= threshhold_color
+    colors, levels
+end
 
 """
     get_body(sdf_array, ::Val{false})
@@ -88,6 +101,10 @@ Keyword arguments:
     - `CIs::CartesianIndices`: Range of Cartesian indices to render.
     - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render, and defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
+    - `tidy_colormap::Bool`: Adjusts the colormap to have a fully transparent color near 0 values. Additional plotting options
+        passed into `kwargs` (eg. colormap, levels) are preserved.
+        Pass `threshhold::Number` to adjust the near-0 range`, `threshhold_color::RGBA` to set to a color different from white, and
+        clims::Tuple{Number,Number} to adjust the colormap limits.
     - `body::Bool`: Plot the body.
     - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a Makie.volume (faster).
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
@@ -106,8 +123,8 @@ Keyword arguments:
 """
 function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typemax(Int), verbose=true,
     λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
-    d=ndims(sim.flow.p), CIs=nothing, cut=nothing,
-    body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:black, body2mesh=false,
+    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
+    body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, skipframes=1, hideaxis=false, elevation=π/8, azimuth=1.275π, framerate=30, compression=5,
     theme=nothing, fig_size=(1200,1200), fig_pad=40, kwargs...)
 
@@ -146,7 +163,17 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
 
     !isnothing(theme) && set_theme!(theme)
     fig = Figure(size=fig_size, figure_padding=fig_pad)
-    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
+    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; limits, azimuth, elevation)
+    if d == 2 && tidy_colormap
+        clims = :clims in keys(clims) ? kwargs[:clims] : (-1,1)
+        nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 20
+        colormap = :colormap in keys(kwargs) ? kwargs[:colormap] : :seismic
+        threshhold = :threshhold in keys(kwargs) ? kwargs[:threshhold] : 0.1
+        threshhold_color = :threshhold_color in keys(kwargs) ? kwargs[:threshhold_color] : RGB(1,1,1)
+        tidy_colormap, tidy_levels = default_colormap_and_levels(clims; threshhold, nlevels, colormap, threshhold_color)
+        kwargs = remove_kwargs(:levels, :colormap, :clims, :threshhold, :threshhold_color, :extendlow, :extendhigh; kwargs...)
+        kwargs = add_kwarg(:colormap=>tidy_colormap, :levels=>tidy_levels, :extendlow=>:auto, :extendhigh=>:auto; kwargs...)
+    end
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color)
     hideaxis && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
@@ -178,5 +205,15 @@ function viz!(sim, f!::Function; t_end=nothing, remeasure=true, max_steps=typema
     isnothing(video) && display(fig)
     return sim, fig, ax
 end
+
+function ω_viz!(cpu_array, sim)
+    a = sim.flow.σ
+    WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+    copyto!(cpu_array, a[inside(a)])
+end
+
+# Utils
+add_kwarg(args...; kwargs...) = (; kwargs..., (p.first => p.second for p in args)...) |> pairs
+remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(x.first, args))...) |> pairs
 
 end # module
