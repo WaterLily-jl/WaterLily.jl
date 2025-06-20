@@ -1,16 +1,6 @@
 # new file stuff.
 using WaterLily,StaticArrays
 
-# TODO: Move to PixelBody in src
-function WaterLily.measure!(a::Flow{2,T},body::PixelBody;t=zero(T),ϵ=1) where {T}
-    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T)
-    @assert size(a.p)==size(body.μ₀) # move to the constructor?
-    WaterLily.apply!((i,x)->WaterLily.interp(x,body.μ₀),a.μ₀)
-    BC!(a.μ₀,zeros(SVector{2,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
-end
-
-WaterLily.measure_sdf!(a::AbstractArray,body::PixelBody,t=0;kwargs...) = @warn "Can't do this yet"
-
 # # set up airfoil image example
 function PixelSimAirfoil(Re=200, ϵ=1)
     # image_path = "test/resources/airfoil.png"

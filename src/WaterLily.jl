@@ -27,7 +27,7 @@ include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
 include("PixelBody.jl")
-export PixelBody
+export PixelBody, measure!, measure_sdf!
 
 include("Metrics.jl")
 
