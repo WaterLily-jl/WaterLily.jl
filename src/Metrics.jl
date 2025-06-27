@@ -181,7 +181,8 @@ end
 
 function update!(meanflow::MeanFlow, flow::Flow)
     dt = time(flow) - meanflow.t[end]
-    ε = dt / (dt + (meanflow.t[end] - meanflow.t[1]) + eps(eltype(flow.p)))
+    ε = dt / (dt + time(meanflow) + eps(eltype(flow.p)))
+    length(meanflow.t) == 1 && (ε = 1) # if it's the first update, we just take the instantaneous flow field
     @loop meanflow.P[I] = ε * flow.p[I] + (1 - ε) * meanflow.P[I] over I in CartesianIndices(flow.p)
     @loop meanflow.U[Ii] = ε * flow.u[Ii] + (1 - ε) * meanflow.U[Ii] over Ii in CartesianIndices(flow.u)
     if meanflow.uu_stats

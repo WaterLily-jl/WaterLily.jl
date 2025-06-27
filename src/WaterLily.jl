@@ -27,7 +27,7 @@ include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
 include("Metrics.jl")
-export MeanFlow
+export MeanFlow,update!,uu!,uu
 
 abstract type AbstractSimulation end
 """
@@ -101,14 +101,14 @@ A `λ::Function` function can be passed as a custom convective scheme, following
 downstream points).
 """
 function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
-        udf=nothing,meanflow=nothing,kwargs...)
+        udf=nothing,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, λ, udf, meanflow, kwargs...)
+        sim_step!(sim; remeasure, λ, udf, kwargs...)
         verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,meanflow=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,kwargs...)
     remeasure && measure!(sim)
     mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
     !isnothing(meanflow) && update!(meanflow,sim.flow)
