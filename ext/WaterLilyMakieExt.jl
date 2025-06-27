@@ -135,7 +135,7 @@ Keyword arguments:
     - `fig_pad::Int`: Figure padding.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
-function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, remeasure=true, verbose=true,
+function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
     λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
@@ -162,6 +162,7 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, rem
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
+    isnothing(f) && (f = ω_viz!(d))
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> Array
