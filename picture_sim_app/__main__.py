@@ -4,7 +4,7 @@ from pathlib import Path
 
 import cv2
 import subprocess
-from PIL import Image
+from PIL import Image, ImageSequence
 import pygame
 
 
@@ -272,6 +272,53 @@ def display_gif_fullscreen(gif_path, monitor_index=0, force_windowed=False):
         pygame.quit()
 
 
+def resize_gif(input_path, output_path, target_size=(1920, 1080), fill_color=(0, 0, 0, 0)):
+    """
+    Resize each frame of a GIF while preserving aspect ratio, then pad to target size.
+
+    Args:
+        input_path (str): Path to the input GIF.
+        output_path (str): Path to save the resized and padded GIF.
+        target_size (tuple): Desired (width, height), e.g., (1920, 1080).
+        fill_color (tuple): RGBA fill color for padding, default transparent/black.
+    """
+    with Image.open(input_path) as img:
+        frames = []
+        durations = []
+
+        for frame in ImageSequence.Iterator(img):
+            frame = frame.convert("RGBA")
+            orig_w, orig_h = frame.size
+            target_w, target_h = target_size
+
+            # Compute scale to preserve aspect ratio
+            scale = min(target_w / orig_w, target_h / orig_h)
+            new_w = int(orig_w * scale)
+            new_h = int(orig_h * scale)
+
+            # Resize with aspect ratio
+            resized = frame.resize((new_w, new_h), Image.BICUBIC)
+
+            # Create new canvas and paste resized frame in center
+            canvas = Image.new("RGBA", target_size, fill_color)
+            offset_x = (target_w - new_w) // 2
+            offset_y = (target_h - new_h) // 2
+            canvas.paste(resized, (offset_x, offset_y))
+
+            frames.append(canvas)
+            durations.append(frame.info.get('duration', 100))
+
+        # Save as animated GIF
+        frames[0].save(
+            output_path,
+            save_all=True,
+            append_images=frames[1:],
+            duration=durations,
+            loop=0,
+            disposal=2
+        )
+
+
 def main() -> None:
     capture_image()
 
@@ -294,6 +341,8 @@ def main() -> None:
     result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
     if result.returncode != 0:
         print(f"\nJulia process exited with code {result.returncode}")
+
+    resize_gif(input_path=output_gif, output_path=output_gif)
 
     display_gif_fullscreen(gif_path=output_gif, monitor_index=1)
 
