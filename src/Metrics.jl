@@ -194,10 +194,10 @@ function update!(meanflow::MeanFlow, flow::Flow)
 end
 
 uu!(τ,a::MeanFlow) = for i in 1:ndims(a.P), j in 1:ndims(a.P)
-    @loop τ[I,i,j] = a.UU[I,i,j] - a.U[I,i,j] * a.U[I,i,j] over I in CartesianIndices(a.P)
+    @loop τ[I,i,j] = a.UU[I,i,j] - a.U[I,i] * a.U[I,j] over I in CartesianIndices(a.P)
 end
 function uu(a::MeanFlow)
-    τ = zeros(eltype(a.UU), size(a.UU)...) |> typeof(meanflow.UU).name.wrapper
+    τ = zeros(eltype(a.UU), size(a.UU)...) |> typeof(a.UU).name.wrapper
     uu!(τ,a)
     return τ
 end

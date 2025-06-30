@@ -472,6 +472,13 @@ import WaterLily: ×
         for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
             @test all(isapprox.(Array(sim.flow.u)[:,:,i] .* Array(sim.flow.u)[:,:,j], Array(meanflow.UU)[:,:,i,j]; atol=√eps(T)))
         end
+        τ = uu(meanflow)
+        for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
+            @test all(isapprox.(
+                Array(meanflow.UU)[:,:,i,j] .- Array(meanflow.U)[:,:,i].*Array(meanflow.U)[:,:,j],
+                Array(τ)[:,:,i,j]; atol=√eps(T))
+            )
+        end
         @test WaterLily.time(sim.flow) == WaterLily.time(meanflow)
         WaterLily.reset!(meanflow)
         @test all(meanflow.U .== zero(T))
