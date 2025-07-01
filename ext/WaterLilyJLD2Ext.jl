@@ -25,7 +25,7 @@ save!(fname, meanflow::MeanFlow; dir="./") = jldsave(
     joinpath(dir, fname);
     P=Array(meanflow.P),
     U=Array(meanflow.U),
-    UU=Array(meanflow.UU),
+    UU=isnothing(meanflow.UU) ? nothing : Array(meanflow.UU),
     t=meanflow.t
 )
 
@@ -64,6 +64,7 @@ function load!(meanflow::MeanFlow; kwargs...)
     f = typeof(meanflow.P).name.wrapper
     meanflow.P .= obj["P"] |> f
     meanflow.U .= obj["U"] |> f
+    isnothing(meanflow.UU) || (meanflow.UU .= obj["UU"] |> f)
     empty!(meanflow.t)
     push!(meanflow.t, obj["t"]...)
     close(obj)

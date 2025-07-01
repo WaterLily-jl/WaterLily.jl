@@ -463,11 +463,21 @@ import WaterLily: ×
         T = Float32
         sim = make_bl_flow(; T, mem=f)
         meanflow = MeanFlow(sim.flow; uu_stats=true)
-        sim_step!(sim, 10; meanflow)
+        for t in range(0,10;step=0.1)
+            sim_step!(sim, t)
+            update!(meanflow, sim.flow)
+        end
         @test all(isapprox.(Array(sim.flow.u), Array(meanflow.U); atol=√eps(T))) # can't broadcast isapprox for GPUArrays...
         @test all(isapprox.(Array(sim.flow.p), Array(meanflow.P); atol=√eps(T)))
         for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
             @test all(isapprox.(Array(sim.flow.u)[:,:,i] .* Array(sim.flow.u)[:,:,j], Array(meanflow.UU)[:,:,i,j]; atol=√eps(T)))
+        end
+        τ = uu(meanflow)
+        for i in 1:ndims(sim.flow.p), j in 1:ndims(sim.flow.p)
+            @test all(isapprox.(
+                Array(meanflow.UU)[:,:,i,j] .- Array(meanflow.U)[:,:,i].*Array(meanflow.U)[:,:,j],
+                Array(τ)[:,:,i,j]; atol=√eps(T))
+            )
         end
         @test WaterLily.time(sim.flow) == WaterLily.time(meanflow)
         WaterLily.reset!(meanflow)
@@ -568,7 +578,10 @@ end
         # temporal averages
         sim = make_bl_flow(; T=Float32, mem)
         meanflow1 = MeanFlow(sim.flow; uu_stats=true)
-        sim_step!(sim, 10; meanflow1)
+        for t in range(0,10;step=0.1)
+            sim_step!(sim, t)
+            update!(meanflow1, sim.flow)
+        end
         save!("meanflow.jld2", meanflow1; dir=test_dir)
         meanflow2 = MeanFlow(sim.flow; uu_stats=true)
         WaterLily.reset!(meanflow2)

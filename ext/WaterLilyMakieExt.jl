@@ -82,7 +82,7 @@ plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(
 
 """
     viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, remeasure=true, verbose=true,
-        λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
+        λ=quick, udf=nothing, udf_kwargs=nothing,
         d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
         body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
         video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
@@ -107,7 +107,6 @@ Keyword arguments:
     - `remeasure::Bool`: Update the body position.
     - `verbose::Bool`: Print simulation information.
     - `λ::Function`: Convective scheme function passed into `sim_step!`.
-    - `meanflow::MeanFlow`: `MeanFlow` object passed into `sim_step!`.
     - `udf::Function`: User-defined function passed into `sim_step!`.
     - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
         `Pair{Symbol,Any}` iterator.
@@ -135,8 +134,8 @@ Keyword arguments:
     - `fig_pad::Int`: Figure padding.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
-function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, remeasure=true, verbose=true,
-    λ=quick, udf=nothing, udf_kwargs=nothing, meanflow=nothing,
+function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
+    λ=quick, udf=nothing, udf_kwargs=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
@@ -151,7 +150,7 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, rem
         end
     end
     function step_sim_and_viz!(sim, tᵢ)
-        sim_step!(sim, tᵢ; remeasure, λ, udf, meanflow, udf_kwargs...)
+        sim_step!(sim, tᵢ; remeasure, λ, udf, udf_kwargs...)
         verbose && sim_info(sim)
         update_data()
     end
@@ -162,6 +161,7 @@ function viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, rem
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
+    isnothing(f) && (f = ω_viz!(d))
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> Array
