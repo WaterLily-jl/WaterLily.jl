@@ -17,9 +17,11 @@ end
 """
     default_colormap_and_levels(minv, maxv, threshhold, levels)
 """
-function default_colormap_and_levels(clims; threshhold=0.1, nlevels=20, colormap=:seismic, threshhold_color=RGB(1,1,1))
-    lowerrange = range(clims[1], -threshhold, (nlevels - 1) ÷ 2)
-    upperrange = range(threshhold, clims[2], (nlevels - 1) ÷ 2)
+function default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap=:seismic, threshhold_color=RGB(1,1,1))
+    @assert clims[2] > clims[1] "clims argument does not satisfy clims[2] > clims[1]"
+    Δ = clims[2] - clims[1]
+    lowerrange = range(clims[1], clims[1] + Δ/2 - abs(threshhold), (nlevels - 1) ÷ 2)
+    upperrange = range(clims[1] + Δ/2 + abs(threshhold), clims[2], (nlevels - 1) ÷ 2)
     colors = palette(colormap, nlevels).colors.colors
     colors[[(nlevels - 1) ÷ 2 + 1, (nlevels - 1) ÷ 2 + 2]] .= threshhold_color
     colors, [lowerrange; upperrange]
