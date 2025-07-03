@@ -8,8 +8,14 @@ struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
 end
 
 # Outer constructor for PixelBody from image path
-function PixelBody(image_path::String; threshold=0.5, ϵ=1.0)
+function PixelBody(image_path::String; threshold=0.5, ϵ=1.0, max_image_res=nothing)
     img = load(image_path)
+
+    # Downsize image if max_image_res is provided
+    if !isnothing(max_image_res)
+        img = limit_resolution(img, max_image_res)
+    end
+
     gray_img = reverse(Gray.(img), dims=1)' # Transpose to allign matrix indices with physical x-y coordinates
     @show size(gray_img)
     gray_img_padded = pad_to_pow2_with_ghost_cells(gray_img)
@@ -32,7 +38,8 @@ function PixelBody(image_path::String; threshold=0.5, ϵ=1.0)
     display(heatmap(gray_img', color=:coolwarm, title="gray scale image", aspect_ratio=:equal))
     display(heatmap(gray_img_padded', color=:coolwarm, title="gray scale image (padded)", aspect_ratio=:equal))
     display(heatmap(mask', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
-    display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
+    display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
+    display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
     display(heatmap(μ₀_array', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
 
     return PixelBody(μ₀_array)
@@ -73,3 +80,23 @@ function measure!(a::Flow{2,T},body::PixelBody;t=zero(T),ϵ=1) where {T}
 end
 
 measure_sdf!(a::AbstractArray,body::PixelBody,t=0;kwargs...) = @warn "Can't do this yet"
+
+
+using Images, ImageTransformations
+
+function limit_resolution(img, max_grid::Int)
+    h, w = size(img)
+    max_dim = max(h, w)
+
+    # Do not resize if image dimensions do not exceed set limit
+    if max_dim <= max_grid
+        return img
+    end
+
+    scale = max_grid / max_dim
+    new_h = round(Int, h * scale)
+    new_w = round(Int, w * scale)
+
+    println("Resizing from $(h)x$(w) → $(new_h)x$(new_w)")
+    return imresize(img, (new_h, new_w))
+end

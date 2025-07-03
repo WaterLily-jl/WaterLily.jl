@@ -23,14 +23,16 @@ def main() -> None:
     output_gif_name = "output.gif"
     output_gif = OUTPUT_FOLDER / output_gif_name
 
-    angle_of_attack, _ = calculate_aoa_from_markers(
-        image_path=str(input_path),
-        marker_color_rgb=(16,52,110),
-        tolerance=50,
-        show_processed_image=True,
-    )
+    calculate_aoa = True
+    if calculate_aoa:
+        angle_of_attack, _ = calculate_aoa_from_markers(
+            image_path=str(input_path),
+            marker_color_rgb=(16,52,110),
+            tolerance=50,
+            show_processed_image=True,
+        )
 
-    print(f"Calculated Angle of Attack: {angle_of_attack:.2f} degrees")
+        print(f"Calculated Angle of Attack: {angle_of_attack:.2f} degrees")
 
     julia_script = SCRIPT_DIR.parent / "test" / "TestPixelCamSim.jl"
 
