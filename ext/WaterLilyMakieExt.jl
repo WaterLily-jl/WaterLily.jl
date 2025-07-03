@@ -214,13 +214,14 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
                 end
             end
         else
-            display(fig)
+            display(Makie.current_backend().Screen(), fig)
             for tᵢ in range(t₀,t₀+duration;step)
                 step_sim_and_viz!(sim,tᵢ)
             end
         end
+        return fig, ax
     end
-    isnothing(video) && display(fig)
+    display(Makie.current_backend().Screen(), fig)
     return fig, ax
 end
 
