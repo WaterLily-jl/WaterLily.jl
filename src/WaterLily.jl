@@ -6,10 +6,13 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
+export L₂,@inside,inside,δ,apply!,loc,@log,set_backend,backend
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
+
+include("BC.jl")
+export AbstractBC,BC,BC!
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
@@ -62,9 +65,10 @@ mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
-    flow :: Flow
+    flow :: AbstractFlow
     body :: AbstractBody
     pois :: AbstractPoisson
+    bc :: AbstractBC
     function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
@@ -72,9 +76,11 @@ mutable struct Simulation <: AbstractSimulation
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
-        measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
+        bc = BC(dims,uBC;perdir,exitBC,T,mem)
+        flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
+        pois = MultiLevelPoisson(flow.p,bc.μ₀,flow.σ;perdir)
+        measure!(flow,body,bc;ϵ)
+        new(U,L,ϵ,flow,body,pois,bc)
     end
 end
 
@@ -109,7 +115,7 @@ function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_ste
 end
 function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
+    mom_step!(sim.flow, sim.pois, sim.bc; λ, udf, kwargs...)
 end
 
 """
@@ -118,7 +124,7 @@ end
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
 function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
-    measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
+    measure!(sim.flow,sim.body,sim.bc;t,ϵ=sim.ϵ)
     update!(sim.pois)
 end
 
