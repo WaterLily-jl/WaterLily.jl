@@ -9,8 +9,7 @@ def calculate_aoa_from_markers(
         image_path: str,
         marker_color_rgb: tuple=(255, 0, 0),
         tolerance: int=20,
-        show_processed_image: bool=True,
-) ->tuple[float, list]:
+) ->tuple[float, list, np.ndarray]:
     """
     Detects two marker dots of a specified color in an image, calculates their
     mean positions, and then computes the angle of the line connecting them.
@@ -20,12 +19,11 @@ def calculate_aoa_from_markers(
         marker_color_rgb (tuple): The RGB color of the markers (e.g., (255, 0, 0) for red).
         tolerance (int): Tolerance for color detection (how much deviation from
                          the marker_color_rgb is allowed).
-        show_processed_image(bool): If True, shows the estimated marker centroids and line between them.
-
     Returns:
         tuple: (angle_deg, marker_coords)
                - angle_deg (float): The calculated angle in degrees. None if not found.
                - marker_coords (list): A list of (x, y) tuples for the detected markers.
+               - processed_img (np.ndarray): An image showing the detected markers and estimated angle of attack.
     """
     # Load image
     img = cv2.imread(image_path)
@@ -92,10 +90,7 @@ def calculate_aoa_from_markers(
         # Draw the line connecting the markers
         cv2.line(processed_img, p1, p2, color=marker_color_rgb, thickness=2) # Green line
 
-        if show_processed_image:
-            plot_processed_aoa_markers(processed_img, angle_of_attack)
-
-        return angle_of_attack, marker_coords
+        return angle_of_attack, marker_coords, processed_img
 
     else:
         raise ValueError("Could not find two distinct marker points.")

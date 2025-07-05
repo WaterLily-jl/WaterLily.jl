@@ -5,10 +5,10 @@ Pkg.activate("..")          # Use the project in WaterLily.jl/
 using WaterLily,StaticArrays, Plots
 
 # set up airfoil image example
-function PixelSimAirfoil(image_path, Re=200, ϵ=1, mem=Array)
+function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, mem=Array)
     # image_path = "test/resources/airfoil.png"
     # image_path = "test/resources/airfoil_30_deg.png"
-    airfoil_pixel_body = WaterLily.PixelBody(image_path,ϵ=ϵ) # setting smooth weighted function
+    airfoil_pixel_body = WaterLily.PixelBody(image_path,ϵ=ϵ, threshold=threshold, max_image_res=800) # setting smooth weighted function
     
     println("Press Enter to continue...")
     try
@@ -20,7 +20,7 @@ function PixelSimAirfoil(image_path, Re=200, ϵ=1, mem=Array)
     n, m = airfoil_pixel_body.μ₀.size
     LS = n / 10 # TODO: Arbitrary length scale of 10% of the domain, need to be able to set from image
     # make simulation of same size and ϵ
-    Simulation((n-2,m-2), (1,0), LS; body=airfoil_pixel_body, ν=LS/Re, ϵ=ϵ, mem=Array)
+    Simulation((n-2,m-2), (1,0), LS; body=airfoil_pixel_body, ν=LS/Re, ϵ=ϵ, mem=mem)
 end
 
 
@@ -33,11 +33,13 @@ function main()
 
     input_path = args[1]
     output_path = args[2]
+    graycsale_threshold = parse(Float64, args[3])
 
     println("Running simulation on: $input_path")
+    println("Grayscale threshold=$graycsale_threshold")
 
     # sim = PixelSimAirfoil("test/resources/airfoil_30_deg.png");
-    sim = PixelSimAirfoil(input_path);
+    sim = PixelSimAirfoil(input_path, threshold=graycsale_threshold);
     # Initialize the simulation with GPU Array
     # using CUDA
     # sim = PixelSimAirfoil(3*2^6,2^7; mem=CuArray);
