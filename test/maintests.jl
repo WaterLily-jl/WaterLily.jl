@@ -3,12 +3,53 @@ using ReadVTK, WriteVTK, JLD2
 
 backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
-@testset "util.jl" begin # TODO: Add Flow.jl tests on derivatives and face reconstructions here.
+@testset "util.jl" begin
     I = CartesianIndex(1,2,3,4)
     @test I+δ(3,I) == CartesianIndex(1,2,4,4)
     @test WaterLily.CI(I,5)==CartesianIndex(1,2,3,4,5)
     @test WaterLily.CIj(3,I,5)==CartesianIndex(1,2,5,4)
     @test WaterLily.CIj(2,CartesianIndex(16,16,16,3),14)==CartesianIndex(16,14,16,3)
+
+    # Test vanLeer
+    vanLeer = WaterLily.vanLeer
+    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d, reverts to itself
+    @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
+
+    # Test central difference scheme
+    cds = WaterLily.cds
+    @test cds(1,0,1) == 0.5 && cds(1,2,-1) == 0.5 # central difference between downstream and itself
+
+    # Check QUICK scheme on boundary
+    ϕuL = WaterLily.ϕuL
+    ϕuR = WaterLily.ϕuR
+    quick = WaterLily.quick
+    ϕ = WaterLily.ϕ
+
+    # inlet with positive flux -> CD
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1,quick)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
+    # inlet negative flux -> backward QUICK
+    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1,quick)==-quick(2.0,0.5,0.0)
+    # outlet, positive flux -> standard QUICK
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1,quick)==quick(0.0,0.5,2.0)
+    # outlet, negative flux -> backward CD
+    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1,quick)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
+
+    # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
+    ϕu = WaterLily.ϕu
+    ϕuP = WaterLily.ϕuP
+    λ = WaterLily.quick
+
+    I = CartesianIndex(3); # 1D check, positive flux
+    @test ϕu(1,I,[0.,0.5,2.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,quick);
+    I = CartesianIndex(2); # 1D check, negative flux
+    @test ϕu(1,I,[0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,quick);
+
+    # check for periodic flux
+    I=CartesianIndex(3);Ip=I-2δ(1,I);
+    f = [1.,1.25,1.5,1.75,2.];
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
+    Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
+    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
 
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
     I = CartesianIndex(rand(2:10,3)...)
@@ -149,50 +190,9 @@ end
 end
 
 @testset "Flow.jl" begin
-    # Test vanLeer
-    vanLeer = WaterLily.vanLeer
-    @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d, reverts to itself
-    @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
-
-    # Test central difference scheme
-    cds = WaterLily.cds
-    @test cds(1,0,1) == 0.5 && cds(1,2,-1) == 0.5 # central difference between downstream and itself
-
-    # Check QUICK scheme on boundary
-    ϕuL = WaterLily.ϕuL
-    ϕuR = WaterLily.ϕuR
-    quick = WaterLily.quick
-    ϕ = WaterLily.ϕ
-
-    # inlet with positive flux -> CD
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],1,quick)==ϕ(1,CartesianIndex(2),[0.,0.5,2.0])
-    # inlet negative flux -> backward QUICK
-    @test ϕuL(1,CartesianIndex(2),[0.,0.5,2.],-1,quick)==-quick(2.0,0.5,0.0)
-    # outlet, positive flux -> standard QUICK
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],1,quick)==quick(0.0,0.5,2.0)
-    # outlet, negative flux -> backward CD
-    @test ϕuR(1,CartesianIndex(3),[0.,0.5,2.],-1,quick)==-ϕ(1,CartesianIndex(3),[0.,0.5,2.0])
-
-    # check that ϕuSelf is the same as ϕu if explicitly provided with the same indices
-    ϕu = WaterLily.ϕu
-    ϕuP = WaterLily.ϕuP
-    λ = WaterLily.quick
-
-    I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,quick);
-    I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,quick);
-
-    # check for periodic flux
-    I=CartesianIndex(3);Ip=I-2δ(1,I);
-    f = [1.,1.25,1.5,1.75,2.];
-    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
-    Ip = WaterLily.CIj(1,I,length(f)-2); # make periodic
-    @test ϕuP(1,Ip,I,f,1,quick)==λ(f[Ip],f[I-δ(1,I)],f[I])
-
     # check applying acceleration
-    for f ∈ arrays
-        N = 4; a = zeros(N,N,2) |> f
+    for mem ∈ arrays
+        N = 4; a = zeros(N,N,2) |> mem
         WaterLily.accelerate!(a,1,nothing,())
         @test all(a .== 0)
         WaterLily.accelerate!(a,1.,(i,x,t)->i==1 ? t : 2*t,())
@@ -202,7 +202,7 @@ end
         WaterLily.accelerate!(a,1.,(i,x,t) -> i==1 ? t : 2*t,(i,x,t) -> i==1 ? -t : -2*t)
         @test all(a[:,:,1] .== 0) && all(a[:,:,2] .== 0)
         # check applying body force (changes in x but not t)
-        b = zeros(N,N,2) |> f
+        b = zeros(N,N,2) |> mem
         WaterLily.accelerate!(b,0.,(i,x,t)->1,nothing)
         @test all(b .== 1)
         WaterLily.accelerate!(b,1.,(i,x,t)->0,(i,x,t)->t)
@@ -342,9 +342,9 @@ gravity!(flow::Flow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
     WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
 end
 @testset "Flow.jl with increasing body force" begin
-    for f ∈ arrays
+    for mem ∈ arrays
         N = 8
-        sim,jerk = acceleratingFlow(N;use_g=true,mem=f)
+        sim,jerk = acceleratingFlow(N;use_g=true,mem)
         sim_step!(sim,1.0); u = sim.flow.u |> Array
         # Exact uₓ = uₓ₀ + ∫ a dt = uₓ₀ + ∫ jerk*t dt = uₓ₀ + 0.5*jerk*t^2
         uFinal = sim.bc.uBC[1] + 0.5*jerk*WaterLily.time(sim)^2
@@ -354,7 +354,7 @@ end
         )
 
         # Test with user defined function instead of acceleration
-        sim_udf,_ = acceleratingFlow(N;mem=f)
+        sim_udf,_ = acceleratingFlow(N;mem)
         sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
         uFinal = sim_udf.bc.uBC[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
         @test (
@@ -369,8 +369,8 @@ make_bl_flow(L=32;T=Float32,mem=Array) = Simulation((L,L),
     L;ν=0.001,U=1,mem,T,exitBC=false
 ) # fails with exitBC=true, but the profile is maintained
 @testset "Boundary Layer Flow" begin
-    for f ∈ arrays
-        sim = make_bl_flow(32;mem=f)
+    for mem ∈ arrays
+        sim = make_bl_flow(32;mem)
         sim_step!(sim,10)
         @test GPUArrays.@allowscalar all(sim.flow.u[1,:,1] .≈ sim.flow.u[end,:,1])
     end
@@ -396,9 +396,9 @@ end
 end
 
 @testset "Circle in accelerating flow" begin
-    for f ∈ arrays
+    for mem ∈ arrays
         make_accel_circle(radius=32,H=16) = Simulation(radius.*(2H,2H),
-            (i,x,t)-> i==1 ? t : zero(t), radius; U=1, mem=f,
+            (i,x,t)-> i==1 ? t : zero(t), radius; U=1, mem,
             body=AutoBody((x,t)->√sum(abs2,x .-H*radius)-radius))
         sim = make_accel_circle(); sim_step!(sim)
         @test isapprox(WaterLily.pressure_force(sim)/(π*sim.L^2),[-1,0],atol=0.04)

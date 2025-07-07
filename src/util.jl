@@ -39,9 +39,20 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,::Val{N}) where N = CI(ntuple(j -> j==i ? 1 : 0, N))
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
-# Derivatives and face flux reconstruction. ADD DOCS!
+"""
+    ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n})
+
+Finite-volume derivative of scalar field `f` on cell `I` and direction `a`
+"""
 @inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
+"""
+    @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n})
+
+Finite-volume derivative of vector field `u` on cell `I`, direction (and component) `a`.
+"""
 @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
+
+
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])/2
 @inline ϕu(a,I,f,u,λ) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
 @inline ϕuP(a,Ip,I,f,u,λ) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])

@@ -21,7 +21,15 @@ perBC!(a, perdir, N = size(a)) = for j ∈ perdir
     @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
 end
 
+
 abstract type AbstractBC{D,T,Sf,Vf,Tf} end
+"""
+    BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Sf,Vf,Tf}
+
+Boundary condition struct holding extending `AbstractBC`. It hold the necessary fields to impose the boundary conditions
+on the `Flow.u` velocity field, as well as the boundary condition `Tuple` of `Function`, `uBC`, that needs to be passed
+when creating a new `BC` struct.
+"""
 struct BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Sf,Vf,Tf}
     # BDIM fields
     V :: Vf # body velocity vector
@@ -42,12 +50,11 @@ struct BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}
 end
 
 """
-    BC!(a,A)
+    BC!(a,bc::BC,t=0)
 
-Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
-is applied to the tangential components.
+Apply boundary conditions encapsulated in `BC` to the ghost cells of a _vector_ field `a`.
+A Dirichlet condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain boundary.
+For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition is applied to the tangential components.
 """
 BC!(a,bc::BC,t=0) = BC!(a,bc.uBC,bc.exitBC,bc.perdir,t)
 BC!(a,uBC,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->uBC[i],saveexit,perdir,t)
