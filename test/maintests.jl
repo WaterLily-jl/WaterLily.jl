@@ -291,16 +291,16 @@ function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
     # Initialize simulation
     return Simulation((L,L),(i,x,t)->TGV(i,x,t,κ,ν),L;U=1,ν,T,mem,perdir),TGV
 end
-# @testset "Flow.jl periodic TGV" begin
-#     for f ∈ arrays
-#         sim,TGV = TGVsim(f,T=Float32); ue=copy(sim.flow.u) |> Array
-#         sim_step!(sim,π/100)
-#         apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
-#         u = sim.flow.u |> Array
-#         @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
-#               WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
-#     end
-# end
+@testset "Flow.jl periodic TGV" begin
+    for f ∈ arrays
+        sim,TGV = TGVsim(f,T=Float32); ue=copy(sim.flow.u) |> Array
+        sim_step!(sim,π/100)
+        apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
+        u = sim.flow.u |> Array
+        @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
+              WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
+    end
+end
 @testset "ForwardDiff" begin
     function TGV_ke(Re)
         sim,_ = TGVsim(Array;Re)
@@ -320,11 +320,11 @@ end
     end
     function lift(ξ,t_end=1)
         sim = spinning(ξ)
-        sim_step!(sim,t_end;remeasure=true) # TODO: ERROR if remeasure=false
+        sim_step!(sim,t_end;remeasure=false)
         WaterLily.total_force(sim)[2]/(ξ^2*sim.U^2*sim.L)
     end
     h = 1e-6
-    @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h # TODO: ERROR if remeasure=false
+    @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
 end
 
 function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
@@ -506,7 +506,7 @@ end
     # Test sim_time, and sim_step! stopping time
     sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)
     @test sim_time(sim) == 0
-    sim_step!(sim,0.1;remeasure=true) # TODO: ERROR if remeasure=false
+    sim_step!(sim,0.1;remeasure=false)
     @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
     for mem ∈ arrays, exitBC ∈ (false,)
         # Test that remeasure works perfectly when V = U = 1

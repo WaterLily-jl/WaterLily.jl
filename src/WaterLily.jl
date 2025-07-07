@@ -78,9 +78,8 @@ mutable struct Simulation <: AbstractSimulation
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
         bc = BC(dims,uBC;perdir,exitBC,T,mem)
         flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
-        pois = MultiLevelPoisson(flow.p,bc.μ₀,flow.σ;perdir)
-        measure!(flow,body,bc;ϵ)
-        new(U,L,ϵ,flow,body,pois,bc)
+        measure!(body,bc;ϵ)
+        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,bc.μ₀,flow.σ;perdir),bc)
     end
 end
 
@@ -124,7 +123,7 @@ end
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
 function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
-    measure!(sim.flow,sim.body,sim.bc;t,ϵ=sim.ϵ)
+    measure!(sim.body,sim.bc;t,ϵ=sim.ϵ)
     update!(sim.pois)
 end
 

@@ -21,14 +21,13 @@ perBC!(a, perdir, N = size(a)) = for j ∈ perdir
     @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
 end
 
-abstract type AbstractBC{D,T,Vf,Tf} end
-abstract type AbstractFlow{D,T,Sf,Vf} end
-
-struct BC{D, T, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Vf,Tf}
+abstract type AbstractBC{D,T,Sf,Vf,Tf} end
+struct BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Sf,Vf,Tf}
     # BDIM fields
     V :: Vf # body velocity vector
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
+    σ :: Sf # scalar field as working array
     # Other BCs fields
     uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
     exitBC :: Bool # Convection exit
@@ -36,11 +35,9 @@ struct BC{D, T, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Vf
     function BC(N::NTuple{D}, uBC; perdir=(), exitBC=false, mem=Array, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
-        V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
+        σ, V, μ₀, μ₁ = zeros(T, Ng) |> mem, zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),exitBC,perdir)
-        # BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
-        # BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(μ₀),typeof(μ₁)}(V,μ₀,μ₁,uBC,exitBC,perdir)
+        new{D,T,typeof(σ),typeof(μ₀),typeof(μ₁)}(V,μ₀,μ₁,σ,uBC,exitBC,perdir)
     end
 end
 
@@ -79,13 +76,7 @@ end
     for j ∈ 1:np1-1
         s+= @inbounds μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
     end
-    return 0.5s
-end
-
-function BDIM!(a::AbstractFlow,bc::AbstractBC)
-    dt = a.Δt[end]
-    @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-bc.V[Ii] over Ii in CartesianIndices(a.f)
-    @loop a.u[Ii] += μddn(Ii,bc.μ₁,a.f)+bc.V[Ii]+bc.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
+    return s/2
 end
 
 # Neumann BC Building block

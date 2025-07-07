@@ -26,6 +26,7 @@ accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
 
+abstract type AbstractFlow{D,T,Sf,Vf} end
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
@@ -65,11 +66,17 @@ Current flow time.
 """
 time(a::Flow) = sum(@view(a.Δt[1:end-1]))
 
+function BDIM!(a::AbstractFlow,bc::AbstractBC)
+    dt = a.Δt[end]
+    @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-bc.V[Ii] over Ii in CartesianIndices(a.f)
+    @loop a.u[Ii] += μddn(Ii,bc.μ₁,a.f)+bc.V[Ii]+bc.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
+end
+
 function project!(a::Flow{n},b::AbstractPoisson,bc::AbstractBC,t; w=1) where n
     BDIM!(a,bc)
-    scale_u!(a,w)
+    w != 1 && scale_u!(a,w)
     BC!(a.u,bc,t)
-    bc.exitBC && w > 0.5 && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
+    bc.exitBC && w != 0.5 && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
