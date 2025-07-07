@@ -12,7 +12,7 @@ A fast-approximate method can return `≈d,zero(x),zero(x)` if `d^2>fastd²`.
 """
 abstract type AbstractBody end
 """
-    measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)
+    measure!(body::AbstractBody; t=0, ϵ=1)
 
 Queries the body geometry to fill the arrays:
 
@@ -24,8 +24,8 @@ at time `t` using an immersion kernel of size `ϵ`.
 
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
-function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
-    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=(2+ϵ)^2
+function measure!(body::AbstractBody,bc::AbstractBC{N,T};t=zero(T),ϵ=1) where {N,T}
+    bc.V .= zero(T); bc.μ₀ .= one(T); bc.μ₁ .= zero(T); d²=(2+ϵ)^2
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         d[I] = sdf(body,loc(0,I,T),t,fastd²=d²)
         if d[I]^2<d²
@@ -43,9 +43,9 @@ function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
             end
         end
     end
-    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
-    BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
-    BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
+    @loop fill!(bc.μ₀,bc.μ₁,bc.V,bc.σ,I) over I ∈ inside(bc.σ)
+    BC!(bc.μ₀,zeros(SVector{N,T}),false,bc.perdir) # BC on μ₀, don't fill normal component yet
+    BC!(bc.V,zeros(SVector{N,T}),bc.exitBC,bc.perdir)
 end
 
 # Convolution kernel and its moments
@@ -77,7 +77,7 @@ Use for a simulation without a body.
 """
 struct NoBody <: AbstractBody end
 measure(::NoBody,x::AbstractVector,args...;kwargs...)=(Inf,zero(x),zero(x))
-function measure!(::Flow,::NoBody;kwargs...) end # skip measure! entirely
+function measure!(::NoBody,::AbstractBC;kwargs...) end # skip measure! entirely
 
 """
     SetBody
