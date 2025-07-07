@@ -508,7 +508,7 @@ end
     @test sim_time(sim) == 0
     sim_step!(sim,0.1;remeasure=false)
     @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
-    for mem ∈ arrays, exitBC ∈ (false,)
+    for mem ∈ arrays, exitBC ∈ (true,false)
         # Test that remeasure works perfectly when V = U = 1
         sim = Simulation(nm,(1,0),radius; body=AutoBody(circle,move), ν, T, mem, exitBC)
         sim_step!(sim)
