@@ -26,8 +26,7 @@ def main() -> None:
     # Set grayscale threshold to identify color
     grayscale_threshold = 0.6
 
-    calculate_aoa = True
-    plot_markers = True
+    calculate_aoa = False
     if calculate_aoa:
         angle_of_attack, _, image_with_markers = calculate_aoa_from_markers(
             image_path=str(input_path),
@@ -37,6 +36,7 @@ def main() -> None:
 
         print(f"Calculated Angle of Attack: {angle_of_attack:.2f} degrees")
 
+        plot_markers = False
         if plot_markers:
             plot_processed_aoa_markers(image_with_markers, angle_of_attack)
 

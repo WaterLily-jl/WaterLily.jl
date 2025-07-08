@@ -43,24 +43,25 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
 
     t₀ = round(WaterLily.sim_time(sim))
 
-    if isnothing(save_path)
-        @time @gif for tᵢ in range(t₀, t₀+duration; step)
+    function plot_sim(tᵢ)
             WaterLily.sim_step!(sim, tᵢ; remeasure)
             @WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3, I, sim.flow.u) * sim.L / sim.U
             flood(sim.flow.σ[R]; kv...)
             plotbody && body_plot!(sim)
             verbose && println("tU/L=", round(tᵢ, digits=4),
-                               ", Δt=", round(sim.flow.Δt[end], digits=3))
+                            ", Δt=", round(sim.flow.Δt[end], digits=3))
+    end
+
+    # Provide the option to save given a save_path, otherwise use the default temp location 
+    # given by #gif
+    if isnothing(save_path)
+        @time @gif for tᵢ in range(t₀, t₀+duration; step)
+            plot_sim(tᵢ)
         end
     else
         @time begin
             anim = @animate for tᵢ in range(t₀, t₀+duration; step)
-                WaterLily.sim_step!(sim, tᵢ; remeasure)
-                @WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3, I, sim.flow.u) * sim.L / sim.U
-                flood(sim.flow.σ[R]; kv...)
-                plotbody && body_plot!(sim)
-                verbose && println("tU/L=", round(tᵢ, digits=4),
-                                ", Δt=", round(sim.flow.Δt[end], digits=3))
+                plot_sim(tᵢ)
             end
             gif(anim, save_path)
         end

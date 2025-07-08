@@ -9,7 +9,19 @@ function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, mem=Array)
     # image_path = "test/resources/airfoil.png"
     # image_path = "test/resources/airfoil_30_deg.png"
     airfoil_pixel_body = WaterLily.PixelBody(image_path,ϵ=ϵ, threshold=threshold, max_image_res=800) # setting smooth weighted function
-    
+
+    println("Press Enter to continue...")
+    try
+        readline()
+    catch e
+        @warn "No stdin available. Skipping pause." exception=e
+    end
+
+    LS, aoa = WaterLily.estimate_characteristic_length(airfoil_pixel_body, method="pca", plot_method=true);
+
+    println("Estimated characteristic length: $(round(LS; digits=2))")
+    println("Estimated AoA (deg): $(round(aoa; digits=2))")
+
     println("Press Enter to continue...")
     try
         readline()
