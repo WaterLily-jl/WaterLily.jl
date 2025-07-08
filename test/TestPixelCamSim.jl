@@ -30,7 +30,6 @@ function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, max_image_res=
     end
     
     n, m = airfoil_pixel_body.μ₀.size
-    LS = n / 10 # TODO: Arbitrary length scale of 10% of the domain, need to be able to set from image
     # make simulation of same size and ϵ
     Simulation((n-2,m-2), (1,0), LS; body=airfoil_pixel_body, ν=LS/Re, ϵ=ϵ, mem=mem)
 end
