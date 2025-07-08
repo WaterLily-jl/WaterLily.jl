@@ -24,7 +24,11 @@ def main() -> None:
     output_gif = OUTPUT_FOLDER / output_gif_name
 
     # Set grayscale threshold to identify color
-    grayscale_threshold = 0.6
+    grayscale_threshold = 0.65
+    max_image_res=1080
+    t_sim=20.
+    delta_t=0.05
+    verbose="true"
 
     calculate_aoa = False
     if calculate_aoa:
@@ -47,7 +51,17 @@ def main() -> None:
         print(f"Error: Julia script not found at {julia_script}")
         sys.exit(1)
 
-    cmd = ["julia", str(julia_script), str(input_path), str(output_gif), str(grayscale_threshold)]
+    cmd = [
+        "julia",
+        str(julia_script),
+        str(input_path),
+        str(output_gif),
+        str(grayscale_threshold),
+        str(max_image_res),
+        str(t_sim),
+        str(delta_t),
+        verbose,
+    ]
     print(f"Starting Julia: {' '.join(cmd)}\n")
 
     result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
