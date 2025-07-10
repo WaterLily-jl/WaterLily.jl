@@ -19,14 +19,15 @@ function PixelBody(image_path::String; threshold=0.5, ϵ=1.0, max_image_res=noth
 
     gray_img = reverse(Gray.(img), dims=1)' # Transpose to allign matrix indices with physical x-y coordinates
     @show size(gray_img)
-    gray_img_padded = pad_to_pow2_with_ghost_cells(gray_img)
-    @show size(gray_img_padded)
 
     # Binary mask: true for solid, false for fluid
-    mask = Float64.(gray_img_padded) .< threshold
+    mask = Float64.(gray_img) .< threshold
+
+    mask_padded = pad_to_pow2_with_ghost_cells(mask)
+    @show size(mask_padded)
 
     # Compute signed distance field
-    sdf = distance_transform(feature_transform(mask)) .- distance_transform(feature_transform(.!mask))
+    sdf = distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded))
 
     @show size(sdf)
     # Smooth volume fraction field
@@ -37,8 +38,8 @@ function PixelBody(image_path::String; threshold=0.5, ϵ=1.0, max_image_res=noth
     # TODO: TEMP images for debugging
     display(heatmap(img, color=:coolwarm, title="Raw image", aspect_ratio=:equal))
     display(heatmap(gray_img', color=:coolwarm, title="gray scale image", aspect_ratio=:equal))
-    display(heatmap(gray_img_padded', color=:coolwarm, title="gray scale image (padded)", aspect_ratio=:equal))
     display(heatmap(mask', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
+    display(heatmap(mask_padded', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
     display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
     display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
     display(heatmap(μ₀_array', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
@@ -65,7 +66,7 @@ function pad_to_pow2_with_ghost_cells(img)
     pad_left = pad_M ÷ 2
     pad_right = pad_M - pad_left
 
-    padded_img = ones(eltype(img), N + pad_top + pad_bot + 2, M + pad_left + pad_right + 2)
+    padded_img = zeros(eltype(img), N + pad_top + pad_bot + 2, M + pad_left + pad_right + 2)
     padded_img[pad_top+1 : pad_top+N, pad_left+1 : pad_left+M] .= img
     @show size(padded_img)
 
