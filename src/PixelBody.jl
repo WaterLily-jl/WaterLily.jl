@@ -9,20 +9,53 @@ struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
 end
 
 # Outer constructor for PixelBody from image path
-function PixelBody(image_path::String; threshold=0.5, ϵ=1.0, max_image_res=nothing)
+function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ=1.0, max_image_res=nothing, body_color="gray")
     img = load(image_path)
+    @show size(img)
 
     # Downsize image if max_image_res is provided
     if !isnothing(max_image_res)
         img = limit_resolution(img, max_image_res)
+        println("Image resized to $(size(img))")
     end
 
-    gray_img = reverse(Gray.(img), dims=1)' # Transpose to allign matrix indices with physical x-y coordinates
-    @show size(gray_img)
+    # Validate the body_color parameter
+    valid_colors = ["gray", "red", "green", "blue"]
+    if body_color ∉ valid_colors
+        throw(ArgumentError("Unsupported solid color: $body_color. Supported colors are: $(join(valid_colors, ", "))."))
+    end
 
-    # Binary mask: true for solid, false for fluid
-    mask = Float64.(gray_img) .< threshold
+    if body_color == "gray"
+        img = Gray.(img)  # Convert to grayscale
 
+        gray_img = Gray.(img)
+        # Binary mask: 1 for solid, 0 for fluid
+        mask = Float64.(gray_img) .< threshold
+
+    else
+        # Convert to RGB to ensure image is in RBG format
+        img_rgb = RGB.(img)
+        # Extract channels
+        R = channelview(img_rgb)[1, :, :]
+        G = channelview(img_rgb)[2, :, :]
+        B = channelview(img_rgb)[3, :, :]
+
+        if body_color == "red"
+            # threshold = 0.5      # Minimum red value
+            # diff_threshold = 0.2     # How much more red than green/blue 
+            # Binary mask: 0 for solid, 1 for fluid 
+            mask = .!((R .> threshold) .& ((R .- G) .> diff_threshold) .& ((R .- B) .> diff_threshold))
+
+        elseif body_color == "green"
+            mask = .!((G .> threshold) .& ((G .- R) .> diff_threshold) .& ((G .- B) .> diff_threshold))
+            
+        elseif body_color == "blue"
+            mask = .!((B .> threshold) .& ((B .- G) .> diff_threshold) .& ((B .- R) .> diff_threshold))
+        end
+
+    end
+
+    mask = reverse(mask, dims=1)' # Transpose to align matrix indices with physical x-y
     mask_padded = pad_to_pow2_with_ghost_cells(mask)
     @show size(mask_padded)
 
@@ -37,7 +70,6 @@ function PixelBody(image_path::String; threshold=0.5, ϵ=1.0, max_image_res=noth
 
     # TODO: TEMP images for debugging
     display(heatmap(img, color=:coolwarm, title="Raw image", aspect_ratio=:equal))
-    display(heatmap(gray_img', color=:coolwarm, title="gray scale image", aspect_ratio=:equal))
     display(heatmap(mask', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
     display(heatmap(mask_padded', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
     display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
