@@ -485,6 +485,10 @@ import WaterLily: ×
         @test all(meanflow.P .== zero(T))
         @test all(meanflow.UU .== zero(T))
         @test meanflow.t == T[0]
+
+        meanflow2 = MeanFlow(size(sim.flow.p).-2; uu_stats=true)
+        @test all(meanflow2.P .== zero(T))
+        @test size(meanflow2.P) == size(meanflow.P)
     end
 end
 
