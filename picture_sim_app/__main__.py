@@ -33,12 +33,17 @@ def main() -> None:
     # Image resolution cap (spatial resolution)
     max_image_res=800
     # Simulation duration and temporal resolution
-    t_sim=20.
-    delta_t=0.05
+    t_sim = 20.
+    delta_t = 0.05
+
+    # Flow settings
+    Re = 200.
+    epsilon = 1. # BDIM kernel width
 
     # Other settings
     verbose="true"
     sim_type="particles"
+    mem="CuArray"
 
     # Estimate AoA from markers
     calculate_aoa = False
@@ -79,9 +84,13 @@ def main() -> None:
         # Simulation duration and temporal resolution
         str(t_sim),
         str(delta_t),
+        # Flow settings
+        str(Re),
+        str(epsilon),
         # Other settings
         verbose,
         sim_type,
+        mem,
     ]
     print(f"Starting Julia: {' '.join(cmd)}\n")
 

@@ -28,7 +28,7 @@ function sim_gif_particles!(
 
     if plotbody
         # Plot the body region filled with black
-        μ₀ = sim.body.μ₀
+        μ₀ = Array(sim.body.μ₀)
         body_mask = μ₀ .== 0.0  # Original solid pixels
 
         # For larger holes, use a different approach with label_components

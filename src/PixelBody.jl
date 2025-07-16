@@ -1,5 +1,6 @@
 using FileIO, Images, ImageDistances, ImageTransformations, Plots
 using LinearAlgebra
+  using CUDA
 import Statistics: mean
 struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
     μ₀::A # needs to be same size as sim scalar (p) and from 0..1
@@ -60,21 +61,21 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
     @show size(mask_padded)
 
     # Compute signed distance field
-    sdf = distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded))
+    sdf = Float32.(distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded)))
 
     @show size(sdf)
     # Smooth volume fraction field
-    μ₀_array = μ₀.(sdf, ϵ)
+    μ₀_array = CuArray(Float32.(μ₀.(sdf, Float32(ϵ))))
     @show size(μ₀_array)
 
 
     # TODO: TEMP images for debugging
-    display(heatmap(img, color=:coolwarm, title="Raw image", aspect_ratio=:equal))
-    display(heatmap(mask', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
-    display(heatmap(mask_padded', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
-    display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
-    display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
-    display(heatmap(μ₀_array', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
+    # display(heatmap(img, color=:coolwarm, title="Raw image", aspect_ratio=:equal))
+    # display(heatmap(mask', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
+    # display(heatmap(mask_padded', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
+    # display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
+    # display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
+    # display(heatmap(μ₀_array', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
 
     return PixelBody(μ₀_array)
 end
@@ -109,7 +110,8 @@ end
 function measure!(a::Flow{2,T},body::PixelBody;t=zero(T),ϵ=1) where {T}
     a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T)
     @assert size(a.p)==size(body.μ₀) # move to the constructor?
-    apply!((i,x)->interp(x,body.μ₀),a.μ₀)
+    μ₀ = body.μ₀
+    apply!((i,x)->interp(x,μ₀), a.μ₀)
     BC!(a.μ₀,zeros(SVector{2,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
 end
 
@@ -166,8 +168,13 @@ end
 Method to estimate the characteristic length of a PixelBody by identifying a bounding box
 around the object, and assuming the characteristic length is the longest diagonal in the box.
 """
-function characteristic_length_bbox(B::Matrix{Float64}; plot_method=false)
-    coords = findall(B .== 0)
+function characteristic_length_bbox(B::AbstractArray{<:AbstractFloat,2}; plot_method=false)
+    # Convert to CPU array if using CUDA array
+    if isa(B, CuArray)
+        B = Array(B)
+    end
+    # 0 Is solid, but due to image recognition artifacts there might be floating point errors
+    coords = findall(abs.(B) .< 1e-6)
     if isempty(coords)
         throw(ErrorException(
             "No solid detected when attempting to calcualte characteristic length"))
@@ -184,7 +191,7 @@ function characteristic_length_bbox(B::Matrix{Float64}; plot_method=false)
     characteristic_length = sqrt(dx^2 + dy^2)
 
     if plot_method
-        display(heatmap(B', c=:blues, aspect_ratio=1, xlabel="x", ylabel="y", legend=false))
+        display(heatmap(Array(B)', c=:blues, aspect_ratio=1, xlabel="x", ylabel="y", legend=false))
 
         # Bounding box corners
         xcorners = [xmin, xmax, xmax, xmin, xmin]
@@ -210,8 +217,13 @@ direction in which points are most spread.)
 
 Also estimates the angle of attack of the object based on the principal axis direction
 """
-function characteristic_length_pca(B::Matrix{Float64}; plot_method=false)
-    coords = findall(B .== 0)  # solid is 0
+function characteristic_length_pca(B::AbstractArray{<:AbstractFloat,2}; plot_method=false)
+    # Convert to CPU array if using CUDA array
+    if isa(B, CuArray)
+        B = Array(B)
+    end
+    # 0 Is solid, but due to image recognition artifacts there might be floating point errors
+    coords = findall(abs.(B) .< 1e-6)
     if isempty(coords)
         throw(ErrorException(
             "No solid detected when attempting to calcualte characteristic length"))
