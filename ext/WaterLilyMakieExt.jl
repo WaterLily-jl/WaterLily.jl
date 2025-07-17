@@ -12,8 +12,7 @@ Measure the body SDF and update the CPU buffer array.
 """
 function update_body!(a_cpu::Array, sim)
     WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
-    f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
-    copyto!(a_cpu, f(sim.flow.σ[inside(sim.flow.σ)]))
+    copyto!(a_cpu, ad_f(sim)(sim.flow.σ[inside(sim.flow.σ)]))
 end
 
 """
@@ -35,15 +34,13 @@ Default visualization function for 2D/3D simulations
 
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
-    ad_f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
-    copyto!(cpu_array, ad_f(a[inside(a)]))
+    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
 end
 function ω3D_viz!(cpu_array, sim)
     a = sim.flow.σ
-    ad_f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(cpu_array, ad_f(a[inside(a)]))
+    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
 end
 ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
@@ -168,10 +165,9 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     isnothing(f) && (f = ω_viz!(d))
-    ad_f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
-    dat = sim.flow.σ[inside(sim.flow.σ)] |> ad_f |> Array
+    dat = sim.flow.σ[inside(sim.flow.σ)] |> ad_f(sim) |> Array
     if d != D && all(>(1), length.(CIs.indices)) # Requesting 2D plot on 3D data, and CIs is not a slice
         isnothing(cut) && (cut = (0, 0, size(dat,3)÷2))
         @assert count(==(0), cut) == 2 "Requesting 2D plot on 3D data, but `cut` is not an slice, eg: (0,0,10)"
@@ -185,10 +181,10 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     f(dat, sim)
-    σ = WaterLily.squeeze(dat[CIs]) |> ad_f |> Observable
+    σ = WaterLily.squeeze(dat[CIs]) |> ad_f(sim) |> Observable
     if body
         update_body!(dat, sim)
-        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> ad_f |> Observable
+        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> ad_f(sim) |> Observable
     end
 
     !isnothing(theme) && set_theme!(theme)
@@ -239,5 +235,6 @@ end
 # Utils
 add_kwarg(args...; kwargs...) = (; kwargs..., (p.first => p.second for p in args)...) |> pairs
 remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(x.first, args))...) |> pairs
+ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 
 end # module
