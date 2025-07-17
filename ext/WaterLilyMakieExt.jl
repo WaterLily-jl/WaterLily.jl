@@ -2,7 +2,7 @@ module WaterLilyMakieExt
 
 using Makie, WaterLily, ForwardDiff
 using Makie.GeometryBasics, Makie.PlotUtils
-using ForwardDiff: Dual, Tag, value
+using ForwardDiff: Dual, value
 import WaterLily: viz!, get_body, plot_body_obs!
 
 """
