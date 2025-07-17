@@ -1,7 +1,8 @@
 module WaterLilyMakieExt
 
-using Makie, WaterLily
+using Makie, WaterLily, ForwardDiff
 using Makie.GeometryBasics, Makie.PlotUtils
+using ForwardDiff: Dual, Tag, value
 import WaterLily: viz!, get_body, plot_body_obs!
 
 """
@@ -11,7 +12,8 @@ Measure the body SDF and update the CPU buffer array.
 """
 function update_body!(a_cpu::Array, sim)
     WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
-    copyto!(a_cpu, sim.flow.σ[inside(sim.flow.σ)])
+    f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
+    copyto!(a_cpu, f(sim.flow.σ[inside(sim.flow.σ)]))
 end
 
 """
@@ -33,13 +35,15 @@ Default visualization function for 2D/3D simulations
 
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
+    ad_f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
-    copyto!(cpu_array, a[inside(a)])
+    copyto!(cpu_array, ad_f(a[inside(a)]))
 end
 function ω3D_viz!(cpu_array, sim)
     a = sim.flow.σ
+    ad_f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(cpu_array, a[inside(a)])
+    copyto!(cpu_array, ad_f(a[inside(a)]))
 end
 ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
@@ -83,7 +87,7 @@ Plot the 3D scalar `σ::Observable` in a 3D volume axis.
 plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; kwargs...)
 
 """
-    viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, remeasure=true, verbose=true,
+    viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
         λ=quick, udf=nothing, udf_kwargs=nothing,
         d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
         body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
@@ -164,9 +168,10 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     isnothing(f) && (f = ω_viz!(d))
+    ad_f = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
-    dat = sim.flow.σ[inside(sim.flow.σ)] |> Array
+    dat = sim.flow.σ[inside(sim.flow.σ)] |> ad_f |> Array
     if d != D && all(>(1), length.(CIs.indices)) # Requesting 2D plot on 3D data, and CIs is not a slice
         isnothing(cut) && (cut = (0, 0, size(dat,3)÷2))
         @assert count(==(0), cut) == 2 "Requesting 2D plot on 3D data, but `cut` is not an slice, eg: (0,0,10)"
@@ -180,10 +185,10 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     f(dat, sim)
-    σ = WaterLily.squeeze(dat[CIs]) |> Observable
+    σ = WaterLily.squeeze(dat[CIs]) |> ad_f |> Observable
     if body
         update_body!(dat, sim)
-        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> Observable
+        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> ad_f |> Observable
     end
 
     !isnothing(theme) && set_theme!(theme)
@@ -223,6 +228,12 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
     display(Makie.current_backend().Screen(), fig)
     return fig, ax
+end
+function viz!(sim, a::AbstractArray; kwargs...)
+    kwargs = remove_kwargs(:f, :duration; kwargs...) # do not allow co-visualization (is not a simulation)
+    @assert size(a) == size(sim.flow.σ) "Visualized array has different size than Simulation."
+    f(cpu_array, sim) = copyto!(cpu_array, Array(a[inside(a)]))
+    viz!(sim; f, duration=nothing, kwargs...)
 end
 
 # Utils
