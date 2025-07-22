@@ -1,6 +1,6 @@
 using FileIO, Images, ImageDistances, ImageTransformations, Plots
 using LinearAlgebra
-  using CUDA
+using CUDA
 import Statistics: mean
 struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
     μ₀::A # needs to be same size as sim scalar (p) and from 0..1
@@ -10,7 +10,7 @@ struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
 end
 
 # Outer constructor for PixelBody from image path
-function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ=1.0, max_image_res=nothing, body_color="gray")
+function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ=1.0, max_image_res=nothing, body_color="gray", mem=Array)
     img = load(image_path)
     @show size(img)
 
@@ -65,17 +65,16 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
 
     @show size(sdf)
     # Smooth volume fraction field
-    μ₀_array = CuArray(Float32.(μ₀.(sdf, Float32(ϵ))))
+    μ₀_array = mem(Float32.(μ₀.(sdf, Float32(ϵ))))
     @show size(μ₀_array)
 
-
     # TODO: TEMP images for debugging
-    # display(heatmap(img, color=:coolwarm, title="Raw image", aspect_ratio=:equal))
-    # display(heatmap(mask', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
-    # display(heatmap(mask_padded', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
-    # display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
-    # display(heatmap(sdf', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
-    # display(heatmap(μ₀_array', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
+    display(heatmap(Array(img), color=:coolwarm, title="Raw image", aspect_ratio=:equal))
+    display(heatmap(Array(mask)', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
+    display(heatmap(Array(mask_padded)', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
+    display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
+    display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
+    display(heatmap(Array(μ₀_array)', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
 
     return PixelBody(μ₀_array)
 end
@@ -106,7 +105,6 @@ function pad_to_pow2_with_ghost_cells(img)
     return padded_img
 end
 
-# TODO: Move to PixelBody in src
 function measure!(a::Flow{2,T},body::PixelBody;t=zero(T),ϵ=1) where {T}
     a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T)
     @assert size(a.p)==size(body.μ₀) # move to the constructor?

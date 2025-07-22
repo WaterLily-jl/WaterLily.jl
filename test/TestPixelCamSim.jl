@@ -23,6 +23,7 @@ function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, diff_threshold
         diff_threshold=diff_threshold,
         body_color=body_color,
         max_image_res=max_image_res,
+        mem=mem,
     ) # setting smooth weighted function
 
     println("Press Enter to continue...")
