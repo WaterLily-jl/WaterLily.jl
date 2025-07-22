@@ -3,7 +3,7 @@ from pathlib import Path
 
 import subprocess
 
-from image_utils import capture_image, resize_gif, display_gif_fullscreen
+from picture_sim_app.image_utils import capture_image, resize_gif, display_gif_fullscreen, display_two_gifs_side_by_side
 from picture_sim_app.detect_aoa import calculate_aoa_from_markers, plot_processed_aoa_markers
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -98,9 +98,14 @@ def main() -> None:
     if result.returncode != 0:
         raise Exception(f"\nJulia process exited with code {result.returncode}")
 
-    resize_gif(input_path=output_path, output_path=output_path)
+    output_path_gif_right = OUTPUT_FOLDER / "output.gif"
 
-    display_gif_fullscreen(gif_path=output_path, monitor_index=1)
+    resize_gif(input_path=output_path, output_path=output_path)
+    resize_gif(input_path=output_path_gif_right, output_path=output_path_gif_right)
+
+    # display_gif_fullscreen(gif_path=output_path, monitor_index=1)
+
+    display_two_gifs_side_by_side(gif_path_left=output_path, gif_path_right=output_path_gif_right)
 
 
 if __name__ == "__main__":

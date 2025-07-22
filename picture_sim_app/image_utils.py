@@ -310,3 +310,87 @@ def resize_gif(
             loop=0,
             disposal=2
         )
+
+
+def display_two_gifs_side_by_side(
+    gif_path_left: str | Path,
+    gif_path_right: str | Path,
+    monitor_index: int = 0,
+    force_windowed: bool = False
+) -> None:
+    pygame.init()
+    num_displays = pygame.display.get_num_displays()
+    desktop_sizes = pygame.display.get_desktop_sizes() if hasattr(pygame.display, "get_desktop_sizes") else [(1920, 1080)] * num_displays
+    x_offset = sum(desktop_sizes[i][0] for i in range(monitor_index))
+    screen_width, screen_height = desktop_sizes[monitor_index]
+    os.environ["SDL_VIDEO_WINDOW_POS"] = f"{x_offset},0"
+    screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN if not force_windowed else 0)
+    pygame.display.set_caption("Flow visualization")
+
+    def load_gif_frames(gif_path, target_size):
+        gif = Image.open(gif_path)
+        frames, durations = [], []
+        for frame in ImageSequence.Iterator(gif):
+            frame = frame.convert("RGBA")
+            frame = frame.resize(target_size, Image.BICUBIC)
+            surf = pygame.image.fromstring(frame.tobytes(), frame.size, "RGBA")
+            frames.append(surf)
+            durations.append(frame.info.get("duration", 100))
+        return frames, durations
+
+    half_size = (screen_width // 2, screen_height)
+    frames_left, durations_left = load_gif_frames(gif_path_left, half_size)
+    frames_right, durations_right = load_gif_frames(gif_path_right, half_size)
+    idx_left = idx_right = 0
+    last_time_left = last_time_right = pygame.time.get_ticks()
+    running = True
+    clock = pygame.time.Clock()
+
+    while running:
+        now = pygame.time.get_ticks()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key in [pygame.K_ESCAPE, pygame.K_q]):
+                running = False
+
+        if now - last_time_left >= durations_left[idx_left]:
+            idx_left = (idx_left + 1) % len(frames_left)
+            last_time_left = now
+        if now - last_time_right >= durations_right[idx_right]:
+            idx_right = (idx_right + 1) % len(frames_right)
+            last_time_right = now
+
+        screen.fill((0, 0, 0))
+        screen.blit(frames_left[idx_left], (0, 0))
+        screen.blit(frames_right[idx_right], (half_size[0], 0))
+        pygame.display.flip()
+        clock.tick(60)
+    pygame.quit()
+
+
+    def load_gif_frames(gif_path, target_box):
+        gif = Image.open(gif_path)
+        frames, durations, positions = [], [], []
+        target_w, target_h = target_box
+        orig_w, orig_h = gif.size
+        scale = min(target_w / orig_w, target_h / orig_h)
+        new_w, new_h = int(orig_w * scale), int(orig_h * scale)
+        offset_x = (target_w - new_w) // 2
+        offset_y = (target_h - new_h) // 2
+        for frame in ImageSequence.Iterator(gif):
+            frame = frame.convert('RGBA')
+            frame_resized = frame.resize((new_w, new_h), Image.BICUBIC)
+            surf = pygame.image.fromstring(frame_resized.tobytes(), frame_resized.size, 'RGBA')
+            frames.append(surf)
+            durations.append(frame.info.get('duration', 100))
+            positions.append((offset_x, offset_y))
+        return frames, durations, positions
+
+    # In your main function:
+    frames_left, durations_left, positions_left = load_gif_frames(gif_path_left, half_size)
+    frames_right, durations_right, positions_right = load_gif_frames(gif_path_right, half_size)
+
+    # In the main loop, update blitting:
+    screen.fill((0, 0, 0))
+    screen.blit(frames_left[idx_left], positions_left[idx_left])
+    screen.blit(frames_right[idx_right], (half_size[0] + positions_right[idx_right][0], positions_right[idx_right][1]))
+    pygame.display.flip()
