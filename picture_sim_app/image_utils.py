@@ -327,15 +327,23 @@ def display_two_gifs_side_by_side(
     screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN if not force_windowed else 0)
     pygame.display.set_caption("Flow visualization")
 
-    def load_gif_frames(gif_path, target_size):
+    def load_gif_frames(gif_path, target_box):
         gif = Image.open(gif_path)
-        frames, durations = [], []
+        frames, durations, positions = [], [], []
+        target_w, target_h = target_box
         for frame in ImageSequence.Iterator(gif):
-            frame = frame.convert("RGBA")
-            frame = frame.resize(target_size, Image.BICUBIC)
-            surf = pygame.image.fromstring(frame.tobytes(), frame.size, "RGBA")
+            frame = frame.convert('RGBA')
+            orig_w, orig_h = frame.size
+            scale = min(target_w / orig_w, target_h / orig_h)
+            new_w, new_h = int(orig_w * scale), int(orig_h * scale)
+            offset_x = (target_w - new_w) // 2
+            offset_y = (target_h - new_h) // 2
+            frame_resized = frame.resize((new_w, new_h), Image.BICUBIC)
+            canvas = Image.new('RGBA', (target_w, target_h), (0, 0, 0, 255))
+            canvas.paste(frame_resized, (offset_x, offset_y))
+            surf = pygame.image.fromstring(canvas.tobytes(), canvas.size, 'RGBA')
             frames.append(surf)
-            durations.append(frame.info.get("duration", 100))
+            durations.append(frame.info.get('duration', 100))
         return frames, durations
 
     half_size = (screen_width // 2, screen_height)
