@@ -99,17 +99,16 @@ If the `udf` user keyword arguments, these needs to be included in the `sim_step
 A `λ::Function` function can be passed as a custom convective scheme, following the interface of `λ(u,c,d)` (for upstream, central,
 downstream points).
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
-        udf=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation,t_end; max_steps=typemax(Int), verbose=false, kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, λ, udf, kwargs...)
+        sim_step!(sim; kwargs...)
         verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation; remeasure=true, kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
+    mom_step!(sim.flow, sim.pois; kwargs...)
 end
 
 """
