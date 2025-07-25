@@ -360,7 +360,7 @@ end
 
         # Test with user defined function instead of acceleration
         sim_udf,_ = acceleratingFlow(N;mem=f)
-        sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
+        sim_step!(sim_udf,1.0; udf=gravity!, udf_kwargs=(:jerk=>jerk,)); u_udf = sim_udf.flow.u |> Array
         uFinal = sim_udf.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
         @test (
             WaterLily.L₂(u_udf[:,:,1].-uFinal) < 1e-4 &&
