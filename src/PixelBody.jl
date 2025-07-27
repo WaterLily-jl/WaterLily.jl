@@ -20,51 +20,18 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
         println("Image resized to $(size(img))")
     end
 
-    # Validate the body_color parameter
-    valid_colors = ["gray", "red", "green", "blue"]
-    if body_color ∉ valid_colors
-        throw(ArgumentError("Unsupported solid color: $body_color. Supported colors are: $(join(valid_colors, ", "))."))
-    end
+    mask = create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold)
 
-    if body_color == "gray"
-        img = Gray.(img)  # Convert to grayscale
-
-        gray_img = Gray.(img)
-        # Binary mask: 1 for solid, 0 for fluid
-        mask = Float64.(gray_img) .< threshold
-
-    else
-        # Convert to RGB to ensure image is in RBG format
-        img_rgb = RGB.(img)
-        # Extract channels
-        R = channelview(img_rgb)[1, :, :]
-        G = channelview(img_rgb)[2, :, :]
-        B = channelview(img_rgb)[3, :, :]
-
-        if body_color == "red"
-            # threshold = 0.5      # Minimum red value
-            # diff_threshold = 0.2     # How much more red than green/blue 
-            # Binary mask: 0 for solid, 1 for fluid 
-            mask = .!((R .> threshold) .& ((R .- G) .> diff_threshold) .& ((R .- B) .> diff_threshold))
-
-        elseif body_color == "green"
-            mask = .!((G .> threshold) .& ((G .- R) .> diff_threshold) .& ((G .- B) .> diff_threshold))
-            
-        elseif body_color == "blue"
-            mask = .!((B .> threshold) .& ((B .- G) .> diff_threshold) .& ((B .- R) .> diff_threshold))
-        end
-
-    end
-
-    mask = reverse(mask, dims=1)' # Transpose to align matrix indices with physical x-y
+    # Pad mask with ghost cells (needed for simulation). WARNING: Assumes all edges are fluid 0, otherwise it will not work.
     mask_padded = pad_to_pow2_with_ghost_cells(mask)
     @show size(mask_padded)
 
-    # Compute signed distance field
+    # TODO: Attempt to compute signed distance field (see if this will work to create a gradient between the solid and fluid,
+    # required to caclulate body forces).
     sdf = Float32.(distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded)))
-
     @show size(sdf)
-    # Smooth volume fraction field
+
+    # TODO: Smooth volume fraction field using kernel (Need to find out how to use properly to create the solid-fluid gradient)
     μ₀_array = mem(Float32.(μ₀.(sdf, Float32(ϵ))))
     @show size(μ₀_array)
 
@@ -79,6 +46,156 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
     return PixelBody(μ₀_array)
 end
 
+"""
+    function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold)
+
+Function to produce a boolean mask that distinguishes the solid from the fluid using image recognition logic. Both grayscale
+and colored images are supported.
+
+For grayscale images, the 'threshold' value acts as a lowpass logic filter such that (normalized) pixel intensity values lower
+than the threshold are assumed to be a solid, while values above the thresgold are assumed as fluid. The assumed contrast logic
+is that the fluid is dominatnly white and the solid is dominatnly black.
+
+For colored images, lighting conditions, the color chosen for the solid, and even the camera used will influence the solid/fluid
+image recognition logic. A "smart" logic was initially implemented to try to address these issues (see further documentation
+in the comments below).
+"""
+function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold)
+     # Validate the body_color parameter
+    valid_colors = ["gray", "red", "green", "blue"]
+    if body_color ∉ valid_colors
+        throw(ArgumentError("Unsupported solid color: $body_color. Supported colors are: $(join(valid_colors, ", "))."))
+    end
+
+    if body_color == "gray"
+        img = Gray.(img)  # Convert to grayscale
+
+        gray_img = Gray.(img)
+        # Binary mask: 1 for solid, 0 for fluid
+        mask = Float64.(gray_img) .< threshold
+
+    else
+        println("Colored figure selected. Smart body detection will be used.")
+
+        # Convert to RGB to ensure image is in RBG format
+        img_rgb = RGB.(img)
+        # Extract channels
+        R = channelview(img_rgb)[1, :, :]
+        G = channelview(img_rgb)[2, :, :]
+        B = channelview(img_rgb)[3, :, :]
+
+        # NOTE: Different cameras and lighting conditions cause the boolean logic when trying to distinguish solid from fluid to
+        # be inverted, depending on the final color hiearchy of the image. Since the padding function pad_to_pow2_with_ghost_cells
+        # assume 1 is solid and 0 is fluid, the mask passed down to the padding function also needs to ahdere to this logic. This
+        # means that depending on the color hierarchy, the mask logic changes based on the selected threshold values, and
+        # the mask logic needs to be inverted. A smart body detection implemenation is used in the following lines to attempt
+        # said automatic reversal.
+
+        # Smart body detection uses channel hierarchy to determine masking logic between solid and fluid
+        R_mean = mean(R)
+        G_mean = mean(G)
+        B_mean = mean(B)
+
+        println("Channel means: R=$(round(R_mean, digits=3)), G=$(round(G_mean, digits=3)), B=$(round(B_mean, digits=3))")
+
+        # Analyze channel hierarchy and relative differences between color channels
+        R_vs_G_diff = R_mean - G_mean
+        R_vs_B_diff = R_mean - B_mean
+        total_color_range = maximum([maximum(R), maximum(G), maximum(B)]) -
+                           minimum([minimum(R), minimum(G), minimum(B)])
+
+        # Logic to determine if mask inversion is nededed based on color hierarchy
+        needs_inversion = false
+        if R_mean > G_mean && R_mean > B_mean
+            # Red is dominant channel
+            println("RED DOMINANT camera detected")
+
+            # Scale thresholds based on how much red dominates
+            red_dominance = min(R_vs_G_diff, R_vs_B_diff) / total_color_range
+            println("Red dominance factor: $(round(red_dominance, digits=3))")
+
+            # Selects threshold and diff_threshold based on red dominance
+            if red_dominance > 0.05  # Significant red dominance
+                threshold = 0.5 + red_dominance  # Higher threshold for red-heavy cameras
+                diff_threshold = 0.05 + red_dominance * 0.5  # Lower diff since red is already elevated
+            else
+                threshold = 0.45 # TODO: Still need to calibrate these two values
+                diff_threshold = 0.15
+            end
+            needs_inversion = true  # RED DOMINANT requires inversion (e.g. macbook camera)
+
+        elseif G_mean > R_mean && B_mean > R_mean
+            # Red is lowest - likely Logitech-style with suppressed red values
+            println("RED SUPPRESSED camera detected")
+
+            # Scale thresholds based on how much red is suppressed
+            red_suppression = max(G_mean - R_mean, B_mean - R_mean) / total_color_range
+            println("Red suppression factor: $(round(red_suppression, digits=3))")
+
+            threshold = 0.35 + red_suppression * 0.2  # Lower threshold for red-suppressed cameras
+            diff_threshold = 0.15 + red_suppression * 0.3  # Higher diff needed to detect red
+            needs_inversion = false  # Logitech-style doesn't need inversion
+
+        else
+            # Balanced channels - use adaptive thresholds based on overall range
+            println("BALANCED channels detected")
+
+            # Use the total dynamic range to scale thresholds
+            if total_color_range > 0.5
+                threshold = 0.4
+                diff_threshold = 0.2
+            else
+                # Lower dynamic range needs more sensitive detection
+                threshold = 0.3
+                diff_threshold = 0.1
+            end
+            needs_inversion = false  # Default behavior
+        end
+
+        # Ensure thresholds are within reasonable bounds
+        threshold = clamp(threshold, 0.2, 0.7)
+        diff_threshold = clamp(diff_threshold, 0.05, 0.4)
+
+        println("FINAL ADAPTIVE THRESHOLDS:")
+        println("   threshold = $(round(threshold, digits=3))")
+        println("   diff_threshold = $(round(diff_threshold, digits=3))")
+        println("   needs_inversion = $needs_inversion")
+        println("="^50)
+
+
+        # TODO: The above logic was developed around the red color. However, other colors can be selected for the solid. For
+        # now, the automated mask inversion logic is only used for the color 'red', but might be useful later.
+        if body_color == "red"
+            # Detect red pixels (flip logic for different hierarchies of color channels)
+            red_detected = (R .> threshold) .& ((R .- G) .> diff_threshold) .& ((R .- B) .> diff_threshold)
+
+            if needs_inversion
+                # RED DOMINANT: red_detected=true means solid, so mask should be true for solid
+                mask = red_detected  # 1 for solid (red), 0 for fluid
+                println("Applied mask = red_detected (no inversion)")
+            else
+                # RED SUPPRESSED: red_detected=true means solid, but we need 0 for solid to match padding
+                mask = .!red_detected  # 0 for solid (red), 1 for fluid
+                println("Applied mask = .!red_detected (inverted)")
+            end
+
+        elseif body_color == "green"
+            green_detected = (G .> threshold) .& ((G .- R) .> diff_threshold) .& ((G .- B) .> diff_threshold)
+            # For now, use standard logic for green (can be enhanced later)
+            mask = .!green_detected
+            
+        elseif body_color == "blue"
+            blue_detected = (B .> threshold) .& ((B .- G) .> diff_threshold) .& ((B .- R) .> diff_threshold)
+            # For now, use standard logic for blue (can be enhanced later)
+            mask = .!blue_detected
+        end
+
+    end
+
+    mask = reverse(mask, dims=1)' # Transpose to align matrix indices with physical x-y
+
+    return mask
+end
 
 """
     pad_to_pow2_with_ghost_cells(img)
