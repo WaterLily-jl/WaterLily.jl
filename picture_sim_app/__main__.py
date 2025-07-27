@@ -25,9 +25,9 @@ def main() -> None:
     output_animation_name = "particleplot.gif"
     output_path = OUTPUT_FOLDER / output_animation_name
 
-    # Image recognition settings
-    threshold = 0.4
-    diff_threshold=0.2
+    # Image recognition settings (rule of thumb for both: Increase if too much background noise, decrease if solid not showing)
+    threshold = 0.6 # First play with this until solid shows up, then adjust diff_threshold
+    diff_threshold=0.001 # Increase if too much noise, decrease if solid not showing
     solid_color="red"
 
     # Image resolution cap (spatial resolution)

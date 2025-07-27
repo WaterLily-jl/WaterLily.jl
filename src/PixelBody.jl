@@ -20,7 +20,7 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
         println("Image resized to $(size(img))")
     end
 
-    mask = create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold)
+    mask = create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold)
 
     # Pad mask with ghost cells (needed for simulation). WARNING: Assumes all edges are fluid 0, otherwise it will not work.
     mask_padded = pad_to_pow2_with_ghost_cells(mask)
@@ -47,7 +47,7 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
 end
 
 """
-    function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold)
+    function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold)
 
 Function to produce a boolean mask that distinguishes the solid from the fluid using image recognition logic. Both grayscale
 and colored images are supported.
@@ -59,8 +59,31 @@ is that the fluid is dominatnly white and the solid is dominatnly black.
 For colored images, lighting conditions, the color chosen for the solid, and even the camera used will influence the solid/fluid
 image recognition logic. A "smart" logic was initially implemented to try to address these issues (see further documentation
 in the comments below).
+
+- 'threshold' (float):
+
+Controls the minimum intensity required for a pixel to be considered as the "solid" color (e.g., red, green, blue, or gray).
+For color images, a pixel's channel (e.g., R for red) must be greater than this value to be considered as part of the solid.
+For grayscale, pixels with intensity below this value are considered solid.
+
+ - 'diff_threshold' (float):
+
+Controls how much more the target color channel (e.g., R for red) must exceed the other channels for a pixel to be considered solid.
+Helps distinguish the solid color from backgrounds or lighting variations.
+For example, for red: a pixel is solid if R > threshold and R - G > diff_threshold and R - B > diff_threshold.
+Suggested values:
+
+===Suggestions for threshold and diff threshold===
+
+For well-lit, high-contrast images:
+threshold ≈ 0.4-0.6
+diff_threshold ≈ 0.1-0.3
+For images with less contrast or more noise, try lowering threshold and/or diff_threshold slightly.
+
+If the mask is too small (misses solid), lower the thresholds.
+If the mask is too large (includes background), raise the thresholds.
 """
-function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold)
+function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold)
      # Validate the body_color parameter
     valid_colors = ["gray", "red", "green", "blue"]
     if body_color ∉ valid_colors
@@ -119,8 +142,9 @@ function create_fluid_soilid_mask_using_image_recognition(img, body_color, thres
                 threshold = 0.5 + red_dominance  # Higher threshold for red-heavy cameras
                 diff_threshold = 0.05 + red_dominance * 0.5  # Lower diff since red is already elevated
             else
-                threshold = 0.45 # TODO: Still need to calibrate these two values
-                diff_threshold = 0.15
+                # Use manual values from input settings
+                threshold = threshold
+                diff_threshold = diff_threshold
             end
             needs_inversion = true  # RED DOMINANT requires inversion (e.g. macbook camera)
 
@@ -134,7 +158,7 @@ function create_fluid_soilid_mask_using_image_recognition(img, body_color, thres
 
             threshold = 0.35 + red_suppression * 0.2  # Lower threshold for red-suppressed cameras
             diff_threshold = 0.15 + red_suppression * 0.3  # Higher diff needed to detect red
-            needs_inversion = false  # Logitech-style doesn't need inversion
+            needs_inversion = false  # RED SUPPRESSED doesn't need inversion (e.g. logitech webcam)
 
         else
             # Balanced channels - use adaptive thresholds based on overall range
