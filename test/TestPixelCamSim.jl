@@ -19,7 +19,7 @@ push!(LOAD_PATH, joinpath(@__DIR__, "..", "..", "Pathlines.jl", "src")) # For no
 include(joinpath(@__DIR__, "plot_particles.jl"))  # Add module containing particle plotting functions
 
 # set up airfoil image example
-function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, diff_threshold=0.2, body_color="gray", max_image_res=800, mem=Array)
+function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, diff_threshold=0.2, body_color="gray", max_image_res=800, manual_mode=false, force_invert_mask=false, mem=Array)
 
     airfoil_pixel_body = WaterLily.PixelBody(
         image_path,
@@ -28,6 +28,8 @@ function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, diff_threshold
         diff_threshold=diff_threshold,
         body_color=body_color,
         max_image_res=max_image_res,
+        manual_mode=manual_mode,
+        force_invert_mask=force_invert_mask,
         mem=mem,
     ) # setting smooth weighted function
 
@@ -70,14 +72,16 @@ function main()
     threshold = parse(Float64, args[3])
     diff_threshold = parse(Float64, args[4])
     body_color = args[5]
-    max_image_res = parse(Int64, args[6])
-    t_sim = parse(Float64, args[7])
-    delta_t = parse(Float64, args[8])
-    Re = parse(Float64, args[9])
-    ϵ = parse(Float64, args[10])
-    verbose = parse(Bool, args[11])
-    sim_type =args[12]
-    mem_str = args[13]
+    manual_mode = parse(Bool, args[6])
+    force_invert_mask = parse(Bool, args[7])
+    max_image_res = parse(Int64, args[8])
+    t_sim = parse(Float64, args[9])
+    delta_t = parse(Float64, args[10])
+    Re = parse(Float64, args[11])
+    ϵ = parse(Float64, args[12])
+    verbose = parse(Bool, args[13])
+    sim_type =args[14]
+    mem_str = args[15]
 
     if mem_str == "Array"
         mem = Array
@@ -88,13 +92,23 @@ function main()
     end
 
     # Print settings
+    println("===File I/O settings===")
     println("Running simulation on: $input_path")
+
+    println("===Image recognition settings===")
     println("threshold=$threshold")
     println("diff_threshold=$diff_threshold")
     println("body_color=$body_color")
+    println("manual_mode=$manual_mode")
+    println("force_invert_mask=$force_invert_mask")
+
+    println("===Image resolution cap (spatial resolution)===")
     println("Maximum image resolution=$max_image_res")
+
+    println("===Simulation settings===")
     println("Simulation time=$t_sim s (Δt=$delta_t s)")
     println("Re=$Re")
+    println("ϵ=$ϵ")
     println("verbose=$verbose,sim_type=$sim_type")
     println("mem=$mem_str")
 
@@ -105,6 +119,8 @@ function main()
         diff_threshold=diff_threshold,
         body_color=body_color,
         max_image_res=max_image_res,
+        manual_mode=manual_mode,
+        force_invert_mask=force_invert_mask,
         Re=Re,
         ϵ=ϵ,  # Default value for ϵ, can be adjusted
         mem=mem,
@@ -147,72 +163,76 @@ end
 
 main()
 
-# image_path = "test/resources/airfoil.png"
-# image_path = "test/resources/airfoil_30_deg.png"
-image_path = "picture_sim_app/input/input.png"
-image_path = "picture_sim_app/input/input_red.png"
-# image_path = "picture_sim_app/input/input_blue.png"
-# image_path = "picture_sim_app/input/input_green.png"
-output_path = "picture_sim_app/output/particles.gif"
+# # image_path = "test/resources/airfoil.png"
+# # image_path = "test/resources/airfoil_30_deg.png"
+# image_path = "picture_sim_app/input/input.png"
+# image_path = "picture_sim_app/input/input_red.png"
+# # image_path = "picture_sim_app/input/input_blue.png"
+# # image_path = "picture_sim_app/input/input_green.png"
+# output_path = "picture_sim_app/output/particles.gif"
 
-threshold = 0.4
-diff_threshold = 0.2
-max_image_res=800
-t_sim=20.0
-delta_t=0.05
-Re=200
-ϵ=1
-verbose=true
-body_color="red"
-sim_type="particles"  # "particles" or "gif"
-mem=Array
-# mem=CuArray
+# threshold = 0.4
+# diff_threshold = 0.2
+# manual_mode = false
+# force_invert_mask = false
+# max_image_res=800
+# t_sim=20.0
+# delta_t=0.05
+# Re=200
+# ϵ=1
+# verbose=true
+# body_color="red"
+# sim_type="particles"  # "particles" or "gif"
+# mem=Array
+# # mem=CuArray
 
-airfoil_pixel_body = WaterLily.PixelBody(
-    image_path,
-    ϵ=ϵ,
-    threshold=threshold,
-    diff_threshold=diff_threshold,
-    body_color="red",
-    max_image_res=max_image_res,
-) # setting smooth weighted function
+# airfoil_pixel_body = WaterLily.PixelBody(
+#     image_path,
+#     ϵ=ϵ,
+#     threshold=threshold,
+#     diff_threshold=diff_threshold,
+#     body_color="red",
+#     max_image_res=max_image_res,
+#     manual_mode=manual_mode,
+#     force_invert_mask=force_invert_mask,
+# ) # setting smooth weighted function
 
-# airfoil_pixel_body = WaterLily.PixelBody(image_path,ϵ=ϵ, threshold=threshold, diff_threshold=diff_threshold, max_image_res=max_image_res, 
-# body_color="red")
-# body_color="blue")
-# body_color="green")
-# body_color="gray")
-
-
-LS, aoa = WaterLily.estimate_characteristic_length(airfoil_pixel_body, method="pca", plot_method=true);
-
-println("Estimated characteristic length: $(round(LS; digits=2))")
-println("Estimated AoA (deg): $(round(aoa; digits=2))")
+# # airfoil_pixel_body = WaterLily.PixelBody(image_path,ϵ=ϵ, threshold=threshold, diff_threshold=diff_threshold, max_image_res=max_image_res, 
+# # body_color="red")
+# # body_color="blue")
+# # body_color="green")
+# # body_color="gray")
 
 
-n, m = size(airfoil_pixel_body.μ₀)
+# LS, aoa = WaterLily.estimate_characteristic_length(airfoil_pixel_body, method="pca", plot_method=true);
+
+# println("Estimated characteristic length: $(round(LS; digits=2))")
+# println("Estimated AoA (deg): $(round(aoa; digits=2))")
 
 
-# LS = n / 10 # TODO: Arbitrary length scale of 10% of the domain, need to be able to set from image
+# n, m = size(airfoil_pixel_body.μ₀)
 
-# # REMEMBER TO RESTART SIMULATION BEFORE NEW PLOT
-sim = Simulation((n-2,m-2), (1,0), LS; body=airfoil_pixel_body, ν=LS/Re, ϵ=ϵ, mem=mem);
+
+# # LS = n / 10 # TODO: Arbitrary length scale of 10% of the domain, need to be able to set from image
+
+# # # REMEMBER TO RESTART SIMULATION BEFORE NEW PLOT
+# sim = Simulation((n-2,m-2), (1,0), LS; body=airfoil_pixel_body, ν=LS/Re, ϵ=ϵ, mem=mem);
  
 
-verbose=true
-output_path="picture_sim_app/output/output.gif"
-# sim_gif!(sim;duration=20.,step=0.05,clims=(-5,5), save_path=output_path, verbose=verbose);
+# verbose=true
+# output_path="picture_sim_app/output/output.gif"
+# # sim_gif!(sim;duration=20.,step=0.05,clims=(-5,5), save_path=output_path, verbose=verbose);
 
-sim_gif_particles!(
- sim;
- t_i=0.01, duration=t_sim, Δt=0.05,
- N_particles=2^14, life_particles=1e3,
- scale=5.0, minsize=0.01, width=0.05,
- plotbody=true, 
- save_path="picture_sim_app/output/particleplot.gif",
- verbose=verbose,
- mem=mem,
- );
+# sim_gif_particles!(
+#  sim;
+#  t_i=0.01, duration=t_sim, Δt=0.05,
+#  N_particles=2^14, life_particles=1e3,
+#  scale=5.0, minsize=0.01, width=0.05,
+#  plotbody=true, 
+#  save_path="picture_sim_app/output/particleplot.gif",
+#  verbose=verbose,
+#  mem=mem,
+#  );
 
 # t_i=0.01
 # duration=20.
@@ -389,152 +409,159 @@ sim_gif_particles!(
 # end
 
 
-# image_path = "picture_sim_app/input/input.png"
-image_path = "picture_sim_app/input/input_red.png"
+# # image_path = "picture_sim_app/input/input.png"
+# image_path = "picture_sim_app/input/input_red.png"
 
-# Load Image
-img = WaterLily.load(image_path);
-@show size(img);
-# display(heatmap(Array(img), color=:coolwarm, title="Raw image", aspect_ratio=:equal))
+# # Load Image
+# img = WaterLily.load(image_path);
+# @show size(img);
+# # display(heatmap(Array(img), color=:coolwarm, title="Raw image", aspect_ratio=:equal))
 
-# Downsize image if max_image_res is provided
-if !isnothing(max_image_res)
-    img = WaterLily.limit_resolution(img, max_image_res)
-    println("Image resized to $(size(img))")
-end
+# # Downsize image if max_image_res is provided
+# if !isnothing(max_image_res)
+#     img = WaterLily.limit_resolution(img, max_image_res)
+#     println("Image resized to $(size(img))")
+# end
 
-# Validate the body_color parameter
-valid_colors = ["gray", "red", "green", "blue"];
-if body_color ∉ valid_colors
-    throw(ArgumentError("Unsupported solid color: $body_color. Supported colors are: $(join(valid_colors, ", "))."))
-end;
+# # Validate the body_color parameter
+# valid_colors = ["gray", "red", "green", "blue"];
+# if body_color ∉ valid_colors
+#     throw(ArgumentError("Unsupported solid color: $body_color. Supported colors are: $(join(valid_colors, ", "))."))
+# end;
 
 
-# Ensure image is in RBG format
-img_rgb = RGB.(img)
-# Extract channels
-R = WaterLily.channelview(img_rgb)[1, :, :];
-G = WaterLily.channelview(img_rgb)[2, :, :]  ;
-B = WaterLily.channelview(img_rgb)[3, :, :];
+# # Ensure image is in RBG format
+# img_rgb = RGB.(img);
+# # Extract channels
+# R = WaterLily.channelview(img_rgb)[1, :, :];
+# G = WaterLily.channelview(img_rgb)[2, :, :];
+# B = WaterLily.channelview(img_rgb)[3, :, :];
 
-# Use satistics to determine color domonance hierarchy fo automatic threshold selection (makes detection more robust for varying li)
-R_mean = WaterLily.mean(R);
-G_mean = WaterLily.mean(G);
-B_mean = WaterLily.mean(B);
+# # NOTE: Different cameras and lighting conditions cause the boolean logic when trying to distinguish solid from fluid to 
+# # be inverted, depending on the final color hiearchy of the image. Since the padding function pad_to_pow2_with_ghost_cells
+# # assume 1 is solid and 0 is fluid, the mask passed down to the padding function also needs to ahdere to this logic. This
+# # means that depending on the color hierarchy, the mask logic changes based on the selected threshold values, and
+# # the mask logic needs to be inverted. A smart body detection implemenation is used in the following lines to attempt
+# # said automatic reversal.
 
-println("Channel means: R=$(round(R_mean, digits=3)), G=$(round(G_mean, digits=3)), B=$(round(B_mean, digits=3))")
+# # Smart body detection uses channel hierarchy to determine masking logic between solid and fluid
+# R_mean = WaterLily.mean(R);
+# G_mean = WaterLily.mean(G);
+# B_mean = WaterLily.mean(B);
 
-# Analyze channel hierarchy and relative differences
-R_vs_G_diff = R_mean - G_mean;
-R_vs_B_diff = R_mean - B_mean;
-total_color_range = WaterLily.maximum([WaterLily.maximum(R), WaterLily.maximum(G), WaterLily.maximum(B)]) - 
-                   WaterLily.minimum([WaterLily.minimum(R), WaterLily.minimum(G), WaterLily.minimum(B)]);
+# println("Channel means: R=$(round(R_mean, digits=3)), G=$(round(G_mean, digits=3)), B=$(round(B_mean, digits=3))");
 
-println("R vs G difference: $(round(R_vs_G_diff, digits=3))")
-println("R vs B difference: $(round(R_vs_B_diff, digits=3))")
-println("Total color range: $(round(total_color_range, digits=3))")
+# # Analyze channel hierarchy and relative differences between color channels
+# R_vs_G_diff = R_mean - G_mean;
+# R_vs_B_diff = R_mean - B_mean;
+# total_color_range = maximum([maximum(R), maximum(G), maximum(B)]) - 
+#                     minimum([minimum(R), minimum(G), minimum(B)]);
 
-# Decision logic based on relative channel relationships
-if R_mean > G_mean && R_mean > B_mean
-    # Red is dominant - likely MacBook-style with elevated red values
-    println("RED DOMINANT camera detected")
+# # Logic to determine if mask inversion is nededed based on color hierarchy
+# needs_inversion = false;
+# if R_mean > G_mean && R_mean > B_mean
+#     # Red is dominant channel
+#     println("RED DOMINANT camera detected");
     
-    # Scale thresholds based on how much red dominates
-    red_dominance = min(R_vs_G_diff, R_vs_B_diff) / total_color_range
-    println("Red dominance factor: $(round(red_dominance, digits=3))")
+#     # Scale thresholds based on how much red dominates
+#     red_dominance = min(R_vs_G_diff, R_vs_B_diff) / total_color_range;
+#     println("Red dominance factor: $(round(red_dominance, digits=3))");
     
-    if red_dominance > 0.05  # Significant red dominance
-        threshold = 0.5 + red_dominance  # Higher threshold for red-heavy cameras
-        diff_threshold = 0.05 + red_dominance * 0.5  # Lower diff since red is already elevated
-    else
-        threshold = 0.45
-        diff_threshold = 0.15
-    end
+#     # Selects threshold and diff_threshold based on red dominance 
+#     if red_dominance > 0.05  # Significant red dominance
+#         threshold = 0.5 + red_dominance;  # Higher threshold for red-heavy cameras
+#         diff_threshold = 0.05 + red_dominance * 0.5;  # Lower diff since red is already elevated
+#     else
+#         threshold = 0.45; # TODO: Still need to calibrate these two values
+#         diff_threshold = 0.15;
+#     end
+#     needs_inversion = true;  # RED DOMINANT requires inversion (e.g. macbook camera)
     
-elseif G_mean > R_mean && B_mean > R_mean
-    # Red is lowest channel
-    println("RED SUPPRESSED camera detected")
+# elseif G_mean > R_mean && B_mean > R_mean
+#     # Red is lowest - likely Logitech-style with suppressed red values
+#     println("RED SUPPRESSED camera detected");
     
-    # Scale thresholds based on how much red is suppressed
-    red_suppression = max(G_mean - R_mean, B_mean - R_mean) / total_color_range
-    println("Red suppression factor: $(round(red_suppression, digits=3))")
+#     # Scale thresholds based on how much red is suppressed
+#     red_suppression = max(G_mean - R_mean, B_mean - R_mean) / total_color_range;
+#     println("Red suppression factor: $(round(red_suppression, digits=3))");
     
-    threshold = 0.35 + red_suppression * 0.2  # Lower threshold for red-suppressed cameras
-    diff_threshold = 0.15 + red_suppression * 0.3  # Higher diff needed to detect red
+#     threshold = 0.35 + red_suppression * 0.2  # Lower threshold for red-suppressed cameras
+#     diff_threshold = 0.15 + red_suppression * 0.3  # Higher diff needed to detect red
+#     needs_inversion = false;  # Logitech-style doesn't need inversion
     
-else
-    # Balanced channels - use adaptive thresholds based on overall range
-    println("⚖️  BALANCED channels detected - using adaptive thresholds")
+# else
+#     # Balanced channels - use adaptive thresholds based on overall range
+#     println("BALANCED channels detected")
     
-    # Use the total dynamic range to scale thresholds
-    if total_color_range > 0.5
-        threshold = 0.4
-        diff_threshold = 0.2
-    else
-        # Lower dynamic range needs more sensitive detection
-        threshold = 0.3
-        diff_threshold = 0.1
-    end
-end;
+#     # Use the total dynamic range to scale thresholds
+#     if total_color_range > 0.5
+#         threshold = 0.4
+#         diff_threshold = 0.2
+#     else
+#         # Lower dynamic range needs more sensitive detection
+#         threshold = 0.3
+#         diff_threshold = 0.1
+#     end
+#     needs_inversion = false  # Default behavior
+# end;
 
-# Ensure thresholds are within reasonable bounds
-threshold = clamp(threshold, 0.2, 0.7);
-diff_threshold = clamp(diff_threshold, 0.05, 0.4);
+# # Ensure thresholds are within reasonable bounds
+# threshold = clamp(threshold, 0.2, 0.7);
+# diff_threshold = clamp(diff_threshold, 0.05, 0.4);
 
-println("Using the following threshold values:")
-println("   threshold = $(round(threshold, digits=3))")
-println("   diff_threshold = $(round(diff_threshold, digits=3))")
-println("="^50)
-
-
-
-# Step 2: Check individual conditions
-condition1 = R .> threshold;
-condition2 = (R .- G) .> diff_threshold;
-condition3 = (R .- B) .> diff_threshold;
-combined_red_detection = condition1 .& condition2 .& condition3;
-
-# Step 3: Check some specific pixel values where red should be detected
-red_pixels = findall(combined_red_detection);
-if length(red_pixels) > 0
-    sample_idx = red_pixels[1:min(5, length(red_pixels))]
-    println("\n--- Sample RED pixels (first 5) ---")
-    for idx in sample_idx
-        println("Pixel $idx: R=$(R[idx]), G=$(G[idx]), B=$(B[idx]), R-G=$(R[idx]-G[idx]), R-B=$(R[idx]-B[idx])")
-    end
-end;
-
-# Step 4: Final mask (note the .! negation)
-mask = .!combined_red_detection;
-println("\n--- Final Mask ---")
-println("Mask: $(sum(mask)) pixels are TRUE (should be red areas, aka the solid)")
-println("Mask: $(sum(.!mask)) pixels are FALSE (should be non-red area, aka the fluid)")
-
-# Display intermediate results
-display(heatmap(Array(condition1)', color=:coolwarm, title="Condition 1: R > $threshold", aspect_ratio=:equal))
-display(heatmap(Array(condition2)', color=:coolwarm, title="Condition 2: R-G > $diff_threshold", aspect_ratio=:equal))
-display(heatmap(Array(condition3)', color=:coolwarm, title="Condition 3: R-B > $diff_threshold", aspect_ratio=:equal))
-display(heatmap(Array(combined_red_detection)', color=:coolwarm, title="Combined RED detection", aspect_ratio=:equal))
-display(heatmap(Array(mask)', color=:coolwarm, title="Final mask (.! of red detection)", aspect_ratio=:equal))
+# println("FINAL ADAPTIVE THRESHOLDS:")
+# println("   threshold = $(round(threshold, digits=3))")
+# println("   diff_threshold = $(round(diff_threshold, digits=3))")
+# println("   needs_inversion = $needs_inversion")
+# println("="^50)
 
 
+# # TODO: The above logic was developed around the red color. However, other colors can be selected for the solid. For 
+# # now, the automated mask inversion logic is only used for the color 'red', but might be useful later.
+# if body_color == "red"
+#     # Detect red pixels (flip logic for different hierarchies of color channels)
+#     red_detected = (R .> threshold) .& ((R .- G) .> diff_threshold) .& ((R .- B) .> diff_threshold)
+    
+#     if needs_inversion
+#         # RED DOMINANT: red_detected=true means solid, so mask should be true for solid
+#         mask = red_detected  # 1 for solid (red), 0 for fluid
+#         println("Applied mask = red_detected (no inversion)")
+#     else
+#         # RED SUPPRESSED: red_detected=true means solid, but we need 0 for solid to match padding
+#         mask = .!red_detected  # 0 for solid (red), 1 for fluid
+#         println("Applied mask = .!red_detected (inverted)")
+#     end
+
+# elseif body_color == "green"
+#     green_detected = (G .> threshold) .& ((G .- R) .> diff_threshold) .& ((G .- B) .> diff_threshold)
+#     # For now, use standard logic for green (can be enhanced later)
+#     mask = .!green_detected
+    
+# elseif body_color == "blue"
+#     blue_detected = (B .> threshold) .& ((B .- G) .> diff_threshold) .& ((B .- R) .> diff_threshold)
+#     # For now, use standard logic for blue (can be enhanced later)
+#     mask = .!blue_detected
+# end
 
 
-mask = reverse(mask, dims=1)' # Transpose to align matrix indices with physical x-y
-mask_padded = WaterLily.pad_to_pow2_with_ghost_cells(mask);
-@show size(mask_padded);
-display(heatmap(Array(mask)', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
+# mask = reverse(mask, dims=1)' # Transpose to align matrix indices with physical x-y
 
 
-# Compute signed distance field
-sdf = Float32.(distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded)));
+# # Pad with zeros (False/fluid) at the border
+# mask_padded = WaterLily.pad_to_pow2_with_ghost_cells(mask);
+# @show size(mask_padded);
+# display(heatmap(Array(mask)', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
 
-@show size(sdf)
-# Smooth volume fraction field
-μ₀_array = mem(Float32.(WaterLily.μ₀.(sdf, Float32(ϵ))));
-@show size(μ₀_array);
 
-# TODO: TEMP images for debugging
-display(heatmap(Array(mask_padded)', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
-display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
-display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
+# # Compute signed distance field
+# sdf = Float32.(distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded)));
+
+# @show size(sdf)
+# # Smooth volume fraction field
+# μ₀_array = mem(Float32.(WaterLily.μ₀.(sdf, Float32(ϵ))));
+# @show size(μ₀_array);
+
+# # TODO: TEMP images for debugging
+# display(heatmap(Array(mask_padded)', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
+# display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
+# display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))

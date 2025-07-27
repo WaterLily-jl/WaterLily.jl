@@ -10,7 +10,7 @@ struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
 end
 
 # Outer constructor for PixelBody from image path
-function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ=1.0, max_image_res=nothing, body_color="gray", mem=Array)
+function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ=1.0, max_image_res=nothing, body_color="gray", manual_mode=false, force_invert_mask=false, mem=Array)
     img = load(image_path)
     @show size(img)
 
@@ -20,7 +20,7 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
         println("Image resized to $(size(img))")
     end
 
-    mask = create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold)
+    mask = create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode, force_invert_mask)
 
     # Pad mask with ghost cells (needed for simulation). WARNING: Assumes all edges are fluid 0, otherwise it will not work.
     mask_padded = pad_to_pow2_with_ghost_cells(mask)
@@ -47,24 +47,23 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
 end
 
 """
-    function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold)
+    function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode, force_invert_mask)
 
 Function to produce a boolean mask that distinguishes the solid from the fluid using image recognition logic. Both grayscale
 and colored images are supported.
 
-For grayscale images, the 'threshold' value acts as a lowpass logic filter such that (normalized) pixel intensity values lower
-than the threshold are assumed to be a solid, while values above the thresgold are assumed as fluid. The assumed contrast logic
-is that the fluid is dominatnly white and the solid is dominatnly black.
-
-For colored images, lighting conditions, the color chosen for the solid, and even the camera used will influence the solid/fluid
-image recognition logic. A "smart" logic was initially implemented to try to address these issues (see further documentation
-in the comments below).
-
 - 'threshold' (float):
 
 Controls the minimum intensity required for a pixel to be considered as the "solid" color (e.g., red, green, blue, or gray).
+
+For grayscale images, the 'threshold' value controls how restrictive the solid detection is. Higher threshold values
+make detection more restrictive (detects less solid but decreases noise). The assumed contrast logic is that the solid is dominantly dark (black)
+and the fluid is dominantly bright (white). Pixels with intensity below (1 - threshold) are considered solid.
+
 For color images, a pixel's channel (e.g., R for red) must be greater than this value to be considered as part of the solid.
-For grayscale, pixels with intensity below this value are considered solid.
+For colored images, lighting conditions, the color chosen for the solid, and even the camera used will influence the solid/fluid
+image recognition logic. A "smart" logic was initially implemented to try to address these issues (see further documentation
+in the comments below).
 
  - 'diff_threshold' (float):
 
@@ -72,6 +71,15 @@ Controls how much more the target color channel (e.g., R for red) must exceed th
 Helps distinguish the solid color from backgrounds or lighting variations.
 For example, for red: a pixel is solid if R > threshold and R - G > diff_threshold and R - B > diff_threshold.
 Suggested values:
+
+- 'manual_mode' (bool) = False:
+
+User selected threshold and diff_threshold are used if manual_mode is set to true (overwrites color detection logic).
+Smart logic is still used to use color hierarchy to invert matrix
+
+- 'force_invert_mask' (bool) = False:
+Optional setting to force inverting the mask in case smart image recognition hiearchy logic fails. Recommendation is to use
+only if padding logic is incorrect (will be obvious from heatmap image)
 
 ===Suggestions for threshold and diff threshold===
 
@@ -83,7 +91,7 @@ For images with less contrast or more noise, try lowering threshold and/or diff_
 If the mask is too small (misses solid), lower the thresholds.
 If the mask is too large (includes background), raise the thresholds.
 """
-function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold)
+function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode=false, force_invert_mask=false)
      # Validate the body_color parameter
     valid_colors = ["gray", "red", "green", "blue"]
     if body_color ∉ valid_colors
@@ -95,7 +103,9 @@ function create_fluid_soilid_mask_using_image_recognition(img, body_color, thres
 
         gray_img = Gray.(img)
         # Binary mask: 1 for solid, 0 for fluid
-        mask = Float64.(gray_img) .< threshold
+        # NOTE: Changed logic to match color behavior - higher threshold = more restrictive = less solid detected
+        # Assumes solid is dark (low values) and fluid is bright (high values)
+        mask = Float64.(gray_img) .< (1.0 - threshold)  # Invert threshold for consistent behavior
 
     else
         println("Colored figure selected. Smart body detection will be used.")
@@ -120,6 +130,7 @@ function create_fluid_soilid_mask_using_image_recognition(img, body_color, thres
         B_mean = mean(B)
 
         println("Channel means: R=$(round(R_mean, digits=3)), G=$(round(G_mean, digits=3)), B=$(round(B_mean, digits=3))")
+        println("Manual mode: $manual_mode, Force invert mask: $force_invert_mask")
 
         # Analyze channel hierarchy and relative differences between color channels
         R_vs_G_diff = R_mean - G_mean
@@ -127,63 +138,88 @@ function create_fluid_soilid_mask_using_image_recognition(img, body_color, thres
         total_color_range = maximum([maximum(R), maximum(G), maximum(B)]) -
                            minimum([minimum(R), minimum(G), minimum(B)])
 
-        # Logic to determine if mask inversion is nededed based on color hierarchy
+        # Logic to determine if mask inversion is needed based on color hierarchy
         needs_inversion = false
-        if R_mean > G_mean && R_mean > B_mean
-            # Red is dominant channel
-            println("RED DOMINANT camera detected")
 
-            # Scale thresholds based on how much red dominates
-            red_dominance = min(R_vs_G_diff, R_vs_B_diff) / total_color_range
-            println("Red dominance factor: $(round(red_dominance, digits=3))")
-
-            # Selects threshold and diff_threshold based on red dominance
-            if red_dominance > 0.05  # Significant red dominance
-                threshold = 0.5 + red_dominance  # Higher threshold for red-heavy cameras
-                diff_threshold = 0.05 + red_dominance * 0.5  # Lower diff since red is already elevated
+        if manual_mode
+            # MANUAL MODE: Use provides thresholds but smart inversion logic based on color hierarchy is still used
+            println("MANUAL MODE: Using provided threshold values")
+            if R_mean > G_mean && R_mean > B_mean
+                println("RED DOMINANT camera detected (mask inversion appplied)")
+                needs_inversion = true
+            elseif G_mean > R_mean && B_mean > R_mean
+                println("RED SUPPRESSED camera detected (mask inversion not applied)")
+                needs_inversion = false
             else
-                # Use manual values from input settings
-                threshold = threshold
-                diff_threshold = diff_threshold
+                println("BALANCED channels detected (mask inversion not applied)")
+                needs_inversion = false
             end
-            needs_inversion = true  # RED DOMINANT requires inversion (e.g. macbook camera)
-
-        elseif G_mean > R_mean && B_mean > R_mean
-            # Red is lowest - likely Logitech-style with suppressed red values
-            println("RED SUPPRESSED camera detected")
-
-            # Scale thresholds based on how much red is suppressed
-            red_suppression = max(G_mean - R_mean, B_mean - R_mean) / total_color_range
-            println("Red suppression factor: $(round(red_suppression, digits=3))")
-
-            threshold = 0.35 + red_suppression * 0.2  # Lower threshold for red-suppressed cameras
-            diff_threshold = 0.15 + red_suppression * 0.3  # Higher diff needed to detect red
-            needs_inversion = false  # RED SUPPRESSED doesn't need inversion (e.g. logitech webcam)
-
         else
-            # Balanced channels - use adaptive thresholds based on overall range
-            println("BALANCED channels detected")
+            # SMART MODE: Auto-adjust thresholds and determine inversion
+            if R_mean > G_mean && R_mean > B_mean
+                # Red is dominant channel
+                println("RED DOMINANT camera detected")
 
-            # Use the total dynamic range to scale thresholds
-            if total_color_range > 0.5
-                threshold = 0.4
-                diff_threshold = 0.2
+                # Scale thresholds based on how much red dominates
+                red_dominance = min(R_vs_G_diff, R_vs_B_diff) / total_color_range
+                println("Red dominance factor: $(round(red_dominance, digits=3))")
+
+                # Selects threshold and diff_threshold based on red dominance
+                if red_dominance > 0.05  # Significant red dominance
+                    threshold = 0.5 + red_dominance  # Higher threshold for red-heavy cameras
+                    diff_threshold = 0.05 + red_dominance * 0.5  # Lower diff since red is already elevated
+                else
+                    # TODO: Need to calibrate better values
+                    threshold = 0.45
+                    diff_threshold = 0.15
+                end
+                needs_inversion = true  # RED DOMINANT requires inversion (e.g. macbook camera)
+
+            elseif G_mean > R_mean && B_mean > R_mean
+                # Red is lowest channel (e.g. logitech webcam)
+                println("RED SUPPRESSED camera detected")
+
+                # Scale thresholds based on how much red is suppressed
+                red_suppression = max(G_mean - R_mean, B_mean - R_mean) / total_color_range
+                println("Red suppression factor: $(round(red_suppression, digits=3))")
+
+                threshold = 0.35 + red_suppression * 0.2  # Lower threshold for red-suppressed cameras
+                diff_threshold = 0.15 + red_suppression * 0.3  # Higher diff needed to detect red
+                needs_inversion = false  # RED SUPPRESSED doesn't need inversion (e.g. logitech webcam)
+
             else
-                # Lower dynamic range needs more sensitive detection
-                threshold = 0.3
-                diff_threshold = 0.1
+                # Balanced channels - use adaptive thresholds based on overall range
+                println("BALANCED channels detected")
+
+                # Use the total dynamic range to scale thresholds
+                if total_color_range > 0.5
+                    threshold = 0.4
+                    diff_threshold = 0.2
+                else
+                    # Lower dynamic range needs more sensitive detection
+                    threshold = 0.3
+                    diff_threshold = 0.1
+                end
+                needs_inversion = false  # Default behavior
             end
-            needs_inversion = false  # Default behavior
+
+            # Ensure thresholds are within reasonable bounds
+            threshold = clamp(threshold, 0.2, 0.7)
+            diff_threshold = clamp(diff_threshold, 0.05, 0.4)
         end
 
-        # Ensure thresholds are within reasonable bounds
-        threshold = clamp(threshold, 0.2, 0.7)
-        diff_threshold = clamp(diff_threshold, 0.05, 0.4)
+        # Force invert override
+        if force_invert_mask
+            println("FORCE INVERT: Overriding smart inversion logic")
+            needs_inversion = !needs_inversion
+        end
 
-        println("FINAL ADAPTIVE THRESHOLDS:")
+        println("FINAL THRESHOLDS:")
         println("   threshold = $(round(threshold, digits=3))")
         println("   diff_threshold = $(round(diff_threshold, digits=3))")
         println("   needs_inversion = $needs_inversion")
+        println("   manual_mode = $manual_mode")
+        println("   force_invert_mask = $force_invert_mask")
         println("="^50)
 
 

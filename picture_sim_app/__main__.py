@@ -18,17 +18,24 @@ def main() -> None:
     # capture_image(input_folder=INPUT_FOLDER)
 
     # File I/O settings
-    # input_image_name = "input.png"
-    input_image_name = "input_red.png"
+    input_image_name = "input.png"
+    # input_image_name = "input_red_hierarchy.png"
+    # input_image_name = "input_red.png"
+    # input_image_name = "input_naca_002.png"
+    # input_image_name = "input_naca_015.png"
+    # input_image_name = "input_naca_030.png"
     input_path = INPUT_FOLDER / input_image_name
     # output_animation_name = "output.gif"
     output_animation_name = "particleplot.gif"
     output_path = OUTPUT_FOLDER / output_animation_name
 
     # Image recognition settings (rule of thumb for both: Increase if too much background noise, decrease if solid not showing)
-    threshold = 0.6 # First play with this until solid shows up, then adjust diff_threshold
-    diff_threshold=0.001 # Increase if too much noise, decrease if solid not showing
-    solid_color="red"
+    threshold = 0.5 # First play with this until solid shows up, then adjust diff_threshold
+    diff_threshold=0.2 # Increase if too much noise, decrease if solid not showing (only if using colors)
+    solid_color="red" # Options are grey, red, green or blue
+    manual_mode = False  # Set to True to use provided threshold values, otherwise smart detection is used
+    force_invert_mask = False  # Set to True to force mask inversion if smart logic fails (will be seen as an incorrect
+                               # ghost cell padding at the edges of the fluid boundary)
 
     # Image resolution cap (spatial resolution)
     max_image_res=800
@@ -43,7 +50,7 @@ def main() -> None:
     # Other settings
     verbose="true"
     sim_type="particles"
-    mem="CuArray"
+    mem="Array"
 
     # Estimate AoA from markers
     calculate_aoa = False
@@ -79,6 +86,8 @@ def main() -> None:
         str(threshold),
         str(diff_threshold),
         str(solid_color),
+        str(manual_mode).lower(),
+        str(force_invert_mask).lower(),
         # Image resolution cap (spatial resolution)
         str(max_image_res),
         # Simulation duration and temporal resolution
