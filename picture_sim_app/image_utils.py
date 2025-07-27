@@ -2,15 +2,30 @@ import os
 from pathlib import Path
 
 import cv2
+import numpy as np
 from PIL import Image, ImageSequence
 import pygame
 
-def capture_image(input_folder:str | Path, image_name: str = "input.png") -> None:
+def capture_image(input_folder:str | Path, image_name: str = "input.png", fixed_aspect_ratio: tuple = None, fixed_size: tuple = None) -> None:
+    """
+    Capture image from webcam with optional fixed aspect ratio or size.
+    
+    Args:
+        input_folder: Folder to save the captured image
+        image_name: Name of the output image file
+        fixed_aspect_ratio: If provided (width, height), enforces this aspect ratio
+        fixed_size: If provided (width, height), captures image at this exact size
+    """
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         raise RuntimeError("Webcam not found or cannot be opened.")
 
     print("Press [space] to capture image, or [ESC] to quit.")
+    if fixed_aspect_ratio:
+        print(f"Fixed aspect ratio mode: {fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}")
+    if fixed_size:
+        print(f"Fixed size mode: {fixed_size[0]}x{fixed_size[1]} pixels")
+    
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -33,24 +48,69 @@ def capture_image(input_folder:str | Path, image_name: str = "input.png") -> Non
     cap.release()
     cv2.destroyAllWindows()
 
-    # Read the saved image for cropping
+    # Read the saved image for cropping/resizing
     img = cv2.imread(str(path)) # cv2.imread often prefers string paths
     if img is None:
         raise RuntimeError(f"Failed to load image {path} for cropping.")
 
-    # Let the user select ROI with mouse
-    print("Select ROI (drag mouse to crop). Press ENTER or SPACE to confirm, or 'c' to cancel.")
-    roi = cv2.selectROI("Crop Image", img, showCrosshair=True, fromCenter=False)
-    cv2.destroyAllWindows()
-
-    x, y, w, h = roi
-    if w > 0 and h > 0:
-        # Crop and overwrite the image
-        cropped_img = img[int(y):int(y+h), int(x):int(x+w)]
-        cv2.imwrite(str(path), cropped_img) # cv2.imwrite often prefers string paths
-        print(f"Cropped image saved to {path}")
+    if fixed_size:
+        # Crop to exact fixed size from center
+        h, w = img.shape[:2]
+        target_w, target_h = fixed_size
+        
+        # Calculate center crop coordinates
+        start_x = max(0, (w - target_w) // 2)
+        start_y = max(0, (h - target_h) // 2)
+        end_x = min(w, start_x + target_w)
+        end_y = min(h, start_y + target_h)
+        
+        cropped_img = img[start_y:end_y, start_x:end_x]
+        
+        # If the crop is smaller than target, pad with black
+        if cropped_img.shape[:2] != (target_h, target_w):
+            padded_img = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+            paste_y = (target_h - cropped_img.shape[0]) // 2
+            paste_x = (target_w - cropped_img.shape[1]) // 2
+            padded_img[paste_y:paste_y+cropped_img.shape[0], paste_x:paste_x+cropped_img.shape[1]] = cropped_img
+            cropped_img = padded_img
+            
+        cv2.imwrite(str(path), cropped_img)
+        print(f"Fixed size image ({target_w}x{target_h}) saved to {path}")
+        
+    elif fixed_aspect_ratio:
+        # Crop to fixed aspect ratio
+        h, w = img.shape[:2]
+        target_ratio = fixed_aspect_ratio[0] / fixed_aspect_ratio[1]
+        current_ratio = w / h
+        
+        if current_ratio > target_ratio:
+            # Image is too wide, crop width
+            new_width = int(h * target_ratio)
+            start_x = (w - new_width) // 2
+            cropped_img = img[:, start_x:start_x + new_width]
+        else:
+            # Image is too tall, crop height
+            new_height = int(w / target_ratio)
+            start_y = (h - new_height) // 2
+            cropped_img = img[start_y:start_y + new_height, :]
+        
+        cv2.imwrite(str(path), cropped_img)
+        print(f"Fixed aspect ratio image ({fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}) saved to {path}")
+        
     else:
-        print("No crop selected, original image kept.")
+        # Original manual cropping behavior
+        print("Select ROI (drag mouse to crop). Press ENTER or SPACE to confirm, or 'c' to cancel.")
+        roi = cv2.selectROI("Crop Image", img, showCrosshair=True, fromCenter=False)
+        cv2.destroyAllWindows()
+
+        x, y, w, h = roi
+        if w > 0 and h > 0:
+            # Crop and overwrite the image
+            cropped_img = img[int(y):int(y+h), int(x):int(x+w)]
+            cv2.imwrite(str(path), cropped_img) # cv2.imwrite often prefers string paths
+            print(f"Cropped image saved to {path}")
+        else:
+            print("No crop selected, original image kept.")
 
 def list_monitors() -> list:
     """List available monitors and their properties."""
@@ -260,45 +320,32 @@ def display_gif_fullscreen(gif_path: str | Path, monitor_index:int =0, force_win
         pygame.quit()
 
 
-def resize_gif(
+def crop_gif(
         input_path: str | Path,
         output_path: str | Path,
-        target_size: tuple=(1920, 1080),
-        fill_color: tuple=(0, 0, 0, 0),
+        crop_box: tuple,
 ) -> None:
     """
-    Resize each frame of a GIF while preserving aspect ratio, then pad to target size.
+    Crop each frame of a GIF using specified coordinates.
 
     Args:
         input_path (str): Path to the input GIF.
-        output_path (str): Path to save the resized and padded GIF.
-        target_size (tuple): Desired (width, height), e.g., (1920, 1080).
-        fill_color (tuple): RGBA fill color for padding, default transparent/black.
+        output_path (str): Path to save the cropped GIF.
+        crop_box (tuple): (left, top, right, bottom) coordinates for cropping.
     """
+    left, top, right, bottom = crop_box
+    
     with Image.open(input_path) as img:
         frames = []
         durations = []
 
         for frame in ImageSequence.Iterator(img):
             frame = frame.convert("RGBA")
-            orig_w, orig_h = frame.size
-            target_w, target_h = target_size
-
-            # Compute scale to preserve aspect ratio
-            scale = min(target_w / orig_w, target_h / orig_h)
-            new_w = int(orig_w * scale)
-            new_h = int(orig_h * scale)
-
-            # Resize with aspect ratio
-            resized = frame.resize((new_w, new_h), Image.BICUBIC)
-
-            # Create new canvas and paste resized frame in center
-            canvas = Image.new("RGBA", target_size, fill_color)
-            offset_x = (target_w - new_w) // 2
-            offset_y = (target_h - new_h) // 2
-            canvas.paste(resized, (offset_x, offset_y))
-
-            frames.append(canvas)
+            
+            # Crop the frame
+            cropped_frame = frame.crop((left, top, right, bottom))
+            
+            frames.append(cropped_frame)
             durations.append(frame.info.get('duration', 100))
 
         # Save as animated GIF
@@ -312,12 +359,143 @@ def resize_gif(
         )
 
 
-def display_two_gifs_side_by_side(
-    gif_path_left: str | Path,
-    gif_path_right: str | Path,
-    monitor_index: int = 0,
-    force_windowed: bool = False
+def resize_gif(
+        input_path: str | Path,
+        output_path: str | Path,
+        target_size: tuple=(1920, 1080),
+        maintain_aspect: bool = True,
+        fill_color: tuple=(0, 0, 0, 0),
 ) -> None:
+    """
+    Resize each frame of a GIF with improved aspect ratio handling.
+
+    Args:
+        input_path (str): Path to the input GIF.
+        output_path (str): Path to save the resized GIF.
+        target_size (tuple): Desired (width, height), e.g., (1920, 1080).
+        maintain_aspect (bool): If True, maintain aspect ratio (may result in smaller output).
+                               If False, stretch to exact target size.
+        fill_color (tuple): RGBA fill color for padding when maintain_aspect=True.
+    """
+    with Image.open(input_path) as img:
+        frames = []
+        durations = []
+
+        for frame in ImageSequence.Iterator(img):
+            frame = frame.convert("RGBA")
+            orig_w, orig_h = frame.size
+            target_w, target_h = target_size
+
+            if maintain_aspect:
+                # Compute scale to preserve aspect ratio
+                scale = min(target_w / orig_w, target_h / orig_h)
+                new_w = int(orig_w * scale)
+                new_h = int(orig_h * scale)
+
+                # Resize with aspect ratio
+                resized = frame.resize((new_w, new_h), Image.BICUBIC)
+
+                # Create new canvas and paste resized frame in center
+                canvas = Image.new("RGBA", target_size, fill_color)
+                offset_x = (target_w - new_w) // 2
+                offset_y = (target_h - new_h) // 2
+                canvas.paste(resized, (offset_x, offset_y))
+                frames.append(canvas)
+            else:
+                # Stretch to exact target size
+                resized = frame.resize(target_size, Image.BICUBIC)
+                frames.append(resized)
+
+            durations.append(frame.info.get('duration', 100))
+
+        # Save as animated GIF
+        frames[0].save(
+            output_path,
+            save_all=True,
+            append_images=frames[1:],
+            duration=durations,
+            loop=0,
+            disposal=2
+        )
+
+
+def get_gif_dimensions(gif_path: str | Path) -> tuple:
+    """
+    Get the dimensions of the first frame of a GIF.
+    
+    Args:
+        gif_path: Path to the GIF file
+        
+    Returns:
+        tuple: (width, height) of the GIF
+    """
+    with Image.open(gif_path) as img:
+        return img.size
+
+
+def make_gifs_consistent_size(
+    gif_paths: list,
+    target_size: tuple = None,
+    maintain_aspect: bool = True,
+    crop_boxes: list = None
+) -> None:
+    """
+    Process multiple GIFs to have consistent dimensions.
+    
+    Args:
+        gif_paths: List of GIF file paths to process
+        target_size: Target (width, height). If None, uses largest dimensions found
+        maintain_aspect: Whether to maintain aspect ratio
+        crop_boxes: Optional list of crop boxes [(left, top, right, bottom), ...] for each GIF
+    """
+    if not gif_paths:
+        return
+        
+    # If target_size not specified, find the largest dimensions
+    if target_size is None:
+        max_w, max_h = 0, 0
+        for gif_path in gif_paths:
+            w, h = get_gif_dimensions(gif_path)
+            max_w = max(max_w, w)
+            max_h = max(max_h, h)
+        target_size = (max_w, max_h)
+    
+    print(f"Processing {len(gif_paths)} GIFs to consistent size: {target_size}")
+    
+    # Process each GIF
+    for i, gif_path in enumerate(gif_paths):
+        # Apply crop if specified
+        if crop_boxes and i < len(crop_boxes) and crop_boxes[i]:
+            temp_path = str(gif_path).replace('.gif', '_temp.gif')
+            crop_gif(gif_path, temp_path, crop_boxes[i])
+            gif_path = temp_path
+        
+        # Resize to target size
+        backup_path = str(gif_path).replace('.gif', '_backup.gif')
+        
+        # Create backup
+        import shutil
+        shutil.copy2(gif_path, backup_path)
+        
+        # Resize
+        resize_gif(gif_path, gif_path, target_size, maintain_aspect)
+        
+        print(f"Processed {gif_path}")
+
+
+def display_two_gifs_side_by_side(
+    gif_path_left, gif_path_right, monitor_index=0, force_windowed=False, target_size=None
+):
+    """
+    Display two GIFs side by side with consistent sizing.
+    
+    Args:
+        gif_path_left: Path to left GIF
+        gif_path_right: Path to right GIF  
+        monitor_index: Monitor to display on
+        force_windowed: Force windowed mode
+        target_size: If provided (width, height), ensures both GIFs are this size
+    """
     pygame.init()
     num_displays = pygame.display.get_num_displays()
     desktop_sizes = pygame.display.get_desktop_sizes() if hasattr(pygame.display, "get_desktop_sizes") else [(1920, 1080)] * num_displays
@@ -327,28 +505,36 @@ def display_two_gifs_side_by_side(
     screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN if not force_windowed else 0)
     pygame.display.set_caption("Flow visualization")
 
-    def load_gif_frames(gif_path, target_box):
+    def load_gif_frames(gif_path, target_h):
         gif = Image.open(gif_path)
-        frames, durations, positions = [], [], []
-        target_w, target_h = target_box
+        frames, durations, widths = [], [], []
         for frame in ImageSequence.Iterator(gif):
             frame = frame.convert('RGBA')
             orig_w, orig_h = frame.size
-            scale = min(target_w / orig_w, target_h / orig_h)
-            new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-            offset_x = (target_w - new_w) // 2
-            offset_y = (target_h - new_h) // 2
-            frame_resized = frame.resize((new_w, new_h), Image.BICUBIC)
-            canvas = Image.new('RGBA', (target_w, target_h), (0, 0, 0, 255))
-            canvas.paste(frame_resized, (offset_x, offset_y))
-            surf = pygame.image.fromstring(canvas.tobytes(), canvas.size, 'RGBA')
+            scale = target_h / orig_h
+            new_w = int(orig_w * scale)
+            frame_resized = frame.resize((new_w, target_h), Image.BICUBIC)
+            surf = pygame.image.fromstring(frame_resized.tobytes(), frame_resized.size, 'RGBA')
             frames.append(surf)
             durations.append(frame.info.get('duration', 100))
-        return frames, durations
+            widths.append(new_w)
+        return frames, durations, widths[0] if widths else 0
 
-    half_size = (screen_width // 2, screen_height)
-    frames_left, durations_left = load_gif_frames(gif_path_left, half_size)
-    frames_right, durations_right = load_gif_frames(gif_path_right, half_size)
+    # Load frames and get their widths
+    frames_left, durations_left, width_left = load_gif_frames(gif_path_left, screen_height)
+    frames_right, durations_right, width_right = load_gif_frames(gif_path_right, screen_height)
+
+    # If combined width > screen, scale both down
+    total_width = width_left + width_right
+    if total_width > screen_width:
+        scale = screen_width / total_width
+        new_h = int(screen_height * scale)
+        frames_left, durations_left, width_left = load_gif_frames(gif_path_left, new_h)
+        frames_right, durations_right, width_right = load_gif_frames(gif_path_right, new_h)
+        y_offset = (screen_height - new_h) // 2
+    else:
+        y_offset = 0
+
     idx_left = idx_right = 0
     last_time_left = last_time_right = pygame.time.get_ticks()
     running = True
@@ -368,37 +554,8 @@ def display_two_gifs_side_by_side(
             last_time_right = now
 
         screen.fill((0, 0, 0))
-        screen.blit(frames_left[idx_left], (0, 0))
-        screen.blit(frames_right[idx_right], (half_size[0], 0))
+        screen.blit(frames_left[idx_left], (0, y_offset))
+        screen.blit(frames_right[idx_right], (width_left, y_offset))
         pygame.display.flip()
         clock.tick(60)
     pygame.quit()
-
-
-    def load_gif_frames(gif_path, target_box):
-        gif = Image.open(gif_path)
-        frames, durations, positions = [], [], []
-        target_w, target_h = target_box
-        orig_w, orig_h = gif.size
-        scale = min(target_w / orig_w, target_h / orig_h)
-        new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-        offset_x = (target_w - new_w) // 2
-        offset_y = (target_h - new_h) // 2
-        for frame in ImageSequence.Iterator(gif):
-            frame = frame.convert('RGBA')
-            frame_resized = frame.resize((new_w, new_h), Image.BICUBIC)
-            surf = pygame.image.fromstring(frame_resized.tobytes(), frame_resized.size, 'RGBA')
-            frames.append(surf)
-            durations.append(frame.info.get('duration', 100))
-            positions.append((offset_x, offset_y))
-        return frames, durations, positions
-
-    # In your main function:
-    frames_left, durations_left, positions_left = load_gif_frames(gif_path_left, half_size)
-    frames_right, durations_right, positions_right = load_gif_frames(gif_path_right, half_size)
-
-    # In the main loop, update blitting:
-    screen.fill((0, 0, 0))
-    screen.blit(frames_left[idx_left], positions_left[idx_left])
-    screen.blit(frames_right[idx_right], (half_size[0] + positions_right[idx_right][0], positions_right[idx_right][1]))
-    pygame.display.flip()

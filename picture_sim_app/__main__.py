@@ -1,9 +1,18 @@
 import sys
 from pathlib import Path
-
 import subprocess
 
-from picture_sim_app.image_utils import capture_image, resize_gif, display_gif_fullscreen, display_two_gifs_side_by_side
+# from julia.api import Julia
+
+from picture_sim_app.image_utils import (
+    capture_image,
+    resize_gif,
+    crop_gif,
+    make_gifs_consistent_size,
+    get_gif_dimensions,
+    display_gif_fullscreen,
+    display_two_gifs_side_by_side
+)
 from picture_sim_app.detect_aoa import calculate_aoa_from_markers, plot_processed_aoa_markers
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -15,7 +24,14 @@ OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> None:
-    # capture_image(input_folder=INPUT_FOLDER)
+    # Capture image with fixed aspect ratio for consistency
+    # You can choose between fixed_aspect_ratio=(16, 9) or fixed_size=(800, 600)
+    # This ensures consistent input image dimensions every time
+    capture_image(
+        input_folder=INPUT_FOLDER,
+        fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
+        # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
+    )
 
     # File I/O settings
     input_image_name = "input.png"
@@ -107,13 +123,57 @@ def main() -> None:
     if result.returncode != 0:
         raise Exception(f"\nJulia process exited with code {result.returncode}")
 
+    # Define paths for both GIFs
     output_path_gif_right = OUTPUT_FOLDER / "output.gif"
+    gif_paths = [output_path, output_path_gif_right]
 
-    resize_gif(input_path=output_path, output_path=output_path)
-    resize_gif(input_path=output_path_gif_right, output_path=output_path_gif_right)
+    # Get original dimensions before processing
+    print("Original GIF dimensions:")
+    for gif_path in gif_paths:
+        if gif_path.exists():
+            dims = get_gif_dimensions(gif_path)
+            print(f"  {gif_path.name}: {dims[0]}x{dims[1]}")
 
-    # display_gif_fullscreen(gif_path=output_path, monitor_index=1)
+    # Option 1: Crop specific regions if you know there's unwanted padding
+    # Define crop boxes to remove margins/padding: (left, top, right, bottom)
+    # crop_boxes = [
+    #     (50, 50, 750, 550),  # Crop particleplot.gif
+    #     (50, 50, 750, 550),  # Crop output.gif
+    # ]
 
+    # Option 2: Resize without cropping but with consistent dimensions
+    target_size = (800, 600)  # Set your desired consistent size
+
+    print(f"\nProcessing GIFs to consistent size: {target_size}")
+
+    # Method A: Process each GIF individually with aspect ratio preservation
+    for gif_path in gif_paths:
+        if gif_path.exists():
+            print(f"Processing {gif_path.name}...")
+            resize_gif(
+                input_path=gif_path,
+                output_path=gif_path,
+                target_size=target_size,
+                maintain_aspect=False,  # Set to True to maintain aspect ratio (may add black bars)
+                                        # Set to False to stretch to exact target size
+            )
+
+    # Method B: Use the batch processing function with optional cropping
+    # make_gifs_consistent_size(
+    #     gif_paths=gif_paths,
+    #     target_size=target_size,
+    #     maintain_aspect=True,
+    #     crop_boxes=crop_boxes  # Optional: specify crop regions
+    # )
+
+    # Verify final dimensions
+    print("\nFinal GIF dimensions:")
+    for gif_path in gif_paths:
+        if gif_path.exists():
+            dims = get_gif_dimensions(gif_path)
+            print(f"  {gif_path.name}: {dims[0]}x{dims[1]}")
+
+    # Display the consistent-sized GIFs side by side
     display_two_gifs_side_by_side(gif_path_left=output_path, gif_path_right=output_path_gif_right)
 
 
