@@ -80,8 +80,15 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
 end
 
 
-# Required: domain size must be 2^n × 2^m for the MultiLevelPoisson solver. This function pads an 
-# image to ensure this size, and adds 2 cells per dimension to account for ghost cells
+"""
+    pad_to_pow2_with_ghost_cells(img)
+
+Domain size must be (2^n, 2^m) for the MultiLevelPoisson solver. This function pads an
+image to ensure this size, and adds 2 cells per dimension to account for ghost cells.
+
+IMPORTANT: Assumes all edges are fluid (0 in the mask), so will cause problems if there are solids in the boundary or if
+there is an inversion in the pixel body mask due to camera scheme color and thresholds.
+"""
 function pad_to_pow2_with_ghost_cells(img)
     @show N, M = size(img)
 
@@ -98,7 +105,8 @@ function pad_to_pow2_with_ghost_cells(img)
     pad_left = pad_M ÷ 2
     pad_right = pad_M - pad_left
 
-    padded_img = zeros(eltype(img), N + pad_top + pad_bot + 2, M + pad_left + pad_right + 2)
+    padded_img = zeros(eltype(img), N + pad_top + pad_bot + 2, M + pad_left + pad_right + 2) # TODO: Only works if all edges are
+                                                                                             # fluid
     padded_img[pad_top+1 : pad_top+N, pad_left+1 : pad_left+M] .= img
     @show size(padded_img)
 
