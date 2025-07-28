@@ -15,6 +15,11 @@ from picture_sim_app.image_utils import (
 )
 from picture_sim_app.detect_aoa import calculate_aoa_from_markers, plot_processed_aoa_markers
 
+# Initialize Julia with your custom sysimage
+# sysimage_path = str(Path(__file__).resolve().parent / "julia_sysimage_pixelbody.so")
+# jl = Julia(sysimage=sysimage_path, compiled_modules=False)
+
+# Define absolute path to the script directory
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Define paths to input and output folders
@@ -24,9 +29,10 @@ OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> None:
-    # Capture image with fixed aspect ratio for consistency
-    # You can choose between fixed_aspect_ratio=(16, 9) or fixed_size=(800, 600)
-    # This ensures consistent input image dimensions every time
+    # Capture image with interactive click-and-drag selection box
+    # The selection box maintains aspect ratio while you drag
+    # - Click and drag to define the selection area
+    # - The box automatically maintains your target aspect ratio
     capture_image(
         input_folder=INPUT_FOLDER,
         fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
@@ -47,9 +53,9 @@ def main() -> None:
     output_path = OUTPUT_FOLDER / output_animation_name
 
     # Image recognition settings (rule of thumb for both: Increase if too much background noise, decrease if solid not showing)
-    threshold = 0.5 # First play with this until solid shows up, then adjust diff_threshold
+    threshold = 0.7 # First play with this until solid shows up, then adjust diff_threshold
     diff_threshold=0.2 # Increase if too much noise, decrease if solid not showing (only if not using gray)
-    solid_color="red" # Options are gray, red, green or blue
+    solid_color="gray" # Options are gray, red, green or blue
     manual_mode = False  # Set to True to use provided threshold values, otherwise smart detection is used
     force_invert_mask = False  # Set to True to force mask inversion if smart logic fails (will be seen as an incorrect
                                # ghost cell padding at the edges of the fluid boundary)
@@ -57,7 +63,7 @@ def main() -> None:
     # Image resolution cap (spatial resolution)
     max_image_res=800
     # Simulation duration and temporal resolution
-    t_sim = 20.
+    t_sim = 2.
     delta_t = 0.05
 
     # Flow settings
@@ -96,6 +102,8 @@ def main() -> None:
     cmd = [
         "julia",
         str(julia_script),
+        # "--sysimage", "julia_sysimage_pixelbody.so",  # Add custom Julia sysimage for faster startup and precompiled
+        # package loading (precompiles Julia packages and code)
         # File I/O settings
         str(input_path),
         str(output_path),
@@ -183,13 +191,12 @@ def main() -> None:
     default_monitor = 1 if len(monitors) > 1 else 0
 
     # Display the consistent-sized GIFs side by side on selected monitor
-    print(f"\nDisplaying GIFs on monitor {monitor_index}...")
+    print(f"\nDisplaying GIFs on monitor {default_monitor}...")
     display_two_gifs_side_by_side(
         gif_path_left=output_path, 
         gif_path_right=output_path_gif_right,
         monitor_index=default_monitor
     )
-
 
 
 if __name__ == "__main__":

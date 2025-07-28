@@ -41,11 +41,11 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
     @show size(μ₀_array)
 
     # TODO: TEMP images for debugging
-    display(heatmap(Array(img), color=:coolwarm, title="Raw image", aspect_ratio=:equal))
-    display(heatmap(Array(mask)', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
-    display(heatmap(Array(mask_padded)', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
-    display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
-    display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
+    # display(heatmap(Array(img), color=:coolwarm, title="Raw image", aspect_ratio=:equal))
+    # display(heatmap(Array(mask)', color=:coolwarm, title="Threshold mask", aspect_ratio=:equal))
+    # display(heatmap(Array(mask_padded)', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
+    # display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
+    # display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
     display(heatmap(Array(μ₀_array)', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
 
     return PixelBody(μ₀_array)

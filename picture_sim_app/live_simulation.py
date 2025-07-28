@@ -45,9 +45,10 @@ OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 class LiveSimulation:
     """Interactive live simulation controller."""
     
-    def __init__(self):
+    def __init__(self, simulation_params):
         self.julia_initialized = False
         self.jl = None
+        self.saved_selection = None  # Store selection coordinates (x, y, w, h)
         self.selection_box = None
         self.simulation_params = {}
         self.monitor_index = 1  # Default to secondary monitor
@@ -62,7 +63,7 @@ class LiveSimulation:
         self.initialize_julia()
         
         # Setup simulation parameters
-        self.setup_simulation_parameters()
+        self.setup_simulation_parameters(simulation_params)
         
         # Setup monitor selection
         self.setup_monitor_selection()
@@ -129,36 +130,9 @@ class LiveSimulation:
             self.jl = None
             self.julia_initialized = False
     
-    def setup_simulation_parameters(self):
+    def setup_simulation_parameters(self, simulation_params: dict) -> None:
         """Setup simulation parameters."""
-        self.simulation_params = {
-            # Image recognition settings
-            'threshold': 0.7,
-            'diff_threshold': 0.2,
-            'solid_color': 'gray',
-            'manual_mode': False,
-            'force_invert_mask': False,
-            
-            # Image resolution cap
-            'max_image_res': 800,
-            
-            # Simulation duration and temporal resolution
-            't_sim': 2.0,
-            'delta_t': 0.05,
-            
-            # Flow settings
-            'Re': 200.0,
-            'epsilon': 1.0,
-            
-            # Other settings
-            'verbose': 'true',
-            'sim_type': 'particles',
-            'mem': 'Array',
-            
-            # Processing settings
-            'target_size': (800, 600),
-            'maintain_aspect': False,
-        }
+        self.simulation_params = simulation_params
         
         print("Simulation Parameters:")
         print("=" * 40)
@@ -190,12 +164,16 @@ class LiveSimulation:
         
         # Capture initial image with selection box - this also sets up the selection area
         try:
-            capture_image(
+            coordinates = capture_image(
                 input_folder=INPUT_FOLDER,
                 image_name="input.png",  # Save directly as input.png
                 fixed_aspect_ratio=(4, 3),
                 selection_box_mode=True
             )
+            
+            # Store the selection coordinates for future captures
+            self.saved_selection = coordinates
+            print(f"Selection coordinates saved: {coordinates}")
             
             # Check if image was captured
             if self.input_path.exists():
@@ -273,12 +251,16 @@ class LiveSimulation:
             
             try:
                 # Capture new image with the same selection box settings
-                capture_image(
+                coordinates = capture_image(
                     input_folder=INPUT_FOLDER,
                     image_name="input.png",
                     fixed_aspect_ratio=(4, 3),
-                    selection_box_mode=True  # Allow user to adjust if needed
+                    selection_box_mode=True,  # Allow user to adjust if needed
+                    saved_selection=self.saved_selection  # Use saved coordinates as default
                 )
+                
+                # Update saved coordinates if user made changes
+                self.saved_selection = coordinates
                 
                 if not self.input_path.exists():
                     print("Image capture cancelled. Returning to menu...")
@@ -426,8 +408,39 @@ class LiveSimulation:
 
 def main():
     """Main function."""
+
+    simulation_params = {
+        # Image recognition settings
+        "threshold": 0.7,
+        "diff_threshold": 0.2,
+        "solid_color": "gray",
+        "manual_mode": False,
+        "force_invert_mask": False,
+
+        # Image resolution cap
+        "max_image_res": 800,
+
+        # Simulation duration and temporal resolution
+        "t_sim": 2.0,
+        "delta_t": 0.05,
+
+        # Flow settings
+        "Re": 200.0,
+        "epsilon": 1.0,
+
+        # Other settings
+        "verbose": "true",
+        "sim_type": "particles",
+        "mem": "Array",
+
+        # Processing settings
+        "target_size": (800, 600),
+        "maintain_aspect": False,
+    }
+
+
     try:
-        sim = LiveSimulation()
+        sim = LiveSimulation(simulation_params)
         sim.run()
     except KeyboardInterrupt:
         print("\nInterrupted by user.")

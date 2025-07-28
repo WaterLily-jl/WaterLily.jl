@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image, ImageSequence
 import pygame
 
-def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed_aspect_ratio: tuple = None, fixed_size: tuple = None, selection_box_mode: bool = True) -> None:
+def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed_aspect_ratio: tuple = None, fixed_size: tuple = None, selection_box_mode: bool = True, saved_selection: tuple = None) -> tuple:
     """
     Capture image from webcam with optional fixed aspect ratio, size, or interactive selection box.
     
@@ -16,6 +16,10 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
         fixed_aspect_ratio: If provided (width, height), enforces this aspect ratio
         fixed_size: If provided (width, height), captures image at this exact size
         selection_box_mode: If True, shows a click-and-drag selection with fixed aspect ratio
+        saved_selection: If provided (x, y, w, h), uses this as the initial selection box
+        
+    Returns:
+        tuple: (x, y, w, h) coordinates of the selected region, or None if cancelled
     """
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -23,8 +27,10 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
 
     if selection_box_mode and fixed_aspect_ratio:
         print("ASPECT RATIO SELECTION MODE:")
-        print("- Click and drag to define the initial selection area")
-        print("- The box will maintain the aspect ratio while you drag")
+        if saved_selection:
+            print("- Previous selection loaded as default")
+            print("- Press [space] to use current selection")
+        print("- Click and drag to define a new selection area (constant aspect ratio)")
         print("- After selection, use [w/a/s/d] to fine-tune position")
         print("- Press [r] to reset and start over")
         print("- Press [space] to capture the selected region")
@@ -36,7 +42,14 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
         drawing = False
         selection_made = False
         start_point = None
-        box_x, box_y, box_w, box_h = 0, 0, 0, 0
+        
+        # Initialize with saved selection if provided
+        if saved_selection:
+            box_x, box_y, box_w, box_h = saved_selection
+            selection_made = True
+            print(f"Using previous selection: {box_w}x{box_h} at ({box_x}, {box_y})")
+        else:
+            box_x, box_y, box_w, box_h = 0, 0, 0, 0
         
         def mouse_callback(event, x, y, flags, param):
             nonlocal drawing, start_point, box_x, box_y, box_w, box_h, selection_made
@@ -175,6 +188,9 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
         cap.release()
         cv2.destroyAllWindows()
         
+        # Return the coordinates of the final selection
+        return (box_x, box_y, box_w, box_h)
+        
     else:
         # Original behavior for non-selection modes
         print("Press [space] to capture image, or [ESC] to quit.")
@@ -194,7 +210,7 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
                 print("Aborted.")
                 cap.release()
                 cv2.destroyAllWindows()
-                return
+                return (0, 0, 0, 0)  # Return empty coordinates when aborted
             elif key == 32:  # Spacebar
                 path = input_folder / image_name
                 cv2.imwrite(str(path), frame)
@@ -231,6 +247,9 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
             cv2.imwrite(str(path), cropped_img)
             print(f"Fixed size image ({target_w}x{target_h}) saved to {path}")
             
+            # Return the crop coordinates for fixed size mode
+            return (start_x, start_y, target_w, target_h)
+            
         elif fixed_aspect_ratio:
             # Crop to fixed aspect ratio
             h, w = img.shape[:2]
@@ -248,6 +267,10 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
             
             cv2.imwrite(str(path), cropped_img)
             print(f"Fixed aspect ratio image ({fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}) saved to {path}")
+            
+            # Return the crop coordinates for fixed aspect ratio mode
+            h, w = cropped_img.shape[:2]
+            return (0, 0, w, h)  # Since we processed the full image
         
         else:
             # Original manual cropping behavior
@@ -260,8 +283,11 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
                 cropped_img = img[int(y):int(y+h), int(x):int(x+w)]
                 cv2.imwrite(str(path), cropped_img)
                 print(f"Cropped image saved to {path}")
+                return (int(x), int(y), int(w), int(h))  # Return the manual crop coordinates
             else:
                 print("No crop selected, original image kept.")
+                h, w = img.shape[:2]
+                return (0, 0, w, h)  # Return full image coordinates
 
 def list_monitors() -> list:
     """List available monitors and their properties."""
