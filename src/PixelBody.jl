@@ -1,6 +1,11 @@
 using FileIO, Images, ImageDistances, ImageTransformations, Plots
 using LinearAlgebra
-using CUDA
+try
+    using CUDA
+    CUDA.allowscalar(false)
+catch e
+    @warn "CUDA not available, running on CPU only." exception=e
+end
 import Statistics: mean
 struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
     μ₀::A # needs to be same size as sim scalar (p) and from 0..1
