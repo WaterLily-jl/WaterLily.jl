@@ -6,111 +6,233 @@ import numpy as np
 from PIL import Image, ImageSequence
 import pygame
 
-def capture_image(input_folder:str | Path, image_name: str = "input.png", fixed_aspect_ratio: tuple = None, fixed_size: tuple = None) -> None:
+def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed_aspect_ratio: tuple = None, fixed_size: tuple = None, selection_box_mode: bool = True) -> None:
     """
-    Capture image from webcam with optional fixed aspect ratio or size.
+    Capture image from webcam with optional fixed aspect ratio, size, or interactive selection box.
     
     Args:
         input_folder: Folder to save the captured image
         image_name: Name of the output image file
         fixed_aspect_ratio: If provided (width, height), enforces this aspect ratio
         fixed_size: If provided (width, height), captures image at this exact size
+        selection_box_mode: If True, shows a click-and-drag selection with fixed aspect ratio
     """
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         raise RuntimeError("Webcam not found or cannot be opened.")
 
-    print("Press [space] to capture image, or [ESC] to quit.")
-    if fixed_aspect_ratio:
-        print(f"Fixed aspect ratio mode: {fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}")
-    if fixed_size:
-        print(f"Fixed size mode: {fixed_size[0]}x{fixed_size[1]} pixels")
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            continue
-        cv2.imshow("Live Feed", frame)
-
-        key = cv2.waitKey(1) & 0xFF
-        if key == 27:  # ESC
-            print("Aborted.")
-            cap.release()
-            cv2.destroyAllWindows()
-            return
-        elif key == 32:  # Spacebar
-            # Use the global INPUT_FOLDER path
-            path = input_folder / image_name
-            cv2.imwrite(str(path), frame) # cv2.imwrite often prefers string paths
-            print(f"Image saved to {path}")
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-    # Read the saved image for cropping/resizing
-    img = cv2.imread(str(path)) # cv2.imread often prefers string paths
-    if img is None:
-        raise RuntimeError(f"Failed to load image {path} for cropping.")
-
-    if fixed_size:
-        # Crop to exact fixed size from center
-        h, w = img.shape[:2]
-        target_w, target_h = fixed_size
+    if selection_box_mode and fixed_aspect_ratio:
+        print("ASPECT RATIO SELECTION MODE:")
+        print("- Click and drag to define the selection area")
+        print("- The box will maintain the aspect ratio while you drag")
+        print("- Press [space] to capture the selected region")
+        print("- Press [ESC] to quit")
+        print(f"- Target aspect ratio: {fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}")
         
-        # Calculate center crop coordinates
-        start_x = max(0, (w - target_w) // 2)
-        start_y = max(0, (h - target_h) // 2)
-        end_x = min(w, start_x + target_w)
-        end_y = min(h, start_y + target_h)
-        
-        cropped_img = img[start_y:end_y, start_x:end_x]
-        
-        # If the crop is smaller than target, pad with black
-        if cropped_img.shape[:2] != (target_h, target_w):
-            padded_img = np.zeros((target_h, target_w, 3), dtype=np.uint8)
-            paste_y = (target_h - cropped_img.shape[0]) // 2
-            paste_x = (target_w - cropped_img.shape[1]) // 2
-            padded_img[paste_y:paste_y+cropped_img.shape[0], paste_x:paste_x+cropped_img.shape[1]] = cropped_img
-            cropped_img = padded_img
-            
-        cv2.imwrite(str(path), cropped_img)
-        print(f"Fixed size image ({target_w}x{target_h}) saved to {path}")
-        
-    elif fixed_aspect_ratio:
-        # Crop to fixed aspect ratio
-        h, w = img.shape[:2]
+        # Variables for click-and-drag selection
         target_ratio = fixed_aspect_ratio[0] / fixed_aspect_ratio[1]
-        current_ratio = w / h
+        drawing = False
+        start_point = None
+        box_x, box_y, box_w, box_h = 0, 0, 0, 0
         
-        if current_ratio > target_ratio:
-            # Image is too wide, crop width
-            new_width = int(h * target_ratio)
-            start_x = (w - new_width) // 2
-            cropped_img = img[:, start_x:start_x + new_width]
-        else:
-            # Image is too tall, crop height
-            new_height = int(w / target_ratio)
-            start_y = (h - new_height) // 2
-            cropped_img = img[start_y:start_y + new_height, :]
+        def mouse_callback(event, x, y, flags, param):
+            nonlocal drawing, start_point, box_x, box_y, box_w, box_h
+            
+            if event == cv2.EVENT_LBUTTONDOWN:
+                drawing = True
+                start_point = (x, y)
+                box_x, box_y, box_w, box_h = x, y, 0, 0
+                
+            elif event == cv2.EVENT_MOUSEMOVE and drawing:
+                if start_point:
+                    # Calculate the width and height from drag
+                    drag_w = abs(x - start_point[0])
+                    drag_h = abs(y - start_point[1])
+                    
+                    # Prevent division by zero and handle very small movements
+                    if drag_w < 10 and drag_h < 10:
+                        # Too small to determine aspect ratio, skip update
+                        return
+                    elif drag_h == 0:
+                        # Purely horizontal drag - use width to determine height
+                        box_w = drag_w
+                        box_h = int(box_w / target_ratio)
+                    elif drag_w == 0:
+                        # Purely vertical drag - use height to determine width
+                        box_h = drag_h
+                        box_w = int(box_h * target_ratio)
+                    else:
+                        # Normal case - determine which dimension constrains the box
+                        if drag_w / drag_h > target_ratio:
+                            # Width is the limiting factor
+                            box_h = drag_h
+                            box_w = int(box_h * target_ratio)
+                        else:
+                            # Height is the limiting factor  
+                            box_w = drag_w
+                            box_h = int(box_w / target_ratio)
+                    
+                    # Position the box based on drag direction
+                    if x >= start_point[0]:  # Dragging right
+                        box_x = start_point[0]
+                    else:  # Dragging left
+                        box_x = start_point[0] - box_w
+                        
+                    if y >= start_point[1]:  # Dragging down
+                        box_y = start_point[1]
+                    else:  # Dragging up
+                        box_y = start_point[1] - box_h
+                    
+                    # Keep box within camera bounds
+                    if box_x < 0:
+                        box_x = 0
+                    if box_y < 0:
+                        box_y = 0
+                    if box_x + box_w > cap.get(cv2.CAP_PROP_FRAME_WIDTH):
+                        box_x = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) - box_w)
+                    if box_y + box_h > cap.get(cv2.CAP_PROP_FRAME_HEIGHT):
+                        box_y = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) - box_h)
+                        
+            elif event == cv2.EVENT_LBUTTONUP:
+                drawing = False
         
-        cv2.imwrite(str(path), cropped_img)
-        print(f"Fixed aspect ratio image ({fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}) saved to {path}")
+        cv2.namedWindow("Live Feed")
+        cv2.setMouseCallback("Live Feed", mouse_callback)
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                continue
+                
+            display_frame = frame.copy()
+            
+            # Draw the selection box if we have valid dimensions
+            if box_w > 0 and box_h > 0:
+                cv2.rectangle(display_frame, (box_x, box_y), (box_x + box_w, box_y + box_h), (0, 255, 0), 2)
+                
+                # Draw corner markers
+                corner_size = 10
+                corners = [
+                    (box_x, box_y), (box_x + box_w, box_y),
+                    (box_x, box_y + box_h), (box_x + box_w, box_y + box_h)
+                ]
+                for (cx, cy) in corners:
+                    cv2.line(display_frame, (cx - corner_size, cy), (cx + corner_size, cy), (0, 255, 0), 2)
+                    cv2.line(display_frame, (cx, cy - corner_size), (cx, cy + corner_size), (0, 255, 0), 2)
+                
+                # Add text overlay
+                cv2.putText(display_frame, f"Box: {box_w}x{box_h}", (box_x, box_y - 10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            cv2.imshow("Live Feed", display_frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:  # ESC
+                print("Aborted.")
+                cap.release()
+                cv2.destroyAllWindows()
+                return
+            elif key == 32:  # Spacebar
+                if box_w > 0 and box_h > 0:
+                    # Capture the selected region
+                    selected_region = frame[box_y:box_y + box_h, box_x:box_x + box_w]
+                    path = input_folder / image_name
+                    cv2.imwrite(str(path), selected_region)
+                    print(f"Image saved to {path}")
+                    break
+                else:
+                    print("Please select a region first by clicking and dragging.")
+        
+        cap.release()
+        cv2.destroyAllWindows()
         
     else:
-        # Original manual cropping behavior
-        print("Select ROI (drag mouse to crop). Press ENTER or SPACE to confirm, or 'c' to cancel.")
-        roi = cv2.selectROI("Crop Image", img, showCrosshair=True, fromCenter=False)
+        # Original behavior for non-selection modes
+        print("Press [space] to capture image, or [ESC] to quit.")
+        if fixed_aspect_ratio:
+            print(f"Fixed aspect ratio mode: {fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}")
+        if fixed_size:
+            print(f"Fixed size mode: {fixed_size[0]}x{fixed_size[1]} pixels")
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            cv2.imshow("Live Feed", frame)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:  # ESC
+                print("Aborted.")
+                cap.release()
+                cv2.destroyAllWindows()
+                return
+            elif key == 32:  # Spacebar
+                path = input_folder / image_name
+                cv2.imwrite(str(path), frame)
+                print(f"Image saved to {path}")
+                break
+
+        cap.release()
         cv2.destroyAllWindows()
 
-        x, y, w, h = roi
-        if w > 0 and h > 0:
-            # Crop and overwrite the image
-            cropped_img = img[int(y):int(y+h), int(x):int(x+w)]
-            cv2.imwrite(str(path), cropped_img) # cv2.imwrite often prefers string paths
-            print(f"Cropped image saved to {path}")
+        # Apply post-processing for non-selection modes
+        img = cv2.imread(str(path))
+        if img is None:
+            raise RuntimeError(f"Failed to load image {path} for cropping.")
+
+        if fixed_size:
+            # Crop to exact fixed size from center
+            h, w = img.shape[:2]
+            target_w, target_h = fixed_size
+            
+            start_x = max(0, (w - target_w) // 2)
+            start_y = max(0, (h - target_h) // 2)
+            end_x = min(w, start_x + target_w)
+            end_y = min(h, start_y + target_h)
+            
+            cropped_img = img[start_y:end_y, start_x:end_x]
+            
+            if cropped_img.shape[:2] != (target_h, target_w):
+                padded_img = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+                paste_y = (target_h - cropped_img.shape[0]) // 2
+                paste_x = (target_w - cropped_img.shape[1]) // 2
+                padded_img[paste_y:paste_y+cropped_img.shape[0], paste_x:paste_x+cropped_img.shape[1]] = cropped_img
+                cropped_img = padded_img
+                
+            cv2.imwrite(str(path), cropped_img)
+            print(f"Fixed size image ({target_w}x{target_h}) saved to {path}")
+            
+        elif fixed_aspect_ratio:
+            # Crop to fixed aspect ratio
+            h, w = img.shape[:2]
+            target_ratio = fixed_aspect_ratio[0] / fixed_aspect_ratio[1]
+            current_ratio = w / h
+            
+            if current_ratio > target_ratio:
+                new_width = int(h * target_ratio)
+                start_x = (w - new_width) // 2
+                cropped_img = img[:, start_x:start_x + new_width]
+            else:
+                new_height = int(w / target_ratio)
+                start_y = (h - new_height) // 2
+                cropped_img = img[start_y:start_y + new_height, :]
+            
+            cv2.imwrite(str(path), cropped_img)
+            print(f"Fixed aspect ratio image ({fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}) saved to {path}")
+        
         else:
-            print("No crop selected, original image kept.")
+            # Original manual cropping behavior
+            print("Select ROI (drag mouse to crop). Press ENTER or SPACE to confirm, or 'c' to cancel.")
+            roi = cv2.selectROI("Crop Image", img, showCrosshair=True, fromCenter=False)
+            cv2.destroyAllWindows()
+
+            x, y, w, h = roi
+            if w > 0 and h > 0:
+                cropped_img = img[int(y):int(y+h), int(x):int(x+w)]
+                cv2.imwrite(str(path), cropped_img)
+                print(f"Cropped image saved to {path}")
+            else:
+                print("No crop selected, original image kept.")
 
 def list_monitors() -> list:
     """List available monitors and their properties."""

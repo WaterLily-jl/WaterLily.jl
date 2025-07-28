@@ -5,8 +5,8 @@ import subprocess
 # from julia.api import Julia
 
 from picture_sim_app.image_utils import (
-    capture_image,
-    resize_gif,
+    capture_image, 
+    resize_gif, 
     crop_gif,
     make_gifs_consistent_size,
     get_gif_dimensions,
@@ -30,6 +30,7 @@ def main() -> None:
     capture_image(
         input_folder=INPUT_FOLDER,
         fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
+        selection_box_mode=True,    # Click-and-drag selection box
         # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
     )
 
