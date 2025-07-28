@@ -650,11 +650,21 @@ def display_two_gifs_side_by_side(
     pygame.init()
     num_displays = pygame.display.get_num_displays()
     desktop_sizes = pygame.display.get_desktop_sizes() if hasattr(pygame.display, "get_desktop_sizes") else [(1920, 1080)] * num_displays
+    
+    print(f"Available displays: {num_displays}")
+    for i, size in enumerate(desktop_sizes):
+        status = " (CURRENT)" if i == monitor_index else ""
+        print(f"  Monitor {i}: {size[0]}x{size[1]}{status}")
+    
+    if monitor_index >= num_displays:
+        print(f"Monitor {monitor_index} not available. Using monitor 0.")
+        monitor_index = 0
+    
     x_offset = sum(desktop_sizes[i][0] for i in range(monitor_index))
     screen_width, screen_height = desktop_sizes[monitor_index]
     os.environ["SDL_VIDEO_WINDOW_POS"] = f"{x_offset},0"
     screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN if not force_windowed else 0)
-    pygame.display.set_caption("Flow visualization")
+    pygame.display.set_caption(f"Flow visualization - Monitor {monitor_index}")
 
     def load_gif_frames(gif_path, target_h):
         gif = Image.open(gif_path)
@@ -690,12 +700,56 @@ def display_two_gifs_side_by_side(
     last_time_left = last_time_right = pygame.time.get_ticks()
     running = True
     clock = pygame.time.Clock()
+    current_monitor = monitor_index
+
+    print("Controls: ESC/Q=quit, M=switch monitor, F=toggle fullscreen")
 
     while running:
         now = pygame.time.get_ticks()
         for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key in [pygame.K_ESCAPE, pygame.K_q]):
+            if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key in [pygame.K_ESCAPE, pygame.K_q]:
+                    running = False
+                elif event.key == pygame.K_m:
+                    # Switch to next monitor
+                    current_monitor = (current_monitor + 1) % num_displays
+                    x_offset = sum(desktop_sizes[i][0] for i in range(current_monitor))
+                    screen_width, screen_height = desktop_sizes[current_monitor]
+                    
+                    print(f"Switching to monitor {current_monitor}: {screen_width}x{screen_height}")
+                    
+                    # Recreate window on new monitor
+                    os.environ["SDL_VIDEO_WINDOW_POS"] = f"{x_offset},0"
+                    is_fullscreen = screen.get_flags() & pygame.FULLSCREEN
+                    screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN if is_fullscreen else 0)
+                    pygame.display.set_caption(f"Flow visualization - Monitor {current_monitor}")
+                    
+                    # Need to reload frames for new screen height
+                    frames_left, durations_left, width_left = load_gif_frames(gif_path_left, screen_height)
+                    frames_right, durations_right, width_right = load_gif_frames(gif_path_right, screen_height)
+                    
+                    # Recalculate scaling if needed
+                    total_width = width_left + width_right
+                    if total_width > screen_width:
+                        scale = screen_width / total_width
+                        new_h = int(screen_height * scale)
+                        frames_left, durations_left, width_left = load_gif_frames(gif_path_left, new_h)
+                        frames_right, durations_right, width_right = load_gif_frames(gif_path_right, new_h)
+                        y_offset = (screen_height - new_h) // 2
+                    else:
+                        y_offset = 0
+                        
+                elif event.key == pygame.K_f:
+                    # Toggle fullscreen
+                    is_fullscreen = screen.get_flags() & pygame.FULLSCREEN
+                    if is_fullscreen:
+                        screen = pygame.display.set_mode((screen_width, screen_height))
+                        print("Switched to windowed mode")
+                    else:
+                        screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN)
+                        print("Switched to fullscreen mode")
 
         if now - last_time_left >= durations_left[idx_left]:
             idx_left = (idx_left + 1) % len(frames_left)

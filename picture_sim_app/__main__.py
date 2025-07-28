@@ -174,8 +174,22 @@ def main() -> None:
             dims = get_gif_dimensions(gif_path)
             print(f"  {gif_path.name}: {dims[0]}x{dims[1]}")
 
-    # Display the consistent-sized GIFs side by side
-    display_two_gifs_side_by_side(gif_path_left=output_path, gif_path_right=output_path_gif_right)
+    # Monitor selection for display
+    print("\nAvailable monitors:")
+    from picture_sim_app.image_utils import list_monitors
+    monitors = list_monitors()
+
+    # Default to secondary monitor (index 1) if available, otherwise primary (index 0)
+    default_monitor = 1 if len(monitors) > 1 else 0
+
+    # Display the consistent-sized GIFs side by side on selected monitor
+    print(f"\nDisplaying GIFs on monitor {monitor_index}...")
+    display_two_gifs_side_by_side(
+        gif_path_left=output_path, 
+        gif_path_right=output_path_gif_right,
+        monitor_index=default_monitor
+    )
+
 
 
 if __name__ == "__main__":
