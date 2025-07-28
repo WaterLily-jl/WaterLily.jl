@@ -24,7 +24,7 @@ def fix_cuda_sysimage():
         print(f"Removing problematic CUDA sysimage: {sysimage_path}")
         try:
             os.remove(sysimage_path)
-            print("✓ Removed successfully")
+            print("Removed successfully")
         except Exception as e:
             print(f"Failed to remove: {e}")
     else:

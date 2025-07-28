@@ -88,21 +88,21 @@ class LiveSimulation:
                 print(f"Attempting to load Julia with {description}: {sysimage_file}")
                 try:
                     self.jl = Julia(sysimage=str(sysimage_file), compiled_modules=False)
-                    print(f"✓ Julia initialized with {description}")
+                    print(f"Julia initialized with {description}")
                     
                     # Load the Julia script
                     if julia_script.exists():
                         print(f"Loading Julia script: {julia_script}")
                         self.jl.include(str(julia_script))
                         self.julia_initialized = True
-                        print("✓ Julia script loaded successfully")
+                        print("Julia script loaded successfully")
                         return
                     else:
-                        print(f"❌ Julia script not found: {julia_script}")
+                        print(f"Julia script not found: {julia_script}")
                         
                 except Exception as e:
-                    print(f"❌ Failed to initialize Julia with {description}: {e}")
-                    print("🔄 Trying next option...")
+                    print(f"Failed to initialize Julia with {description}: {e}")
+                    print("Trying next option...")
                     # Clean up failed attempt
                     self.jl = None
         
@@ -110,8 +110,8 @@ class LiveSimulation:
         try:
             print("Loading Julia in standard mode...")
             self.jl = Julia(compiled_modules=False)
-            print("✓ Julia initialized (standard mode)")
-            print("💡 Tip: Create a CUDA-free sysimage for better performance:")
+            print("Julia initialized (standard mode)")
+            print("Note: Create a CUDA-free sysimage for better performance:")
             print("   julia build_sysimage_no_cuda.jl")
             
             # Load the Julia script
@@ -119,13 +119,13 @@ class LiveSimulation:
                 print(f"Loading Julia script: {julia_script}")
                 self.jl.include(str(julia_script))
                 self.julia_initialized = True
-                print("✓ Julia script loaded successfully")
+                print("Julia script loaded successfully")
             else:
-                print(f"❌ Julia script not found: {julia_script}")
+                print(f"Julia script not found: {julia_script}")
                 
         except Exception as e:
-            print(f"❌ Failed to initialize Julia in standard mode: {e}")
-            print("🔄 Falling back to subprocess mode...")
+            print(f"Failed to initialize Julia in standard mode: {e}")
+            print("Falling back to subprocess mode...")
             self.jl = None
             self.julia_initialized = False
     
@@ -199,15 +199,15 @@ class LiveSimulation:
             
             # Check if image was captured
             if self.input_path.exists():
-                print("✓ Field of view setup complete!")
+                print("Field of view setup complete")
                 self.setup_complete = True
                 return True
             else:
-                print("❌ Field of view setup cancelled")
+                print("Field of view setup cancelled")
                 return False
                 
         except Exception as e:
-            print(f"❌ Error during field of view setup: {e}")
+            print(f"Error during field of view setup: {e}")
             return False
     
     def live_simulation_loop(self):
@@ -216,7 +216,7 @@ class LiveSimulation:
         print("LIVE SIMULATION MODE")
         print("="*60)
         print("Instructions:")
-        print("  - Each cycle: Capture image → Run simulation → Display results")
+        print("  - Each cycle: Capture image -> Run simulation -> Display results")
         print("  - After displaying results, you can:")
         print("    * Press SPACE to run another simulation")
         print("    * Press R to reconfigure field of view")
@@ -227,14 +227,14 @@ class LiveSimulation:
         simulation_count = 1  # We already ran the first simulation
         
         while True:
-            print(f"\n🎬 Simulation #{simulation_count} completed!")
-            print("📺 Displaying results...")
+            print(f"\nSimulation #{simulation_count} completed")
+            print("Displaying results...")
             
             # Step 1: Display results
             self.display_results()
             
             # Step 2: Wait for user input for next action
-            print(f"\n🔄 Ready for simulation #{simulation_count + 1}")
+            print(f"\nReady for simulation #{simulation_count + 1}")
             print("Controls:")
             print("  SPACE - Capture new image and run next simulation")
             print("  R     - Reconfigure field of view")  
@@ -250,26 +250,26 @@ class LiveSimulation:
                         break
                     elif action in ['r', 'reconfigure']:
                         # Reconfigure field of view
-                        print("\n🔧 Reconfiguring field of view...")
+                        print("\nReconfiguring field of view...")
                         if self.setup_field_of_view():
-                            print("✓ Field of view reconfigured!")
+                            print("Field of view reconfigured")
                             break
                         else:
-                            print("❌ Reconfiguration cancelled. Exiting.")
-                            return
+                            print("Reconfiguration cancelled. Continuing with current setup.")
+                            break
                     elif action in ['esc', 'escape', 'exit', 'q', 'quit']:
-                        print("👋 Exiting live simulation mode...")
+                        print("Exiting live simulation mode...")
                         return
                     else:
                         print("Invalid input. Please press SPACE, R, or ESC.")
                         
                 except (EOFError, KeyboardInterrupt):
-                    print("\n👋 Exiting live simulation mode...")
+                    print("\nExiting live simulation mode...")
                     return
             
             # Step 3: Capture new image using the same selection settings
-            print(f"\n🚀 Starting simulation #{simulation_count + 1}...")
-            print("📸 Capture new image using your established field of view...")
+            print(f"\nStarting simulation #{simulation_count + 1}...")
+            print("Capture new image using your established field of view...")
             
             try:
                 # Capture new image with the same selection box settings
@@ -281,26 +281,26 @@ class LiveSimulation:
                 )
                 
                 if not self.input_path.exists():
-                    print("❌ Image capture cancelled. Exiting live simulation.")
-                    return
+                    print("Image capture cancelled. Returning to menu...")
+                    continue
                     
             except Exception as e:
-                print(f"❌ Error capturing image: {e}")
+                print(f"Error capturing image: {e}")
                 continue
             
             # Step 4: Run simulation
-            print("🧮 Running simulation...")
+            print("Running simulation...")
             if self.julia_initialized and self.jl:
                 success = self.run_julia_simulation()
             else:
                 success = self.run_subprocess_simulation()
             
             if not success:
-                print("❌ Simulation failed!")
+                print("Simulation failed")
                 continue
             
             # Step 5: Process GIFs
-            print("🎬 Processing GIFs...")
+            print("Processing GIFs...")
             self.process_gifs()
             
             simulation_count += 1
@@ -392,7 +392,7 @@ class LiveSimulation:
     
     def run(self):
         """Main execution loop."""
-        print("🌊 WaterLily Live Simulation")
+        print("WaterLily Live Simulation")
         print("=" * 50)
         
         # Step 1: Setup field of view and capture first image
@@ -402,8 +402,8 @@ class LiveSimulation:
             return
             
         # Step 2: Run first simulation
-        print("\n🚀 Running first simulation...")
-        print("🧮 Processing simulation...")
+        print("\nRunning first simulation...")
+        print("Processing simulation...")
         
         if self.julia_initialized and self.jl:
             success = self.run_julia_simulation()
@@ -411,17 +411,17 @@ class LiveSimulation:
             success = self.run_subprocess_simulation()
             
         if not success:
-            print("❌ First simulation failed! Check your setup.")
+            print("First simulation failed. Check your setup.")
             return
             
         # Step 3: Process first results
-        print("🎬 Processing GIFs...")
+        print("Processing GIFs...")
         self.process_gifs()
         
         # Step 4: Enter continuous simulation loop  
         self.live_simulation_loop()
         
-        print("\n👋 Live simulation ended. Goodbye!")
+        print("\nLive simulation ended.")
 
 
 def main():
@@ -430,7 +430,7 @@ def main():
         sim = LiveSimulation()
         sim.run()
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user.")
+        print("\nInterrupted by user.")
     except Exception as e:
         print(f"\nUnexpected error: {e}")
         import traceback
