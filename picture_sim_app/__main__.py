@@ -10,7 +10,7 @@ from picture_sim_app.image_utils import (
     crop_gif,
     make_gifs_consistent_size,
     get_gif_dimensions,
-    display_gif_fullscreen,
+    display_gif_fullscreen, 
     display_two_gifs_side_by_side
 )
 from picture_sim_app.detect_aoa import calculate_aoa_from_markers, plot_processed_aoa_markers
@@ -48,8 +48,8 @@ def main() -> None:
 
     # Image recognition settings (rule of thumb for both: Increase if too much background noise, decrease if solid not showing)
     threshold = 0.5 # First play with this until solid shows up, then adjust diff_threshold
-    diff_threshold=0.2 # Increase if too much noise, decrease if solid not showing (only if using colors)
-    solid_color="red" # Options are grey, red, green or blue
+    diff_threshold=0.2 # Increase if too much noise, decrease if solid not showing (only if not using gray)
+    solid_color="red" # Options are gray, red, green or blue
     manual_mode = False  # Set to True to use provided threshold values, otherwise smart detection is used
     force_invert_mask = False  # Set to True to force mask inversion if smart logic fails (will be seen as an incorrect
                                # ghost cell padding at the edges of the fluid boundary)

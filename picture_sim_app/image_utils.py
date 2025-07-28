@@ -23,8 +23,10 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
 
     if selection_box_mode and fixed_aspect_ratio:
         print("ASPECT RATIO SELECTION MODE:")
-        print("- Click and drag to define the selection area")
+        print("- Click and drag to define the initial selection area")
         print("- The box will maintain the aspect ratio while you drag")
+        print("- After selection, use [w/a/s/d] to fine-tune position")
+        print("- Press [r] to reset and start over")
         print("- Press [space] to capture the selected region")
         print("- Press [ESC] to quit")
         print(f"- Target aspect ratio: {fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}")
@@ -32,14 +34,16 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
         # Variables for click-and-drag selection
         target_ratio = fixed_aspect_ratio[0] / fixed_aspect_ratio[1]
         drawing = False
+        selection_made = False
         start_point = None
         box_x, box_y, box_w, box_h = 0, 0, 0, 0
         
         def mouse_callback(event, x, y, flags, param):
-            nonlocal drawing, start_point, box_x, box_y, box_w, box_h
+            nonlocal drawing, start_point, box_x, box_y, box_w, box_h, selection_made
             
             if event == cv2.EVENT_LBUTTONDOWN:
                 drawing = True
+                selection_made = False
                 start_point = (x, y)
                 box_x, box_y, box_w, box_h = x, y, 0, 0
                 
@@ -95,6 +99,9 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
                         
             elif event == cv2.EVENT_LBUTTONUP:
                 drawing = False
+                if box_w > 0 and box_h > 0:
+                    selection_made = True
+                    print("Selection made! Use [w/a/s/d] to adjust position, [r] to reset, [space] to capture.")
         
         cv2.namedWindow("Live Feed")
         cv2.setMouseCallback("Live Feed", mouse_callback)
@@ -108,7 +115,9 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
             
             # Draw the selection box if we have valid dimensions
             if box_w > 0 and box_h > 0:
-                cv2.rectangle(display_frame, (box_x, box_y), (box_x + box_w, box_y + box_h), (0, 255, 0), 2)
+                # Change color based on selection state
+                color = (0, 255, 0) if selection_made else (255, 255, 0)  # Green if selected, yellow while dragging
+                cv2.rectangle(display_frame, (box_x, box_y), (box_x + box_w, box_y + box_h), color, 2)
                 
                 # Draw corner markers
                 corner_size = 10
@@ -117,12 +126,13 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
                     (box_x, box_y + box_h), (box_x + box_w, box_y + box_h)
                 ]
                 for (cx, cy) in corners:
-                    cv2.line(display_frame, (cx - corner_size, cy), (cx + corner_size, cy), (0, 255, 0), 2)
-                    cv2.line(display_frame, (cx, cy - corner_size), (cx, cy + corner_size), (0, 255, 0), 2)
+                    cv2.line(display_frame, (cx - corner_size, cy), (cx + corner_size, cy), color, 2)
+                    cv2.line(display_frame, (cx, cy - corner_size), (cx, cy + corner_size), color, 2)
                 
-                # Add text overlay
-                cv2.putText(display_frame, f"Box: {box_w}x{box_h}", (box_x, box_y - 10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                # Add text overlay with status
+                status = "SELECTED - Use WASD to adjust" if selection_made else "DRAGGING"
+                cv2.putText(display_frame, f"Box: {box_w}x{box_h} - {status}", (box_x, box_y - 10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             
             cv2.imshow("Live Feed", display_frame)
             
@@ -142,6 +152,25 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
                     break
                 else:
                     print("Please select a region first by clicking and dragging.")
+            
+            # WASD controls for fine-tuning position (only after selection is made)
+            if selection_made:
+                move_step = 5  # Smaller step for fine adjustment
+                cam_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                cam_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                
+                if key == ord('w'):  # Move up
+                    box_y = max(0, box_y - move_step)
+                elif key == ord('s'):  # Move down
+                    box_y = min(cam_h - box_h, box_y + move_step)
+                elif key == ord('a'):  # Move left
+                    box_x = max(0, box_x - move_step)
+                elif key == ord('d'):  # Move right
+                    box_x = min(cam_w - box_w, box_x + move_step)
+                elif key == ord('r'):  # Reset selection
+                    selection_made = False
+                    box_x, box_y, box_w, box_h = 0, 0, 0, 0
+                    print("Selection reset. Click and drag to make a new selection.")
         
         cap.release()
         cv2.destroyAllWindows()
