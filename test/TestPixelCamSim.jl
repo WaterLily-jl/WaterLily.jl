@@ -59,6 +59,72 @@ function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, diff_threshold
 end
 
 
+# Wrapper function for PyJulia interface
+function run_simulation(input_path, output_path, threshold, diff_threshold, body_color, manual_mode, force_invert_mask, max_image_res, t_sim, delta_t, Re, ϵ, verbose, sim_type, mem_str)
+    """
+    Wrapper function to run simulation from PyJulia.
+    Returns 0 on success, 1 on failure.
+    """
+    try
+        # Convert memory type
+        if mem_str == "Array"
+            mem = Array
+        elseif mem_str == "CuArray"
+            mem = CuArray
+        else
+            error("Unsupported mem type: $mem_str. Must be 'Array' or 'CuArray'.")
+        end
+
+        # Print settings
+        println("===Running PyJulia Simulation===")
+        println("Input: $input_path")
+        println("Output: $output_path")
+        println("Threshold: $threshold, Diff threshold: $diff_threshold")
+        println("Body color: $body_color, Manual mode: $manual_mode")
+        println("Re: $Re, ϵ: $ϵ, t_sim: $t_sim, Δt: $delta_t")
+        println("Simulation type: $sim_type, Memory: $mem_str")
+
+        # Instantiate the PixelBody simulation
+        sim = PixelSimAirfoil(
+            input_path,
+            threshold=threshold,
+            diff_threshold=diff_threshold,
+            body_color=body_color,
+            max_image_res=max_image_res,
+            manual_mode=manual_mode,
+            force_invert_mask=force_invert_mask,
+            Re=Re,
+            ϵ=ϵ,
+            mem=mem,
+        );
+
+        # Run the simulation
+        if sim_type == "particles"
+            println("Running particle simulation...")
+            sim_gif_particles!(
+                sim;
+                t_i=0.01, duration=t_sim, Δt=delta_t,
+                N_particles=2^14, life_particles=1e3,
+                scale=5.0, minsize=0.01, width=0.05,
+                plotbody=true, 
+                verbose=verbose,
+                save_path=output_path,
+                mem=mem,
+            );
+        else
+            println("Running WaterLily.sim_gif!...")
+            sim_gif!(sim; duration=t_sim, step=delta_t, clims=(-5,5), save_path=output_path, verbose=verbose)
+        end
+
+        println("✓ Simulation completed successfully")
+        return 0
+        
+    catch e
+        println("Simulation failed: $e")
+        return 1
+    end
+end
+
 function main()
     # Parse arguments passed down from Python script
     args = ARGS
@@ -83,85 +149,15 @@ function main()
     sim_type =args[14]
     mem_str = args[15]
 
-    if mem_str == "Array"
-        mem = Array
-    elseif mem_str == "CuArray"
-        mem = CuArray
-    else
-        error("Unsupported mem type: $mem_str. Must be 'Array' or 'CuArray'.")
-    end
-
-    # Print settings
-    println("===File I/O settings===")
-    println("Running simulation on: $input_path")
-
-    println("===Image recognition settings===")
-    println("threshold=$threshold")
-    println("diff_threshold=$diff_threshold")
-    println("body_color=$body_color")
-    println("manual_mode=$manual_mode")
-    println("force_invert_mask=$force_invert_mask")
-
-    println("===Image resolution cap (spatial resolution)===")
-    println("Maximum image resolution=$max_image_res")
-
-    println("===Simulation settings===")
-    println("Simulation time=$t_sim s (Δt=$delta_t s)")
-    println("Re=$Re")
-    println("ϵ=$ϵ")
-    println("verbose=$verbose,sim_type=$sim_type")
-    println("mem=$mem_str")
-
-    # Instantiate the PixelBody simulation
-    sim = PixelSimAirfoil(
-        input_path,
-        threshold=threshold,
-        diff_threshold=diff_threshold,
-        body_color=body_color,
-        max_image_res=max_image_res,
-        manual_mode=manual_mode,
-        force_invert_mask=force_invert_mask,
-        Re=Re,
-        ϵ=ϵ,  # Default value for ϵ, can be adjusted
-        mem=mem,
-    );
-
-
-    # Run the simulation
-    if sim_type=="particles"
-
-        println("Running particle simulation...")
-
-        sim_gif_particles!(
-        sim;
-        t_i=0.01, duration=t_sim, Δt=delta_t,
-        N_particles=2^14, life_particles=1e3,
-        scale=5.0, minsize=0.01, width=0.05,
-        plotbody=true, 
-        verbose=verbose,
-        save_path=output_path,
-        mem=mem,
-        );
-
-    else
-        println("Running WaterLily.sim_gif!...")
-        sim_gif!(sim;duration=t_sim,step=delta_t,clims=(-5,5), save_path=output_path, verbose=verbose)
-
-    end
-
-
-    ## sketchy real-time loop
-    # Δt = 0.1
-    # while
-    #     # async grab image stuff
-    #     # when_image_avail && sim.body = grab_new_image(src)
-    #     sim_step!(sim,time(sim)+Δt,remeasure=true)
-    #     abort_flag && break
-    # end
+    run_simulation(input_path, output_path, threshold, diff_threshold, body_color, manual_mode, force_invert_mask, max_image_res, t_sim, delta_t, Re, ϵ, verbose, sim_type, mem_str)
 
 end
 
-main()
+
+# Only run main if this script is executed directly (not loaded via PyJulia)
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
 
 # # image_path = "test/resources/airfoil.png"
 # # image_path = "test/resources/airfoil_30_deg.png"
