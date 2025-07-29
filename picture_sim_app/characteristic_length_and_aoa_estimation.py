@@ -55,6 +55,57 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
     
     characteristic_length = half_span * 2
     
+    # Determine airfoil orientation by analyzing cross-sectional width at ends
+    # This helps distinguish leading edge (typically blunter) from trailing edge (sharper)
+    min_proj = np.min(projections)
+    max_proj = np.max(projections)
+    
+    # Get points near the extremes of the principal axis
+    tolerance = 0.1 * (max_proj - min_proj)  # 10% tolerance
+    
+    # Points near minimum projection (one end)
+    near_min = np.abs(projections - min_proj) < tolerance
+    # Points near maximum projection (other end)
+    near_max = np.abs(projections - max_proj) < tolerance
+    
+    # Calculate cross-sectional spread at each end (perpendicular to principal axis)
+    p2 = U[:, 1]  # Second principal component (perpendicular direction)
+    proj_perp = np.dot(p2, X)
+    
+    spread_at_min = np.std(proj_perp[near_min]) if np.sum(near_min) > 1 else 0
+    spread_at_max = np.std(proj_perp[near_max]) if np.sum(near_max) > 1 else 0
+    
+    # Leading edge typically has greater cross-sectional spread (blunter)
+    # If max end has greater spread, it's likely the leading edge
+    if spread_at_max > spread_at_min:
+        # Max projection end is leading edge, min projection end is trailing edge
+        # Vector points from trailing to leading edge
+        chord_vector = p1
+        leading_proj = max_proj
+        trailing_proj = min_proj
+    else:
+        # Min projection end is leading edge, max projection end is trailing edge
+        # Flip vector to point from trailing to leading edge
+        chord_vector = -p1
+        leading_proj = min_proj
+        trailing_proj = max_proj
+    
+    # Calculate actual positions of leading and trailing edges
+    p_center = mu.flatten()
+    p_trailing = p_center + trailing_proj * chord_vector  # Trailing edge position
+    p_leading = p_center + leading_proj * chord_vector    # Leading edge position
+    
+    # Store coordinates for easy access
+    x_trailing, y_trailing = p_trailing[0], p_trailing[1]
+    x_leading, y_leading = p_leading[0], p_leading[1]
+    
+    print("Debug info:")
+    print(f"  Spread at min end: {spread_at_min:.3f}")
+    print(f"  Spread at max end: {spread_at_max:.3f}")
+    print(f"  Leading edge detected at: {'max' if spread_at_max > spread_at_min else 'min'} projection end")
+    print(f"  Trailing edge coords: ({x_trailing:.1f}, {y_trailing:.1f})")
+    print(f"  Leading edge coords: ({x_leading:.1f}, {y_leading:.1f})")
+    
     # Estimate signed angle of attack in degrees from x-axis
     angle_degrees = -np.rad2deg(np.arctan2(p1[1], p1[0]))
     
@@ -72,11 +123,15 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
         if show_components:
             plt.scatter(mu[0], mu[1], marker='x', s=100, c='red', label='Centroid')
             
+            # Plot full principal axis
             plt.plot([p_start[0], p_end[0]], [p_start[1], p_end[1]], 
                     linewidth=2, color='orange', label='Principal Axis')
             
-            plt.scatter([p_start[0], p_end[0]], [p_start[1], p_end[1]], 
-                       s=60, c='orange', label='Extent')
+            # Plot leading and trailing edges with different markers
+            plt.scatter([x_trailing], [y_trailing], s=80, c='blue', marker='s', 
+                       label='Trailing Edge', edgecolor='darkblue', linewidth=2)
+            plt.scatter([x_leading], [y_leading], s=80, c='green', marker='^', 
+                       label='Leading Edge', edgecolor='darkgreen', linewidth=2)
         
         plt.xlabel('x')
         plt.ylabel('y')
@@ -90,65 +145,3 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
         plt.show()
     
     return float(characteristic_length), float(angle_degrees)
-
-
-def characteristic_length_bbox(mask, plot_method=False):
-    """
-    Estimate the characteristic length using bounding box method.
-    
-    Identifies a bounding box around the object and assumes the characteristic
-    length is the longest diagonal in the box.
-    
-    Args:
-        mask (numpy.ndarray): Boolean mask where False=solid, True=fluid
-        plot_method (bool): Whether to display visualization plots
-    
-    Returns:
-        float: Characteristic length (diagonal of bounding box)
-    """
-    # Convert mask to numpy array if needed
-    mask = np.array(mask)
-    
-    # Find solid pixels (where mask is False, value 0)
-    solid_coords = np.where(~mask)
-    
-    if len(solid_coords[0]) == 0:
-        raise ValueError("No solid detected when attempting to calculate characteristic length")
-    
-    # Extract coordinates
-    xs = solid_coords[0]
-    ys = solid_coords[1]
-    
-    xmin, xmax = np.min(xs), np.max(xs)
-    ymin, ymax = np.min(ys), np.max(ys)
-    
-    dx = xmax - xmin
-    dy = ymax - ymin
-    characteristic_length = np.sqrt(dx**2 + dy**2)
-    
-    if plot_method:
-        plt.figure(figsize=(10, 8))
-        
-        # Plot mask background
-        plt.imshow(mask.T, cmap='gray', origin='lower', alpha=0.3, extent=[0, mask.shape[0], 0, mask.shape[1]])
-        
-        # Bounding box corners
-        xcorners = [xmin, xmax, xmax, xmin, xmin]
-        ycorners = [ymin, ymin, ymax, ymax, ymin]
-        plt.plot(xcorners, ycorners, color='red', linewidth=2, label='Bounding Box')
-        
-        # Diagonal line
-        plt.plot([xmin, xmax], [ymin, ymax], color='orange', linewidth=2, 
-                linestyle='--', label='Diagonal')
-        
-        plt.scatter(xs, ys, s=2, c='black', alpha=0.4, label='Solid Pixels')
-        
-        plt.xlabel('x')
-        plt.ylabel('y')
-        plt.title(f'Bounding Box Analysis\nCharacteristic Length: {characteristic_length:.2f}')
-        plt.legend()
-        plt.axis('equal')
-        plt.grid(True, alpha=0.3)
-        plt.show()
-    
-    return characteristic_length
