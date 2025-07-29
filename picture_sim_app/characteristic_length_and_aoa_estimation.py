@@ -2,13 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=True) -> tuple[float, float]:
+def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=True) -> tuple[float, float, float]:
     """
-    Estimate the characteristic length and angle of attack of a PixelBody using Principal Component Analysis.
+    Estimate the characteristic length, angle of attack, and maximum thickness of a PixelBody using Principal Component Analysis.
     
     Finds the direction perpendicular to the principal component of the pixel distribution
     (the direction in which points are most spread) and estimates the angle of attack
-    of the object based on the principal axis direction.
+    and maximum thickness of the object based on the principal axis direction.
     
     Args:
         mask (numpy.ndarray): Boolean mask where False=solid, True=fluid
@@ -16,10 +16,11 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
         show_components (bool): Whether to show legend and PCA components in plot
     
     Returns:
-        tuple: (characteristic_length, angle_degrees)
+        tuple: (characteristic_length, angle_degrees, max_thickness)
             - characteristic_length (float): Estimated characteristic length
             - angle_degrees (float): Signed angle of attack in degrees [-180, 180]
                                    Positive for clockwise, negative for counterclockwise
+            - max_thickness (float): Maximum thickness perpendicular to principal axis
     """
     # Convert mask to numpy array if needed
     mask = np.array(mask)
@@ -106,6 +107,36 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
     print(f"  Trailing edge coords: ({x_trailing:.1f}, {y_trailing:.1f})")
     print(f"  Leading edge coords: ({x_leading:.1f}, {y_leading:.1f})")
     
+    # Calculate maximum thickness using cross-sectional analysis
+    # Method: Sweep along the principal axis and find max thickness perpendicular to it
+    p2 = U[:, 1]  # Second principal component (perpendicular to principal axis)
+    proj_perp_all = np.dot(p2, X)  # Project all points onto perpendicular axis
+    
+    # Create bins along the principal axis for cross-sectional analysis
+    n_bins = 50  # Number of cross-sections to analyze
+    proj_along_axis = projections
+    
+    # Find thickness at each cross-section
+    bin_edges = np.linspace(np.min(proj_along_axis), np.max(proj_along_axis), n_bins + 1)
+    max_thickness = 0.0
+    max_thickness_location = 0.0
+    
+    for i in range(n_bins):
+        # Points in this cross-section bin
+        in_bin = (proj_along_axis >= bin_edges[i]) & (proj_along_axis < bin_edges[i + 1])
+        
+        if np.sum(in_bin) > 1:  # Need at least 2 points to measure thickness
+            # Find the span of points in the perpendicular direction for this cross-section
+            perp_coords_in_bin = proj_perp_all[in_bin]
+            thickness = np.max(perp_coords_in_bin) - np.min(perp_coords_in_bin)
+            
+            if thickness > max_thickness:
+                max_thickness = thickness
+                max_thickness_location = (bin_edges[i] + bin_edges[i + 1]) / 2
+    
+    print(f"  Maximum thickness: {max_thickness:.2f}")
+    print(f"  Max thickness location: {max_thickness_location:.2f} along principal axis")
+    
     # Estimate signed angle of attack in degrees from x-axis
     angle_degrees = -np.rad2deg(np.arctan2(p1[1], p1[0]))
     
@@ -132,10 +163,23 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
                        label='Trailing Edge', edgecolor='darkblue', linewidth=2)
             plt.scatter([x_leading], [y_leading], s=80, c='green', marker='^', 
                        label='Leading Edge', edgecolor='darkgreen', linewidth=2)
+            
+            # Plot maximum thickness location
+            # Calculate the position where max thickness occurs
+            max_thick_pos = mu.flatten() + max_thickness_location * p1
+            # Calculate the perpendicular line endpoints at max thickness location
+            thick_half_span = max_thickness / 2
+            thick_start = max_thick_pos + thick_half_span * p2
+            thick_end = max_thick_pos - thick_half_span * p2
+            
+            plt.plot([thick_start[0], thick_end[0]], [thick_start[1], thick_end[1]], 
+                    linewidth=3, color='magenta', label=f'Max Thickness ({max_thickness:.2f})')
+            plt.scatter([max_thick_pos[0]], [max_thick_pos[1]], s=60, c='magenta', marker='o', 
+                       label='Max Thickness Center', edgecolor='darkmagenta', linewidth=2)
         
         plt.xlabel('x')
         plt.ylabel('y')
-        plt.title(f'PCA Analysis\nCharacteristic Length: {characteristic_length:.2f}, Angle: {angle_degrees:.1f}°')
+        plt.title(f'PCA Analysis\nLength: {characteristic_length:.2f}, Angle: {angle_degrees:.1f}°, Max Thickness: {max_thickness:.2f}')
         
         if show_components:
             plt.legend()
@@ -144,4 +188,4 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
         plt.grid(True, alpha=0.3)
         plt.show()
     
-    return float(characteristic_length), float(angle_degrees)
+    return float(characteristic_length), float(angle_degrees), float(max_thickness)
