@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 import subprocess
 
+from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
 # from julia.api import Julia
 
 from picture_sim_app.image_utils import (
@@ -13,7 +14,7 @@ from picture_sim_app.image_utils import (
     display_gif_fullscreen, 
     display_two_gifs_side_by_side
 )
-from picture_sim_app.detect_aoa import calculate_aoa_from_markers, plot_processed_aoa_markers
+from picture_sim_app.pixel_body_python import PixelBodyMask
 
 # Initialize Julia with your custom sysimage
 # sysimage_path = str(Path(__file__).resolve().parent / "julia_sysimage_pixelbody.so")
@@ -75,20 +76,24 @@ def main() -> None:
     sim_type="particles"
     mem="Array"
 
-    # Estimate AoA from markers
-    calculate_aoa = False
-    if calculate_aoa:
-        angle_of_attack, _, image_with_markers = calculate_aoa_from_markers(
-            image_path=str(input_path),
-            marker_color_rgb=(16,52,110),
-            tolerance=50,
-        )
+    # Use image recognition to create a fluid-solid mask (1=Fluid, 0=Solid)
+    pixel_body = PixelBodyMask(
+        image_path=str(input_path),
+        threshold=threshold,
+        diff_threshold=diff_threshold,
+        max_image_res=max_image_res,
+        body_color="gray",
+        manual_mode=False,
+        force_invert_mask=False
+    )
+    domain_mask = pixel_body.get_mask()
 
-        print(f"Calculated Angle of Attack: {angle_of_attack:.2f} degrees")
+    plot_mask = True
+    if plot_mask:
+        pixel_body.plot_mask()
 
-        plot_markers = False
-        if plot_markers:
-            plot_processed_aoa_markers(image_with_markers, angle_of_attack)
+    # Estimate characteristic length and angle of attack using PCA
+    l_c, aoa, thickness = characteristic_length_and_aoa_pca(mask=domain_mask, plot_method=True, show_components=False)
 
 
     # Run Julia script 'TestPixelCamSim.jl'

@@ -2,7 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=True) -> tuple[float, float, float]:
+def characteristic_length_and_aoa_pca(
+        mask,
+        plot_method=False,
+        show_components=True,
+        flow_xy=(1., 0.),
+        debug_mode=False,
+) -> tuple[float, float, float]:
     """
     Estimate the characteristic length, angle of attack, and maximum thickness of a PixelBody using Principal Component Analysis.
     
@@ -14,7 +20,10 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
         mask (numpy.ndarray): Boolean mask where False=solid, True=fluid
         plot_method (bool): Whether to display visualization plots
         show_components (bool): Whether to show legend and PCA components in plot
-    
+        flow_xy (tuple): Tuple of (x, y) coordinates representing the flow direction. If not provided, will assume
+                        flow direciton is in the direction of x, that is, (1, 0).
+        debug_mode (bool): If True, prints debug information to console.
+
     Returns:
         tuple: (characteristic_length, angle_degrees, max_thickness)
             - characteristic_length (float): Estimated characteristic length
@@ -99,13 +108,13 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
     # Store coordinates for easy access
     x_trailing, y_trailing = p_trailing[0], p_trailing[1]
     x_leading, y_leading = p_leading[0], p_leading[1]
-    
-    print("Debug info:")
-    print(f"  Spread at min end: {spread_at_min:.3f}")
-    print(f"  Spread at max end: {spread_at_max:.3f}")
-    print(f"  Leading edge detected at: {'max' if spread_at_max > spread_at_min else 'min'} projection end")
-    print(f"  Trailing edge coords: ({x_trailing:.1f}, {y_trailing:.1f})")
-    print(f"  Leading edge coords: ({x_leading:.1f}, {y_leading:.1f})")
+
+    # Calculate Angle of attack in degrees
+    angle_degrees = calculate_angle_of_attack(
+        leading_edge_xy=(x_leading, y_leading),
+        trailing_edge_xy=(x_trailing, y_trailing),
+        flow_xy=flow_xy,
+    )
     
     # Calculate maximum thickness using cross-sectional analysis
     # Method: Sweep along the principal axis and find max thickness perpendicular to it
@@ -133,13 +142,18 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
             if thickness > max_thickness:
                 max_thickness = thickness
                 max_thickness_location = (bin_edges[i] + bin_edges[i + 1]) / 2
-    
-    print(f"  Maximum thickness: {max_thickness:.2f}")
-    print(f"  Max thickness location: {max_thickness_location:.2f} along principal axis")
-    
-    # Estimate signed angle of attack in degrees from x-axis
-    angle_degrees = -np.rad2deg(np.arctan2(p1[1], p1[0]))
-    
+
+    if debug_mode:
+        print("Debug info:")
+        print(f"  Spread at min end: {spread_at_min:.3f}")
+        print(f"  Spread at max end: {spread_at_max:.3f}")
+        print(f"  Leading edge detected at: {'max' if spread_at_max > spread_at_min else 'min'} projection end")
+        print(f"  Trailing edge coords: ({x_trailing:.1f}, {y_trailing:.1f})")
+        print(f"  Leading edge coords: ({x_leading:.1f}, {y_leading:.1f})")
+        print(f"  Maximum thickness: {max_thickness:.2f}")
+        print(f"  Max thickness location: {max_thickness_location:.2f} along principal axis")
+        print(f" Angle of attack (degrees): {angle_degrees:.2f}")
+
     if plot_method:
         # Compute line endpoints for visualization
         min_proj = np.min(projections)
@@ -189,3 +203,35 @@ def characteristic_length_and_aoa_pca(mask, plot_method=False, show_components=T
         plt.show()
     
     return float(characteristic_length), float(angle_degrees), float(max_thickness)
+
+
+def calculate_angle_of_attack(
+        leading_edge_xy: tuple[float, float], trailing_edge_xy: tuple[float, float], flow_xy: tuple[float, float]
+) -> float:
+    """
+    Calculate the angle of attack of an air based on leading and trailing edge coordinates, and provided flow direction.
+    """
+
+    # Unpack coordinates
+    flow_x, flow_y = flow_xy
+    x_leading, y_leading = leading_edge_xy
+    x_trailing, y_trailing = trailing_edge_xy
+
+    # Build chord vector (direction is from leading to trailing edge)
+    chord_vec = np.array([x_trailing - x_leading, y_trailing - y_leading])
+
+    # Build flow vector (from provded coordinates)
+    flow_vec = np.array([flow_x, flow_y])
+
+    # Normalize vectors (for angle calculation we only care about direction)
+    chord_vec = chord_vec / np.linalg.norm(chord_vec)
+    flow_vec = flow_vec / np.linalg.norm(flow_vec)
+
+    # Calculate signed angle from flow to chord (in degrees)
+    angle_rad = np.arctan2(
+        chord_vec[0]*flow_vec[1] - chord_vec[1]*flow_vec[0],  # cross product (z-component)
+        chord_vec[0]*flow_vec[0] + chord_vec[1]*flow_vec[1]   # dot product
+    )
+    angle_deg = np.degrees(angle_rad)
+
+    return angle_deg
