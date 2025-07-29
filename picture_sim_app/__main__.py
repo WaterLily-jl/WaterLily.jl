@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 
 from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
+from picture_sim_app.detect_airfoil_type import detect_airfoil_type
 # from julia.api import Julia
 
 from picture_sim_app.image_utils import (
@@ -95,6 +96,8 @@ def main() -> None:
     # Estimate characteristic length and angle of attack using PCA
     l_c, aoa, thickness = characteristic_length_and_aoa_pca(mask=domain_mask, plot_method=True, show_components=False)
 
+    # Estimate airfoil type based on thickness and characteristic length
+    airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness/l_c)
 
     # Run Julia script 'TestPixelCamSim.jl'
     julia_script = SCRIPT_DIR.parent / "test" / "TestPixelCamSim.jl"
