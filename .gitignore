@@ -25,6 +25,7 @@ __pycache__/
 # paraview
 *.vti
 *.pvd
+*.npz
 
 # exceptions
 !/examples/JuliaCon2021.jpg

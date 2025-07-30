@@ -5,6 +5,7 @@ import subprocess
 import numpy as np
 
 from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
+from picture_sim_app.create_visualizations import create_gifs
 from picture_sim_app.detect_airfoil_type import detect_airfoil_type
 # from julia.api import Julia
 
@@ -53,8 +54,12 @@ def main() -> None:
     # input_image_name = "input_naca_030.png"
     input_path = INPUT_FOLDER / input_image_name
     # output_animation_name = "output.gif"
-    output_animation_name = "particleplot.gif"
-    output_path = OUTPUT_FOLDER / output_animation_name
+    particle_plot_name = "particleplot.gif"
+    heatmap_plot_name = "heatmap_plot.gif"
+    data_file_name = "simulation_data.npz"
+    output_path_particle_plot = OUTPUT_FOLDER / particle_plot_name
+    output_path_heatmap_plot = OUTPUT_FOLDER / heatmap_plot_name
+    output_path_data = OUTPUT_FOLDER / data_file_name
 
     # Image recognition settings (rule of thumb for both: Increase if too much background noise, decrease if solid not showing)
     threshold = 0.5 # First play with this until solid shows up, then adjust diff_threshold
@@ -77,7 +82,7 @@ def main() -> None:
 
     # Other settings
     verbose="true"
-    sim_type="particles"
+    sim_type="sim_only"
     mem="Array"
 
     # Use image recognition to create a fluid-solid mask (1=Fluid, 0=Solid)
@@ -121,7 +126,7 @@ def main() -> None:
         # package loading (precompiles Julia packages and code)
         # File I/O settings - now pass mask file instead of image
         str(mask_file),  # Pass mask file instead of input image
-        str(output_path),
+        str(output_path_data),  # Pass data file path for sim_only mode
         # Simulation parameters
         str(l_c),  # Pass characteristic length from Python
         str(Re),
@@ -144,9 +149,16 @@ def main() -> None:
     if result.returncode != 0:
         raise Exception(f"\nJulia process exited with code {result.returncode}")
 
+    # Create visualizations from the exported simulation data
+    print("\nCreating gifs from simulation data...")
+    create_gifs(
+        data_path=output_path_data,
+        particle_output=output_path_particle_plot,
+        heatmap_output=output_path_heatmap_plot,
+    )
+
     # Define paths for both GIFs
-    output_path_gif_right = OUTPUT_FOLDER / "output.gif"
-    gif_paths = [output_path, output_path_gif_right]
+    gif_paths = [output_path_particle_plot, output_path_heatmap_plot]
 
     # Get original dimensions before processing
     print("Original GIF dimensions:")

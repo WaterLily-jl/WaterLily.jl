@@ -18,6 +18,7 @@ push!(LOAD_PATH, joinpath(@__DIR__, "..", "..", "Pathlines.jl", "src")) # For no
                                                                         # of Pathlines (Pathlines.jl/src/ needs to be in the 
                                                                         # same dir level as this root dir)
 include(joinpath(@__DIR__, "plot_particles.jl"))  # Add module containing particle plotting functions
+include(joinpath(@__DIR__, "sim_data_export.jl"))  # Add module for data export
 
 # set up airfoil simulation from boolean mask
 function PixelSimAirfoilFromMask(mask_file; Re=200, ϵ=1, LS=nothing, mem=Array)
@@ -79,9 +80,19 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
                 t_i=0.01, duration=t_sim, Δt=delta_t,
                 N_particles=2^14, life_particles=1e3,
                 scale=5.0, minsize=0.01, width=0.05,
-                plotbody=true, 
+                plotbody=true,
                 verbose=verbose,
                 save_path=output_path,
+                mem=mem,
+            );
+        elseif sim_type == "sim_only"
+            println("Running simulation for data export...")
+            run_simulation_export_data!(
+                sim;
+                t_i=0.01, duration=t_sim, Δt=delta_t,
+                N_particles=2^14, life_particles=1e3,
+                save_path=output_path,
+                verbose=verbose,
                 mem=mem,
             );
         else

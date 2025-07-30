@@ -397,7 +397,7 @@ def main():
     output_folder = script_dir / "output"
     
     gif_left = output_folder / "particleplot.gif"
-    gif_right = output_folder / "output.gif"
+    gif_right = output_folder / "heatmap_plot.gif"
     
     # Default to secondary monitor if available
     import pygame
