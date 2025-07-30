@@ -63,6 +63,7 @@ def main() -> None:
     manual_mode = False  # Set to True to use provided threshold values, otherwise smart detection is used
     force_invert_mask = False  # Set to True to force mask inversion if smart logic fails (will be seen as an incorrect
                                # ghost cell padding at the edges of the fluid boundary)
+    image_recognition_debug_mode = True # Set to true to plot the image recognition mask and PCA components
 
     # Image resolution cap (spatial resolution)
     max_image_res=800
@@ -85,18 +86,18 @@ def main() -> None:
         threshold=threshold,
         diff_threshold=diff_threshold,
         max_image_res=max_image_res,
-        body_color="gray",
-        manual_mode=False,
-        force_invert_mask=False
+        body_color=solid_color,
+        manual_mode=manual_mode,
+        force_invert_mask=force_invert_mask,
     )
     domain_mask = pixel_body.get_mask()
 
-    plot_mask = True
+    plot_mask = image_recognition_debug_mode
     if plot_mask:
         pixel_body.plot_mask()
 
     # Estimate characteristic length and angle of attack using PCA
-    l_c, aoa, thickness = characteristic_length_and_aoa_pca(mask=domain_mask, plot_method=True, show_components=False)
+    l_c, aoa, thickness = characteristic_length_and_aoa_pca(mask=domain_mask, plot_method=image_recognition_debug_mode, show_components=False)
 
     # Estimate airfoil type based on thickness and characteristic length
     airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness/l_c)
