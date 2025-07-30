@@ -367,29 +367,39 @@ end
 
 
 """
-    function estimate_characteristic_length(body::PixelBody; method="pca", plot_method=false)
+    function estimate_characteristic_length(body::PixelBody; method="pca", plot_method=false, flow_xy=(1.0, 0.0), debug_mode=false)
 
 Estimates the characteristic length of a PixelBody by either a bounding-box method (method='bbox')
 or using Principal Component Analysis (method='pca').
 
+For PCA method, also returns angle of attack and maximum thickness.
+
 Can enable 'plot_method=true' to see a plot of how each method estimated the characteristic length.
+
+Args:
+    - method: "pca" or "bbox"
+    - plot_method: Whether to show visualization
+    - flow_xy: Flow direction for angle of attack calculation (PCA only)
+    - debug_mode: Print debug information (PCA only)
+
+Returns:
+    - For "pca": (characteristic_length, angle_degrees, max_thickness)
+    - For "bbox": characteristic_length only
 """
-function estimate_characteristic_length(body::PixelBody; method="pca", plot_method=false)
+function estimate_characteristic_length(body::PixelBody; method="pca", plot_method=false, flow_xy=(1.0, 0.0), debug_mode=false)
     body = body.μ₀
 
     if method == "pca"
-        Lc, Θ_deg = characteristic_length_pca(body, plot_method=plot_method)
-        return Lc, Θ_deg
+        Lc, Θ_deg, max_thickness = characteristic_length_pca(body, plot_method=plot_method, flow_xy=flow_xy, debug_mode=debug_mode)
+        return Lc, Θ_deg, max_thickness
     elseif method == "bbox"
         Lc = characteristic_length_bbox(body, plot_method=plot_method)
+        return Lc
     else
         throw(ErrorException(
         "Invalid characteristic length estimation method selected. Current supported options are:
         'pca', 'bbox'."))
     end
-
-
-
 end
 
 """
@@ -439,24 +449,36 @@ end
 
 
 """
-    characteristic_length_pca(B::Matrix{Float64}; plot_method=false)
+    characteristic_length_pca(B::AbstractArray{<:AbstractFloat,2}; plot_method=false, show_components=true, flow_xy=(1.0, 0.0), debug_mode=false)
 
-Method to estimate the characteristic length of a PixelBody using the PCA (Principal Component Analysis).
-In short, it finds the direction perpendicular to the principal component of the pixel distribution (the
-direction in which points are most spread.)
+Method to estimate the characteristic length, angle of attack, and maximum thickness of a PixelBody using Principal Component Analysis.
 
-Also estimates the angle of attack of the object based on the principal axis direction
+Finds the direction perpendicular to the principal component of the pixel distribution and estimates:
+- Characteristic length (chord length)
+- Angle of attack relative to flow direction
+- Maximum thickness perpendicular to principal axis
+
+Uses leading/trailing edge detection based on cross-sectional spread analysis.
+
+Args:
+    - B: 2D array where 0=solid, 1=fluid
+    - plot_method: Whether to display visualization plots
+    - show_components: Whether to show legend and PCA components in plot
+    - flow_xy: Tuple of (x, y) coordinates representing flow direction
+    - debug_mode: If true, prints debug information
+
+Returns:
+    - (characteristic_length, angle_degrees, max_thickness)
 """
-function characteristic_length_pca(B::AbstractArray{<:AbstractFloat,2}; plot_method=false)
+function characteristic_length_pca(B::AbstractArray{<:AbstractFloat,2}; plot_method=false, show_components=true, flow_xy=(1.0, 0.0), debug_mode=false)
     # Convert to CPU array if using CUDA array
     if isa(B, CuArray)
         B = Array(B)
     end
-    # 0 Is solid, but due to image recognition artifacts there might be floating point errors
+    # 0 is solid, but due to image recognition artifacts there might be floating point errors
     coords = findall(abs.(B) .< 1e-6)
     if isempty(coords)
-        throw(ErrorException(
-            "No solid detected when attempting to calcualte characteristic length"))
+        throw(ErrorException("No solid detected when attempting to calculate characteristic length"))
     end
 
     xs = Float64[c[1] for c in coords]
@@ -465,34 +487,167 @@ function characteristic_length_pca(B::AbstractArray{<:AbstractFloat,2}; plot_met
     pts = hcat(xs, ys)'  # 2 × N matrix
     μ = mean(pts, dims=2)
     X = pts .- μ
-    U, _, _ = svd(X)
+    U, S, V = svd(X)
 
     # Project onto first principal axis
     p1 = U[:, 1]
     projections = p1' * X
     half_span = maximum(abs.(projections))
-
     characteristic_length = half_span * 2
 
-    # Estimate angle of attack in degrees from x-axis (might not work properly for some objects)
-    θ_deg = 180 - rad2deg(atan(p1[2], p1[1]))  
-
-    if plot_method
-        # Compute line endpoints
-        min_proj = minimum(projections)
-        max_proj = maximum(projections)
-        p_start = μ + min_proj * p1
-        p_end = μ + max_proj * p1
-
-        display(scatter(xs, ys, markersize=2, label="Solid Pixels", aspect_ratio=1, c=:black))
-        display(scatter!([μ[1]], [μ[2]], markershape=:cross, color=:red, label="Centroid"))
-
-        display(plot!([p_start[1], p_end[1]], [p_start[2], p_end[2]],
-            linewidth=2, color=:orange, label="Principal Axis"))
-
-        display(scatter!([p_start[1], p_end[1]], [p_start[2], p_end[2]],
-                markersize=6, markercolor=:orange, label="Extent"))
+    # Determine airfoil orientation by analyzing cross-sectional width at ends
+    min_proj = minimum(projections)
+    max_proj = maximum(projections)
+    
+    # Get points near the extremes of the principal axis
+    tolerance = 0.1 * (max_proj - min_proj)  # 10% tolerance
+    
+    # Points near minimum and maximum projection
+    near_min = abs.(projections .- min_proj) .< tolerance
+    near_max = abs.(projections .- max_proj) .< tolerance
+    
+    # Calculate cross-sectional spread at each end (perpendicular to principal axis)
+    p2 = U[:, 2]  # Second principal component (perpendicular direction)
+    proj_perp = p2' * X
+    
+    spread_at_min = sum(near_min) > 1 ? std(proj_perp[near_min]) : 0.0
+    spread_at_max = sum(near_max) > 1 ? std(proj_perp[near_max]) : 0.0
+    
+    # Leading edge typically has greater cross-sectional spread (blunter)
+    if spread_at_max > spread_at_min
+        # Max projection end is leading edge
+        chord_vector = p1
+        leading_proj = max_proj
+        trailing_proj = min_proj
+    else
+        # Min projection end is leading edge, flip vector
+        chord_vector = -p1
+        leading_proj = min_proj
+        trailing_proj = max_proj
+    end
+    
+    # Calculate actual positions of leading and trailing edges
+    p_center = vec(μ)
+    p_trailing = p_center + trailing_proj * chord_vector
+    p_leading = p_center + leading_proj * chord_vector
+    
+    x_trailing, y_trailing = p_trailing[1], p_trailing[2]
+    x_leading, y_leading = p_leading[1], p_leading[2]
+    
+    # Calculate angle of attack
+    angle_degrees = calculate_angle_of_attack((x_leading, y_leading), (x_trailing, y_trailing), flow_xy)
+    
+    # Calculate maximum thickness using cross-sectional analysis
+    n_bins = 50
+    proj_along_axis = projections
+    bin_edges = range(minimum(proj_along_axis), maximum(proj_along_axis), length=n_bins+1)
+    max_thickness = 0.0
+    max_thickness_location = 0.0
+    
+    for i in 1:n_bins
+        # Points in this cross-section bin
+        in_bin = (proj_along_axis .>= bin_edges[i]) .& (proj_along_axis .< bin_edges[i+1])
+        
+        if sum(in_bin) > 1  # Need at least 2 points to measure thickness
+            perp_coords_in_bin = proj_perp[in_bin]
+            thickness = maximum(perp_coords_in_bin) - minimum(perp_coords_in_bin)
+            
+            if thickness > max_thickness
+                max_thickness = thickness
+                max_thickness_location = (bin_edges[i] + bin_edges[i+1]) / 2
+            end
+        end
+    end
+    
+    if debug_mode
+        println("Debug info:")
+        println("  Spread at min end: $(round(spread_at_min, digits=3))")
+        println("  Spread at max end: $(round(spread_at_max, digits=3))")
+        println("  Leading edge detected at: $(spread_at_max > spread_at_min ? "max" : "min") projection end")
+        println("  Trailing edge coords: ($(round(x_trailing, digits=1)), $(round(y_trailing, digits=1)))")
+        println("  Leading edge coords: ($(round(x_leading, digits=1)), $(round(y_leading, digits=1)))")
+        println("  Maximum thickness: $(round(max_thickness, digits=2))")
+        println("  Max thickness location: $(round(max_thickness_location, digits=2)) along principal axis")
+        println("  Angle of attack (degrees): $(round(angle_degrees, digits=2))")
     end
 
-    return characteristic_length, θ_deg
+    if plot_method
+        # Compute line endpoints for visualization
+        p_start = vec(μ) + min_proj * p1
+        p_end = vec(μ) + max_proj * p1
+        
+        plt = scatter(xs, ys, markersize=2, label=show_components ? "Solid Pixels" : nothing, aspect_ratio=1, c=:black)
+        
+        if show_components
+            scatter!([μ[1]], [μ[2]], markershape=:cross, markersize=8, color=:red, label="Centroid")
+            
+            # Plot full principal axis
+            plot!([p_start[1], p_end[1]], [p_start[2], p_end[2]], 
+                  linewidth=2, color=:orange, label="Principal Axis")
+            
+            # Plot leading and trailing edges
+            scatter!([x_trailing], [y_trailing], markersize=8, color=:blue, markershape=:square,
+                    label="Trailing Edge")
+            scatter!([x_leading], [y_leading], markersize=8, color=:green, markershape=:utriangle,
+                    label="Leading Edge")
+            
+            # Plot maximum thickness location
+            max_thick_pos = vec(μ) + max_thickness_location * p1
+            thick_half_span = max_thickness / 2
+            thick_start = max_thick_pos + thick_half_span * p2
+            thick_end = max_thick_pos - thick_half_span * p2
+            
+            plot!([thick_start[1], thick_end[1]], [thick_start[2], thick_end[2]], 
+                  linewidth=3, color=:magenta, label="Max Thickness ($(round(max_thickness, digits=2)))")
+            scatter!([max_thick_pos[1]], [max_thick_pos[2]], markersize=6, color=:magenta,
+                    label="Max Thickness Center")
+        end
+        
+        title!("PCA Analysis\nLength: $(round(characteristic_length, digits=2)), Angle: $(round(angle_degrees, digits=1))°, Max Thickness: $(round(max_thickness, digits=2))")
+        
+        if show_components
+            display(plt)
+        end
+    end
+
+    return characteristic_length, angle_degrees, max_thickness
+end
+
+"""
+    calculate_angle_of_attack(leading_edge_xy, trailing_edge_xy, flow_xy)
+
+Calculate the angle of attack based on leading and trailing edge coordinates and flow direction.
+
+Args:
+    - leading_edge_xy: Tuple of (x, y) coordinates for leading edge
+    - trailing_edge_xy: Tuple of (x, y) coordinates for trailing edge  
+    - flow_xy: Tuple of (x, y) coordinates representing flow direction
+
+Returns:
+    - angle_degrees: Signed angle of attack in degrees [-180, 180]
+"""
+function calculate_angle_of_attack(leading_edge_xy, trailing_edge_xy, flow_xy)
+    # Unpack coordinates
+    flow_x, flow_y = flow_xy
+    x_leading, y_leading = leading_edge_xy
+    x_trailing, y_trailing = trailing_edge_xy
+    
+    # Build chord vector (direction from leading to trailing edge)
+    chord_vec = [x_trailing - x_leading, y_trailing - y_leading]
+    
+    # Build flow vector
+    flow_vec = [flow_x, flow_y]
+    
+    # Normalize vectors
+    chord_vec = chord_vec / norm(chord_vec)
+    flow_vec = flow_vec / norm(flow_vec)
+    
+    # Calculate signed angle from flow to chord (in degrees)
+    cross_product = chord_vec[1]*flow_vec[2] - chord_vec[2]*flow_vec[1]  # z-component of cross product
+    dot_product = chord_vec[1]*flow_vec[1] + chord_vec[2]*flow_vec[2]    # dot product
+    
+    angle_rad = atan(cross_product, dot_product)
+    angle_deg = rad2deg(angle_rad)
+    
+    return angle_deg
 end
