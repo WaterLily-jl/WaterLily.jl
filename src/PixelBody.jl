@@ -7,11 +7,35 @@ catch e
     @warn "CUDA not available, running on CPU only." exception=e
 end
 import Statistics: mean
+
 struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
     μ₀::A # needs to be same size as sim scalar (p) and from 0..1
     # size(sim.flow.p)
     # sim.ϵ -> Gauss σ
     # extrema(μ₀) = (0,1)
+end
+
+# Simplified constructor that takes an existing boolean mask (Solid=False, Fluid=True) as an input
+# and prepares it for running a WaterLily sim.
+function PixelBody(mask::AbstractArray{Bool,2}; ϵ=1.0, mem=Array)
+
+    # Invert mask so that 1=solid, 0=fluid for compatibility with padding and SDF logic
+    mask = .!mask
+
+    # Pad mask with ghost cells (assumes all edges are fluid, i.e., 0)
+    mask_padded = pad_to_pow2_with_ghost_cells(mask)
+
+    # Compute signed distance field (SDF will be positive in solid, negative in fluid)
+    sdf = Float32.(distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded)))
+    # Smooth volume fraction field using kernel
+    μ₀_array = mem(Float32.(μ₀.(sdf, Float32(ϵ))))
+
+    # # TEMP Debug plot
+    # display(heatmap(Array(μ₀_array)', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
+    # println("Press Enter to continue...")
+    # readline()
+
+    return PixelBody(μ₀_array)
 end
 
 # Outer constructor for PixelBody from image path
@@ -29,16 +53,13 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
 
     # Pad mask with ghost cells (needed for simulation). WARNING: Assumes all edges are fluid 0, otherwise it will not work.
     mask_padded = pad_to_pow2_with_ghost_cells(mask)
-    @show size(mask_padded)
 
     # TODO: Attempt to compute signed distance field (see if this will work to create a gradient between the solid and fluid,
     # required to caclulate body forces).
-    sdf = Float32.(distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded)))
-    @show size(sdf)
+    sdf = Float32.(distance_transform(feature_transform(.!mask_padded)) .- distance_transform(feature_transform(mask_padded)))
 
     # TODO: Smooth volume fraction field using kernel (Need to find out how to use properly to create the solid-fluid gradient)
     μ₀_array = mem(Float32.(μ₀.(sdf, Float32(ϵ))))
-    @show size(μ₀_array)
 
     # TODO: TEMP images for debugging
     # display(heatmap(Array(img), color=:coolwarm, title="Raw image", aspect_ratio=:equal))
@@ -46,7 +67,7 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
     # display(heatmap(Array(mask_padded)', color=:coolwarm, title="Threshold mask (padded)", aspect_ratio=:equal))
     # display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf)", aspect_ratio=:equal))
     # display(heatmap(Array(sdf)', color=:coolwarm, title="Signed Distance Field (sdf between ϵ=-1 and ϵ=1)", aspect_ratio=:equal, clims=(-ϵ, ϵ)))
-    display(heatmap(Array(μ₀_array)', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
+    # display(heatmap(Array(μ₀_array)', color=:viridis, title="μ₀ Smoothed Mask", aspect_ratio=:equal))
 
     return PixelBody(μ₀_array)
 end
@@ -265,8 +286,12 @@ end
 """
     pad_to_pow2_with_ghost_cells(img)
 
-Domain size must be (2^n, 2^m) for the MultiLevelPoisson solver. This function pads an
-image to ensure this size, and adds 2 cells per dimension to account for ghost cells.
+Pads a binary mask to the next power-of-2 size in each dimension and adds 2 ghost cells per dimension.
+
+**Mask logic required:**
+    - Input mask must be 1 for solid, 0 for fluid (Bool or numeric).
+    - Padding is always done with 0 (fluid) at the boundaries.
+    - If your mask is True/1 for fluid, False/0 for solid, invert it before calling this function.
 
 IMPORTANT: Assumes all edges are fluid (0 in the mask), so will cause problems if there are solids in the boundary or if
 there is an inversion in the pixel body mask due to camera scheme color and thresholds.
@@ -279,8 +304,8 @@ function pad_to_pow2_with_ghost_cells(img)
     pow2_M = 2 ^ ceil(Int, log2(M))
 
     # Compute padding needed
-    @show pad_N = pow2_N - N
-    @show  pad_M = pow2_M - M
+    pad_N = pow2_N - N
+    pad_M = pow2_M - M
 
     pad_top  = pad_N ÷ 2
     pad_bot  = pad_N - pad_top

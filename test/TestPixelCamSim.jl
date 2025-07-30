@@ -7,6 +7,7 @@ import Pkg
 # Pkg.develop(path="..")      # Register WaterLily as a dev package (one time only)
 
 using WaterLily, StaticArrays, Plots, StatsBase
+using NPZ  # For reading numpy files
 try
     using CUDA
     CUDA.allowscalar(false)
@@ -18,51 +19,30 @@ push!(LOAD_PATH, joinpath(@__DIR__, "..", "..", "Pathlines.jl", "src")) # For no
                                                                         # same dir level as this root dir)
 include(joinpath(@__DIR__, "plot_particles.jl"))  # Add module containing particle plotting functions
 
-# set up airfoil image example
-function PixelSimAirfoil(image_path; Re=200, ϵ=1, threshold=0.5, diff_threshold=0.2, body_color="gray", max_image_res=800, manual_mode=false, force_invert_mask=false, mem=Array)
-
-    airfoil_pixel_body = WaterLily.PixelBody(
-        image_path,
-        ϵ=ϵ,
-        threshold=threshold,
-        diff_threshold=diff_threshold,
-        body_color=body_color,
-        max_image_res=max_image_res,
-        manual_mode=manual_mode,
-        force_invert_mask=force_invert_mask,
-        mem=mem,
-    ) # setting smooth weighted function
-
-    println("Press Enter to continue...")
-    try
-        readline()
-    catch e
-        @warn "No stdin available. Skipping pause." exception=e
-    end
-
-    LS, aoa = WaterLily.estimate_characteristic_length(airfoil_pixel_body, method="pca", plot_method=true);
-
-    println("Estimated characteristic length: $(round(LS; digits=2))")
-    println("Estimated AoA (deg): $(round(aoa; digits=2))")
-
-    println("Press Enter to continue...")
-    try
-        readline()
-    catch e
-        @warn "No stdin available. Skipping pause." exception=e
+# set up airfoil simulation from boolean mask
+function PixelSimAirfoilFromMask(mask_file; Re=200, ϵ=1, LS=nothing, mem=Array)
+    # Load the boolean mask from numpy file
+    mask = npzread(mask_file)
+    
+    # Create PixelBody using the new mask constructor
+    airfoil_pixel_body = WaterLily.PixelBody(mask; ϵ=ϵ, mem=mem)
+    
+    # Use provided characteristic length or estimate it
+    if LS === nothing
+        LS, _ = WaterLily.estimate_characteristic_length(airfoil_pixel_body, method="pca", plot_method=false)
     end
     
     n, m = size(airfoil_pixel_body.μ₀)
-
-    # make simulation of same size and ϵ
+    
+    # Create simulation
     Simulation((n-2,m-2), (1,0), LS; body=airfoil_pixel_body, ν=LS/Re, ϵ=ϵ, mem=mem)
 end
 
 
 # Wrapper function for PyJulia interface
-function run_simulation(input_path, output_path, threshold, diff_threshold, body_color, manual_mode, force_invert_mask, max_image_res, t_sim, delta_t, Re, ϵ, verbose, sim_type, mem_str)
+function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verbose, sim_type, mem_str)
     """
-    Wrapper function to run simulation from PyJulia.
+    Wrapper function to run simulation from PyJulia using pre-computed mask.
     Returns 0 on success, 1 on failure.
     """
     try
@@ -77,24 +57,17 @@ function run_simulation(input_path, output_path, threshold, diff_threshold, body
 
         # Print settings
         println("===Running PyJulia Simulation===")
-        println("Input: $input_path")
+        println("Mask file: $mask_file")
         println("Output: $output_path")
-        println("Threshold: $threshold, Diff threshold: $diff_threshold")
-        println("Body color: $body_color, Manual mode: $manual_mode")
-        println("Re: $Re, ϵ: $ϵ, t_sim: $t_sim, Δt: $delta_t")
+        println("LS: $LS, Re: $Re, ϵ: $ϵ, t_sim: $t_sim, Δt: $delta_t")
         println("Simulation type: $sim_type, Memory: $mem_str")
 
-        # Instantiate the PixelBody simulation
-        sim = PixelSimAirfoil(
-            input_path,
-            threshold=threshold,
-            diff_threshold=diff_threshold,
-            body_color=body_color,
-            max_image_res=max_image_res,
-            manual_mode=manual_mode,
-            force_invert_mask=force_invert_mask,
+        # Instantiate the PixelBody simulation from mask
+        sim = PixelSimAirfoilFromMask(
+            mask_file,
             Re=Re,
             ϵ=ϵ,
+            LS=LS,
             mem=mem,
         );
 
@@ -129,28 +102,22 @@ function main()
     # Parse arguments passed down from Python script
     args = ARGS
     if length(args) < 2
-        println("Usage: julia TestPixelCamSin.jl input.png output.gif")
+        println("Usage: julia TestPixelCamSim.jl mask_file.npy output.gif")
         return
     end
 
-    input_path = args[1]
+    mask_file = args[1]
     output_path = args[2]
-    threshold = parse(Float64, args[3])
-    diff_threshold = parse(Float64, args[4])
-    body_color = args[5]
-    manual_mode = parse(Bool, args[6])
-    force_invert_mask = parse(Bool, args[7])
-    max_image_res = parse(Int64, args[8])
-    t_sim = parse(Float64, args[9])
-    delta_t = parse(Float64, args[10])
-    Re = parse(Float64, args[11])
-    ϵ = parse(Float64, args[12])
-    verbose = parse(Bool, args[13])
-    sim_type =args[14]
-    mem_str = args[15]
+    LS = parse(Float64, args[3])
+    Re = parse(Float64, args[4])
+    ϵ = parse(Float64, args[5])
+    t_sim = parse(Float64, args[6])
+    delta_t = parse(Float64, args[7])
+    verbose = parse(Bool, args[8])
+    sim_type = args[9]
+    mem_str = args[10]
 
-    run_simulation(input_path, output_path, threshold, diff_threshold, body_color, manual_mode, force_invert_mask, max_image_res, t_sim, delta_t, Re, ϵ, verbose, sim_type, mem_str)
-
+    run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verbose, sim_type, mem_str)
 end
 
 

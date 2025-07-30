@@ -2,6 +2,8 @@ import sys
 from pathlib import Path
 import subprocess
 
+import numpy as np
+
 from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
 from picture_sim_app.detect_airfoil_type import detect_airfoil_type
 # from julia.api import Julia
@@ -43,11 +45,11 @@ def main() -> None:
     )
 
     # File I/O settings
-    input_image_name = "input.png"
+    # input_image_name = "input.png"
     # input_image_name = "input_red_hierarchy.png"
     # input_image_name = "input_red.png"
     # input_image_name = "input_naca_002.png"
-    # input_image_name = "input_naca_015.png"
+    input_image_name = "input_naca_015.png"
     # input_image_name = "input_naca_030.png"
     input_path = INPUT_FOLDER / input_image_name
     # output_animation_name = "output.gif"
@@ -55,7 +57,7 @@ def main() -> None:
     output_path = OUTPUT_FOLDER / output_animation_name
 
     # Image recognition settings (rule of thumb for both: Increase if too much background noise, decrease if solid not showing)
-    threshold = 0.7 # First play with this until solid shows up, then adjust diff_threshold
+    threshold = 0.5 # First play with this until solid shows up, then adjust diff_threshold
     diff_threshold=0.2 # Increase if too much noise, decrease if solid not showing (only if not using gray)
     solid_color="gray" # Options are gray, red, green or blue
     manual_mode = False  # Set to True to use provided threshold values, otherwise smart detection is used
@@ -99,6 +101,10 @@ def main() -> None:
     # Estimate airfoil type based on thickness and characteristic length
     airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness/l_c)
 
+    # Save the boolean mask to a temporary file for Julia to read
+    mask_file = OUTPUT_FOLDER / "temp_mask.npy"
+    np.save(mask_file, domain_mask)
+
     # Run Julia script 'TestPixelCamSim.jl'
     julia_script = SCRIPT_DIR.parent / "test" / "TestPixelCamSim.jl"
 
@@ -112,23 +118,15 @@ def main() -> None:
         str(julia_script),
         # "--sysimage", "julia_sysimage_pixelbody.so",  # Add custom Julia sysimage for faster startup and precompiled
         # package loading (precompiles Julia packages and code)
-        # File I/O settings
-        str(input_path),
+        # File I/O settings - now pass mask file instead of image
+        str(mask_file),  # Pass mask file instead of input image
         str(output_path),
-        # Image recognition settings
-        str(threshold),
-        str(diff_threshold),
-        str(solid_color),
-        str(manual_mode).lower(),
-        str(force_invert_mask).lower(),
-        # Image resolution cap (spatial resolution)
-        str(max_image_res),
-        # Simulation duration and temporal resolution
-        str(t_sim),
-        str(delta_t),
-        # Flow settings
+        # Simulation parameters
+        str(l_c),  # Pass characteristic length from Python
         str(Re),
         str(epsilon),
+        str(t_sim),
+        str(delta_t),
         # Other settings
         verbose,
         sim_type,
@@ -137,6 +135,11 @@ def main() -> None:
     print(f"Starting Julia: {' '.join(cmd)}\n")
 
     result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+
+    # Clean up temporary mask file
+    if mask_file.exists():
+        mask_file.unlink()
+
     if result.returncode != 0:
         raise Exception(f"\nJulia process exited with code {result.returncode}")
 
@@ -190,21 +193,21 @@ def main() -> None:
             dims = get_gif_dimensions(gif_path)
             print(f"  {gif_path.name}: {dims[0]}x{dims[1]}")
 
-    # Monitor selection for display
-    print("\nAvailable monitors:")
-    from picture_sim_app.image_utils import list_monitors
-    monitors = list_monitors()
-
-    # Default to secondary monitor (index 1) if available, otherwise primary (index 0)
-    default_monitor = 1 if len(monitors) > 1 else 0
-
-    # Display the consistent-sized GIFs side by side on selected monitor
-    print(f"\nDisplaying GIFs on monitor {default_monitor}...")
-    display_two_gifs_side_by_side(
-        gif_path_left=output_path, 
-        gif_path_right=output_path_gif_right,
-        monitor_index=default_monitor
-    )
+    # # Monitor selection for display
+    # print("\nAvailable monitors:")
+    # from picture_sim_app.image_utils import list_monitors
+    # monitors = list_monitors()
+    #
+    # # Default to secondary monitor (index 1) if available, otherwise primary (index 0)
+    # default_monitor = 1 if len(monitors) > 1 else 0
+    #
+    # # Display the consistent-sized GIFs side by side on selected monitor
+    # print(f"\nDisplaying GIFs on monitor {default_monitor}...")
+    # display_two_gifs_side_by_side(
+    #     gif_path_left=output_path,
+    #     gif_path_right=output_path_gif_right,
+    #     monitor_index=default_monitor
+    # )
 
 
 if __name__ == "__main__":
