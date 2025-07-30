@@ -15,19 +15,33 @@ struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
     # extrema(μ₀) = (0,1)
 end
 
-# Simplified constructor that takes an existing boolean mask (Solid=False, Fluid=True) as an input
-# and prepares it for running a WaterLily sim.
-function PixelBody(mask::AbstractArray{Bool,2}; ϵ=1.0, mem=Array)
+"""
+    PixelBody(mask::AbstractArray{Bool,2}; ϵ=1.0, mem=Array)
 
-    # Invert mask so that 1=solid, 0=fluid for compatibility with padding and SDF logic
-    mask = .!mask
+Simplified constructor that takes an existing boolean mask where:
+- Input mask: true=fluid, false=solid
 
-    # Pad mask with ghost cells (assumes all edges are fluid, i.e., 0)
+and returns
+- μ₀_array: 1=fluid, 0=solid
+
+If the logic of the provided mask is inverted, set 'invert_mask_logic' to true.
+"""
+function PixelBody(
+    mask::AbstractArray{Bool,2}; ϵ=1.0, invert_mask_logic=false, mem=Array
+)
+
+    if invert_mask_logic
+        # Invert mask so that 1=fluid, 0=solid for compatibility with padding logic
+        mask = .!mask
+    end
+
+    # Pad mask with ghost cells (assumes all edges are fluid, i.e., 1)
     mask_padded = pad_to_pow2_with_ghost_cells(mask)
 
-    # Compute signed distance field (SDF will be positive in solid, negative in fluid)
-    sdf = Float32.(distance_transform(feature_transform(mask_padded)) .- distance_transform(feature_transform(.!mask_padded)))
-    # Smooth volume fraction field using kernel
+    # Compute signed distance field (SDF will be positive in fluid, negative in solid)
+    sdf = Float32.(distance_transform(feature_transform(.!mask_padded)) .- distance_transform(feature_transform(mask_padded)))
+    
+    # Smooth volume fraction field using kernel (μ₀_array: 1=fluid, 0=solid)
     μ₀_array = mem(Float32.(μ₀.(sdf, Float32(ϵ))))
 
     # # TEMP Debug plot
@@ -39,7 +53,16 @@ function PixelBody(mask::AbstractArray{Bool,2}; ϵ=1.0, mem=Array)
 end
 
 # Outer constructor for PixelBody from image path
-function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ=1.0, max_image_res=nothing, body_color="gray", manual_mode=false, force_invert_mask=false, mem=Array)
+function PixelBody(
+    image_path::String;
+    threshold=0.5,
+    diff_threshold=nothing,
+    ϵ=1.0, max_image_res=nothing,
+    body_color="gray",
+    manual_mode=false,
+    invert_mask_logic=true,
+    mem=Array,
+)
     img = load(image_path)
     @show size(img)
 
@@ -49,9 +72,15 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
         println("Image resized to $(size(img))")
     end
 
-    mask = create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode, force_invert_mask)
+    mask = create_fluid_solid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode, force_invert_mask)
 
-    # Pad mask with ghost cells (needed for simulation). WARNING: Assumes all edges are fluid 0, otherwise it will not work.
+    if invert_mask_logic
+        # Sometimes image recognition returns inverse mask logic (depends on camera and light). Then a reversal is needed
+        # such that 1=fluid, 0=solid for consistent logic
+        mask = .!mask
+    end
+
+    # Pad mask with ghost cells (assumes all edges are fluid, i.e., 1)
     mask_padded = pad_to_pow2_with_ghost_cells(mask)
 
     # TODO: Attempt to compute signed distance field (see if this will work to create a gradient between the solid and fluid,
@@ -73,7 +102,7 @@ function PixelBody(image_path::String; threshold=0.5, diff_threshold=nothing, ϵ
 end
 
 """
-    function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode, force_invert_mask)
+    function create_fluid_solid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode, force_invert_mask)
 
 Function to produce a boolean mask that distinguishes the solid from the fluid using image recognition logic. Both grayscale
 and colored images are supported.
@@ -103,10 +132,6 @@ Suggested values:
 User selected threshold and diff_threshold are used if manual_mode is set to true (overwrites color detection logic).
 Smart logic is still used to use color hierarchy to invert matrix
 
-- 'force_invert_mask' (bool) = False:
-Optional setting to force inverting the mask in case smart image recognition hiearchy logic fails. Recommendation is to use
-only if padding logic is incorrect (will be obvious from heatmap image)
-
 ===Suggestions for threshold and diff threshold===
 
 For well-lit, high-contrast images:
@@ -117,7 +142,7 @@ For images with less contrast or more noise, try lowering threshold and/or diff_
 If the mask is too small (misses solid), lower the thresholds.
 If the mask is too large (includes background), raise the thresholds.
 """
-function create_fluid_soilid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode=false, force_invert_mask=false)
+function create_fluid_solid_mask_using_image_recognition(img, body_color, threshold, diff_threshold, manual_mode=false, force_invert_mask=false)
      # Validate the body_color parameter
     valid_colors = ["gray", "red", "green", "blue"]
     if body_color ∉ valid_colors
@@ -234,18 +259,11 @@ function create_fluid_soilid_mask_using_image_recognition(img, body_color, thres
             diff_threshold = clamp(diff_threshold, 0.05, 0.4)
         end
 
-        # Force invert override
-        if force_invert_mask
-            println("FORCE INVERT: Overriding smart inversion logic")
-            needs_inversion = !needs_inversion
-        end
-
         println("FINAL THRESHOLDS:")
         println("   threshold = $(round(threshold, digits=3))")
         println("   diff_threshold = $(round(diff_threshold, digits=3))")
         println("   needs_inversion = $needs_inversion")
         println("   manual_mode = $manual_mode")
-        println("   force_invert_mask = $force_invert_mask")
         println("="^50)
 
 
@@ -291,7 +309,7 @@ Pads a binary mask to the next power-of-2 size in each dimension and adds 2 ghos
 **Mask logic required:**
     - Input mask must be 1 for solid, 0 for fluid (Bool or numeric).
     - Padding is always done with 0 (fluid) at the boundaries.
-    - If your mask is True/1 for fluid, False/0 for solid, invert it before calling this function.
+    - If mask is True/1 for fluid, False/0 for solid, invert it before calling this function.
 
 IMPORTANT: Assumes all edges are fluid (0 in the mask), so will cause problems if there are solids in the boundary or if
 there is an inversion in the pixel body mask due to camera scheme color and thresholds.
@@ -312,8 +330,7 @@ function pad_to_pow2_with_ghost_cells(img)
     pad_left = pad_M ÷ 2
     pad_right = pad_M - pad_left
 
-    padded_img = zeros(eltype(img), N + pad_top + pad_bot + 2, M + pad_left + pad_right + 2) # TODO: Only works if all edges are
-                                                                                             # fluid
+    padded_img = ones(eltype(img), N + pad_top + pad_bot + 2, M + pad_left + pad_right + 2) # All edges are fluid (1)
     padded_img[pad_top+1 : pad_top+N, pad_left+1 : pad_left+M] .= img
     @show size(padded_img)
 
