@@ -10,7 +10,7 @@ function sim_gif_particles!(
     scale=1.0, minsize=0.1, width=1,
     plotbody=true, 
     verbose=true,
-    save_path="picture_sim_app/output/particleplot.mp4",
+    save_path="picture_sim_app/output/particleplot.gif",
     mem=Array,
 )
 
@@ -27,35 +27,12 @@ function sim_gif_particles!(
     GLMakie.hidedecorations!(ax)
 
     if plotbody
-        # Plot the body region filled with black
+        # Plot the body region - solid color overlay on top of particles
         μ₀ = Array(sim.body.μ₀)
-        body_mask = μ₀ .== 0.0  # Original solid pixels
-
-        # For larger holes, use a different approach with label_components
-        # First invert the mask so solid is false (0) and fluid is true (1)
-        fluid_mask = .!body_mask
-
-        # Label all connected components in the fluid
-        labels = ImageMorphology.label_components(fluid_mask)
-
-        # The largest component is the outside fluid region
-        # All other components are holes inside the body
-        component_sizes = zeros(Int, maximum(labels))
-        for i in 1:length(labels)
-            if labels[i] > 0
-                component_sizes[labels[i]] += 1
-            end
-        end
-
-        # Find the label of the largest component (the outside)
-        outside_label = argmax(component_sizes)
-        # Everything that's not the outside and not already part of the body is a hole
-        fill_mask = (labels .!= outside_label) .& fluid_mask
-        # Combine the original body and the filled holes
-        filled_body = body_mask .| fill_mask
-        # Display the filled body
-        GLMakie.image!(ax, filled_body; colormap=[:transparent, :black])
-        # GLMakie.contour!(ax, μ₀; levels=[0.5], color=:red, linewidth=2)
+        body_mask = μ₀ .< 0.5  # Solid pixels (true for solid)
+        
+        # Create a solid color overlay - only show body pixels, everything else transparent
+        GLMakie.image!(ax, body_mask; colormap=[:transparent, "#990000"])
     end
 
     # display(fig)
