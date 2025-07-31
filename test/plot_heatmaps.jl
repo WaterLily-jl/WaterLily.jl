@@ -15,7 +15,12 @@ function flood(f::AbstractArray; shift=(0.,0.), cfill=:RdBu_11, clims=(), levels
     end
     Plots.contourf(axes(f,1).+shift[1], axes(f,2).+shift[2], f'|>Array,
                    linewidth=0, levels=levels, color=cfill, clims=clims,
-                   aspect_ratio=:equal; kv...)
+                   aspect_ratio=:equal, 
+                   axis=false, 
+                   showaxis=false,
+                   grid=false,
+                   framestyle=:none,
+                   margin=0Plots.mm; kv...)
 end
 
 """

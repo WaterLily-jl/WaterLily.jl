@@ -106,7 +106,11 @@ def main() -> None:
         pixel_body.plot_mask()
 
     # Estimate characteristic length and angle of attack using PCA
-    l_c, aoa, thickness = characteristic_length_and_aoa_pca(mask=domain_mask, plot_method=image_recognition_debug_mode, show_components=False)
+    l_c, aoa, thickness = characteristic_length_and_aoa_pca(
+        mask=domain_mask,
+        plot_method=image_recognition_debug_mode,
+        show_components=False,
+    )
 
     # Estimate airfoil type based on thickness and characteristic length
     airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness/l_c)

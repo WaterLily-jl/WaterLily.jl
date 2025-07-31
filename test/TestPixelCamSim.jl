@@ -81,7 +81,7 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
         if sim_type == "sim_with_vorticity_heatmap_gif"
             println("Running WaterLily.sim_gif!...")
             sim_gif!(sim; duration=t_sim, step=delta_t, clims=(-5,5), save_path=output_path, verbose=verbose)
-        elseif sim_type == "particles"
+        elseif sim_type == "sim_with_particles_gif"
             println("Running particle simulation...")
             sim_gif_particles!(
                 sim;
