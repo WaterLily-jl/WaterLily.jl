@@ -82,7 +82,11 @@ def main() -> None:
 
     # Other settings
     verbose="true"
-    sim_type="sim_with_gif_data"
+    sim_type="sim_with_particle_and_heatmap_gif"  # Run the simulation. Options are:
+                                  # "sim_with_vorticity_heatmap_gif" (the OG)
+                                  # "particles" (uses PathLines library to create a particle plot)
+                                  # "sim_only" (runs the sim without any plotting)
+                                  # "sim_with_particle_and_heatmap_gif" (creates both the particle and heatmap gif)
     mem="Array"
 
     # Use image recognition to create a fluid-solid mask (1=Fluid, 0=Solid)
@@ -126,7 +130,7 @@ def main() -> None:
         # package loading (precompiles Julia packages and code)
         # File I/O settings - now pass mask file instead of image
         str(mask_file),  # Pass mask file instead of input image
-        str(particle_plot_name),  # Pass particle gif name for dual_gifs mode
+        str(output_path_particle_plot),  # Pass full particle gif path for dual_gifs mode
         # Simulation parameters
         str(l_c),  # Pass characteristic length from Python
         str(Re),
@@ -137,6 +141,7 @@ def main() -> None:
         verbose,
         sim_type,
         mem,
+        str(output_path_heatmap_plot),  # Pass full heatmap gif path for dual_gifs mode
     ]
     print(f"Starting Julia: {' '.join(cmd)}\n")
 

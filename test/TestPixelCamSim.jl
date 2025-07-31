@@ -19,6 +19,7 @@ push!(LOAD_PATH, joinpath(@__DIR__, "..", "..", "Pathlines.jl", "src")) # For no
                                                                         # same dir level as this root dir)
 include(joinpath(@__DIR__, "plot_particles.jl"))  # Add module containing particle plotting functions
 include(joinpath(@__DIR__, "run_sim.jl"))  # Simple simulation runner
+include(joinpath(@__DIR__, "plot_heatmaps.jl"))  # Heatmap plotting functions
 
 # set up airfoil simulation from boolean mask
 function PixelSimAirfoilFromMask(mask_file; Re=200, ϵ=1, LS=nothing, mem=Array)
@@ -41,7 +42,7 @@ end
 
 
 # Wrapper function for PyJulia interface
-function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verbose, sim_type, mem_str)
+function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verbose, sim_type, mem_str, heatmap_path=nothing)
     """
     Wrapper function to run simulation from PyJulia using pre-computed mask.
     Returns 0 on success, 1 on failure.
@@ -72,8 +73,15 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
             mem=mem,
         );
 
-        # Run the simulation
-        if sim_type == "particles"
+        # Run the simulation. Options are:
+        # "sim_with_vorticity_heatmap_gif" (the OG)
+        # "particles" (uses PathLines library to create a particle plot)
+        # "sim_only" (runs the sim without any plotting)
+        # "sim_with_particle_and_heatmap_gif" (creates both the particle and heatmap gif)
+        if sim_type == "sim_with_vorticity_heatmap_gif"
+            println("Running WaterLily.sim_gif!...")
+            sim_gif!(sim; duration=t_sim, step=delta_t, clims=(-5,5), save_path=output_path, verbose=verbose)
+        elseif sim_type == "particles"
             println("Running particle simulation...")
             sim_gif_particles!(
                 sim;
@@ -100,7 +108,12 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
                 println("Simulation failed")
                 return 1
             end
-        elseif sim_type == "sim_with_gif_data"
+        elseif sim_type == "sim_with_particle_and_heatmap_gif"
+            # Check that both paths are provided for dual GIF generation
+            if heatmap_path === nothing
+                error("Error: heatmap_path is required for sim_with_particle_and_heatmap_gif mode. Please provide both particle and heatmap output paths.")
+            end
+            
             println("Running simulation and collecting data for GIF creation...")
             sim_data = run_simulation_collect_data(
                 sim;
@@ -113,20 +126,25 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
             println("Simulation data collected: $(length(sim_data.positions)) frames")
             println("Body mask size: $(size(sim_data.body_mask))")
             println("Data ready for post-processing visualization")
-
+            
             # Create particle GIF from collected data
             println("Creating particle GIF from simulation data...")
-            gif_save_path = joinpath(@__DIR__, "..", "picture_sim_app", "output", output_path)
             create_particle_gif_from_data!(
                 sim_data;
                 scale=5.0, minsize=0.01, width=0.05,
                 plotbody=true,
-                save_path=gif_save_path,
+                save_path=output_path,
                 verbose=verbose
             )
-        else
-            println("Running WaterLily.sim_gif!...")
-            sim_gif!(sim; duration=t_sim, step=delta_t, clims=(-5,5), save_path=output_path, verbose=verbose)
+            
+            # Create heatmap GIF from vorticity field data
+            println("Creating heatmap GIF from vorticity field data...")
+            create_heatmap_gif_from_data!(
+                sim_data.vorticity_field;
+                save_path=heatmap_path,
+                time_points=sim_data.time_points,
+                verbose=verbose
+            )
         end
 
         println("✓ Simulation completed successfully")
@@ -156,8 +174,9 @@ function main()
     verbose = parse(Bool, args[8])
     sim_type = args[9]
     mem_str = args[10]
+    heatmap_path = length(args) >= 11 ? args[11] : nothing
 
-    run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verbose, sim_type, mem_str)
+    run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verbose, sim_type, mem_str, heatmap_path)
 end
 
 
