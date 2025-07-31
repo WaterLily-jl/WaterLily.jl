@@ -49,3 +49,65 @@ function sim_gif_particles!(
                 ", Δt=", round(sim.flow.Δt[end], digits=3))
     end
 end
+
+
+function create_particle_gif_from_data!(
+    sim_data;
+    scale=1.0, minsize=0.1, width=1,
+    plotbody=true,
+    save_path="picture_sim_app/output/particleplot.gif",
+    verbose=true
+)
+    n_frames = length(sim_data.positions)
+    verbose && println("Creating particle GIF from $n_frames frames of data")
+    
+    # Setup figure
+    fig = GLMakie.Figure(; backgroundcolor = :gray30)
+    ax = GLMakie.Axis(fig[1, 1]; autolimitaspect=1, backgroundcolor = :gray30)
+    GLMakie.hidedecorations!(ax)
+    
+    # Initialize observables with first frame data
+    pos = sim_data.positions[1]
+    pos_prev = sim_data.positions_prev[1]
+    dt = sim_data.delta_times[1]
+    
+    # Compute initial visualization properties
+    pmag = Pathlines.velmag.(pos, pos_prev, dt; scale=scale, minsize=minsize, width=width)
+    pdir = Pathlines.veldir.(pos, pos_prev)
+    
+    # Create observables
+    opos = GLMakie.Observable(pos)
+    omag = GLMakie.Observable(pmag)
+    odir = GLMakie.Observable(pdir)
+    
+    # Add scatter plot
+    GLMakie.scatter!(ax, opos; color = :white, markersize = omag, rotation = odir, marker = GLMakie.Circle)
+    
+    if plotbody
+        # Plot body mask
+        body_mask = sim_data.body_mask .< 0.5
+        GLMakie.image!(ax, body_mask; colormap=[:transparent, "#990000"])
+    end
+    
+    # Record GIF
+    @time GLMakie.record(fig, save_path, sim_data.time_points) do t
+        # Find frame index for this time point
+        frame_idx = findfirst(x -> x == t, sim_data.time_points)
+        
+        # Update data for current frame
+        pos = sim_data.positions[frame_idx]
+        pos_prev = sim_data.positions_prev[frame_idx]
+        dt = sim_data.delta_times[frame_idx]
+        
+        # Compute visualization properties
+        pmag = Pathlines.velmag.(pos, pos_prev, dt; scale=scale, minsize=minsize, width=width)
+        pdir = Pathlines.veldir.(pos, pos_prev)
+        
+        # Update observables
+        opos[] = pos
+        omag[] = pmag
+        odir[] = pdir
+        
+        verbose && println("tU/L=", round(t, digits=4), ", Δt=", round(dt, digits=3))
+    end
+end

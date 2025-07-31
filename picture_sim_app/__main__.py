@@ -126,7 +126,7 @@ def main() -> None:
         # package loading (precompiles Julia packages and code)
         # File I/O settings - now pass mask file instead of image
         str(mask_file),  # Pass mask file instead of input image
-        str(output_path_data),  # Pass data file path for sim_only mode
+        str(particle_plot_name),  # Pass particle gif name for dual_gifs mode
         # Simulation parameters
         str(l_c),  # Pass characteristic length from Python
         str(Re),

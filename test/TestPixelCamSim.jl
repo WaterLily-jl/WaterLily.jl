@@ -113,6 +113,17 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
             println("Simulation data collected: $(length(sim_data.positions)) frames")
             println("Body mask size: $(size(sim_data.body_mask))")
             println("Data ready for post-processing visualization")
+
+            # Create particle GIF from collected data
+            println("Creating particle GIF from simulation data...")
+            gif_save_path = joinpath(@__DIR__, "..", "picture_sim_app", "output", output_path)
+            create_particle_gif_from_data!(
+                sim_data;
+                scale=5.0, minsize=0.01, width=0.05,
+                plotbody=true,
+                save_path=gif_save_path,
+                verbose=verbose
+            )
         else
             println("Running WaterLily.sim_gif!...")
             sim_gif!(sim; duration=t_sim, step=delta_t, clims=(-5,5), save_path=output_path, verbose=verbose)
