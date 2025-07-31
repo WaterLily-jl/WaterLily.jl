@@ -100,6 +100,19 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
                 println("Simulation failed")
                 return 1
             end
+        elseif sim_type == "sim_with_gif_data"
+            println("Running simulation and collecting data for GIF creation...")
+            sim_data = run_simulation_collect_data(
+                sim;
+                t_i=0.01, duration=t_sim, Δt=delta_t,
+                N_particles=2^14, life_particles=100,
+                verbose=verbose,
+                mem=mem,
+            )
+            
+            println("Simulation data collected: $(length(sim_data.positions)) frames")
+            println("Body mask size: $(size(sim_data.body_mask))")
+            println("Data ready for post-processing visualization")
         else
             println("Running WaterLily.sim_gif!...")
             sim_gif!(sim; duration=t_sim, step=delta_t, clims=(-5,5), save_path=output_path, verbose=verbose)

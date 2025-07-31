@@ -82,7 +82,7 @@ def main() -> None:
 
     # Other settings
     verbose="true"
-    sim_type="sim_only"
+    sim_type="sim_with_gif_data"
     mem="Array"
 
     # Use image recognition to create a fluid-solid mask (1=Fluid, 0=Solid)
