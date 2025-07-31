@@ -20,7 +20,13 @@ function flood(f::AbstractArray; shift=(0.,0.), cfill=:RdBu_11, clims=(), levels
                    showaxis=false,
                    grid=false,
                    framestyle=:none,
-                   margin=0Plots.mm; kv...)
+                   margin=0Plots.mm,
+                   left_margin=0Plots.mm,
+                   right_margin=0Plots.mm,
+                   top_margin=0Plots.mm,
+                   bottom_margin=0Plots.mm,
+                   size=(800,800),
+                   dpi=150; kv...)
 end
 
 """
