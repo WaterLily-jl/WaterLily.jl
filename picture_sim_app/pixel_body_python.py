@@ -214,6 +214,112 @@ class PixelBodyMask:
         mask = np.flipud(mask).T
 
         return mask
+
+
+    def rotate_mask(
+        self, current_angle: float,
+        target_angle: float = 0.0,
+        replace_mask: bool = True,
+    ) -> np.ndarray:
+        """
+        Rotate solid in domain mask to achieve 0 degrees angle of attack.
+
+        Args:
+            current_angle (float): Current angle of attack in degrees
+            target_angle (float): Target angle of attack in degrees (angle after rotation)
+            replace_mask (bool): If True, replace the current mask with the rotated one in the PixelBodyMask instance
+
+        Returns:
+            numpy.ndarray: New boolean mask with rotated solid (True=fluid, False=solid)
+        """
+        mask = self.mask
+
+        # Don't rotate if already at target angle
+        if current_angle == target_angle:
+            return self.mask
+
+        # Calculate necessary rotation to achieve target angle
+        rotation_angle = target_angle - current_angle
+
+        # Rotate the solid in the mask by the calculated angle
+        rotated_solid_mask = self._rotate_solid_by_angle(mask, rotation_angle)
+
+        # Only replace the original mask in the instance if requested
+        if replace_mask:
+            self.mask = rotated_solid_mask
+
+        return rotated_solid_mask
+
+    @staticmethod
+    def _rotate_solid_by_angle(mask:np.ndarray[bool], rotation_angle: float) -> np.ndarray:
+        """
+        Internal function to rotate solid in boolean mask by a specific angle.
+
+        Args:
+            mask (numpy.ndarray): Boolean array where True=fluid, False=solid
+            rotation_angle (float): Angle to rotate by in degrees (positive = counterclockwise)
+
+        Returns:
+            numpy.ndarray: New boolean mask with rotated solid (true=fluid, false=solid)
+        """
+        # Convert to numpy array
+        mask = np.array(mask, dtype=bool)
+
+        # Find solid pixels (where mask is False)
+        solid_coords = np.where(~mask)
+
+        if len(solid_coords[0]) == 0:
+            return mask  # No solid pixels found, return original mask
+
+        # Extract coordinates: solid_coords gives (row, col) = (y, x) in image terms
+        # Convert to standard x, y coordinates
+        x_coords = solid_coords[1].astype(np.float64)  # column indices = x
+        y_coords = solid_coords[0].astype(np.float64)  # row indices = y
+
+        # Calculate centroid of solid object
+        centroid_x = np.mean(x_coords)
+        centroid_y = np.mean(y_coords)
+
+        # Convert angle to radians
+        angle_rad = np.radians(rotation_angle)
+
+        # Create rotation matrix
+        cos_theta = np.cos(angle_rad)
+        sin_theta = np.sin(angle_rad)
+
+        # Translate coordinates to origin (centroid becomes 0,0)
+        x_centered = x_coords - centroid_x
+        y_centered = y_coords - centroid_y
+
+        # Apply rotation matrix
+        x_rotated = cos_theta * x_centered - sin_theta * y_centered
+        y_rotated = sin_theta * x_centered + cos_theta * y_centered
+
+        # Translate back to original position
+        x_new = x_rotated + centroid_x
+        y_new = y_rotated + centroid_y
+
+        # Round to nearest integer pixel coordinates
+        x_new = np.round(x_new).astype(int)
+        y_new = np.round(y_new).astype(int)
+
+        # Create new mask filled with fluid (True)
+        new_mask = np.ones_like(mask, dtype=bool)
+
+        # Get mask dimensions
+        height, width = mask.shape
+
+        # Filter coordinates to stay within bounds
+        valid_indices = ((x_new >= 0) & (x_new < width) &
+                         (y_new >= 0) & (y_new < height))
+
+        x_valid = x_new[valid_indices]
+        y_valid = y_new[valid_indices]
+
+        # Set rotated solid pixels to False
+        new_mask[y_valid, x_valid] = False
+
+        return new_mask
     
     def get_mask(self):
         """
@@ -256,16 +362,3 @@ def create_pixel_body_mask(image_path, **kwargs):
     """
     pixel_body = PixelBodyMask(image_path, **kwargs)
     return pixel_body.get_mask()
-
-
-if __name__ == "__main__":
-    # Example usage
-    mask = create_pixel_body_mask(
-        "input/input.png",
-        body_color="red",
-        threshold=0.5,
-        max_image_res=256
-    )
-    print(f"Mask shape: {mask.shape}")
-    print(f"Solid pixels: {np.sum(mask)}")
-    print(f"Fluid pixels: {np.sum(~mask)}")

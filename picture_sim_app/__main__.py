@@ -5,7 +5,7 @@ import subprocess
 import numpy as np
 
 from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
-from picture_sim_app.create_visualizations import create_gifs
+# from picture_sim_app.create_visualizations import create_gifs
 from picture_sim_app.detect_airfoil_type import detect_airfoil_type
 # from julia.api import Julia
 
@@ -38,12 +38,12 @@ def main() -> None:
     # The selection box maintains aspect ratio while you drag
     # - Click and drag to define the selection area
     # - The box automatically maintains your target aspect ratio
-    capture_image(
-        input_folder=INPUT_FOLDER,
-        fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
-        selection_box_mode=True,    # Click-and-drag selection box
-        # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
-    )
+    # capture_image(
+    #     input_folder=INPUT_FOLDER,
+    #     fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
+    #     selection_box_mode=True,    # Click-and-drag selection box
+    #     # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
+    # )
 
     # File I/O settings
     # input_image_name = "input.png"
@@ -68,7 +68,7 @@ def main() -> None:
     manual_mode = False  # Set to True to use provided threshold values, otherwise smart detection is used
     force_invert_mask = False  # Set to True to force mask inversion if smart logic fails (will be seen as an incorrect
                                # ghost cell padding at the edges of the fluid boundary)
-    image_recognition_debug_mode = True # Set to true to plot the image recognition mask and PCA components
+    image_recognition_debug_mode = True # Set to True to plot the image recognition mask and PCA components
 
     # Image resolution cap (spatial resolution)
     max_image_res=800
@@ -101,16 +101,26 @@ def main() -> None:
     )
     domain_mask = pixel_body.get_mask()
 
-    plot_mask = image_recognition_debug_mode
-    if plot_mask:
-        pixel_body.plot_mask()
-
     # Estimate characteristic length and angle of attack using PCA
     l_c, aoa, thickness = characteristic_length_and_aoa_pca(
         mask=domain_mask,
         plot_method=image_recognition_debug_mode,
         show_components=False,
     )
+
+    # Test rotating angle of attack to zero
+    domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=0.0)
+
+    plot_mask = image_recognition_debug_mode
+    if plot_mask:
+        pixel_body.plot_mask()
+
+    # Estimate characteristic length and angle of attack using PCA (after rotation)
+    l_c, aoa, thickness = characteristic_length_and_aoa_pca(
+        mask=domain_mask,
+        plot_method=image_recognition_debug_mode,
+        show_components=False,
+        )
 
     # Estimate airfoil type based on thickness and characteristic length
     airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness/l_c)
@@ -150,7 +160,7 @@ def main() -> None:
     print(f"Starting Julia: {' '.join(cmd)}\n")
 
     result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
-
+    
     # Clean up temporary mask file
     if mask_file.exists():
         mask_file.unlink()
@@ -158,13 +168,13 @@ def main() -> None:
     if result.returncode != 0:
         raise Exception(f"\nJulia process exited with code {result.returncode}")
 
-    # Create visualizations from the exported simulation data
-    print("\nCreating gifs from simulation data...")
-    create_gifs(
-        data_path=output_path_data,
-        particle_output=output_path_particle_plot,
-        heatmap_output=output_path_heatmap_plot,
-    )
+    # # Create visualizations from the exported simulation data
+    # print("\nCreating gifs from simulation data...")
+    # create_gifs(
+    #     data_path=output_path_data,
+    #     particle_output=output_path_particle_plot,
+    #     heatmap_output=output_path_heatmap_plot,
+    # )
 
     # Define paths for both GIFs
     gif_paths = [output_path_particle_plot, output_path_heatmap_plot]
