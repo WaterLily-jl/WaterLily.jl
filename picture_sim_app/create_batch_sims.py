@@ -92,13 +92,6 @@ def run_sim(
     if result.returncode != 0:
         raise Exception(f"\nJulia process exited with code {result.returncode}")
 
-    # Create visualizations from the exported simulation data
-    create_gifs(
-        data_path=output_path_data,
-        particle_output=output_path_particle_plot,
-        heatmap_output=output_path_heatmap_plot,
-    )
-
     # Define paths for both GIFs
     gif_paths = [output_path_particle_plot, output_path_heatmap_plot]
 
