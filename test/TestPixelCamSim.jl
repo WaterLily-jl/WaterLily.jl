@@ -98,7 +98,7 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
             success = run_simple_simulation(
                 sim;
                 t_i=0.01, duration=t_sim, Δt=delta_t,
-                N_particles=2^14, life_particles=100,
+                N_particles=2^14, life_particles=1e3,
                 scale=5.0, minsize=0.01, width=0.05,
                 verbose=verbose,
                 mem=mem,
