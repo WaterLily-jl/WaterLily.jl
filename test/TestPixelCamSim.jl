@@ -118,7 +118,7 @@ function run_simulation(mask_file, output_path, LS, Re, ϵ, t_sim, delta_t, verb
             sim_data = run_simulation_collect_data(
                 sim;
                 t_i=0.01, duration=t_sim, Δt=delta_t,
-                N_particles=2^14, life_particles=100,
+                N_particles=2^14, life_particles=1e3,
                 verbose=verbose,
                 mem=mem,
             )
