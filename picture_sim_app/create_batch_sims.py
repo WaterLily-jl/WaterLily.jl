@@ -1,6 +1,8 @@
 import subprocess
 import sys
 from pathlib import Path
+import logging
+from tqdm import tqdm
 
 import numpy as np
 import yaml
@@ -9,6 +11,10 @@ from picture_sim_app.characteristic_length_and_aoa_estimation import characteris
 from picture_sim_app.create_visualizations import create_gifs
 from picture_sim_app.image_utils import get_gif_dimensions, resize_gif
 from picture_sim_app.pixel_body_python import PixelBodyMask
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Define paths (static)
 INPUT_AIRFOIL_IMAGES = [
@@ -129,12 +135,13 @@ def main() -> None:
     with open(SCRIPT_DIR / "sim_inputs_batch_run.yaml", "r") as f:
         batch_run_settings = yaml.safe_load(f)
 
+    force_run = batch_run_settings.get("force_run", False)
     sim_settings = batch_run_settings["simulation_settings"]
     image_recognition_settings = sim_settings["image_recognition"]
     simulation_settings = sim_settings["simulation"]
 
-    for base_input_image_name in INPUT_AIRFOIL_IMAGES:
-        for sim_aoa in range(-180, 181):
+    for base_input_image_name in tqdm(INPUT_AIRFOIL_IMAGES, desc="Airfoil:"):
+        for sim_aoa in tqdm(range(-180, 181), desc="AoA", leave=False):
 
             # define output file names per simulation (naca type + angle of attack)
             input_path = INPUT_FOLDER / base_input_image_name
@@ -145,6 +152,15 @@ def main() -> None:
             particle_plot_name = f"particleplot_{file_postfix}.gif"
             heatmap_plot_name = f"heatmap_plot_{file_postfix}.gif"
             data_file_name = f"simulation_data_{file_postfix}.npz"
+
+            if not force_run:
+                # Check if output gifs already exist (skip if they do)
+                particle_plot_output_path = OUTPUT_FOLDER / particle_plot_name
+                heatmap_plot_output_path = OUTPUT_FOLDER / heatmap_plot_name
+                if particle_plot_output_path.exists() and heatmap_plot_output_path.exists():
+                    logger.warning(f"Gif output for {naca_type}, aoa={sim_aoa} already exists. Skipping simulation.")
+                    continue
+
 
             output_path_particle_plot = OUTPUT_FOLDER / particle_plot_name
             output_path_heatmap_plot = OUTPUT_FOLDER / heatmap_plot_name
@@ -166,6 +182,7 @@ def main() -> None:
                 body_color=image_recognition_settings["solid_color"],
                 manual_mode=image_recognition_settings["manual_mode"],
                 force_invert_mask=image_recognition_settings["force_invert_mask"],
+                verbose=False,
             )
 
             domain_mask = pixel_body.get_mask()
@@ -178,10 +195,14 @@ def main() -> None:
             rotated_domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=sim_aoa)
 
             # Run sim for selected airfoil and angle of attack, and create plots
-            run_sim(
-                rotated_domain_mask,
-                output_paths,
-                simulation_settings)
+            try:
+                run_sim(
+                    rotated_domain_mask,
+                    output_paths,
+                    simulation_settings)
+            except Exception as e:
+                logger.warning(f"Simulation failed for {naca_type} at aoa={sim_aoa}: {e}")
+                continue
 
 
 if __name__ == "__main__":

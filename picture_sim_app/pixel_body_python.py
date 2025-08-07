@@ -11,7 +11,7 @@ class PixelBodyMask:
     """
     
     def __init__(self, image_path, threshold=0.5, diff_threshold=None, max_image_res=None, 
-                 body_color="gray", manual_mode=False, force_invert_mask=False):
+                 body_color="gray", manual_mode=False, force_invert_mask=False, verbose=True):
         """
         Create a PixelBody mask from an image.
         
@@ -31,6 +31,9 @@ class PixelBodyMask:
         self.body_color = body_color
         self.manual_mode = manual_mode
         self.force_invert_mask = force_invert_mask
+
+        # Verbose mode (to disable some print statements)
+        self.verbose = verbose
         
         # Load and process the image
         self.img = self._load_image()
@@ -39,11 +42,13 @@ class PixelBodyMask:
     def _load_image(self):
         """Load image and apply resolution limit if specified."""
         img = Image.open(self.image_path)
-        print(f"Original image size: {img.size}")
+        if self.verbose:
+            print(f"Original image size: {img.size}")
         
         if self.max_image_res is not None:
             img = self._limit_resolution(img, self.max_image_res)
-            print(f"Image resized to: {img.size}")
+            if self.verbose:
+                print(f"Image resized to: {img.size}")
         
         return img
     
@@ -58,8 +63,9 @@ class PixelBodyMask:
         scale = max_grid / max_dim
         new_w = round(w * scale)
         new_h = round(h * scale)
-        
-        print(f"Resizing from {w}x{h} → {new_w}x{new_h}")
+
+        if self.verbose:
+            print(f"Resizing from {w}x{h} → {new_w}x{new_h}")
         return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
     
     def _create_mask(self):
