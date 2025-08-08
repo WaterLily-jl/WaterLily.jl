@@ -408,6 +408,11 @@ end
     end
 end
 
+function spanwise_cylinder(radius = 8; D=2, mem=Array, exitBC=false)
+    body = AutoBody((x,t)-> √sum(abs2,SA[x[1],x[2]] .- (2radius+1.5)) - radius)
+    Simulation(radius.*(6,4,1),(1,0,0),radius; body, ν=radius/250, T=Float32, mem, perdir=(3,), exitBC)
+end
+
 import WaterLily: ×
 @testset "Metrics.jl" begin
     J = CartesianIndex(2,3,4); x = loc(0,J,Float64); px = prod(x)
@@ -489,6 +494,21 @@ import WaterLily: ×
         meanflow2 = MeanFlow(size(sim.flow.p).-2; uu_stats=true)
         @test all(meanflow2.P .== zero(T))
         @test size(meanflow2.P) == size(meanflow.P)
+
+        # spanwise average flow
+        sim = spanwise_cylinder(8, mem=f)
+        spanavg = SpanAverage(sim.flow)
+        for t in range(0,10;step=0.1)
+            sim_step!(sim, t)
+            update!(spanavg, sim.flow)
+        end
+        @test WaterLily.time(sim.flow) == WaterLily.time(spanavg)
+
+        WaterLily.reset!(spanavg)
+        @test all(spanavg.U .== zero(T))
+        @test all(spanavg.P .== zero(T))
+        @test all(spanavg.UU .== zero(T))
+        @test spanavg.t == T[0]
     end
 end
 
