@@ -263,6 +263,9 @@ end
     Note: This routine works for any number of dimensions.
 """
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
+    # check that we are inside the array to interpolate (cartesian coords)
+    !(all(0 .≤ x) && all(x .≤ size(arr).-2)) && return zero(T)
+
     # Index below the interpolation coordinate and the difference
     x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
