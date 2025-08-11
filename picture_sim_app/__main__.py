@@ -3,9 +3,10 @@ from pathlib import Path
 import subprocess
 
 import numpy as np
+import yaml
 
 from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
-# from picture_sim_app.create_visualizations import create_gifs
+from picture_sim_app.create_visualizations import create_gifs
 from picture_sim_app.detect_airfoil_type import detect_airfoil_type
 # from julia.api import Julia
 
@@ -34,6 +35,10 @@ OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> None:
+
+    with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
+        settings = yaml.safe_load(f)
+
     # Capture image with interactive click-and-drag selection box
     # The selection box maintains aspect ratio while you drag
     # - Click and drag to define the selection area
@@ -45,59 +50,26 @@ def main() -> None:
     #     # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
     # )
 
-    # File I/O settings
-    # input_image_name = "input.png"
-    # input_image_name = "input_red_hierarchy.png"
-    # input_image_name = "input_red.png"
-    # input_image_name = "input_naca_002.png"
-    input_image_name = "input_naca_015.png"
-    # input_image_name = "input_naca_030.png"
-    input_path = INPUT_FOLDER / input_image_name
-    # output_animation_name = "output.gif"
-    particle_plot_name = "particleplot.gif"
-    heatmap_plot_name = "heatmap_plot.gif"
-    data_file_name = "simulation_data.npz"
-    output_path_particle_plot = OUTPUT_FOLDER / particle_plot_name
-    output_path_heatmap_plot = OUTPUT_FOLDER / heatmap_plot_name
-    output_path_data = OUTPUT_FOLDER / data_file_name
+    # File I/O paths
+    io_settings = settings["io_settings"]
+    input_path = INPUT_FOLDER / io_settings["input_image_name"]
+    output_path_particle_plot = OUTPUT_FOLDER / io_settings["particle_plot_name"]
+    output_path_heatmap_plot = OUTPUT_FOLDER / io_settings["heatmap_plot_name"]
+    # output_path_data = OUTPUT_FOLDER / data_file_name
 
-    # Image recognition settings (rule of thumb for both: Increase if too much background noise, decrease if solid not showing)
-    threshold = 0.5 # First play with this until solid shows up, then adjust diff_threshold
-    diff_threshold=0.2 # Increase if too much noise, decrease if solid not showing (only if not using gray)
-    solid_color="gray" # Options are gray, red, green or blue
-    manual_mode = False  # Set to True to use provided threshold values, otherwise smart detection is used
-    force_invert_mask = False  # Set to True to force mask inversion if smart logic fails (will be seen as an incorrect
-                               # ghost cell padding at the edges of the fluid boundary)
-    image_recognition_debug_mode = True # Set to True to plot the image recognition mask and PCA components
-
-    # Image resolution cap (spatial resolution)
-    max_image_res=800
-    # Simulation duration and temporal resolution
-    t_sim = 2.
-    delta_t = 0.05
-
-    # Flow settings
-    Re = 200.
-    epsilon = 1. # BDIM kernel width
-
-    # Other settings
-    verbose="true"
-    sim_type="sim_with_particle_and_heatmap_gif"  # Run the simulation. Options are:
-                                  # "sim_with_vorticity_heatmap_gif" (the OG)
-                                  # "particles" (uses PathLines library to create a particle plot)
-                                  # "sim_only" (runs the sim without any plotting)
-                                  # "sim_with_particle_and_heatmap_gif" (creates both the particle and heatmap gif)
-    mem="Array"
+    #Unpack simulation settings:
+    simulation_settings = settings["simulation_settings"]
+    image_recognition_debug_mode = simulation_settings["image_recognition_debug_mode"]
 
     # Use image recognition to create a fluid-solid mask (1=Fluid, 0=Solid)
     pixel_body = PixelBodyMask(
         image_path=str(input_path),
-        threshold=threshold,
-        diff_threshold=diff_threshold,
-        max_image_res=max_image_res,
-        body_color=solid_color,
-        manual_mode=manual_mode,
-        force_invert_mask=force_invert_mask,
+        threshold=simulation_settings["threshold"],
+        diff_threshold=simulation_settings["diff_threshold"],
+        max_image_res=simulation_settings["max_image_res"],
+        body_color=simulation_settings["solid_color"],
+        manual_mode=simulation_settings["manual_mode"],
+        force_invert_mask=simulation_settings["force_invert_mask"],
     )
     domain_mask = pixel_body.get_mask()
 
@@ -108,8 +80,8 @@ def main() -> None:
         show_components=False,
     )
 
-    # Test rotating angle of attack to zero
-    domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=0.0)
+    # Test rotating angle of attack
+    domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=45)
 
     plot_mask = image_recognition_debug_mode
     if plot_mask:
@@ -147,14 +119,14 @@ def main() -> None:
         str(output_path_particle_plot),  # Pass full particle gif path for dual_gifs mode
         # Simulation parameters
         str(l_c),  # Pass characteristic length from Python
-        str(Re),
-        str(epsilon),
-        str(t_sim),
-        str(delta_t),
+        str(simulation_settings["Re"]),
+        str(simulation_settings["epsilon"]),
+        str(simulation_settings["t_sim"]),
+        str(simulation_settings["delta_t"]),
         # Other settings
-        verbose,
-        sim_type,
-        mem,
+        str(simulation_settings["verbose"]),
+        simulation_settings["sim_type"],
+        simulation_settings["mem"],
         str(output_path_heatmap_plot),  # Pass full heatmap gif path for dual_gifs mode
     ]
     print(f"Starting Julia: {' '.join(cmd)}\n")
