@@ -30,8 +30,10 @@ function load!(a::AbstractSimulation, ::Val{:pvd}; kwargs...)
     @assert extent.+1 == collect(size(a.flow.p)) text
     # fill the arrays for pressure and velocity
     point_data = ReadVTK.get_point_data(vtk)
-    copyto!(a.flow.p, WaterLily.squeeze(Array(get_data_reshaped(point_data["Pressure"]))));
-    copyto!(a.flow.u, WaterLily.squeeze(components_last(Array(get_data_reshaped(point_data["Velocity"])))));
+    pressure = get(kwargs_dict, :pressure, "Pressure")
+    velocity = get(kwargs_dict, :velocity, "Velocity")
+    copyto!(a.flow.p, WaterLily.squeeze(Array(get_data_reshaped(point_data[pressure]))));
+    copyto!(a.flow.u, WaterLily.squeeze(components_last(Array(get_data_reshaped(point_data[velocity])))));
     # reset time to work with the new time step
     a.flow.Δt[end] = PVDFile(fname).timesteps[end]*a.L/a.U
     push!(a.flow.Δt,WaterLily.CFL(a.flow))
