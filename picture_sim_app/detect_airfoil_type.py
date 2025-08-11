@@ -2,9 +2,9 @@ from enum import StrEnum, auto
 
 
 class AirfoilType(StrEnum):
-    NACA002 = auto()
-    NACA015 = auto()
-    NACA030 = auto()
+    NACA_002 = auto()
+    NACA_015 = auto()
+    NACA_030 = auto()
 
 
 def detect_airfoil_type(thickness_to_cord_ratio: float) -> str:
@@ -18,8 +18,8 @@ def detect_airfoil_type(thickness_to_cord_ratio: float) -> str:
         str: The type of airfoil ('thin', 'medium', 'thick').
     """
     if thickness_to_cord_ratio > 0.2:
-        return AirfoilType.NACA030
+        return AirfoilType.NACA_030
     elif 0.1 <= thickness_to_cord_ratio < 0.2:
-        return AirfoilType.NACA015
+        return AirfoilType.NACA_015
     else:
-        return AirfoilType.NACA002
+        return AirfoilType.NACA_002
