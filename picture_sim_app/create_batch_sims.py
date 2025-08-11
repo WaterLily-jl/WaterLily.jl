@@ -10,6 +10,7 @@ import yaml
 from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
 from picture_sim_app.create_visualizations import create_gifs
 from picture_sim_app.image_utils import get_gif_dimensions, resize_gif
+from picture_sim_app.live_simulation import run_julia_simulation_script
 from picture_sim_app.pixel_body_python import PixelBodyMask
 
 
@@ -47,50 +48,20 @@ def run_sim(
         show_components=False,
     )
 
-    # Save the boolean mask to a temporary file for Julia to read
-    mask_file = OUTPUT_FOLDER / "temp_mask.npy"
-    np.save(mask_file, domain_mask)
-
-    # Verify Julia script path
-    if not JULIA_SCRIPT_PATH.is_file():
-        print(f"\nError: Julia script not found at {JULIA_SCRIPT_PATH}")
-        sys.exit(1)
-
     # Unpack output paths
     output_path_particle_plot = output_paths["output_path_particle_plot"]
     output_path_heatmap_plot = output_paths["output_path_heatmap_plot"]
     output_path_data = output_paths["output_path_data"]
 
-    cmd = [
-        "julia",
-        str(JULIA_SCRIPT_PATH),
-        # "--sysimage", "julia_sysimage_pixelbody.so",  # Add custom Julia sysimage for faster startup and precompiled
-        # package loading (precompiles Julia packages and code)
-        # File I/O settings - now pass mask file instead of image
-        str(mask_file),  # Pass mask file instead of input image
-        str(output_path_particle_plot),  # Pass full particle gif path for dual_gifs mode
-        # Simulation parameters
-        str(l_c),  # Pass characteristic length from Python
-        str(simulation_settings["Re"]),
-        str(simulation_settings["epsilon"]),
-        str(simulation_settings["t_sim"]),
-        str(simulation_settings["delta_t"]),
-        # Other settings
-        str(simulation_settings["verbose"]).lower(),
-        simulation_settings["sim_type"],
-        simulation_settings["mem"],
-        str(output_path_heatmap_plot),  # Pass full heatmap gif path for dual_gifs mode
-    ]
-    print(f"Starting Julia: {' '.join(cmd)}\n")
-
-    result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
-
-    # Clean up temporary mask file
-    if mask_file.exists():
-        mask_file.unlink()
-
-    if result.returncode != 0:
-        raise Exception(f"\nJulia process exited with code {result.returncode}")
+    run_julia_simulation_script(
+        domain_mask=domain_mask,
+        l_c=l_c,
+        simulation_settings=simulation_settings,
+        output_path_particle_plot=output_path_particle_plot,
+        output_path_heatmap_plot=output_path_heatmap_plot,
+        output_folder=OUTPUT_FOLDER,
+        script_dir=SCRIPT_DIR,
+    )
 
     # Define paths for both GIFs
     gif_paths = [output_path_particle_plot, output_path_heatmap_plot]

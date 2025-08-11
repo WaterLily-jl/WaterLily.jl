@@ -19,6 +19,7 @@ from picture_sim_app.image_utils import (
     display_gif_fullscreen, 
     display_two_gifs_side_by_side
 )
+from picture_sim_app.live_simulation import run_julia_simulation_script
 from picture_sim_app.pixel_body_python import PixelBodyMask
 
 # Initialize Julia with your custom sysimage
@@ -97,48 +98,21 @@ def main() -> None:
     # Estimate airfoil type based on thickness and characteristic length
     airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness/l_c)
 
-    # Save the boolean mask to a temporary file for Julia to read
-    mask_file = OUTPUT_FOLDER / "temp_mask.npy"
-    np.save(mask_file, domain_mask)
+    use_precomputed_results = False
+    if not use_precomputed_results:
 
-    # Run Julia script 'TestPixelCamSim.jl'
-    julia_script = SCRIPT_DIR.parent / "test" / "TestPixelCamSim.jl"
+        run_julia_simulation_script(
+            domain_mask=domain_mask,
+            l_c=l_c,
+            simulation_settings=simulation_settings,
+            output_path_particle_plot=output_path_particle_plot,
+            output_path_heatmap_plot=output_path_heatmap_plot,
+            output_folder=OUTPUT_FOLDER,
+            script_dir=SCRIPT_DIR,
+        )
 
-    # Verify Julia script path
-    if not julia_script.is_file():
-        print(f"Error: Julia script not found at {julia_script}")
-        sys.exit(1)
-
-    cmd = [
-        "julia",
-        str(julia_script),
-        # "--sysimage", "julia_sysimage_pixelbody.so",  # Add custom Julia sysimage for faster startup and precompiled
-        # package loading (precompiles Julia packages and code)
-        # File I/O settings - now pass mask file instead of image
-        str(mask_file),  # Pass mask file instead of input image
-        str(output_path_particle_plot),  # Pass full particle gif path for dual_gifs mode
-        # Simulation parameters
-        str(l_c),  # Pass characteristic length from Python
-        str(simulation_settings["Re"]),
-        str(simulation_settings["epsilon"]),
-        str(simulation_settings["t_sim"]),
-        str(simulation_settings["delta_t"]),
-        # Other settings
-        str(simulation_settings["verbose"]),
-        simulation_settings["sim_type"],
-        simulation_settings["mem"],
-        str(output_path_heatmap_plot),  # Pass full heatmap gif path for dual_gifs mode
-    ]
-    print(f"Starting Julia: {' '.join(cmd)}\n")
-
-    result = subprocess.run(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
-    
-    # Clean up temporary mask file
-    if mask_file.exists():
-        mask_file.unlink()
-
-    if result.returncode != 0:
-        raise Exception(f"\nJulia process exited with code {result.returncode}")
+    else:
+        print("\nUsing precomputed simulation results...")
 
     # # Create visualizations from the exported simulation data
     # print("\nCreating gifs from simulation data...")
