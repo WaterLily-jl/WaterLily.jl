@@ -12,7 +12,7 @@ end
 @fastmath @inline function dot(a,b)
     init=zero(eltype(a))
     @inbounds for ij in eachindex(a)
-        init += a[ij] * b[ij]
+     init += a[ij] * b[ij]
     end
     return init
 end
@@ -150,65 +150,43 @@ function pressure_moment(x₀,p,df,body,t=0)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
-# abstract Types to distinguish AverageFlows
-abstract type MeanFlow end
-abstract type SpanAverage end
 """
-    AverageFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
-Holds averages of velocity, , pressure, and Reynolds stresses.
+     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+
+Holds temporal averages of pressure, velocity, and squared-velocity tensor.
 """
-struct AverageFlow{I, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
+struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
     P :: Sf # pressure scalar field
     U :: Vf # velocity vector field
     UU :: Mf # squared-velocity tensor, u⊗u
     t :: Vector{T} # time steps vector
     uu_stats :: Bool # flag to compute UU on-the-fly temporal averages
-    function AverageFlow(ϕ,v,τ,t;I=MeanFlow,uu_stats=false)
-        new{I,eltype(ϕ),typeof(ϕ),typeof(v),typeof(τ)}(ϕ,v,τ,t,uu_stats)
+    function MeanFlow(flow::Flow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
+        mem = typeof(flow.u).name.wrapper
+        P = zeros(T, size(flow.p)) |> mem
+        U = zeros(T, size(flow.u)) |> mem
+        UU = uu_stats ? zeros(T, size(flow.p)..., D, D) |> mem : nothing
+        new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
+    end
+    function MeanFlow(N::NTuple{D}; mem=Array, T=Float32, t_init=0, uu_stats=false) where {D}
+        Ng = N .+ 2
+        P = zeros(T, Ng) |> mem
+        U = zeros(T, Ng..., D) |> mem
+        UU = uu_stats ? zeros(T, Ng..., D, D) |> mem : nothing
+        new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
     end
 end
 
-"""
-    MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
-Holds temporal averages of pressure, velocity, and squared-velocity tensor.
-"""
-function MeanFlow(flow::Flow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
-    mem = typeof(flow.u).name.wrapper
-    P = zeros(T, size(flow.p)) |> mem
-    U = zeros(T, size(flow.p)..., D) |> mem
-    UU = uu_stats ? zeros(T, size(flow.p)..., D, D) |> mem |> mem : nothing
-    AverageFlow(P,U,UU,T[t_init];I=MeanFlow,uu_stats=uu_stats)
-end
-function MeanFlow(N::NTuple{D}; mem=Array, T=Float32, t_init=0, uu_stats=false) where {D}
-    Ng = N .+ 2
-    P = zeros(T, Ng) |> mem
-    U = zeros(T, Ng..., D) |> mem
-    UU = uu_stats ? zeros(T, Ng..., D, D) |> mem : nothing
-    AverageFlow(P,U,UU,T[t_init];I=MeanFlow,uu_stats=uu_stats)
+time(meanflow::MeanFlow) = meanflow.t[end]-meanflow.t[1]
+
+function reset!(meanflow::MeanFlow; t_init=0.0)
+    fill!(meanflow.P, 0); fill!(meanflow.U, 0)
+    !isnothing(meanflow.UU) && fill!(meanflow.UU, 0)
+    deleteat!(meanflow.t, collect(1:length(meanflow.t)))
+    push!(meanflow.t, t_init)
 end
 
-"""
-    SpanAverage{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
-Holds spanwise average of pressure, velocity, and squared-velocity tensor.
-"""
-function SpanAverage(flow::Flow{D,T}; t_init=time(flow), uu_stats=true) where {D,T}
-    mem = typeof(flow.u).name.wrapper
-    P = zeros(T, Base.front(size(flow.p))) |> mem
-    U = zeros(T, Base.front(size(flow.p))..., D-1) |> mem
-    UU = zeros(T, Base.front(size(flow.p))..., D-1, D-1) |> mem
-    AverageFlow(P,U,UU,T[t_init],I=SpanAverage,uu_stats=uu_stats)
-end
-
-time(avrgflow::AverageFlow) = avrgflow.t[end]-avrgflow.t[1]
-
-function reset!(avrgflow::AverageFlow; t_init=0.0)
-    fill!(avrgflow.P, 0); fill!(avrgflow.U, 0)
-    !isnothing(avrgflow.UU) && fill!(avrgflow.UU, 0)
-    deleteat!(avrgflow.t, collect(1:length(avrgflow.t)))
-    push!(avrgflow.t, t_init)
-end
-
-function update!(meanflow::AverageFlow{MeanFlow}, flow::Flow)
+function update!(meanflow::MeanFlow, flow::Flow)
     dt = time(flow) - meanflow.t[end]
     ε = dt / (dt + time(meanflow) + eps(eltype(flow.p)))
     length(meanflow.t) == 1 && (ε = 1) # if it's the first update, we just take the instantaneous flow field
@@ -222,58 +200,16 @@ function update!(meanflow::AverageFlow{MeanFlow}, flow::Flow)
     push!(meanflow.t, meanflow.t[end] + dt)
 end
 
-@inline center(i,I,u) = @inbounds (u[I,i]+u[I+δ(i,I),i])*0.5 # convert face to cell center
-@inbounds @inline squeeze(a::AbstractArray,I::CartesianIndex{2}) = (s=zero(eltype(a)); for i ∈ 1:size(a,3)
-    s+=a[I,i]
-end; s)
-@inbounds @inline squeeze(a::AbstractArray,I::CartesianIndex{3}) = (s=zero(eltype(a)); for i ∈ 1:size(a,3)
-    s+=a[I.I[1],I.I[2],i,I.I[3]]
-end; s)
-
-function update!(spanflow::AverageFlow{SpanAverage}, flow::Flow)
-    ϵ = inv(size(flow.p,3)) # sum over domain
-    # spanwise average of pressure
-    @loop spanflow.P[I] = ϵ*squeeze(flow.p,I) over I in CartesianIndices(spanflow.P)
-    # spanwise average of velocity
-    @loop spanflow.U[Ii] = ϵ*squeeze(flow.u,Ii) over Ii in CartesianIndices(spanflow.U)
-    # fluctuating spanwise average of velocity
-    if spanflow.uu_stats
-        for i ∈ 1:2
-            @loop flow.f[I,i] = center(i,I,flow.u) - center(i,Base.front(I),spanflow.U) over I in inside_u(flow.u)
-        end
-        for i ∈ 1:2, j ∈ 1:2 # τᵢⱼᴿ = < u' ⊗ u' > , needs to be at cell center as ∇⋅τ is then added to faces
-            @views sum!(spanflow.UU[:,:,i,j], ϵ.*flow.f[:,:,:,i].*flow.f[:,:,:,j])
-        end
-    end
-    push!(spanflow.t, time(flow))
-end
-
-uu!(τ,a::AverageFlow{MeanFlow}) = for i in 1:ndims(a.P), j in 1:ndims(a.P)
+uu!(τ,a::MeanFlow) = for i in 1:ndims(a.P), j in 1:ndims(a.P)
     @loop τ[I,i,j] = a.UU[I,i,j] - a.U[I,i] * a.U[I,j] over I in CartesianIndices(a.P)
 end
-function uu(a::AverageFlow{MeanFlow})
+function uu(a::MeanFlow)
     τ = zeros(eltype(a.UU), size(a.UU)...) |> typeof(a.UU).name.wrapper
     uu!(τ,a)
     return τ
 end
 
-function copy!(a::Flow, b::AverageFlow{MeanFlow})
+function copy!(a::Flow, b::MeanFlow)
     a.u .= b.U
     a.p .= b.P
-end
-
-"""
-    spread!(src::Flow{2}, dest::Flow{3}; ϵ=0)
-
-    Spread a 2D flow field `src` to a 3D flow field `dest`. The 2D flow field is spread to the 3rd dimension of the 3D flow field.
-    a random noise can be added to the spreaded data with ϵ, default is zero.
-"""
-function spread!(src::Flow{2}, dest::Flow{3}; ϵ=0)
-    @assert size(src.p)==Base.front(size(dest.p)) "a::Flow{2} must be the same size as b::Flow{3}[:,:,1,i] to spread"
-    spread!(src.p, dest.p; ϵ=0) # spread pressure
-    spread!(src.u, dest.u; ϵ=ϵ) # spread velocity
-end
-spread!(src::AbstractArray{T,2},dest::AbstractArray{T,3};ϵ=0) where T = @loop dest[I] = src[Base.front(I)] over I in CartesianIndices(dest)
-spread!(src::AbstractArray{T,3},dest::AbstractArray{T,4};ϵ=0) where T = for i in 1:2 # can only spread 2 components
-    @loop dest[I,i] = src[Base.front(I),i]+ϵ*rand() over I in CartesianIndices(size(dest)[1:end-1])
 end

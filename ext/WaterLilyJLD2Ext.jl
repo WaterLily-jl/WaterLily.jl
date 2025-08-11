@@ -21,7 +21,7 @@ save!(fname::String, sim::AbstractSimulation; dir="./") = save!(fname, sim.flow;
 
 Save the `meanflow::MeanFlow` time-averaged pressure, velocity, velocity-squared, and time arrays into a JLD2-formatted binary file (HDF5 compatible).
 """
-save!(fname, meanflow::AverageFlow; dir="./") = jldsave(
+save!(fname, meanflow::MeanFlow; dir="./") = jldsave(
     joinpath(dir, fname);
     P=Array(meanflow.P),
     U=Array(meanflow.U),
@@ -56,7 +56,7 @@ load!(sim::AbstractSimulation, ::Val{:jld2}; kwargs...) = load!(sim.flow; kwargs
 Load time-averaged pressure, velocity, velocity-square, and time arrays from a JLD2-formatted binary file.
 Keyword arguments considered are `fname="WaterLilyMean.jld2"` and `dir="./"`.
 """
-function load!(meanflow::AverageFlow{MeanFlow}; kwargs...)
+function load!(meanflow::MeanFlow; kwargs...)
     fname = get(Dict(kwargs), :fname, "WaterLilyMean.jld2")
     dir = get(Dict(kwargs), :dir, "./")
     obj = jldopen(joinpath(dir, fname))
