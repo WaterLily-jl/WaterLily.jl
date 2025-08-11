@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Define paths (static)
 INPUT_AIRFOIL_IMAGES = [
 "input_naca_002.png",
-"input_naca_015.png"
+"input_naca_015.png",
 "input_naca_030.png",
 ]
 
@@ -53,7 +53,7 @@ def run_sim(
 
     # Verify Julia script path
     if not JULIA_SCRIPT_PATH.is_file():
-        print(f"Error: Julia script not found at {JULIA_SCRIPT_PATH}")
+        print(f"\nError: Julia script not found at {JULIA_SCRIPT_PATH}")
         sys.exit(1)
 
     # Unpack output paths
@@ -125,16 +125,20 @@ def run_sim(
 
 def main() -> None:
     # Load simulation settings (same for all, so only need to load once)
-    with open(SCRIPT_DIR / "sim_inputs_batch_run.yaml", "r") as f:
+    with open(SCRIPT_DIR / "configs/sim_inputs_batch_run.yaml", "r") as f:
         batch_run_settings = yaml.safe_load(f)
 
+    aoa_range_list = batch_run_settings.get("aoa_range")
     force_run = batch_run_settings.get("force_run", False)
     sim_settings = batch_run_settings["simulation_settings"]
     image_recognition_settings = sim_settings["image_recognition"]
     simulation_settings = sim_settings["simulation"]
 
+    aoa_range = np.arange(aoa_range_list[0], aoa_range_list[1] + 1, aoa_range_list[2])
+
     for base_input_image_name in tqdm(INPUT_AIRFOIL_IMAGES, desc="Airfoil:"):
-        for sim_aoa in tqdm(range(-180, 181), desc="AoA", leave=False):
+        for sim_aoa in tqdm(aoa_range, desc="AoA", leave=False):
+            logger.info(f"\nRunning simulation for {base_input_image_name} at AoA={sim_aoa} deg")
 
             # define output file names per simulation (naca type + angle of attack)
             input_path = INPUT_FOLDER / base_input_image_name
@@ -151,7 +155,7 @@ def main() -> None:
                 particle_plot_output_path = OUTPUT_FOLDER / particle_plot_name
                 heatmap_plot_output_path = OUTPUT_FOLDER / heatmap_plot_name
                 if particle_plot_output_path.exists() and heatmap_plot_output_path.exists():
-                    logger.warning(f"Gif output for {naca_type}, aoa={sim_aoa} already exists. Skipping simulation.")
+                    logger.warning(f"\nGif output for {naca_type}, aoa={sim_aoa} already exists. Skipping simulation.")
                     continue
 
 
