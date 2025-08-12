@@ -1,6 +1,8 @@
 import sys
+import time
 from pathlib import Path
 import subprocess
+import shutil
 
 import numpy as np
 import yaml
@@ -43,7 +45,7 @@ def main() -> None:
     # Capture image with interactive click-and-drag selection box
     # The selection box maintains aspect ratio while you drag
     # - Click and drag to define the selection area
-    # - The box automatically maintains your target aspect ratio
+    # - The box automatically maintains target aspect ratio
     # capture_image(
     #     input_folder=INPUT_FOLDER,
     #     fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
@@ -74,6 +76,10 @@ def main() -> None:
     )
     domain_mask = pixel_body.get_mask()
 
+    plot_mask = image_recognition_debug_mode
+    if plot_mask:
+        pixel_body.plot_mask()
+
     # Estimate characteristic length and angle of attack using PCA
     l_c, aoa, thickness = characteristic_length_and_aoa_pca(
         mask=domain_mask,
@@ -81,24 +87,7 @@ def main() -> None:
         show_components=False,
     )
 
-    # Test rotating angle of attack
-    domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=45)
-
-    plot_mask = image_recognition_debug_mode
-    if plot_mask:
-        pixel_body.plot_mask()
-
-    # Estimate characteristic length and angle of attack using PCA (after rotation)
-    l_c, aoa, thickness = characteristic_length_and_aoa_pca(
-        mask=domain_mask,
-        plot_method=image_recognition_debug_mode,
-        show_components=False,
-        )
-
-    # Estimate airfoil type based on thickness and characteristic length
-    airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness/l_c)
-
-    use_precomputed_results = False
+    use_precomputed_results = True
     if not use_precomputed_results:
 
         run_julia_simulation_script(
@@ -112,7 +101,44 @@ def main() -> None:
         )
 
     else:
-        print("\nUsing precomputed simulation results...")
+
+        # If using precomputed results, try to find the best matching GIF plots and use those instead of running the
+        # simulation
+
+        # Estimate airfoil type based on thickness and characteristic length
+        airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness / l_c)
+
+        # Round angle of attack to nearest multiple of 3
+        rounded_aoa = round(aoa / 3) * 3
+
+        # Find gifs corresponding to the airfoil type and angle of attack
+        particle_plot_name = f"particleplot_{airfoil_type}_{rounded_aoa}.gif"
+        heatmap_plot_name = f"heatmap_plot_{airfoil_type}_{rounded_aoa}.gif"
+
+        # Check if the plots exists
+        output_path_particle_plot = OUTPUT_FOLDER / "batch_runs" / particle_plot_name
+        output_path_heatmap_plot = OUTPUT_FOLDER / "batch_runs" / heatmap_plot_name
+
+        if not output_path_particle_plot.exists():
+            raise FileNotFoundError(f"Could not find {output_path_particle_plot}")
+
+        if not output_path_heatmap_plot.exists():
+            raise FileNotFoundError(f"Could not find {output_path_heatmap_plot}")
+
+
+        # Overwrite the output paths to the found files (use symlink instead of copying)
+        symlink_particle = OUTPUT_FOLDER / "particleplot.gif"
+        symlink_heatmap = OUTPUT_FOLDER / "heatmap_plot.gif"
+        
+        # Remove existing symlinks/files if they exist
+        if symlink_particle.exists() or symlink_particle.is_symlink():
+            symlink_particle.unlink()
+        if symlink_heatmap.exists() or symlink_heatmap.is_symlink():
+            symlink_heatmap.unlink()
+            
+        # Create new symlinks pointing to the batch_runs files
+        symlink_particle.symlink_to(output_path_particle_plot)
+        symlink_heatmap.symlink_to(output_path_heatmap_plot)
 
     # # Create visualizations from the exported simulation data
     # print("\nCreating gifs from simulation data...")
@@ -171,19 +197,22 @@ def main() -> None:
             dims = get_gif_dimensions(gif_path)
             print(f"  {gif_path.name}: {dims[0]}x{dims[1]}")
 
+
+
     # # Monitor selection for display
     # print("\nAvailable monitors:")
     # from picture_sim_app.image_utils import list_monitors
     # monitors = list_monitors()
-    #
+
     # # Default to secondary monitor (index 1) if available, otherwise primary (index 0)
     # default_monitor = 1 if len(monitors) > 1 else 0
-    #
+
+
     # # Display the consistent-sized GIFs side by side on selected monitor
     # print(f"\nDisplaying GIFs on monitor {default_monitor}...")
     # display_two_gifs_side_by_side(
-    #     gif_path_left=output_path,
-    #     gif_path_right=output_path_gif_right,
+    #     gif_path_left=gif_paths[0],
+    #     gif_path_right=gif_paths[1],
     #     monitor_index=default_monitor
     # )
 
