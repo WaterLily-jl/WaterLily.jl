@@ -8,6 +8,7 @@ def characteristic_length_and_aoa_pca(
         show_components=True,
         flow_xy=(1., 0.),
         debug_mode=False,
+        object_is_airfoil=False,
 ) -> tuple[float, float, float]:
     """
     Estimate the characteristic length, angle of attack, and maximum thickness of a PixelBody using Principal Component Analysis.
@@ -22,7 +23,9 @@ def characteristic_length_and_aoa_pca(
         show_components (bool): Whether to show legend and PCA components in plot
         flow_xy (tuple): Tuple of (x, y) coordinates representing the flow direction. If not provided, will assume
                         flow direciton is in the direction of x, that is, (1, 0).
-        debug_mode (bool): If True, prints debug information to console.
+        debug_mode (bool): If True, prints debug information to console
+        object_is_airfoil (bool): If True, uses airfoil-specific edge detection based on thickness position.
+                                 If False, uses general bluntness-based method.
 
     Returns:
         tuple: (characteristic_length, angle_degrees, max_thickness)
@@ -92,25 +95,38 @@ def characteristic_length_and_aoa_pca(
                 max_thickness = thickness
                 max_thickness_location = (bin_edges[i] + bin_edges[i + 1]) / 2
 
-    # Determine airfoil orientation using thickness position method
-    # For airfoils, max thickness is typically closer to leading edge
+    # Determine object orientation using different methods based on object type (either airfoil or generic object).
     min_proj = np.min(projections)
     max_proj = np.max(projections)
     
-    # Distance from max thickness to each end
-    dist_to_min = abs(max_thickness_location - min_proj)
-    dist_to_max = abs(max_thickness_location - max_proj)
-    
-    # The end closer to max thickness is likely the leading edge
-    if dist_to_min < dist_to_max:
-        # Min projection end is leading edge
-        leading_proj = min_proj
-        trailing_proj = max_proj
+    if object_is_airfoil:
+        # Use thickness position method for airfoils
+        # Distance from max thickness to each end
+        dist_to_min = abs(max_thickness_location - min_proj)
+        dist_to_max = abs(max_thickness_location - max_proj)
+        
+        # The end closer to max thickness is likely the leading edge
+        if dist_to_min < dist_to_max:
+            leading_proj = min_proj
+            trailing_proj = max_proj
+        else:
+            leading_proj = max_proj
+            trailing_proj = min_proj
+            
     else:
-        # Max projection end is leading edge
-        leading_proj = max_proj
-        trailing_proj = min_proj
-    
+        # For generic objects, assume leading edge is always in the direction of flow
+        # Project flow direction onto principal axis
+        flow_vec = np.array(flow_xy)
+        flow_projection = np.dot(flow_vec, p1)
+        
+        # If flow projects positively, max projection is leading edge
+        if flow_projection > 0:
+            leading_proj = max_proj
+            trailing_proj = min_proj
+        else:
+            leading_proj = min_proj
+            trailing_proj = max_proj
+
     # Calculate actual positions of leading and trailing edges
     p_center = mu.flatten()
     p_leading = p_center + leading_proj * p1    # Leading edge position
@@ -128,10 +144,7 @@ def characteristic_length_and_aoa_pca(
     )
 
     if debug_mode:
-        print("Debug info:")
-        print(f"  Distance from max thickness to min proj: {dist_to_min:.3f}")
-        print(f"  Distance from max thickness to max proj: {dist_to_max:.3f}")
-        print(f"  Leading edge detected at: {'min' if dist_to_min < dist_to_max else 'max'} projection end")
+        print(f"  Method used: {'Airfoil thickness-based' if object_is_airfoil else 'General bluntness-based'}")
         print(f"  Trailing edge coords: ({x_trailing:.1f}, {y_trailing:.1f})")
         print(f"  Leading edge coords: ({x_leading:.1f}, {y_leading:.1f})")
         print(f"  Maximum thickness: {max_thickness:.2f}")

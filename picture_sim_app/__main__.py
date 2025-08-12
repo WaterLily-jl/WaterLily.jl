@@ -80,15 +80,13 @@ def main() -> None:
     if plot_mask:
         pixel_body.plot_mask()
 
-    # Estimate characteristic length and angle of attack using PCA
-    l_c, aoa, thickness = characteristic_length_and_aoa_pca(
-        mask=domain_mask,
-        plot_method=image_recognition_debug_mode,
-        show_components=False,
-    )
-
-    use_precomputed_results = True
-    if not use_precomputed_results:
+    if not simulation_settings["use_precomputed_results"]:
+        # Estimate characteristic length and angle of attack using PCA
+        l_c, aoa, thickness = characteristic_length_and_aoa_pca(
+            mask=domain_mask,
+            plot_method=image_recognition_debug_mode,
+            show_components=False,
+        )
 
         run_julia_simulation_script(
             domain_mask=domain_mask,
@@ -101,23 +99,16 @@ def main() -> None:
         )
 
     else:
-
-        # TODO: START TEMP TEST OF DIFFERENT AOAs
-
-        # Test rotating angle of attack
-        domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=80)
-
-        # Estimate characteristic length and angle of attack using PCA (after rotation)
-        l_c, aoa, thickness = characteristic_length_and_aoa_pca(
-            mask=domain_mask,
-            plot_method=image_recognition_debug_mode,
-            show_components=False,
-        )
-
-        #TODO: END TEMP TEST
-
         # If using precomputed results, try to find the best matching GIF plots and use those instead of running the
         # simulation
+
+        # Estimate characteristic length and angle of attack using PCA and airfoil type detection
+        l_c, aoa, thickness = characteristic_length_and_aoa_pca(
+            mask=domain_mask,
+            plot_method=False,
+            show_components=image_recognition_debug_mode,
+            object_is_airfoil=True,
+        )
 
         # Estimate airfoil type based on thickness and characteristic length
         airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness / l_c)
@@ -138,7 +129,6 @@ def main() -> None:
 
         if not output_path_heatmap_plot.exists():
             raise FileNotFoundError(f"Could not find {output_path_heatmap_plot}")
-
 
         # Overwrite the output paths to the found files (use symlink instead of copying)
         symlink_particle = OUTPUT_FOLDER / "particleplot.gif"
