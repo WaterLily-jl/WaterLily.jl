@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 
 import cv2
@@ -6,9 +7,26 @@ import numpy as np
 from PIL import Image, ImageSequence
 import pygame
 
+def load_cached_bbox(cache_file: Path):
+    """Load cached bounding box if it exists."""
+    if cache_file.exists():
+        try:
+            with open(cache_file, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return None
+    return None
+
+def save_bbox_cache(cache_file: Path, bbox_data: dict):
+    """Save bounding box to cache file."""
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(cache_file, 'w') as f:
+        json.dump(bbox_data, f, indent=2)
+
 def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed_aspect_ratio: tuple = None, fixed_size: tuple = None, selection_box_mode: bool = True, saved_selection: tuple = None) -> tuple:
     """
     Capture image from webcam with optional fixed aspect ratio, size, or interactive selection box.
+    Now includes automatic caching of bounding box selections.
     
     Args:
         input_folder: Folder to save the captured image
@@ -21,6 +39,29 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
     Returns:
         tuple: (x, y, w, h) coordinates of the selected region, or None if cancelled
     """
+    # Setup cache file path
+    cache_dir = Path(input_folder).parent / "cache"
+    cache_file = cache_dir / "bbox_cache.json"
+    
+    # Try to load cached bounding box if no saved_selection provided
+    if saved_selection is None and selection_box_mode:
+        cached_data = load_cached_bbox(cache_file)
+        if cached_data:
+            saved_selection = tuple(cached_data.get("bbox", (0, 0, 0, 0)))
+            print(f"Found cached bounding box: {saved_selection}")
+            print("Press ENTER to use cached selection, or 'r' to reselect:")
+            
+            # Simple input check - if user wants to reselect
+            try:
+                user_input = input().strip().lower()
+                if user_input == 'r':
+                    saved_selection = None
+                    print("Will create new selection...")
+                else:
+                    print("Using cached selection...")
+            except KeyboardInterrupt:
+                print("Using cached selection...")
+    
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         raise RuntimeError("Webcam not found or cannot be opened.")
@@ -162,6 +203,16 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
                     path = input_folder / image_name
                     cv2.imwrite(str(path), selected_region)
                     print(f"Image saved to {path}")
+                    
+                    # Save bounding box to cache
+                    bbox_data = {
+                        'bbox': (box_x, box_y, box_w, box_h),
+                        'aspect_ratio': fixed_aspect_ratio,
+                        'image_name': image_name
+                    }
+                    save_bbox_cache(cache_file, bbox_data)
+                    print(f"Bounding box cached for future use")
+                    
                     break
                 else:
                     print("Please select a region first by clicking and dragging.")

@@ -46,12 +46,12 @@ def main() -> None:
     # The selection box maintains aspect ratio while you drag
     # - Click and drag to define the selection area
     # - The box automatically maintains target aspect ratio
-    # capture_image(
-    #     input_folder=INPUT_FOLDER,
-    #     fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
-    #     selection_box_mode=True,    # Click-and-drag selection box
-    #     # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
-    # )
+    capture_image(
+        input_folder=INPUT_FOLDER,
+        fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
+        selection_box_mode=True,    # Click-and-drag selection box
+        # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
+    )
 
     # File I/O paths
     io_settings = settings["io_settings"]
@@ -101,6 +101,20 @@ def main() -> None:
         )
 
     else:
+
+        # TODO: START TEMP TEST OF DIFFERENT AOAs
+
+        # Test rotating angle of attack
+        domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=80)
+
+        # Estimate characteristic length and angle of attack using PCA (after rotation)
+        l_c, aoa, thickness = characteristic_length_and_aoa_pca(
+            mask=domain_mask,
+            plot_method=image_recognition_debug_mode,
+            show_components=False,
+        )
+
+        #TODO: END TEMP TEST
 
         # If using precomputed results, try to find the best matching GIF plots and use those instead of running the
         # simulation
