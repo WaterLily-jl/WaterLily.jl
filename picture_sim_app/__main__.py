@@ -170,7 +170,7 @@ def main() -> None:
     # ]
 
     # Option 2: Resize without cropping but with consistent dimensions
-    target_size = (800, 600)  # Set your desired consistent size
+    target_size = (800, 600)
 
     print(f"\nProcessing GIFs to consistent size: {target_size}")
 

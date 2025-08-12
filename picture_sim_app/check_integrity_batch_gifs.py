@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import numpy as np
-from tqdm.asyncio import tqdm
 
 from picture_sim_app.image_utils import get_gif_dimensions
 
