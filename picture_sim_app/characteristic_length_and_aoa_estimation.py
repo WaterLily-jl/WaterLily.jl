@@ -65,58 +65,7 @@ def characteristic_length_and_aoa_pca(
     
     characteristic_length = half_span * 2
     
-    # Determine airfoil orientation by analyzing cross-sectional width at ends
-    # This helps distinguish leading edge (typically blunter) from trailing edge (sharper)
-    min_proj = np.min(projections)
-    max_proj = np.max(projections)
-    
-    # Get points near the extremes of the principal axis
-    tolerance = 0.1 * (max_proj - min_proj)  # 10% tolerance
-    
-    # Points near minimum projection (one end)
-    near_min = np.abs(projections - min_proj) < tolerance
-    # Points near maximum projection (other end)
-    near_max = np.abs(projections - max_proj) < tolerance
-    
-    # Calculate cross-sectional spread at each end (perpendicular to principal axis)
-    p2 = U[:, 1]  # Second principal component (perpendicular direction)
-    proj_perp = np.dot(p2, X)
-    
-    spread_at_min = np.std(proj_perp[near_min]) if np.sum(near_min) > 1 else 0
-    spread_at_max = np.std(proj_perp[near_max]) if np.sum(near_max) > 1 else 0
-    
-    # Leading edge typically has greater cross-sectional spread (blunter)
-    # If max end has greater spread, it's likely the leading edge
-    if spread_at_max > spread_at_min:
-        # Max projection end is leading edge, min projection end is trailing edge
-        # Vector points from trailing to leading edge
-        chord_vector = p1
-        leading_proj = max_proj
-        trailing_proj = min_proj
-    else:
-        # Min projection end is leading edge, max projection end is trailing edge
-        # Flip vector to point from trailing to leading edge
-        chord_vector = -p1
-        leading_proj = min_proj
-        trailing_proj = max_proj
-    
-    # Calculate actual positions of leading and trailing edges
-    p_center = mu.flatten()
-    p_trailing = p_center + trailing_proj * chord_vector  # Trailing edge position
-    p_leading = p_center + leading_proj * chord_vector    # Leading edge position
-    
-    # Store coordinates for easy access
-    x_trailing, y_trailing = p_trailing[0], p_trailing[1]
-    x_leading, y_leading = p_leading[0], p_leading[1]
-
-    # Calculate Angle of attack in degrees
-    angle_degrees = calculate_angle_of_attack(
-        leading_edge_xy=(x_leading, y_leading),
-        trailing_edge_xy=(x_trailing, y_trailing),
-        flow_xy=flow_xy,
-    )
-    
-    # Calculate maximum thickness using cross-sectional analysis
+    # Calculate maximum thickness using cross-sectional analysis FIRST
     # Method: Sweep along the principal axis and find max thickness perpendicular to it
     p2 = U[:, 1]  # Second principal component (perpendicular to principal axis)
     proj_perp_all = np.dot(p2, X)  # Project all points onto perpendicular axis
@@ -143,11 +92,46 @@ def characteristic_length_and_aoa_pca(
                 max_thickness = thickness
                 max_thickness_location = (bin_edges[i] + bin_edges[i + 1]) / 2
 
+    # Determine airfoil orientation using thickness position method
+    # For airfoils, max thickness is typically closer to leading edge
+    min_proj = np.min(projections)
+    max_proj = np.max(projections)
+    
+    # Distance from max thickness to each end
+    dist_to_min = abs(max_thickness_location - min_proj)
+    dist_to_max = abs(max_thickness_location - max_proj)
+    
+    # The end closer to max thickness is likely the leading edge
+    if dist_to_min < dist_to_max:
+        # Min projection end is leading edge
+        leading_proj = min_proj
+        trailing_proj = max_proj
+    else:
+        # Max projection end is leading edge
+        leading_proj = max_proj
+        trailing_proj = min_proj
+    
+    # Calculate actual positions of leading and trailing edges
+    p_center = mu.flatten()
+    p_leading = p_center + leading_proj * p1    # Leading edge position
+    p_trailing = p_center + trailing_proj * p1  # Trailing edge position
+    
+    # Store coordinates for easy access
+    x_trailing, y_trailing = p_trailing[0], p_trailing[1]
+    x_leading, y_leading = p_leading[0], p_leading[1]
+
+    # Calculate Angle of attack in degrees
+    angle_degrees = calculate_angle_of_attack(
+        leading_edge_xy=(x_leading, y_leading),
+        trailing_edge_xy=(x_trailing, y_trailing),
+        flow_xy=flow_xy,
+    )
+
     if debug_mode:
         print("Debug info:")
-        print(f"  Spread at min end: {spread_at_min:.3f}")
-        print(f"  Spread at max end: {spread_at_max:.3f}")
-        print(f"  Leading edge detected at: {'max' if spread_at_max > spread_at_min else 'min'} projection end")
+        print(f"  Distance from max thickness to min proj: {dist_to_min:.3f}")
+        print(f"  Distance from max thickness to max proj: {dist_to_max:.3f}")
+        print(f"  Leading edge detected at: {'min' if dist_to_min < dist_to_max else 'max'} projection end")
         print(f"  Trailing edge coords: ({x_trailing:.1f}, {y_trailing:.1f})")
         print(f"  Leading edge coords: ({x_leading:.1f}, {y_leading:.1f})")
         print(f"  Maximum thickness: {max_thickness:.2f}")
