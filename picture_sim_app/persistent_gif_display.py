@@ -67,10 +67,11 @@ class GifFileHandler(FileSystemEventHandler):
 class PersistentGifDisplay:
     """Main display class for persistent GIF viewing."""
     
-    def __init__(self, gif_path_left: Path, gif_path_right: Path, monitor_index: int = 1):
+    def __init__(self, gif_path_left: Path, gif_path_right: Path = None, monitor_index: int = 1):
         self.gif_path_left = Path(gif_path_left)
-        self.gif_path_right = Path(gif_path_right)
+        self.gif_path_right = Path(gif_path_right) if gif_path_right else None
         self.monitor_index = monitor_index
+        self.single_gif_mode = gif_path_right is None
         
         # Display state
         self.screen = None
@@ -125,7 +126,11 @@ class PersistentGifDisplay:
         """Setup file system monitoring for automatic reloads."""
         # Monitor the directories containing the GIF files
         directories_to_watch = set()
-        for gif_path in [self.gif_path_left, self.gif_path_right]:
+        gif_paths = [self.gif_path_left]
+        if self.gif_path_right:
+            gif_paths.append(self.gif_path_right)
+            
+        for gif_path in gif_paths:
             if gif_path.exists():
                 directories_to_watch.add(gif_path.parent)
         
@@ -133,7 +138,7 @@ class PersistentGifDisplay:
             self.observer = Observer()
             handler = GifFileHandler(
                 callback=self.on_file_changed,
-                gif_paths=[self.gif_path_left, self.gif_path_right],
+                gif_paths=gif_paths,
                 debounce_seconds=1.0
             )
             
@@ -188,37 +193,54 @@ class PersistentGifDisplay:
             return [placeholder], [1000], 100
     
     def reload_gifs(self):
-        """Reload both GIF files and rescale for current display."""
+        """Reload GIF files and rescale for current display."""
         print("Reloading GIFs...")
         
-        # Load frames at full screen height first
-        frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, self.screen_height)
-        frames_right, durations_right, width_right = self.load_gif_frames(self.gif_path_right, self.screen_height)
-        
-        # Check if combined width exceeds screen width
-        total_width = width_left + width_right
-        if total_width > self.screen_width:
-            # Scale down both to fit
-            scale = self.screen_width / total_width
-            new_height = int(self.screen_height * scale)
+        if self.single_gif_mode:
+            # Single GIF - center it on screen
+            frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, self.screen_height)
             
-            frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, new_height)
-            frames_right, durations_right, width_right = self.load_gif_frames(self.gif_path_right, new_height)
-            
-            self.y_offset = (self.screen_height - new_height) // 2
-        else:
+            # Center horizontally
+            self.x_offset = (self.screen_width - width_left) // 2
             self.y_offset = 0
+            
+            self.frames_left = frames_left
+            self.frames_right = []
+            self.durations_left = durations_left
+            self.durations_right = []
+            self.width_left = width_left
+            
+        else:
+            # Two GIFs side by side
+            frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, self.screen_height)
+            frames_right, durations_right, width_right = self.load_gif_frames(self.gif_path_right, self.screen_height)
+            
+            # Check if combined width exceeds screen width
+            total_width = width_left + width_right
+            if total_width > self.screen_width:
+                # Scale down both to fit
+                scale = self.screen_width / total_width
+                new_height = int(self.screen_height * scale)
+                
+                frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, new_height)
+                frames_right, durations_right, width_right = self.load_gif_frames(self.gif_path_right, new_height)
+                
+                self.y_offset = (self.screen_height - new_height) // 2
+            else:
+                self.y_offset = 0
+            
+            self.x_offset = 0
+            self.frames_left = frames_left
+            self.frames_right = frames_right
+            self.durations_left = durations_left
+            self.durations_right = durations_right
+            self.width_left = width_left
         
-        # Update instance variables
-        self.frames_left = frames_left
-        self.frames_right = frames_right
-        self.durations_left = durations_left
-        self.durations_right = durations_right
-        self.width_left = width_left
         self.frame_indices = [0, 0]
         self.last_frame_times = [pygame.time.get_ticks(), pygame.time.get_ticks()]
         
-        print(f"Loaded: {len(frames_left)} frames (left), {len(frames_right)} frames (right)")
+        gif_count = 1 if self.single_gif_mode else 2
+        print(f"Loaded: {len(self.frames_left)} frames ({'single GIF' if self.single_gif_mode else f'{len(self.frames_right)} frames (right)'})")
         
     def switch_monitor(self):
         """Switch to the next available monitor."""
@@ -240,7 +262,7 @@ class PersistentGifDisplay:
     
     def update_animation(self):
         """Update animation frame indices based on timing."""
-        if self.animation_paused or not self.frames_left or not self.frames_right:
+        if self.animation_paused or not self.frames_left:
             return
             
         current_time = pygame.time.get_ticks()
@@ -250,21 +272,23 @@ class PersistentGifDisplay:
             self.frame_indices[0] = (self.frame_indices[0] + 1) % len(self.frames_left)
             self.last_frame_times[0] = current_time
             
-        # Update right GIF
-        if current_time - self.last_frame_times[1] >= self.durations_right[self.frame_indices[1]]:
-            self.frame_indices[1] = (self.frame_indices[1] + 1) % len(self.frames_right)
-            self.last_frame_times[1] = current_time
+        # Update right GIF (only if not in single mode)
+        if not self.single_gif_mode and self.frames_right:
+            if current_time - self.last_frame_times[1] >= self.durations_right[self.frame_indices[1]]:
+                self.frame_indices[1] = (self.frame_indices[1] + 1) % len(self.frames_right)
+                self.last_frame_times[1] = current_time
     
     def draw(self):
-        """Draw the current frame of both GIFs."""
+        """Draw the current frame of GIF(s)."""
         self.screen.fill((0, 0, 0))  # Black background
         
-        if self.frames_left and self.frames_right:
-            # Draw left GIF
-            self.screen.blit(self.frames_left[self.frame_indices[0]], (0, self.y_offset))
+        if self.frames_left:
+            # Draw left GIF (or single GIF)
+            self.screen.blit(self.frames_left[self.frame_indices[0]], (self.x_offset, self.y_offset))
             
-            # Draw right GIF
-            self.screen.blit(self.frames_right[self.frame_indices[1]], (self.width_left, self.y_offset))
+            # Draw right GIF only if not in single mode
+            if not self.single_gif_mode and self.frames_right:
+                self.screen.blit(self.frames_right[self.frame_indices[1]], (self.width_left, self.y_offset))
         
         # Draw status indicators
         self.draw_status()
@@ -407,16 +431,14 @@ def main():
     if gif_display == "both":
         gif_left = output_folder / "particleplot.gif"
         gif_right = output_folder / "heatmap_plot.gif"
-
     elif gif_display == "particle_plot":
         gif_left = output_folder / "particleplot.gif"
         gif_right = None
     elif gif_display == "heatmap":
         gif_left = output_folder / "heatmap_plot.gif"
         gif_right = None
-
     else:
-        raise ValueError("gif_display must be either 'both',  'particle_plot', or 'heatmap'")
+        raise ValueError("gif_display must be either 'both', 'particle_plot', or 'heatmap'")
 
     # Default to secondary monitor if available
     pygame.init()
@@ -425,8 +447,10 @@ def main():
     pygame.quit()
     
     print("Starting persistent GIF display...")
+    print(f"Mode: {'Single GIF' if gif_right is None else 'Dual GIF'}")
     print(f"Left GIF: {gif_left}")
-    print(f"Right GIF: {gif_right}")
+    if gif_right:
+        print(f"Right GIF: {gif_right}")
     print(f"Target monitor: {default_monitor}")
     
     # Create and run display

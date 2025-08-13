@@ -49,4 +49,4 @@ simulation_settings:
   # - "sim_with_particle_and_heatmap_gif" (creates both the particle and heatmap gif)
   sim_type: "sim_with_particle_and_heatmap_gif"
   use_precomputed_results: true
-  gif_display: "particle_plot" # Options: "both", "particle_plot", "heatmap"
+  gif_display: "both" # Options: "both", "particle_plot", "heatmap"
