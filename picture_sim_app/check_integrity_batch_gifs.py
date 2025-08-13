@@ -31,8 +31,8 @@ def create_list_of_gif_files() -> list:
             particle_plot_name = f"particleplot_{file_postfix}.gif"
             heatmap_plot_name = f"heatmap_plot_{file_postfix}.gif"
 
-            output_path_particle_plot = OUTPUT_FOLDER / "batch_runs" / particle_plot_name
-            output_path_heatmap_plot = OUTPUT_FOLDER / "batch_runs" / heatmap_plot_name
+            output_path_particle_plot = OUTPUT_FOLDER / particle_plot_name
+            output_path_heatmap_plot = OUTPUT_FOLDER / heatmap_plot_name
 
             list_gif_files.append(output_path_particle_plot)
             list_gif_files.append(output_path_heatmap_plot)
@@ -59,7 +59,7 @@ def main():
 
         try:
             dimensions = get_gif_dimensions(gif_path)
-            print(f"{gif_path.name}: {dimensions[0]}x{dimensions[1]}")
+            # print(f"{gif_path.name}: {dimensions[0]}x{dimensions[1]}")
         except Exception as e:
             print(f"{gif_path.name}: ERROR - {e}")
             problematic_files.append(gif_path)
