@@ -3,12 +3,12 @@
 
 # File I/O settings
 io_settings:
-  # input_image_name: "input.png"
-  # input_image_name: "input_red_hierarchy.png"
-  # input_image_name: "input_red.png"
-  # input_image_name: "input_naca_002.png"
-  input_image_name: "input_naca_015.png"
-  # input_image_name: "input_naca_030.png"
+#  input_image_name: "input.png"
+#  input_image_name: "input_red_hierarchy.png"
+#  input_image_name: "input_red.png"
+  input_image_name: "input_naca_002.png"
+#  input_image_name: "input_naca_015.png"
+#  input_image_name: "input_naca_030.png"
 
   output_animation_name: "output.gif"
   particle_plot_name: "particleplot.gif"
@@ -48,3 +48,5 @@ simulation_settings:
   # - "sim_only" (runs the sim without any plotting)
   # - "sim_with_particle_and_heatmap_gif" (creates both the particle and heatmap gif)
   sim_type: "sim_with_particle_and_heatmap_gif"
+  use_precomputed_results: true
+  gif_display: "particle_plot" # Options: "both", "particle_plot", "heatmap"

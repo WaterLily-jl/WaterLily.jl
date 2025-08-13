@@ -27,6 +27,8 @@ Features:
 import time
 import threading
 from pathlib import Path
+
+import yaml
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import pygame
@@ -395,12 +397,28 @@ def main():
     # Define paths relative to script location
     script_dir = Path(__file__).resolve().parent
     output_folder = script_dir / "output"
-    
-    gif_left = output_folder / "particleplot.gif"
-    gif_right = output_folder / "heatmap_plot.gif"
-    
+
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
+        settings = yaml.safe_load(f)
+
+    gif_display = settings["simulation_settings"]["gif_display"]
+
+    if gif_display == "both":
+        gif_left = output_folder / "particleplot.gif"
+        gif_right = output_folder / "heatmap_plot.gif"
+
+    elif gif_display == "particle_plot":
+        gif_left = output_folder / "particleplot.gif"
+        gif_right = None
+    elif gif_display == "heatmap":
+        gif_left = output_folder / "heatmap_plot.gif"
+        gif_right = None
+
+    else:
+        raise ValueError("gif_display must be either 'both',  'particle_plot', or 'heatmap'")
+
     # Default to secondary monitor if available
-    import pygame
     pygame.init()
     num_displays = pygame.display.get_num_displays()
     default_monitor = 1 if num_displays > 1 else 0
