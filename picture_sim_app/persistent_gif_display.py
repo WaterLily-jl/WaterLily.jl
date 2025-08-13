@@ -41,7 +41,8 @@ class GifFileHandler(FileSystemEventHandler):
     
     def __init__(self, callback, gif_paths: List[Path], debounce_seconds: float = 1.0):
         self.callback = callback
-        self.gif_paths = [Path(p) for p in gif_paths]
+        # Filter out None paths and convert to Path objects
+        self.gif_paths = [Path(p) for p in gif_paths if p is not None]
         self.gif_names = {p.name for p in self.gif_paths}
         self.debounce_seconds = debounce_seconds
         self.last_modified = {}
@@ -129,8 +130,11 @@ class PersistentGifDisplay:
         gif_paths = [self.gif_path_left]
         if self.gif_path_right:
             gif_paths.append(self.gif_path_right)
-            
-        for gif_path in gif_paths:
+        
+        # Filter out None paths and only monitor existing files
+        valid_gif_paths = [p for p in gif_paths if p is not None]
+        
+        for gif_path in valid_gif_paths:
             if gif_path.exists():
                 directories_to_watch.add(gif_path.parent)
         
@@ -138,8 +142,8 @@ class PersistentGifDisplay:
             self.observer = Observer()
             handler = GifFileHandler(
                 callback=self.on_file_changed,
-                gif_paths=gif_paths,
-                debounce_seconds=1.0
+                gif_paths=valid_gif_paths,  # Pass only valid paths
+                debounce_seconds=0.1  # Reduce debounce time for faster response
             )
             
             for directory in directories_to_watch:
@@ -147,6 +151,8 @@ class PersistentGifDisplay:
                 print(f"Monitoring directory: {directory}")
             
             self.observer.start()
+        else:
+            print("Warning: No valid GIF files found for monitoring")
             
     def on_file_changed(self, file_path: Path):
         """Callback for when a monitored file changes."""
