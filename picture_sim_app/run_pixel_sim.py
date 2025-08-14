@@ -146,7 +146,7 @@ def main() -> None:
     
     # Idle loop waiting for spacebar
     while True:
-        user_input = input("\nPress ENTER to run again, or 'q' to quit: ").strip().lower()
+        user_input = input("\nPress ENTER to run again, 'r' to reselect box, or 'q' to quit: ").strip().lower()
         if user_input == 'q':
             print("Exiting...")
             break
@@ -156,8 +156,20 @@ def main() -> None:
             with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
                 settings = yaml.safe_load(f)
             run_simulation(settings)
+        elif user_input == 'r':
+            print("Reselecting bounding box...")
+            capture_image(
+                input_folder=INPUT_FOLDER,
+                fixed_aspect_ratio=(16, 9),
+                selection_box_mode=True,
+                use_cached_box=False,  # Force interactive selection
+            )
+            # Reload settings and run simulation with new box
+            with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
+                settings = yaml.safe_load(f)
+            run_simulation(settings)
         else:
-            print("Invalid input. Press ENTER or 'q'.")
+            print("Invalid input. Press ENTER, 'r', or 'q'.")
 
 
 if __name__ == "__main__":
