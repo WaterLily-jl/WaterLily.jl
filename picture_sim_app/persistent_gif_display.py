@@ -5,6 +5,8 @@ import threading
 from pathlib import Path
 from typing import List, Tuple, Optional
 
+import yaml  # <-- added
+
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
@@ -17,6 +19,7 @@ from PIL import Image, ImageSequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "output"
+CONFIG_PATH = SCRIPT_DIR / "configs" / "settings.yaml"  # <-- added
 GIF_LEFT = OUTPUT_DIR / "particleplot.gif"
 GIF_RIGHT = OUTPUT_DIR / "heatmap_plot.gif"
 
@@ -113,22 +116,33 @@ if HAVE_WATCHDOG:
 # -------------------- Display Manager -------------------- #
 
 class DualGifDisplay:
-    def __init__(self, monitor_index: int = 1):
+    def __init__(self, monitor_index: int = 1, start_mode: str = "both"):
         pygame.init()
         self.monitor_index = monitor_index
         self.fullscreen = False
         self._init_window()
-        # state
+        # mode state
+        self.mode = start_mode  # "both" | "particle_plot" | "heatmap"
+        # gif containers
         self.left: Optional[LoadedGif] = None
         self.right: Optional[LoadedGif] = None
         self.single_mode = False
+        # animation state
         self.idx_left = 0
         self.idx_right = 0
         now = pygame.time.get_ticks()
         self.next_left = now
         self.next_right = now
+        # reload flag
         self.reload_lock = threading.Lock()
         self.reload_requested = False
+        # watcher handles
+        self.observer = None
+        self.poller = None
+        # placeholders
+        self.placeholder = self._make_placeholder_surface()
+        # initial load
+        self.load_and_pack()
 
     def _init_window(self):
         num_displays = pygame.display.get_num_displays()
@@ -166,48 +180,110 @@ class DualGifDisplay:
             self.reload_requested = False
         return flag
 
+    def _make_placeholder_surface(self):
+        surf = pygame.Surface((400, 300))
+        surf.fill((0, 0, 0))
+        font = pygame.font.Font(None, 32)
+        txt = font.render("GIF missing", True, (180, 0, 0))
+        r = txt.get_rect(center=surf.get_rect().center)
+        surf.blit(txt, r)
+        return surf
+
+    def set_mode(self, mode: str):
+        if mode not in ("both", "particle_plot", "heatmap"):
+            print(f"Warning: invalid mode '{mode}' ignored.")
+            return
+        if mode == self.mode:
+            return
+        print(f"Switching mode to {mode}")
+        self.mode = mode
+        self._stop_watchers()
+        self.load_and_pack()
+        self._start_watchers()
+
+    def _active_paths(self):
+        if self.mode == "both":
+            return [GIF_LEFT, GIF_RIGHT]
+        if self.mode == "particle_plot":
+            return [GIF_LEFT]
+        return [GIF_RIGHT]
+
+    def _start_watchers(self):
+        paths = self._active_paths()
+        names = [p.name for p in paths]
+        def changed(_):
+            self.request_reload()
+        if HAVE_WATCHDOG:
+            from watchdog.observers import Observer
+            from watchdog.events import FileSystemEventHandler
+            class Handler(FileSystemEventHandler):
+                def on_any_event(self_inner, event):
+                    try:
+                        nm = Path(event.src_path).name
+                        if nm in names:
+                            changed(nm)
+                    except Exception:
+                        pass
+            self.observer = Observer()
+            self.observer.schedule(Handler(), str(OUTPUT_DIR), recursive=False)
+            self.observer.start()
+        else:
+            self.poller = ChangeWatcher(paths, lambda _: changed(None))
+
+    def _stop_watchers(self):
+        if self.observer:
+            self.observer.stop()
+            self.observer.join(timeout=1)
+            self.observer = None
+        if self.poller:
+            self.poller.stop()
+            self.poller = None
+
+    def shutdown(self):
+        self._stop_watchers()
+
     def load_and_pack(self):
-        base_left = load_gif(GIF_LEFT)
-        base_right = load_gif(GIF_RIGHT)
-        if base_left and base_right:
-            # Try full height first
+        """Load according to current mode."""
+        base_left = None
+        base_right = None
+        if self.mode == "both":
+            base_left = load_gif(GIF_LEFT)
+            base_right = load_gif(GIF_RIGHT)
+        elif self.mode == "particle_plot":
+            base_left = load_gif(GIF_LEFT)
+        elif self.mode == "heatmap":
+            base_left = load_gif(GIF_RIGHT)  # treat selected gif as 'left' for centering
+
+        if self.mode == "both" and base_left and base_right:
             target_h = self.screen_h
-            left_scaled = scale_gif(base_left, target_h)
-            right_scaled = scale_gif(base_right, target_h)
-            total_w = left_scaled.width + right_scaled.width
+            l_scaled = scale_gif(base_left, target_h)
+            r_scaled = scale_gif(base_right, target_h)
+            total_w = l_scaled.width + r_scaled.width
             if total_w > self.screen_w:
                 scale_factor = self.screen_w / total_w
                 target_h = max(1, int(self.screen_h * scale_factor))
-                left_scaled = scale_gif(base_left, target_h)
-                right_scaled = scale_gif(base_right, target_h)
-            self.left = left_scaled
-            self.right = right_scaled
+                l_scaled = scale_gif(base_left, target_h)
+                r_scaled = scale_gif(base_right, target_h)
+            self.left = l_scaled
+            self.right = r_scaled
             self.single_mode = False
-        elif base_left or base_right:
-            # Single mode
-            chosen = base_left if base_left else base_right
-            scaled = scale_gif(chosen, self.screen_h)
-            self.left = scaled
-            self.right = None
-            self.single_mode = True
-            if base_left and not base_right:
-                print("Warning: only particleplot.gif available; displaying single GIF.")
-            elif base_right and not base_left:
-                print("Warning: only heatmap_plot.gif available; displaying single GIF.")
         else:
-            self.left = None
+            # single mode (either explicit single selection or fallback)
+            chosen = base_left
+            if chosen:
+                scaled = scale_gif(chosen, self.screen_h)
+                self.left = scaled
+            else:
+                self.left = None
             self.right = None
             self.single_mode = True
-            print("Warning: neither GIF could be loaded.")
+            if not chosen:
+                print(f"Warning: required GIF for mode '{self.mode}' missing.")
 
         self.idx_left = self.idx_right = 0
         now = pygame.time.get_ticks()
         self.next_left = now
         self.next_right = now
-
-    def _rescale(self):
-        # Rescale current raw frames (reload fresh to avoid quality loss)
-        self.load_and_pack()
 
     def update(self):
         # Animation stepping
@@ -222,57 +298,41 @@ class DualGifDisplay:
             self.next_right = now + (dur if dur > 0 else 100)
 
     def draw(self):
-        self.screen.fill((0,0,0))
+        self.screen.fill((0, 0, 0))
         if not self.left:
+            # draw placeholder for single mode missing asset
+            if self.single_mode:
+                ps = self.placeholder
+                self.screen.blit(ps, ps.get_rect(center=self.screen.get_rect().center))
             pygame.display.flip()
             return
         if self.single_mode:
-            # center horizontally
             surf = self.left.frames[self.idx_left]
             x = (self.screen_w - surf.get_width()) // 2
             y = (self.screen_h - surf.get_height()) // 2
-            self.screen.blit(surf, (x,y))
+            self.screen.blit(surf, (x, y))
         else:
             left_surf = self.left.frames[self.idx_left]
-            right_surf = self.right.frames[self.idx_right]
-            # left at x=0
-            self.screen.blit(left_surf, (0, (self.screen_h - left_surf.get_height()) // 2))
-            # right immediately next
-            self.screen.blit(right_surf, (self.left.width, (self.screen_h - right_surf.get_height()) // 2))
+            right_surf = self.right.frames[self.idx_right] if self.right else self.placeholder
+            y_l = (self.screen_h - left_surf.get_height()) // 2
+            y_r = (self.screen_h - right_surf.get_height()) // 2
+            self.screen.blit(left_surf, (0, y_l))
+            self.screen.blit(right_surf, (self.left.width, y_r))
         pygame.display.flip()
 
 # -------------------- Main Loop -------------------- #
 
-def run(monitor_index: int = 1):
-    display = DualGifDisplay(monitor_index=monitor_index)
-    display.load_and_pack()
-
-    # Setup watchers
-    def changed(_):
-        display.request_reload()
-
-    if HAVE_WATCHDOG:
-        observer = Observer()
-        handler = DirHandler([GIF_LEFT.name, GIF_RIGHT.name], changed)
-        observer.schedule(handler, str(OUTPUT_DIR), recursive=False)
-        observer.start()
-        poller = None
-    else:
-        observer = None
-        poller = ChangeWatcher([GIF_LEFT, GIF_RIGHT], changed)
-        poller.start()
+def run(monitor_index: int = 1, start_mode: str = "both"):
+    display = DualGifDisplay(monitor_index=monitor_index, start_mode=start_mode)
+    display._start_watchers()
 
     clock = pygame.time.Clock()
     running = True
-
     try:
         while running:
-            # Process reloads
             if display._consume_reload_flag():
-                # Small debounce to allow both symlinks to settle
-                time.sleep(0.15)
+                time.sleep(0.1)
                 display.load_and_pack()
-
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -283,24 +343,36 @@ def run(monitor_index: int = 1):
                         display.toggle_fullscreen()
                     elif event.key == pygame.K_m:
                         display.cycle_monitor()
-
+                    elif event.key == pygame.K_1:
+                        display.set_mode("both")
+                    elif event.key == pygame.K_2:
+                        display.set_mode("particle_plot")
+                    elif event.key == pygame.K_3:
+                        display.set_mode("heatmap")
             display.update()
             display.draw()
             clock.tick(60)
     finally:
-        if observer:
-            observer.stop()
-            observer.join(timeout=1)
-        if poller:
-            poller.stop()
+        display.shutdown()
         pygame.quit()
 
 if __name__ == "__main__":
-    # Optional monitor index from argv
     mon = 1
     if len(sys.argv) > 1:
         try:
             mon = int(sys.argv[1])
         except ValueError:
             pass
-    run(mon)
+    # Load settings.yaml for initial mode
+    start_mode = "both"
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            cfg = yaml.safe_load(f)
+            gm = cfg.get("simulation_settings", {}).get("gif_display", "both")
+            if gm in ("both", "particle_plot", "heatmap"):
+                start_mode = gm
+            else:
+                print(f"Warning: gif_display '{gm}' invalid, defaulting to 'both'")
+    except Exception as e:
+        print(f"Warning: could not read settings.yaml ({e}), defaulting to 'both'")
+    run(mon, start_mode=start_mode)
