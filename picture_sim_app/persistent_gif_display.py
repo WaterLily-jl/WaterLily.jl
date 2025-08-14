@@ -1,472 +1,306 @@
-#!/usr/bin/env python3
-"""
-Persistent GIF Display Monitor
-
-A standalone script that continuously displays two GIFs side by side on a secondary monitor.
-Automatically reloads GIFs when files are modified, with manual reload option.
-
-Usage:
-    python persistent_gif_display.py
-
-Controls:
-    - ESC/Q: Quit
-    - R: Manual reload GIFs
-    - M: Switch monitor
-    - F: Toggle fullscreen
-    - P: Pause/resume file monitoring
-    - SPACE: Pause/resume animation
-
-Features:
-    - Automatic file monitoring with debounced reloading
-    - Manual reload capability
-    - Monitor switching
-    - Graceful error handling for missing files
-    - Memory efficient GIF loading
-"""
-
+import os
+import sys
 import time
 import threading
 from pathlib import Path
+from typing import List, Tuple, Optional
 
-import yaml
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    HAVE_WATCHDOG = True
+except ImportError:
+    HAVE_WATCHDOG = False
+
 import pygame
 from PIL import Image, ImageSequence
-import os
-from typing import Tuple, List
 
-class GifFileHandler(FileSystemEventHandler):
-    """Handles file system events for GIF files."""
-    
-    def __init__(self, callback, gif_paths: List[Path], debounce_seconds: float = 1.0):
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = SCRIPT_DIR / "output"
+GIF_LEFT = OUTPUT_DIR / "particleplot.gif"
+GIF_RIGHT = OUTPUT_DIR / "heatmap_plot.gif"
+
+# -------------------- GIF Loading -------------------- #
+
+class LoadedGif:
+    def __init__(self, frames: List[pygame.Surface], durations: List[int], width: int, height: int):
+        self.frames = frames
+        self.durations = durations
+        self.width = width
+        self.height = height
+
+def load_gif(path: Path) -> Optional[LoadedGif]:
+    if not path.exists():
+        print(f"Warning: missing {path.name}")
+        return None
+    try:
+        with Image.open(path) as im:
+            frames = []
+            durations = []
+            for frame in ImageSequence.Iterator(im):
+                frm = frame.convert("RGBA")
+                surf = pygame.image.fromstring(frm.tobytes(), frm.size, "RGBA")
+                frames.append(surf)
+                durations.append(frame.info.get("duration", 100))
+            if not frames:
+                print(f"Warning: no frames in {path.name}")
+                return None
+            w = frames[0].get_width()
+            h = frames[0].get_height()
+            return LoadedGif(frames, durations, w, h)
+    except Exception as e:
+        print(f"Warning: failed to load {path.name}: {e}")
+        return None
+
+def scale_gif(g: LoadedGif, target_height: int) -> LoadedGif:
+    if g is None:
+        return None
+    if g.height == target_height:
+        return g
+    ratio = target_height / g.height
+    new_w = max(1, int(g.width * ratio))
+    frames_scaled = [pygame.transform.smoothscale(f, (new_w, target_height)) for f in g.frames]
+    return LoadedGif(frames_scaled, g.durations, new_w, target_height)
+
+# -------------------- File Change Detection -------------------- #
+
+def file_signature(path: Path):
+    try:
+        st_link = path.lstat()  # metadata of symlink itself (if symlink)
+        st_target = path.stat()  # target metadata (follow)
+        return (st_link.st_mtime_ns, st_link.st_ino, st_target.st_mtime_ns, st_target.st_ino, st_target.st_size)
+    except FileNotFoundError:
+        return None
+
+class ChangeWatcher:
+    def __init__(self, paths: List[Path], callback, poll_interval=0.5):
+        self.paths = paths
         self.callback = callback
-        # Filter out None paths and convert to Path objects
-        self.gif_paths = [Path(p) for p in gif_paths if p is not None]
-        self.gif_names = {p.name for p in self.gif_paths}
-        self.debounce_seconds = debounce_seconds
-        self.last_modified = {}
-        
-    def on_modified(self, event):
-        if event.is_directory:
-            return
-            
-        file_path = Path(event.src_path)
-        if file_path.name in self.gif_names:
-            current_time = time.time()
-            
-            # Debounce: only trigger if enough time has passed since last modification
-            if file_path in self.last_modified:
-                if current_time - self.last_modified[file_path] < self.debounce_seconds:
-                    return
-                    
-            self.last_modified[file_path] = current_time
-            
-            # Small delay to ensure file write is complete
-            threading.Timer(0.5, lambda: self.callback(file_path)).start()
+        self.poll_interval = poll_interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._signatures = {p: file_signature(p) for p in paths}
 
-class PersistentGifDisplay:
-    """Main display class for persistent GIF viewing."""
-    
-    def __init__(self, gif_path_left: Path, gif_path_right: Path = None, monitor_index: int = 1):
-        self.gif_path_left = Path(gif_path_left)
-        self.gif_path_right = Path(gif_path_right) if gif_path_right else None
-        self.monitor_index = monitor_index
-        self.single_gif_mode = gif_path_right is None
-        
-        # Display state
-        self.screen = None
-        self.running = True
-        self.animation_paused = False
-        self.monitoring_paused = False
-        self.fullscreen = False
-        
-        # GIF data
-        self.frames_left = []
-        self.frames_right = []
-        self.durations_left = []
-        self.durations_right = []
-        self.frame_indices = [0, 0]
-        self.last_frame_times = [0, 0]
-        
-        # File monitoring
-        self.observer = None
-        self.reload_pending = False
-        self.reload_lock = threading.Lock()
-        
-        # Initialize pygame
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=1)
+
+    def _loop(self):
+        while not self._stop.is_set():
+            for p in self.paths:
+                sig = file_signature(p)
+                if sig != self._signatures.get(p):
+                    self._signatures[p] = sig
+                    self.callback(p)
+            time.sleep(self.poll_interval)
+
+if HAVE_WATCHDOG:
+    class DirHandler(FileSystemEventHandler):
+        def __init__(self, watch_files: List[str], callback):
+            self.watch_files = set(watch_files)
+            self.callback = callback
+        def on_any_event(self, event):
+            try:
+                name = Path(event.src_path).name
+            except Exception:
+                return
+            if name in self.watch_files:
+                self.callback(Path(event.src_path))
+
+# -------------------- Display Manager -------------------- #
+
+class DualGifDisplay:
+    def __init__(self, monitor_index: int = 1):
         pygame.init()
-        self.setup_display()
-        self.setup_file_monitoring()
-        
-    def setup_display(self):
-        """Initialize the display on the specified monitor."""
+        self.monitor_index = monitor_index
+        self.fullscreen = False
+        self._init_window()
+        # state
+        self.left: Optional[LoadedGif] = None
+        self.right: Optional[LoadedGif] = None
+        self.single_mode = False
+        self.idx_left = 0
+        self.idx_right = 0
+        now = pygame.time.get_ticks()
+        self.next_left = now
+        self.next_right = now
+        self.reload_lock = threading.Lock()
+        self.reload_requested = False
+
+    def _init_window(self):
         num_displays = pygame.display.get_num_displays()
-        desktop_sizes = pygame.display.get_desktop_sizes() if hasattr(pygame.display, "get_desktop_sizes") else [(1920, 1080)] * num_displays
-        
-        print(f"Available displays: {num_displays}")
-        for i, size in enumerate(desktop_sizes):
-            status = " (CURRENT)" if i == self.monitor_index else ""
-            print(f"  Monitor {i}: {size[0]}x{size[1]}{status}")
-        
+        desktop_sizes = (pygame.display.get_desktop_sizes()
+                         if hasattr(pygame.display, "get_desktop_sizes")
+                         else [(1920,1080)] * num_displays)
         if self.monitor_index >= num_displays:
-            print(f"Monitor {self.monitor_index} not available. Using monitor 0.")
             self.monitor_index = 0
-        
-        # Calculate monitor position
+        self.desktops = desktop_sizes
         x_offset = sum(desktop_sizes[i][0] for i in range(self.monitor_index))
-        self.screen_width, self.screen_height = desktop_sizes[self.monitor_index]
-        
-        # Set window position and create display
+        self.screen_w, self.screen_h = desktop_sizes[self.monitor_index]
         os.environ["SDL_VIDEO_WINDOW_POS"] = f"{x_offset},0"
-        flags = pygame.FULLSCREEN if self.fullscreen else 0
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height), flags)
-        pygame.display.set_caption(f"Persistent GIF Display - Monitor {self.monitor_index}")
-        
-    def setup_file_monitoring(self):
-        """Setup file system monitoring for automatic reloads."""
-        # Monitor the directories containing the GIF files
-        directories_to_watch = set()
-        gif_paths = [self.gif_path_left]
-        if self.gif_path_right:
-            gif_paths.append(self.gif_path_right)
-        
-        # Filter out None paths and only monitor existing files
-        valid_gif_paths = [p for p in gif_paths if p is not None]
-        
-        for gif_path in valid_gif_paths:
-            if gif_path.exists():
-                directories_to_watch.add(gif_path.parent)
-        
-        if directories_to_watch:
-            self.observer = Observer()
-            handler = GifFileHandler(
-                callback=self.on_file_changed,
-                gif_paths=valid_gif_paths,  # Pass only valid paths
-                debounce_seconds=0.1  # Reduce debounce time for faster response
-            )
-            
-            for directory in directories_to_watch:
-                self.observer.schedule(handler, str(directory), recursive=False)
-                print(f"Monitoring directory: {directory}")
-            
-            self.observer.start()
-        else:
-            print("Warning: No valid GIF files found for monitoring")
-            
-    def on_file_changed(self, file_path: Path):
-        """Callback for when a monitored file changes."""
-        if not self.monitoring_paused:
-            print(f"File changed: {file_path.name} - Reloading GIFs...")
-            with self.reload_lock:
-                self.reload_pending = True
-    
-    def load_gif_frames(self, gif_path: Path, target_height: int) -> Tuple[List, List, int]:
-        """Load and scale GIF frames to fit the target height."""
-        if not gif_path.exists():
-            print(f"Warning: GIF file not found: {gif_path}")
-            # Return empty placeholder frames
-            placeholder = pygame.Surface((100, target_height))
-            placeholder.fill((50, 50, 50))  # Dark gray
-            return [placeholder], [1000], 100  # 1 second duration, 100px width
-        
-        try:
-            with Image.open(gif_path) as gif:
-                frames, durations = [], []
-                width = 0
-                
-                for frame in ImageSequence.Iterator(gif):
-                    frame = frame.convert('RGBA')
-                    orig_w, orig_h = frame.size
-                    
-                    # Scale to target height while maintaining aspect ratio
-                    scale = target_height / orig_h
-                    new_w = int(orig_w * scale)
-                    width = new_w  # Store width of last frame (should be consistent)
-                    
-                    frame_resized = frame.resize((new_w, target_height), Image.LANCZOS)
-                    surf = pygame.image.fromstring(frame_resized.tobytes(), frame_resized.size, 'RGBA')
-                    frames.append(surf)
-                    durations.append(frame.info.get('duration', 100))
-                
-                return frames, durations, width
-                
-        except Exception as e:
-            print(f"Error loading GIF {gif_path}: {e}")
-            # Return error placeholder
-            placeholder = pygame.Surface((100, target_height))
-            placeholder.fill((100, 0, 0))  # Dark red for error
-            return [placeholder], [1000], 100
-    
-    def reload_gifs(self):
-        """Reload GIF files and rescale for current display."""
-        print("Reloading GIFs...")
-        
-        if self.single_gif_mode:
-            # Single GIF - center it on screen
-            frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, self.screen_height)
-            
-            # Center horizontally
-            self.x_offset = (self.screen_width - width_left) // 2
-            self.y_offset = 0
-            
-            self.frames_left = frames_left
-            self.frames_right = []
-            self.durations_left = durations_left
-            self.durations_right = []
-            self.width_left = width_left
-            
-        else:
-            # Two GIFs side by side
-            frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, self.screen_height)
-            frames_right, durations_right, width_right = self.load_gif_frames(self.gif_path_right, self.screen_height)
-            
-            # Check if combined width exceeds screen width
-            total_width = width_left + width_right
-            if total_width > self.screen_width:
-                # Scale down both to fit
-                scale = self.screen_width / total_width
-                new_height = int(self.screen_height * scale)
-                
-                frames_left, durations_left, width_left = self.load_gif_frames(self.gif_path_left, new_height)
-                frames_right, durations_right, width_right = self.load_gif_frames(self.gif_path_right, new_height)
-                
-                self.y_offset = (self.screen_height - new_height) // 2
-            else:
-                self.y_offset = 0
-            
-            self.x_offset = 0
-            self.frames_left = frames_left
-            self.frames_right = frames_right
-            self.durations_left = durations_left
-            self.durations_right = durations_right
-            self.width_left = width_left
-        
-        self.frame_indices = [0, 0]
-        self.last_frame_times = [pygame.time.get_ticks(), pygame.time.get_ticks()]
-        
-        gif_count = 1 if self.single_gif_mode else 2
-        print(f"Loaded: {len(self.frames_left)} frames ({'single GIF' if self.single_gif_mode else f'{len(self.frames_right)} frames (right)'})")
-        
-    def switch_monitor(self):
-        """Switch to the next available monitor."""
-        num_displays = pygame.display.get_num_displays()
-        self.monitor_index = (self.monitor_index + 1) % num_displays
-        print(f"Switching to monitor {self.monitor_index}")
-        self.setup_display()
-        
-        # Reload GIFs for new screen dimensions
-        if self.frames_left or self.frames_right:
-            self.reload_gifs()
-    
+        flags = 0 if not self.fullscreen else pygame.FULLSCREEN
+        self.screen = pygame.display.set_mode((self.screen_w, self.screen_h), flags)
+        pygame.display.set_caption("Dual GIF Display")
+
+    def cycle_monitor(self):
+        self.monitor_index = (self.monitor_index + 1) % pygame.display.get_num_displays()
+        self._init_window()
+        # Force re-scale
+        self._rescale()
+
     def toggle_fullscreen(self):
-        """Toggle between fullscreen and windowed mode."""
         self.fullscreen = not self.fullscreen
-        flags = pygame.FULLSCREEN if self.fullscreen else 0
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height), flags)
-        print(f"Fullscreen: {'ON' if self.fullscreen else 'OFF'}")
-    
-    def update_animation(self):
-        """Update animation frame indices based on timing."""
-        if self.animation_paused or not self.frames_left:
-            return
-            
-        current_time = pygame.time.get_ticks()
-        
-        # Update left GIF
-        if current_time - self.last_frame_times[0] >= self.durations_left[self.frame_indices[0]]:
-            self.frame_indices[0] = (self.frame_indices[0] + 1) % len(self.frames_left)
-            self.last_frame_times[0] = current_time
-            
-        # Update right GIF (only if not in single mode)
-        if not self.single_gif_mode and self.frames_right:
-            if current_time - self.last_frame_times[1] >= self.durations_right[self.frame_indices[1]]:
-                self.frame_indices[1] = (self.frame_indices[1] + 1) % len(self.frames_right)
-                self.last_frame_times[1] = current_time
-    
+        self._init_window()
+        self._rescale()
+
+    def request_reload(self):
+        with self.reload_lock:
+            self.reload_requested = True
+
+    def _consume_reload_flag(self):
+        with self.reload_lock:
+            flag = self.reload_requested
+            self.reload_requested = False
+        return flag
+
+    def load_and_pack(self):
+        base_left = load_gif(GIF_LEFT)
+        base_right = load_gif(GIF_RIGHT)
+        if base_left and base_right:
+            # Try full height first
+            target_h = self.screen_h
+            left_scaled = scale_gif(base_left, target_h)
+            right_scaled = scale_gif(base_right, target_h)
+            total_w = left_scaled.width + right_scaled.width
+            if total_w > self.screen_w:
+                scale_factor = self.screen_w / total_w
+                target_h = max(1, int(self.screen_h * scale_factor))
+                left_scaled = scale_gif(base_left, target_h)
+                right_scaled = scale_gif(base_right, target_h)
+            self.left = left_scaled
+            self.right = right_scaled
+            self.single_mode = False
+        elif base_left or base_right:
+            # Single mode
+            chosen = base_left if base_left else base_right
+            scaled = scale_gif(chosen, self.screen_h)
+            self.left = scaled
+            self.right = None
+            self.single_mode = True
+            if base_left and not base_right:
+                print("Warning: only particleplot.gif available; displaying single GIF.")
+            elif base_right and not base_left:
+                print("Warning: only heatmap_plot.gif available; displaying single GIF.")
+        else:
+            self.left = None
+            self.right = None
+            self.single_mode = True
+            print("Warning: neither GIF could be loaded.")
+
+        self.idx_left = self.idx_right = 0
+        now = pygame.time.get_ticks()
+        self.next_left = now
+        self.next_right = now
+
+    def _rescale(self):
+        # Rescale current raw frames (reload fresh to avoid quality loss)
+        self.load_and_pack()
+
+    def update(self):
+        # Animation stepping
+        now = pygame.time.get_ticks()
+        if self.left and now >= self.next_left:
+            dur = self.left.durations[self.idx_left]
+            self.idx_left = (self.idx_left + 1) % len(self.left.frames)
+            self.next_left = now + (dur if dur > 0 else 100)
+        if self.right and not self.single_mode and now >= self.next_right:
+            dur = self.right.durations[self.idx_right]
+            self.idx_right = (self.idx_right + 1) % len(self.right.frames)
+            self.next_right = now + (dur if dur > 0 else 100)
+
     def draw(self):
-        """Draw the current frame of GIF(s)."""
-        self.screen.fill((0, 0, 0))  # Black background
-        
-        if self.frames_left:
-            # Draw left GIF (or single GIF)
-            self.screen.blit(self.frames_left[self.frame_indices[0]], (self.x_offset, self.y_offset))
-            
-            # Draw right GIF only if not in single mode
-            if not self.single_gif_mode and self.frames_right:
-                self.screen.blit(self.frames_right[self.frame_indices[1]], (self.width_left, self.y_offset))
-        
-        # Draw status indicators
-        self.draw_status()
-        
+        self.screen.fill((0,0,0))
+        if not self.left:
+            pygame.display.flip()
+            return
+        if self.single_mode:
+            # center horizontally
+            surf = self.left.frames[self.idx_left]
+            x = (self.screen_w - surf.get_width()) // 2
+            y = (self.screen_h - surf.get_height()) // 2
+            self.screen.blit(surf, (x,y))
+        else:
+            left_surf = self.left.frames[self.idx_left]
+            right_surf = self.right.frames[self.idx_right]
+            # left at x=0
+            self.screen.blit(left_surf, (0, (self.screen_h - left_surf.get_height()) // 2))
+            # right immediately next
+            self.screen.blit(right_surf, (self.left.width, (self.screen_h - right_surf.get_height()) // 2))
         pygame.display.flip()
-    
-    def draw_status(self):
-        """Draw status information overlay."""
-        font = pygame.font.Font(None, 36)
-        y_pos = 10
-        
-        # Status messages
-        status_lines = []
-        
-        if self.monitoring_paused:
-            status_lines.append("FILE MONITORING: PAUSED")
-        
-        if self.animation_paused:
-            status_lines.append("ANIMATION: PAUSED")
-            
-        if self.reload_pending:
-            status_lines.append("RELOAD PENDING...")
-        
-        # Draw status text
-        for line in status_lines:
-            text_surface = font.render(line, True, (255, 255, 0))  # Yellow text
-            text_rect = text_surface.get_rect()
-            text_rect.topleft = (10, y_pos)
-            
-            # Draw background rectangle
-            bg_rect = text_rect.inflate(10, 5)
-            pygame.draw.rect(self.screen, (0, 0, 0, 128), bg_rect)
-            
-            self.screen.blit(text_surface, text_rect)
-            y_pos += 40
-    
-    def handle_events(self):
-        """Handle pygame events."""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-                
-            elif event.type == pygame.KEYDOWN:
-                if event.key in [pygame.K_ESCAPE, pygame.K_q]:
-                    self.running = False
-                    
-                elif event.key == pygame.K_r:
-                    # Manual reload
-                    with self.reload_lock:
-                        self.reload_pending = True
-                    print("Manual reload requested")
-                    
-                elif event.key == pygame.K_m:
-                    self.switch_monitor()
-                    
-                elif event.key == pygame.K_f:
-                    self.toggle_fullscreen()
-                    
-                elif event.key == pygame.K_p:
-                    # Toggle file monitoring
-                    self.monitoring_paused = not self.monitoring_paused
-                    status = "PAUSED" if self.monitoring_paused else "ACTIVE"
-                    print(f"File monitoring: {status}")
-                    
-                elif event.key == pygame.K_SPACE:
-                    # Toggle animation
-                    self.animation_paused = not self.animation_paused
-                    status = "PAUSED" if self.animation_paused else "PLAYING"
-                    print(f"Animation: {status}")
-    
-    def run(self):
-        """Main run loop."""
-        clock = pygame.time.Clock()
-        
-        # Initial load
-        self.reload_gifs()
-        
-        print("\n" + "="*60)
-        print("PERSISTENT GIF DISPLAY - RUNNING")
-        print("="*60)
-        print("Controls:")
-        print("  ESC/Q: Quit")
-        print("  R: Manual reload GIFs")
-        print("  M: Switch monitor")
-        print("  F: Toggle fullscreen")
-        print("  P: Pause/resume file monitoring")
-        print("  SPACE: Pause/resume animation")
-        print("\nAutomatic file monitoring is ACTIVE")
-        print("="*60)
-        
-        try:
-            while self.running:
-                # Handle pending reloads
-                with self.reload_lock:
-                    if self.reload_pending:
-                        self.reload_gifs()
-                        self.reload_pending = False
-                
-                # Handle events
-                self.handle_events()
-                
-                # Update animation
-                self.update_animation()
-                
-                # Draw everything
-                self.draw()
-                
-                # Limit FPS
-                clock.tick(60)
-                
-        except KeyboardInterrupt:
-            print("\nReceived interrupt signal")
-            
-        finally:
-            self.cleanup()
-    
-    def cleanup(self):
-        """Clean up resources."""
-        print("Cleaning up...")
-        
-        if self.observer and self.observer.is_alive():
-            self.observer.stop()
-            self.observer.join()
-            
-        pygame.quit()
-        print("Shutdown complete")
 
-def main():
-    """Main entry point."""
-    # Define paths relative to script location
-    script_dir = Path(__file__).resolve().parent
-    output_folder = script_dir / "output"
+# -------------------- Main Loop -------------------- #
 
-    SCRIPT_DIR = Path(__file__).resolve().parent
-    with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
-        settings = yaml.safe_load(f)
+def run(monitor_index: int = 1):
+    display = DualGifDisplay(monitor_index=monitor_index)
+    display.load_and_pack()
 
-    gif_display = settings["simulation_settings"]["gif_display"]
+    # Setup watchers
+    def changed(_):
+        display.request_reload()
 
-    if gif_display == "both":
-        gif_left = output_folder / "particleplot.gif"
-        gif_right = output_folder / "heatmap_plot.gif"
-    elif gif_display == "particle_plot":
-        gif_left = output_folder / "particleplot.gif"
-        gif_right = None
-    elif gif_display == "heatmap":
-        gif_left = output_folder / "heatmap_plot.gif"
-        gif_right = None
+    if HAVE_WATCHDOG:
+        observer = Observer()
+        handler = DirHandler([GIF_LEFT.name, GIF_RIGHT.name], changed)
+        observer.schedule(handler, str(OUTPUT_DIR), recursive=False)
+        observer.start()
+        poller = None
     else:
-        raise ValueError("gif_display must be either 'both', 'particle_plot', or 'heatmap'")
+        observer = None
+        poller = ChangeWatcher([GIF_LEFT, GIF_RIGHT], changed)
+        poller.start()
 
-    # Default to secondary monitor if available
-    pygame.init()
-    num_displays = pygame.display.get_num_displays()
-    default_monitor = 1 if num_displays > 1 else 0
-    pygame.quit()
-    
-    print("Starting persistent GIF display...")
-    print(f"Mode: {'Single GIF' if gif_right is None else 'Dual GIF'}")
-    print(f"Left GIF: {gif_left}")
-    if gif_right:
-        print(f"Right GIF: {gif_right}")
-    print(f"Target monitor: {default_monitor}")
-    
-    # Create and run display
-    display = PersistentGifDisplay(
-        gif_path_left=gif_left,
-        gif_path_right=gif_right,
-        monitor_index=default_monitor
-    )
-    
-    display.run()
+    clock = pygame.time.Clock()
+    running = True
+
+    try:
+        while running:
+            # Process reloads
+            if display._consume_reload_flag():
+                # Small debounce to allow both symlinks to settle
+                time.sleep(0.15)
+                display.load_and_pack()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_ESCAPE,):
+                        running = False
+                    elif event.key == pygame.K_f:
+                        display.toggle_fullscreen()
+                    elif event.key == pygame.K_m:
+                        display.cycle_monitor()
+
+            display.update()
+            display.draw()
+            clock.tick(60)
+    finally:
+        if observer:
+            observer.stop()
+            observer.join(timeout=1)
+        if poller:
+            poller.stop()
+        pygame.quit()
 
 if __name__ == "__main__":
-    main()
+    # Optional monitor index from argv
+    mon = 1
+    if len(sys.argv) > 1:
+        try:
+            mon = int(sys.argv[1])
+        except ValueError:
+            pass
+    run(mon)
