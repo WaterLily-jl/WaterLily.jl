@@ -69,6 +69,7 @@ def run_simulation(settings):
             mask=domain_mask,
             plot_method=image_recognition_debug_mode,
             show_components=show_components_pca,
+            object_is_airfoil=True,
         )
 
         run_julia_simulation_script(

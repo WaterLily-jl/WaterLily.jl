@@ -114,18 +114,11 @@ def characteristic_length_and_aoa_pca(
             trailing_proj = min_proj
             
     else:
-        # For generic objects, assume leading edge is always in the direction of flow
-        # Project flow direction onto principal axis
-        flow_vec = np.array(flow_xy)
-        flow_projection = np.dot(flow_vec, p1)
-        
-        # If flow projects positively, max projection is leading edge
-        if flow_projection > 0:
-            leading_proj = max_proj
-            trailing_proj = min_proj
-        else:
-            leading_proj = min_proj
-            trailing_proj = max_proj
+        # For generic objects, there's no inherent leading/trailing edge distinction
+        # We'll arbitrarily choose one direction and constrain angle to [-90, 90] degrees
+        # This represents the angle between the object's major axis and flow direction
+        leading_proj = min_proj
+        trailing_proj = max_proj
 
     # Calculate actual positions of leading and trailing edges
     p_center = mu.flatten()
@@ -142,6 +135,15 @@ def characteristic_length_and_aoa_pca(
         trailing_edge_xy=(x_trailing, y_trailing),
         flow_xy=flow_xy,
     )
+    
+    # For generic objects, constrain angle to [-90, 90] degrees
+    # since there's no inherent leading/trailing edge distinction
+    if not object_is_airfoil:
+        # Normalize to [-90, 90] range
+        while angle_degrees > 90:
+            angle_degrees -= 180
+        while angle_degrees < -90:
+            angle_degrees += 180
 
     if debug_mode:
         print(f"  Method used: {'Airfoil thickness-based' if object_is_airfoil else 'General bluntness-based'}")

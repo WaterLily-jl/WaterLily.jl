@@ -158,6 +158,7 @@ def main() -> None:
                 mask=domain_mask,
                 plot_method=False,
                 show_components=False,
+                object_is_airfoil=True,
             )
 
             rotated_domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=sim_aoa)
