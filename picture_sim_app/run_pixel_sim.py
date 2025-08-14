@@ -41,6 +41,11 @@ def run_simulation(settings):
     # Unpack simulation settings:
     simulation_settings = settings["simulation_settings"]
     image_recognition_debug_mode = simulation_settings["image_recognition_debug_mode"]
+    show_components_pca = simulation_settings["show_components_pca"]
+
+    if show_components_pca and not image_recognition_debug_mode:
+        raise Exception("'show_components_pca' is set to True, but 'image_recognition_debug_mode' is False."
+                        "\n set 'image_recognition_debug_mode' to True to see PCA components.")
 
     # Use image recognition to create a fluid-solid mask (1=Fluid, 0=Solid)
     pixel_body = PixelBodyMask(
@@ -63,7 +68,7 @@ def run_simulation(settings):
         l_c, aoa, thickness = characteristic_length_and_aoa_pca(
             mask=domain_mask,
             plot_method=image_recognition_debug_mode,
-            show_components=False,
+            show_components=show_components_pca,
         )
 
         run_julia_simulation_script(
@@ -83,8 +88,8 @@ def run_simulation(settings):
         # Estimate characteristic length and angle of attack using PCA and airfoil type detection
         l_c, aoa, thickness = characteristic_length_and_aoa_pca(
             mask=domain_mask,
-            plot_method=False,
-            show_components=image_recognition_debug_mode,
+            plot_method=image_recognition_debug_mode,
+            show_components=show_components_pca,
             object_is_airfoil=True,
         )
 
