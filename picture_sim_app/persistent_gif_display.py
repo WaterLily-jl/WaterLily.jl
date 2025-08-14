@@ -159,6 +159,10 @@ class DualGifDisplay:
         self.screen = pygame.display.set_mode((self.screen_w, self.screen_h), flags)
         pygame.display.set_caption("Dual GIF Display")
 
+    def _rescale(self):
+        """Rescale current raw frames (reload fresh to avoid quality loss)."""
+        self.load_and_pack()
+
     def cycle_monitor(self):
         self.monitor_index = (self.monitor_index + 1) % pygame.display.get_num_displays()
         self._init_window()
