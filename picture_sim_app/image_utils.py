@@ -23,7 +23,15 @@ def save_bbox_cache(cache_file: Path, bbox_data: dict):
     with open(cache_file, 'w') as f:
         json.dump(bbox_data, f, indent=2)
 
-def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed_aspect_ratio: tuple = None, fixed_size: tuple = None, selection_box_mode: bool = True, saved_selection: tuple = None) -> tuple:
+def capture_image(
+        input_folder: str | Path,
+        image_name: str = "input.png",
+        fixed_aspect_ratio: tuple = None,
+        fixed_size: tuple = None,
+        selection_box_mode: bool = True,
+        saved_selection: tuple = None,
+        use_cached_box: bool = False,
+) -> tuple:
     """
     Capture image from webcam with optional fixed aspect ratio, size, or interactive selection box.
     Now includes automatic caching of bounding box selections.
@@ -35,6 +43,7 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
         fixed_size: If provided (width, height), captures image at this exact size
         selection_box_mode: If True, shows a click-and-drag selection with fixed aspect ratio
         saved_selection: If provided (x, y, w, h), uses this as the initial selection box
+        use_cached_box: If True, automatically uses cached bounding box without user interaction
         
     Returns:
         tuple: (x, y, w, h) coordinates of the selected region, or None if cancelled
@@ -43,8 +52,47 @@ def capture_image(input_folder: str | Path, image_name: str = "input.png", fixed
     cache_dir = Path(input_folder).parent / "cache"
     cache_file = cache_dir / "bbox_cache.json"
     
-    # Try to load cached bounding box if no saved_selection provided
-    if saved_selection is None and selection_box_mode:
+    # If use_cached_box is True, try to load and use cached box automatically
+    if use_cached_box and selection_box_mode:
+        cached_data = load_cached_bbox(cache_file)
+        if cached_data:
+            saved_selection = tuple(cached_data.get("bbox", (0, 0, 0, 0)))
+            print(f"Using cached bounding box: {saved_selection}")
+            
+            # Capture image automatically using cached bbox
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                raise RuntimeError("Webcam not found or cannot be opened.")
+            
+            ret, frame = cap.read()
+            cap.release()
+            
+            if not ret:
+                raise RuntimeError("Failed to capture frame from webcam.")
+            
+            # Apply cached bounding box
+            box_x, box_y, box_w, box_h = saved_selection
+            
+            # Ensure bounding box is within frame bounds
+            frame_h, frame_w = frame.shape[:2]
+            box_x = max(0, min(frame_w - 1, box_x))
+            box_y = max(0, min(frame_h - 1, box_y))
+            box_w = max(1, min(frame_w - box_x, box_w))
+            box_h = max(1, min(frame_h - box_y, box_h))
+            
+            # Crop and save
+            selected_region = frame[box_y:box_y + box_h, box_x:box_x + box_w]
+            path = Path(input_folder) / image_name
+            cv2.imwrite(str(path), selected_region)
+            print(f"Image automatically captured using cached bbox and saved to {path}")
+            
+            return (box_x, box_y, box_w, box_h)
+        else:
+            print("No cached bounding box found. Falling back to interactive mode.")
+            # Fall through to interactive mode
+    
+    # Try to load cached bounding box if no saved_selection provided (interactive mode)
+    if saved_selection is None and selection_box_mode and not use_cached_box:
         cached_data = load_cached_bbox(cache_file)
         if cached_data:
             saved_selection = tuple(cached_data.get("bbox", (0, 0, 0, 0)))

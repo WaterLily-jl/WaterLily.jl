@@ -20,19 +20,15 @@ OUTPUT_FOLDER = SCRIPT_DIR / "output"
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
-def main() -> None:
-    with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
-        settings = yaml.safe_load(f)
-
-    # Capture image with interactive click-and-drag selection box
-    # The selection box maintains aspect ratio while you drag
-    # - Click and drag to define the selection area
-    # - The box automatically maintains target aspect ratio
+def run_simulation(settings):
+    """Run one complete simulation cycle."""
+    # Capture image (skips bounding box selection and uses cached option)
     capture_image(
         input_folder=INPUT_FOLDER,
         fixed_aspect_ratio=(16, 9),  # Aspect ratio of the selection box (width:height)
         selection_box_mode=True,  # Click-and-drag selection box
         # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
+        use_cached_box=True,  # Fixed typo: was use_chached_box
     )
 
     # File I/O paths
@@ -125,6 +121,39 @@ def main() -> None:
         # Create new symlinks pointing to the batch_runs files
         symlink_particle.symlink_to(output_path_particle_plot)
         symlink_heatmap.symlink_to(output_path_heatmap_plot)
+
+
+def main() -> None:
+    # Load settings once at start
+    with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
+        settings = yaml.safe_load(f)
+
+    # First run with interactive selection (don't use cached box)
+    capture_image(
+        input_folder=INPUT_FOLDER,
+        fixed_aspect_ratio=(16, 9),
+        selection_box_mode=True,
+        use_cached_box=False,  # Interactive selection for first run
+    )
+
+    # Run first simulation
+    run_simulation(settings)
+    
+    # Idle loop waiting for spacebar
+    while True:
+        user_input = input("\nPress ENTER to run again, or 'q' to quit: ").strip().lower()
+        if user_input == 'q':
+            print("Exiting...")
+            break
+        elif user_input == '':
+            print("Running simulation again...")
+            # Reload settings in case they changed
+            with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
+                settings = yaml.safe_load(f)
+            run_simulation(settings)
+        else:
+            print("Invalid input. Press ENTER or 'q'.")
+
 
 if __name__ == "__main__":
     main()
