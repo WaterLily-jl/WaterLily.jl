@@ -3,3 +3,12 @@ opencv-python==4.11.0.86
 pillow==11.2.1
 pygame==2.6.1
 matplotlib>=3.5.0
+
+# Requirements for persistent_gif_display.py
+watchdog>=3.0.0
+pygame>=2.5.0
+Pillow>=9.0.0
+
+# Optional: Enhanced macOS window management
+pyobjc-framework-Cocoa>=9.0; sys_platform == "darwin"
+
