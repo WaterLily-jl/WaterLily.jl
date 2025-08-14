@@ -343,6 +343,9 @@ def run(monitor_index: int = 1, start_mode: str = "both"):
                         display.toggle_fullscreen()
                     elif event.key == pygame.K_m:
                         display.cycle_monitor()
+                    elif event.key == pygame.K_r:
+                        print("Manual reload requested")
+                        display.load_and_pack()
                     elif event.key == pygame.K_1:
                         display.set_mode("both")
                     elif event.key == pygame.K_2:
