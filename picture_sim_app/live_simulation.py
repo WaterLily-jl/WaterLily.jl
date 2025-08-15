@@ -9,10 +9,11 @@ def run_julia_simulation_script(
         domain_mask: np.ndarray,
         l_c: float,
         simulation_settings: dict,
-        output_path_particle_plot: str,
-        output_path_heatmap_plot: str,
         output_folder: pathlib.Path,
         script_dir: pathlib.Path,
+        output_path_particle_plot: str = "null",
+        output_path_heatmap_vorticity: str = "null",
+        output_path_heatmap_pressure: str = "null",
 ) -> None:
 
     # Save the boolean mask to a temporary file for Julia to read
@@ -34,7 +35,10 @@ def run_julia_simulation_script(
         # package loading (precompiles Julia packages and code)
         # File I/O settings - now pass mask file instead of image
         str(mask_file),  # Pass mask file instead of input image
+        str(output_folder),  # Pass output path for saving simulation results
         str(output_path_particle_plot),  # Pass full particle gif path for dual_gifs mode
+        str(output_path_heatmap_pressure),  # Pass full particle gif path for dual_gifs mode
+        str(output_path_heatmap_vorticity),  # Pass full particle gif path for dual_gifs mode
         # Simulation parameters
         str(l_c),  # Pass characteristic length from Python
         str(simulation_settings["Re"]),
@@ -43,9 +47,7 @@ def run_julia_simulation_script(
         str(simulation_settings["delta_t"]),
         # Other settings
         str(simulation_settings["verbose"]).lower(),
-        simulation_settings["sim_type"],
         simulation_settings["mem"],
-        str(output_path_heatmap_plot),  # Pass full heatmap gif path for dual_gifs mode
     ]
     print(f"Starting Julia: {' '.join(cmd)}\n")
 

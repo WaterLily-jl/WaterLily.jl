@@ -35,7 +35,8 @@ def run_simulation(settings):
     io_settings = settings["io_settings"]
     input_path = INPUT_FOLDER / io_settings["input_image_name"]
     output_path_particle_plot = OUTPUT_FOLDER / io_settings["particle_plot_name"]
-    output_path_heatmap_plot = OUTPUT_FOLDER / io_settings["heatmap_plot_name"]
+    output_path_heatmap_vorticity= OUTPUT_FOLDER / io_settings["heatmap_vorticity_name"]
+    output_path_heatmap_pressure = OUTPUT_FOLDER / io_settings["heatmap_pressure_name"]
     # output_path_data = OUTPUT_FOLDER / data_file_name
 
     # Unpack simulation settings:
@@ -77,7 +78,8 @@ def run_simulation(settings):
             l_c=l_c,
             simulation_settings=simulation_settings,
             output_path_particle_plot=output_path_particle_plot,
-            output_path_heatmap_plot=output_path_heatmap_plot,
+            output_path_heatmap_vorticity=output_path_heatmap_vorticity,
+            output_path_heatmap_pressure=output_path_heatmap_pressure,
             output_folder=OUTPUT_FOLDER,
             script_dir=SCRIPT_DIR,
         )
@@ -102,31 +104,47 @@ def run_simulation(settings):
 
         # Find gifs corresponding to the airfoil type and angle of attack
         particle_plot_name = f"particleplot_{airfoil_type}_{rounded_aoa}.gif"
-        heatmap_plot_name = f"heatmap_plot_{airfoil_type}_{rounded_aoa}.gif"
+        heatmap_vorticity_name = f"heatmap_vorticity_{airfoil_type}_{rounded_aoa}.gif"
+        heatmap_pressure_name = f"heatmap_pressure_{airfoil_type}_{rounded_aoa}.gif"
 
         # Check if the plots exists
         output_path_particle_plot = OUTPUT_FOLDER / "batch_runs" / particle_plot_name
-        output_path_heatmap_plot = OUTPUT_FOLDER / "batch_runs" / heatmap_plot_name
+        output_path_heatmap_vorticity = OUTPUT_FOLDER / "batch_runs" / heatmap_vorticity_name
+        output_path_heatmap_pressure = OUTPUT_FOLDER / "batch_runs" / heatmap_pressure_name
 
         if not output_path_particle_plot.exists():
             raise FileNotFoundError(f"Could not find {output_path_particle_plot}")
 
-        if not output_path_heatmap_plot.exists():
-            raise FileNotFoundError(f"Could not find {output_path_heatmap_plot}")
+        if not output_path_heatmap_vorticity.exists():
+            raise FileNotFoundError(f"Could not find {output_path_heatmap_vorticity}")
+
+        # TODO: Uncomment this when heatmap_pressure is implemented
+        # if not output_path_heatmap_pressure.exists():
+        #     raise FileNotFoundError(f"Could not find {output_path_heatmap_pressure}")
 
         # Overwrite the output paths to the found files (use symlink instead of copying)
         symlink_particle = OUTPUT_FOLDER / "particleplot.gif"
-        symlink_heatmap = OUTPUT_FOLDER / "heatmap_plot.gif"
+        symlink_heatmap_vorticity = OUTPUT_FOLDER / "heatmap_vorticity.gif"
+
+        # TODO: Uncomment this when heatmap_pressure is implemented
+        # symlink_heatmap_pressure = OUTPUT_FOLDER / "heatmap_pressure.gif"
 
         # Remove existing symlinks/files if they exist
         if symlink_particle.exists() or symlink_particle.is_symlink():
             symlink_particle.unlink()
-        if symlink_heatmap.exists() or symlink_heatmap.is_symlink():
-            symlink_heatmap.unlink()
+        if symlink_heatmap_vorticity.exists() or symlink_heatmap_vorticity.is_symlink():
+            symlink_heatmap_vorticity.unlink()
+
+        # # TODO: Uncomment this when heatmap_pressure is implemented
+        # if symlink_heatmap_pressure.exists() or symlink_heatmap_pressure.is_symlink():
+        #     symlink_heatmap_pressure.unlink()
 
         # Create new symlinks pointing to the batch_runs files
         symlink_particle.symlink_to(output_path_particle_plot)
-        symlink_heatmap.symlink_to(output_path_heatmap_plot)
+        symlink_heatmap_vorticity.symlink_to(output_path_heatmap_vorticity)
+
+        # # TODO: Uncomment this when heatmap_pressure is implemented
+        # symlink_heatmap_pressure.symlink_to(output_path_heatmap_pressure)
 
 
 def main() -> None:
@@ -144,7 +162,7 @@ def main() -> None:
 
     # Run first simulation
     run_simulation(settings)
-    
+
     # Idle loop waiting for spacebar
     while True:
         user_input = input("\nPress ENTER to run again, 'r' to reselect box, or 'q' to quit: ").strip().lower()

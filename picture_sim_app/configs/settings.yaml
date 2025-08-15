@@ -12,7 +12,8 @@ io_settings:
 
   output_animation_name: "output.gif"
   particle_plot_name: "particleplot.gif"
-  heatmap_plot_name: "heatmap_plot.gif"
+  heatmap_pressure_name: "heatmap_pressure.gif"
+  heatmap_vorticity_name: "heatmap_vorticity.gif"
   # data_file_name: "simulation_data.npz"
 
 simulation_settings:
@@ -48,6 +49,5 @@ simulation_settings:
   # - "particles" (uses PathLines library to create a particle plot)
   # - "sim_only" (runs the sim without any plotting)
   # - "sim_with_particle_and_heatmap_gif" (creates both the particle and heatmap gif)
-  sim_type: "sim_with_particle_and_heatmap_gif"
   use_precomputed_results: true
   gif_display: "both" # Options: "both", "particle_plot", "heatmap"
