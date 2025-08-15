@@ -132,6 +132,8 @@ function run_simulation(
                 time_points=sim_data.time_points,
                 verbose=verbose,
                 plotbody=true,
+                auto_clims=true,
+                invert_colors=true,
             )
         end
 

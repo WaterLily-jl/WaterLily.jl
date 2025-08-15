@@ -97,6 +97,8 @@ function run_simulation_collect_data(
     # Get field dimensions from simulation
     field_size = size(sim.flow.σ)
     vorticity_data = zeros(Float64, field_size[1], field_size[2], n_frames)
+    pressure_data = zeros(Float64, field_size[1], field_size[2], n_frames)
+    solid_mask = Array(sim.body.μ₀) .< 0.5  # true where solid
     
     verbose && println("Running simulation for $n_frames frames (t=$t_i to $t_f, Δt=$Δt)")
     verbose && println("Particles: $N, Life: $life")
@@ -118,6 +120,12 @@ function run_simulation_collect_data(
         # Compute and store vorticity field for this frame
         @WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3, I, sim.flow.u) * sim.L / sim.U
         vorticity_data[:, :, frame_idx] = Array(sim.flow.σ)
+        # Store pressure
+        if hasproperty(sim.flow, :p)
+            pressure_data[:, :, frame_idx] = Array(sim.flow.p)
+            # Mask soild region
+            pressure_data[solid_mask, frame_idx] .= NaN
+        end
         
         # Show progress every ith frame
         i_frame = 1
@@ -138,6 +146,7 @@ function run_simulation_collect_data(
         delta_times = delta_times,
         body_mask = Array(sim.body.μ₀),
         time_points = time_points,
-        vorticity_field = vorticity_data
+        vorticity_field = vorticity_data,
+        pressure_field = pressure_data,
     )
 end
