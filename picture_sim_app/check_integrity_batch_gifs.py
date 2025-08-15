@@ -29,13 +29,16 @@ def create_list_of_gif_files() -> list:
             file_postfix = f"{naca_type}_{sim_aoa}"
 
             particle_plot_name = f"particleplot_{file_postfix}.gif"
-            heatmap_plot_name = f"heatmap_vorticity_{file_postfix}.gif"
+            heatmap_vorticity_plot_name = f"heatmap_vorticity_{file_postfix}.gif"
+            heatmap_pressure_plot_name = f"heatmap_pressure_{file_postfix}.gif"
 
             output_path_particle_plot = OUTPUT_FOLDER / particle_plot_name
-            output_path_heatmap_plot = OUTPUT_FOLDER / heatmap_plot_name
+            output_path_heatmap_vorticity_plot = OUTPUT_FOLDER / heatmap_vorticity_plot_name
+            output_path_heatmap_pressure_plot = OUTPUT_FOLDER / heatmap_pressure_plot_name
 
             list_gif_files.append(output_path_particle_plot)
-            list_gif_files.append(output_path_heatmap_plot)
+            list_gif_files.append(output_path_heatmap_vorticity_plot)
+            list_gif_files.append(output_path_heatmap_pressure_plot)
 
     return list_gif_files
 

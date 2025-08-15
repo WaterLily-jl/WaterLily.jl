@@ -49,21 +49,22 @@ def run_sim(
 
     # Unpack output paths
     output_path_particle_plot = output_paths["output_path_particle_plot"]
-    output_path_heatmap_plot = output_paths["output_path_heatmap_plot"]
-    output_path_data = output_paths["output_path_data"]
+    output_path_heatmap_vorticity = output_paths["output_path_heatmap_vorticity"]
+    output_path_heatmap_pressure= output_paths["output_path_heatmap_pressure"]
 
     run_julia_simulation_script(
         domain_mask=domain_mask,
         l_c=l_c,
         simulation_settings=simulation_settings,
         output_path_particle_plot=output_path_particle_plot,
-        output_path_heatmap_plot=output_path_heatmap_plot,
+        output_path_heatmap_vorticity=output_path_heatmap_vorticity,
+        output_path_heatmap_pressure=output_path_heatmap_pressure,
         output_folder=OUTPUT_FOLDER,
         script_dir=SCRIPT_DIR,
     )
 
     # Define paths for both GIFs
-    gif_paths = [output_path_particle_plot, output_path_heatmap_plot]
+    gif_paths = [output_path_particle_plot, output_path_heatmap_vorticity, output_path_heatmap_pressure]
 
     # Get original dimensions before processing
     for gif_path in gif_paths:
@@ -117,27 +118,43 @@ def main() -> None:
             file_postfix = f"{naca_type}_{sim_aoa}"
 
             particle_plot_name = f"particleplot_{file_postfix}.gif"
-            heatmap_plot_name = f"heatmap_plot_{file_postfix}.gif"
-            data_file_name = f"simulation_data_{file_postfix}.npz"
+            heatmap_vorticity_plot_name = f"heatmap_vorticity_{file_postfix}.gif"
+            heatmap_pressure_plot_name = f"heatmap_pressure_{file_postfix}.gif"
 
             if not force_run:
                 # Check if output gifs already exist (skip if they do)
                 particle_plot_output_path = OUTPUT_FOLDER / particle_plot_name
-                heatmap_plot_output_path = OUTPUT_FOLDER / heatmap_plot_name
-                if particle_plot_output_path.exists() and heatmap_plot_output_path.exists():
-                    logger.warning(f"\nGif output for {naca_type}, aoa={sim_aoa} already exists. Skipping simulation.")
+                heatmap_vorticity_plot_output_path = OUTPUT_FOLDER / heatmap_vorticity_plot_name
+                heatmap_pressure_plot_output_path = OUTPUT_FOLDER / heatmap_pressure_plot_name
+
+                if (
+                    particle_plot_output_path.exists()
+                    and heatmap_vorticity_plot_output_path.exists()
+                    and heatmap_pressure_plot_output_path.exists()
+                ):
+                    logger.warning(f"\nGif outputs for {naca_type}, aoa={sim_aoa} already exists. Skipping simulation.")
                     continue
 
 
             output_path_particle_plot = OUTPUT_FOLDER / particle_plot_name
-            output_path_heatmap_plot = OUTPUT_FOLDER / heatmap_plot_name
-            output_path_data = OUTPUT_FOLDER / data_file_name
+            output_path_heatmap_vorticity_plot = OUTPUT_FOLDER / heatmap_vorticity_plot_name
+            output_path_heatmap_pressure_plot = OUTPUT_FOLDER / heatmap_pressure_plot_name
 
-            # Pack output paths into a dictionary (to prevent confusing files when unpacking later in the pipeline)
+            # Set existing paths to null if they exist (to avoid running the plot again)
+            if particle_plot_output_path.exists():
+                output_path_particle_plot = "null"
+
+            if heatmap_vorticity_plot_output_path.exists():
+                output_path_heatmap_vorticity_plot = "null"
+
+            if heatmap_pressure_plot_output_path.exists():
+                output_path_heatmap_pressure_plot = "null"
+
+                    # Pack output paths into a dictionary (to prevent confusing files when unpacking later in the pipeline)
             output_paths ={
                 "output_path_particle_plot": output_path_particle_plot,
-                "output_path_heatmap_plot": output_path_heatmap_plot,
-                "output_path_data": output_path_data,
+                "output_path_heatmap_vorticity": output_path_heatmap_vorticity_plot,
+                "output_path_heatmap_pressure": output_path_heatmap_pressure_plot,
             }
 
             # Instantiate fluid-solid mask from base image
