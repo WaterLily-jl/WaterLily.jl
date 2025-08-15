@@ -48,7 +48,7 @@ def main() -> None:
     # - The box automatically maintains target aspect ratio
     capture_image(
         input_folder=INPUT_FOLDER,
-        fixed_aspect_ratio=(4, 3),  # 4:3 aspect ratio for consistency
+        fixed_aspect_ratio=(16, 9),  # Aspect ratio of the selection box (width:height)
         selection_box_mode=True,    # Click-and-drag selection box
         # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
     )
@@ -81,6 +81,20 @@ def main() -> None:
         pixel_body.plot_mask()
 
     if not simulation_settings["use_precomputed_results"]:
+
+
+        # # TODO: START TEMP TEST OF DIFFERENT AOAs
+        # _, aoa, _ = characteristic_length_and_aoa_pca(
+        #     mask=domain_mask,
+        #     plot_method=False,
+        #     show_components=image_recognition_debug_mode,
+        #     object_is_airfoil=True,
+        # )
+        # # Test rotating angle of attack
+        # domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=50)
+        # #TODO: END TEMP TEST
+
+
         # Estimate characteristic length and angle of attack using PCA
         l_c, aoa, thickness = characteristic_length_and_aoa_pca(
             mask=domain_mask,
@@ -99,6 +113,18 @@ def main() -> None:
         )
 
     else:
+
+        # TODO: START TEMP TEST OF DIFFERENT AOAs
+        # _, aoa, _ = characteristic_length_and_aoa_pca(
+        #     mask=domain_mask,
+        #     plot_method=False,
+        #     show_components=image_recognition_debug_mode,
+        #     object_is_airfoil=True,
+        # )
+        # # Test rotating angle of attack
+        # domain_mask = pixel_body.rotate_mask(current_angle=aoa, target_angle=33)
+        #TODO: END TEMP TEST
+
         # If using precomputed results, try to find the best matching GIF plots and use those instead of running the
         # simulation
 

@@ -8,7 +8,6 @@ import numpy as np
 import yaml
 
 from picture_sim_app.characteristic_length_and_aoa_estimation import characteristic_length_and_aoa_pca
-from picture_sim_app.create_visualizations import create_gifs
 from picture_sim_app.image_utils import get_gif_dimensions, resize_gif
 from picture_sim_app.live_simulation import run_julia_simulation_script
 from picture_sim_app.pixel_body_python import PixelBodyMask
