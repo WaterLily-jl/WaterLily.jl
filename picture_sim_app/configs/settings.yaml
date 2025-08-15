@@ -3,10 +3,10 @@
 
 # File I/O settings
 io_settings:
-#  input_image_name: "input.png"
+  input_image_name: "input.png"  # USE THIS FOR LIVE SIMULATION, THE REST IS FOR TESTING
 #  input_image_name: "input_red_hierarchy.png"
 #  input_image_name: "input_red.png"
-  input_image_name: "input_naca_002.png"
+#  input_image_name: "input_naca_002.png"
 #  input_image_name: "input_naca_015.png"
 #  input_image_name: "input_naca_030.png"
 
@@ -23,7 +23,8 @@ simulation_settings:
   solid_color: "gray"  # Options are gray, red, green or blue
   manual_mode: false  # Set to true to use provided threshold values, otherwise smart detection is used
   force_invert_mask: false  # Set to true to force mask inversion if smart logic fails
-  image_recognition_debug_mode: false  # Set to true to plot the image recognition mask and PCA components
+  image_recognition_debug_mode: true  # Set to true to plot the image recognition mask
+  show_components_pca: true  # Set to true to plot the PCA components (image_recognition_debug_mode also needs to be true).
 
   # Image resolution cap (spatial resolution)
   max_image_res: 800  
