@@ -132,7 +132,8 @@ function run_simulation(
                 time_points=sim_data.time_points,
                 verbose=verbose,
                 plotbody=true,
-                auto_clims=true,
+                auto_clims=false,
+                clims=(-1,1),
                 invert_colors=true,
             )
         end
@@ -145,7 +146,8 @@ function run_simulation(
                 sim_data.vorticity_field;
                 save_path=vorticity_heatmap_path,
                 time_points=sim_data.time_points,
-                verbose=verbose
+                verbose=verbose,
+                clims=(-5,5),
             )
         end
             
