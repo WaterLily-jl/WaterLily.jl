@@ -48,16 +48,17 @@ function create_heatmap_gif_from_data!(
     invert_colors::Bool=false,
     kv...
 ) where T
-    # Auto compute clims if requested
+    # Auto compute clims (uses last frame, assumed to be best representative of steady state)
     if auto_clims
-        finite_vals = vec(data)[isfinite.(vec(data))]
+        last_slice = data[:, :, end]
+        finite_vals = vec(last_slice)[isfinite.(vec(last_slice))]
         if !isempty(finite_vals)
             max_abs = maximum(abs.(finite_vals))
             max_abs == 0 && (max_abs = 1e-6)
             clims = (-max_abs, max_abs)
-            verbose && println("auto_clims (symmetric): clims = ($(round(clims[1],digits=4)), $(round(clims[2],digits=4)))")
+            verbose && println("auto_clims (symmetric, last frame only): clims = ($(round(clims[1],digits=4)), $(round(clims[2],digits=4)))")
         else
-            verbose && println("auto_clims: no finite data found, keeping provided clims.")
+            verbose && println("auto_clims: no finite data in last frame, keeping provided clims.")
         end
     end
     
