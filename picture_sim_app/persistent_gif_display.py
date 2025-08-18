@@ -21,7 +21,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "output"
 CONFIG_PATH = SCRIPT_DIR / "configs" / "settings.yaml"  # <-- added
 GIF_LEFT = OUTPUT_DIR / "particleplot.gif"
-GIF_RIGHT = OUTPUT_DIR / "heatmap_vorticity.gif"
+GIF_RIGHT = OUTPUT_DIR / "heatmap_pressure.gif"
 
 # -------------------- GIF Loading -------------------- #
 

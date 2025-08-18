@@ -118,16 +118,14 @@ def run_simulation(settings):
         if not output_path_heatmap_vorticity.exists():
             raise FileNotFoundError(f"Could not find {output_path_heatmap_vorticity}")
 
-        # TODO: Uncomment this when heatmap_pressure is implemented
-        # if not output_path_heatmap_pressure.exists():
-        #     raise FileNotFoundError(f"Could not find {output_path_heatmap_pressure}")
+        if not output_path_heatmap_pressure.exists():
+            raise FileNotFoundError(f"Could not find {output_path_heatmap_pressure}")
 
         # Overwrite the output paths to the found files (use symlink instead of copying)
         symlink_particle = OUTPUT_FOLDER / "particleplot.gif"
         symlink_heatmap_vorticity = OUTPUT_FOLDER / "heatmap_vorticity.gif"
 
-        # TODO: Uncomment this when heatmap_pressure is implemented
-        # symlink_heatmap_pressure = OUTPUT_FOLDER / "heatmap_pressure.gif"
+        symlink_heatmap_pressure = OUTPUT_FOLDER / "heatmap_pressure.gif"
 
         # Remove existing symlinks/files if they exist
         if symlink_particle.exists() or symlink_particle.is_symlink():
@@ -135,16 +133,14 @@ def run_simulation(settings):
         if symlink_heatmap_vorticity.exists() or symlink_heatmap_vorticity.is_symlink():
             symlink_heatmap_vorticity.unlink()
 
-        # # TODO: Uncomment this when heatmap_pressure is implemented
-        # if symlink_heatmap_pressure.exists() or symlink_heatmap_pressure.is_symlink():
-        #     symlink_heatmap_pressure.unlink()
+        if symlink_heatmap_pressure.exists() or symlink_heatmap_pressure.is_symlink():
+            symlink_heatmap_pressure.unlink()
 
         # Create new symlinks pointing to the batch_runs files
         symlink_particle.symlink_to(output_path_particle_plot)
         symlink_heatmap_vorticity.symlink_to(output_path_heatmap_vorticity)
 
-        # # TODO: Uncomment this when heatmap_pressure is implemented
-        # symlink_heatmap_pressure.symlink_to(output_path_heatmap_pressure)
+        symlink_heatmap_pressure.symlink_to(output_path_heatmap_pressure)
 
 
 def main() -> None:
