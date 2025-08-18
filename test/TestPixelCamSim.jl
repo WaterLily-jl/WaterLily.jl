@@ -170,10 +170,10 @@ function main()
 
     mask_file = args[1]
     output_path = args[2]
-    # Parse optional plot paths (will set as nothing if length is too small)
-    particle_plot_path = length(args) >= 3 ? args[3] : nothing
-    pressure_heatmap_path = length(args) >= 3 ? args[4] : nothing
-    vorticity_heatmap_path= length(args) >= 3 ? args[5] : nothing
+    # Parse optional plot paths (assumes it's either 'null' or a valid path)
+    particle_plot_path = args[3] != "null" ? args[3] : nothing
+    pressure_heatmap_path = args[4] != "null" ? args[4] : nothing
+    vorticity_heatmap_path= args[5] != "null" ? args[5] : nothing
     LS = parse(Float64, args[6])
     Re = parse(Float64, args[7])
     ϵ = parse(Float64, args[8])
