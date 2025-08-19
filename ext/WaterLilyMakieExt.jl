@@ -135,6 +135,8 @@ Keyword arguments:
     - `theme::Attributes`: Makie theme, eg. `theme_light()` or `theme_latexfonts()`
     - `fig_size::Tuple{Int, Int}`: Figure size.
     - `fig_pad::Int`: Figure padding.
+    - `fig::Makie.Figure`: Figure object.
+    - `axis::Makie.Axis` or `axis::Makie.Axis`: Axis object.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
@@ -142,7 +144,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
-    theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
+    theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
 
     function update_data()
         f(dat, sim)
@@ -188,8 +190,9 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     !isnothing(theme) && set_theme!(theme)
-    fig = Figure(size=fig_size, figure_padding=fig_pad)
-    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
+    new_fig = isnothing(fig)
+    new_fig && (fig = Figure(size=fig_size, figure_padding=fig_pad))
+    isnothing(ax) && (ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation))
     if d == 2 && tidy_colormap
         clims = :clims in keys(kwargs) ? kwargs[:clims] : (-1,1)
         nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 10
@@ -215,14 +218,14 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
                 end
             end
         else
-            display(Makie.current_backend().Screen(), fig)
+            new_fig && display(Makie.current_backend().Screen(), fig)
             for tᵢ in range(t₀,t₀+duration;step)
                 step_sim_and_viz!(sim,tᵢ)
             end
         end
         return fig, ax
     end
-    display(Makie.current_backend().Screen(), fig)
+    new_fig && display(Makie.current_backend().Screen(), fig)
     return fig, ax
 end
 function viz!(sim, a::AbstractArray; kwargs...)
