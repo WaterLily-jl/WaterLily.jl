@@ -46,10 +46,5 @@ simulation_settings:
   mem: "Array"  # Memory type: "Array" or "CuArray"
   target_size: [ 800, 800 ]  # Target size for the output GIF
 
-  # Simulation type options:
-  # - "sim_with_vorticity_heatmap_gif" (the OG)
-  # - "particles" (uses PathLines library to create a particle plot)
-  # - "sim_only" (runs the sim without any plotting)
-  # - "sim_with_particle_and_heatmap_gif" (creates both the particle and heatmap gif)
-  use_precomputed_results: true
+  use_precomputed_results: true  # If true, uses precomputed results instead of running the simulation
   gif_display: "both" # Options: "both", "particle_plot", "heatmap"
