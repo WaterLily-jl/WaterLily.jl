@@ -1,6 +1,9 @@
 from pathlib import Path
 import json
 import os, shutil
+import time
+import subprocess
+import psutil
 
 import yaml
 
@@ -21,16 +24,105 @@ INPUT_FOLDER = SCRIPT_DIR / "input"
 OUTPUT_FOLDER = SCRIPT_DIR / "output"
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
+CAMERA_INDEX = 1
+
+
+def find_display_processes():
+    """Find running display processes by looking for our display scripts."""
+    processes = []
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = proc.info['cmdline']
+            if cmdline and any('persistent_gif_display' in str(arg) for arg in cmdline):
+                processes.append(proc.info['pid'])
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return processes
+
+
+def stop_display_processes():
+    """Stop any running display processes."""
+    pids = find_display_processes()
+    stopped = []
+    for pid in pids:
+        try:
+            proc = psutil.Process(pid)
+            proc.terminate()
+            proc.wait(timeout=5)  # Wait up to 5 seconds for graceful shutdown
+            stopped.append(pid)
+            print(f"[display] Stopped display process {pid}")
+        except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+            try:
+                proc.kill()  # Force kill if terminate didn't work
+                stopped.append(pid)
+                print(f"[display] Force killed display process {pid}")
+            except psutil.NoSuchProcess:
+                pass
+        except Exception as e:
+            print(f"[display] Failed to stop process {pid}: {e}")
+    return stopped
+
+
+def start_display_process(monitor_index=1, use_qt_version=True):
+    """Start the display process."""
+    try:
+        if use_qt_version:
+            script_path = SCRIPT_DIR / "persistent_gif_display_2.py"
+        else:
+            script_path = SCRIPT_DIR / "persistent_gif_display.py"
+
+        # Start the process in the background
+        proc = subprocess.Popen([
+            "python", str(script_path), str(monitor_index)
+        ], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
+
+        print(f"[display] Started display process {proc.pid} on monitor {monitor_index}")
+        time.sleep(2)  # Give it time to start
+        return proc.pid
+    except Exception as e:
+        print(f"[display] Failed to start display process: {e}")
+        return None
+
+
+def restart_display_process(monitor_index=1, use_qt_version=True):
+    """Stop existing display processes and start a new one."""
+    print("[display] Restarting display process...")
+    stopped_pids = stop_display_processes()
+    time.sleep(1)  # Brief pause between stop and start
+    new_pid = start_display_process(monitor_index, use_qt_version)
+    return new_pid
+
+
+def safe_unlink_windows(path: Path, max_retries: int = 3, delay: float = 0.5):
+    """
+    Simplified unlink - display process will be restarted so no need for complex retry logic.
+    """
+    for attempt in range(max_retries):
+        try:
+            if path.exists() or path.is_symlink():
+                path.unlink()
+            return True
+        except PermissionError as e:
+            if attempt < max_retries - 1:
+                print(f"[unlink] File locked, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                print(f"[unlink] Failed to unlink {path} after {max_retries} attempts: {e}")
+                raise
+        except Exception as e:
+            print(f"[unlink] Unexpected error unlinking {path}: {e}")
+            raise
+    return False
+
 
 def ensure_link(src: Path, dst: Path):
     """
-    Create a symlink to src at dst. On Windows without privilege, fall back to hardlink or copy.
+    Create a symlink to src at dst. Simplified version since display will be restarted.
     """
+    # Simple unlink since we're restarting the display process
     if dst.exists() or dst.is_symlink():
-        try:
-            dst.unlink()
-        except Exception:
-            pass
+        dst.unlink()
+
     try:
         dst.symlink_to(src)
         print(f"[link] symlink created: {dst} -> {src}")
@@ -40,6 +132,7 @@ def ensure_link(src: Path, dst: Path):
             print(f"[link] Symlink privilege missing (1314). Falling back to hardlink/copy.")
         else:
             print(f"[link] Symlink failed ({e}). Trying hardlink/copy.")
+
     # Hardlink attempt
     try:
         os.link(src, dst)
@@ -47,6 +140,7 @@ def ensure_link(src: Path, dst: Path):
         return
     except OSError as e:
         print(f"[link] Hardlink failed ({e}). Copying file.")
+
     # Copy fallback
     try:
         shutil.copy2(src, dst)
@@ -64,6 +158,7 @@ def run_simulation(settings):
         selection_box_mode=True,  # Click-and-drag selection box
         # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
         use_cached_box=True,  # Fixed typo: was use_chached_box
+        camera_index=CAMERA_INDEX,
     )
 
     # File I/O paths
@@ -166,22 +261,26 @@ def run_simulation(settings):
         # Overwrite the output paths to the found files (use symlink instead of copying)
         symlink_particle = OUTPUT_FOLDER / "particleplot.gif"
         symlink_heatmap_vorticity = OUTPUT_FOLDER / "heatmap_vorticity.gif"
-
         symlink_heatmap_pressure = OUTPUT_FOLDER / "heatmap_pressure.gif"
 
-        # Remove existing symlinks/files if they exist
-        if symlink_particle.exists() or symlink_particle.is_symlink():
-            symlink_particle.unlink()
-        if symlink_heatmap_vorticity.exists() or symlink_heatmap_vorticity.is_symlink():
-            symlink_heatmap_vorticity.unlink()
+        # Stop display processes to release files
+        print("Stopping display processes to update symlinks...")
+        stop_display_processes()
+        time.sleep(1)  # Give processes time to fully stop
 
-        if symlink_heatmap_pressure.exists() or symlink_heatmap_pressure.is_symlink():
-            symlink_heatmap_pressure.unlink()
+        # Remove existing symlinks/files if they exist (should work now)
+        safe_unlink_windows(symlink_particle)
+        safe_unlink_windows(symlink_heatmap_vorticity)
+        safe_unlink_windows(symlink_heatmap_pressure)
 
         # Create new symlinks pointing to the batch_runs files
         ensure_link(output_path_particle_plot, symlink_particle)
         ensure_link(output_path_heatmap_vorticity, symlink_heatmap_vorticity)
         ensure_link(output_path_heatmap_pressure, symlink_heatmap_pressure)
+
+        # Restart display process
+        print("Restarting display process...")
+        restart_display_process(monitor_index=1, use_qt_version=True)
 
     # Save airfoil data to JSON (use actual AoA, not rounded)
     airfoil_data = {
@@ -207,6 +306,7 @@ def main() -> None:
         fixed_aspect_ratio=tuple(settings["capture_image_aspect_ratio"]),
         selection_box_mode=True,
         use_cached_box=False,  # Interactive selection for first run
+        camera_index=CAMERA_INDEX,
     )
 
     # Run first simulation
@@ -231,6 +331,7 @@ def main() -> None:
                 fixed_aspect_ratio=tuple(settings["capture_image_aspect_ratio"]),
                 selection_box_mode=True,
                 use_cached_box=False,  # Force interactive selection
+                camera_index=CAMERA_INDEX,
             )
             # Reload settings and run simulation with new box
             with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
