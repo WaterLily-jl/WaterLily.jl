@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os, shutil
 
 import yaml
 
@@ -20,7 +21,38 @@ INPUT_FOLDER = SCRIPT_DIR / "input"
 OUTPUT_FOLDER = SCRIPT_DIR / "output"
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
-ASPECT_RATIO = (3,2)
+
+def ensure_link(src: Path, dst: Path):
+    """
+    Create a symlink to src at dst. On Windows without privilege, fall back to hardlink or copy.
+    """
+    if dst.exists() or dst.is_symlink():
+        try:
+            dst.unlink()
+        except Exception:
+            pass
+    try:
+        dst.symlink_to(src)
+        print(f"[link] symlink created: {dst} -> {src}")
+        return
+    except OSError as e:
+        if getattr(e, "winerror", None) == 1314:
+            print(f"[link] Symlink privilege missing (1314). Falling back to hardlink/copy.")
+        else:
+            print(f"[link] Symlink failed ({e}). Trying hardlink/copy.")
+    # Hardlink attempt
+    try:
+        os.link(src, dst)
+        print(f"[link] hardlink created: {dst} -> {src}")
+        return
+    except OSError as e:
+        print(f"[link] Hardlink failed ({e}). Copying file.")
+    # Copy fallback
+    try:
+        shutil.copy2(src, dst)
+        print(f"[link] file copied: {dst} (from {src})")
+    except Exception as e:
+        raise RuntimeError(f"Failed to create link or copy from {src} to {dst}: {e}")
 
 
 def run_simulation(settings):
@@ -147,10 +179,9 @@ def run_simulation(settings):
             symlink_heatmap_pressure.unlink()
 
         # Create new symlinks pointing to the batch_runs files
-        symlink_particle.symlink_to(output_path_particle_plot)
-        symlink_heatmap_vorticity.symlink_to(output_path_heatmap_vorticity)
-
-        symlink_heatmap_pressure.symlink_to(output_path_heatmap_pressure)
+        ensure_link(output_path_particle_plot, symlink_particle)
+        ensure_link(output_path_heatmap_vorticity, symlink_heatmap_vorticity)
+        ensure_link(output_path_heatmap_pressure, symlink_heatmap_pressure)
 
     # Save airfoil data to JSON (use actual AoA, not rounded)
     airfoil_data = {
