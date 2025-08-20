@@ -19,7 +19,7 @@ class GifLabel(QLabel):
         self.symlink_path = path
         self.real_target = None
         self.setAlignment(Qt.AlignCenter)  # center the GIF
-        self.setScaledContents(True)  # Scale content to fit label size
+        self.setScaledContents(False)  # Don't scale contents, we'll handle it manually
         self.load_movie()
 
     def load_movie(self):
@@ -28,20 +28,45 @@ class GifLabel(QLabel):
             self.real_target = new_target
             movie = QMovie(self.symlink_path)
             if movie.isValid():
-                movie.setScaledSize(self.size())  # Scale to label size
                 self.setMovie(movie)
                 movie.start()
                 self.movie = movie
+                self._scale_movie()  # Scale with aspect ratio preservation
                 print(f"Loaded GIF: {self.symlink_path} -> {self.real_target}")
             else:
                 self.setText(f"Invalid GIF: {self.symlink_path}")
                 print(f"Failed to load: {self.symlink_path}")
 
+    def _scale_movie(self):
+        """Scale movie preserving aspect ratio"""
+        if hasattr(self, 'movie') and self.movie:
+            # Get original size
+            original_size = self.movie.frameRect().size()
+            if original_size.isEmpty():
+                return
+
+            # Get available space (leave some margin for safety)
+            available_size = self.size()
+            margin = 10
+            available_width = max(1, available_size.width() - margin)
+            available_height = max(1, available_size.height() - margin)
+
+            # Calculate scaling factor to fit while preserving aspect ratio
+            scale_x = available_width / original_size.width()
+            scale_y = available_height / original_size.height()
+            scale_factor = min(scale_x, scale_y)  # Use smaller scale to fit entirely
+
+            # Calculate new size
+            new_width = int(original_size.width() * scale_factor)
+            new_height = int(original_size.height() * scale_factor)
+
+            from PyQt5.QtCore import QSize
+            self.movie.setScaledSize(QSize(new_width, new_height))
+
     def resizeEvent(self, event):
         """Handle resize events to rescale the movie"""
         super().resizeEvent(event)
-        if hasattr(self, 'movie') and self.movie:
-            self.movie.setScaledSize(self.size())
+        self._scale_movie()
 
     def check_update(self):
         """Check if symlink target changed, reload if needed"""
@@ -52,12 +77,14 @@ class GifDisplay(QWidget):
         super().__init__()
         self.monitor_index = monitor_index
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
-        layout.setSpacing(0)  # Remove spacing between GIFs
+        layout.setContentsMargins(5, 5, 5, 5)  # Small margins to prevent edge cropping
+        layout.setSpacing(5)  # Small spacing between GIFs
         self.labels = []
         for p in paths:
             label = GifLabel(p)
-            layout.addWidget(label)
+            # Set minimum size to ensure visibility
+            label.setMinimumSize(200, 150)
+            layout.addWidget(label, 1)  # Equal stretch for both labels
             self.labels.append(label)
 
         # poll symlinks every 2s
