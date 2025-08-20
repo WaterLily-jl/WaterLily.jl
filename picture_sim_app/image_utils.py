@@ -1,11 +1,130 @@
 import os
 import json
 from pathlib import Path
+import threading
+import time
 
 import cv2
 import numpy as np
 from PIL import Image, ImageSequence
 import pygame
+
+def enumerate_cameras(max_cameras: int = 5, timeout_per_camera: float = 2.0) -> list:
+    """
+    Enumerate available cameras with timeout to prevent hanging.
+    
+    Args:
+        max_cameras: Maximum number of camera indices to check
+        timeout_per_camera: Timeout in seconds for each camera check
+        
+    Returns:
+        list: List of dictionaries with camera info
+    """
+    available_cameras = []
+    
+    def test_camera(index, result_list):
+        try:
+            cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)  # Use DirectShow on Windows for better performance
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Set lower resolution for faster enumeration
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            
+            if cap.isOpened():
+                # Quick test read
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    backend_name = cap.getBackendName()
+                    
+                    result_list.append({
+                        'index': index,
+                        'name': f"Camera {index} ({backend_name})",
+                        'resolution': (width, height)
+                    })
+            cap.release()
+        except:
+            pass  # Ignore any errors during enumeration
+    
+    # Test cameras with threading and timeout
+    for i in range(max_cameras):
+        result = []
+        thread = threading.Thread(target=test_camera, args=(i, result))
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=timeout_per_camera)
+        
+        if thread.is_alive():
+            # Thread timed out, skip this camera
+            continue
+            
+        available_cameras.extend(result)
+        
+        # If we found cameras but this one failed, and we're past index 1, stop checking
+        if not result and available_cameras and i > 1:
+            break
+    
+    return available_cameras
+
+def select_camera(auto_select_external: bool = True, silent: bool = False) -> int:
+    """
+    Select camera with optimized enumeration and fallback options.
+    
+    Args:
+        auto_select_external: If True, automatically selects the highest index camera
+        silent: If True, suppress all output
+        
+    Returns:
+        int: Selected camera index
+    """
+    if not silent:
+        print("Enumerating cameras...")
+    
+    cameras = enumerate_cameras()
+    
+    if not cameras:
+        # Fallback: try common camera indices directly
+        for i in [0, 1, 2]:
+            try:
+                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    cap.release()
+                    if ret and frame is not None:
+                        if not silent:
+                            print(f"Found working camera at index {i}")
+                        return i
+            except:
+                continue
+        raise RuntimeError("No working cameras found.")
+    
+    if len(cameras) == 1:
+        selected = cameras[0]['index']
+        if not silent:
+            print(f"Using camera {selected}: {cameras[0]['name']}")
+        return selected
+    
+    if auto_select_external:
+        # Select the highest index camera (usually external)
+        selected = cameras[-1]['index']
+        if not silent:
+            print(f"Auto-selected external camera {selected}: {cameras[-1]['name']}")
+        return selected
+    
+    # Interactive selection
+    if not silent:
+        print("Available cameras:")
+        for cam in cameras:
+            print(f"  {cam['index']}: {cam['name']} - {cam['resolution'][0]}x{cam['resolution'][1]}")
+    
+    while True:
+        try:
+            choice = int(input(f"Select camera index: "))
+            if any(cam['index'] == choice for cam in cameras):
+                return choice
+            print(f"Invalid choice. Available indices: {[cam['index'] for cam in cameras]}")
+        except (ValueError, KeyboardInterrupt):
+            # Default to first available camera
+            return cameras[0]['index']
 
 def load_cached_bbox(cache_file: Path):
     """Load cached bounding box if it exists."""
@@ -31,44 +150,48 @@ def capture_image(
         selection_box_mode: bool = True,
         saved_selection: tuple = None,
         use_cached_box: bool = False,
+        camera_index: int = 1,
+        auto_select_external: bool = True,
 ) -> tuple:
     """
-    Capture image from webcam with optional fixed aspect ratio, size, or interactive selection box.
-    Now includes automatic caching of bounding box selections.
-    
-    Args:
-        input_folder: Folder to save the captured image
-        image_name: Name of the output image file
-        fixed_aspect_ratio: If provided (width, height), enforces this aspect ratio
-        fixed_size: If provided (width, height), captures image at this exact size
-        selection_box_mode: If True, shows a click-and-drag selection with fixed aspect ratio
-        saved_selection: If provided (x, y, w, h), uses this as the initial selection box
-        use_cached_box: If True, automatically uses cached bounding box without user interaction
-        
-    Returns:
-        tuple: (x, y, w, h) coordinates of the selected region, or None if cancelled
+    Capture image from webcam with optimized camera handling.
     """
     # Setup cache file path
     cache_dir = Path(input_folder).parent / "cache"
     cache_file = cache_dir / "bbox_cache.json"
+    
+    # Select camera if not specified
+    if camera_index is None:
+        try:
+            camera_index = select_camera(auto_select_external, silent=use_cached_box)
+        except RuntimeError as e:
+            print(f"Camera selection failed: {e}")
+            # Try default camera as last resort
+            camera_index = 0
     
     # If use_cached_box is True, try to load and use cached box automatically
     if use_cached_box and selection_box_mode:
         cached_data = load_cached_bbox(cache_file)
         if cached_data:
             saved_selection = tuple(cached_data.get("bbox", (0, 0, 0, 0)))
-            print(f"Using cached bounding box: {saved_selection}")
             
             # Capture image automatically using cached bbox
-            cap = cv2.VideoCapture(0)
+            cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
             if not cap.isOpened():
-                raise RuntimeError("Webcam not found or cannot be opened.")
+                raise RuntimeError(f"Camera {camera_index} not accessible.")
+            
+            # Optimize camera settings for performance
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            
+            # Wait a moment for camera to initialize
+            time.sleep(0.5)
             
             ret, frame = cap.read()
             cap.release()
             
-            if not ret:
-                raise RuntimeError("Failed to capture frame from webcam.")
+            if not ret or frame is None:
+                raise RuntimeError("Failed to capture frame from camera.")
             
             # Apply cached bounding box
             box_x, box_y, box_w, box_h = saved_selection
@@ -84,47 +207,63 @@ def capture_image(
             selected_region = frame[box_y:box_y + box_h, box_x:box_x + box_w]
             path = Path(input_folder) / image_name
             cv2.imwrite(str(path), selected_region)
-            print(f"Image automatically captured using cached bbox and saved to {path}")
             
             return (box_x, box_y, box_w, box_h)
-        else:
-            print("No cached bounding box found. Falling back to interactive mode.")
-            # Fall through to interactive mode
     
     # Try to load cached bounding box if no saved_selection provided (interactive mode)
     if saved_selection is None and selection_box_mode and not use_cached_box:
         cached_data = load_cached_bbox(cache_file)
         if cached_data:
             saved_selection = tuple(cached_data.get("bbox", (0, 0, 0, 0)))
-            print(f"Found cached bounding box: {saved_selection}")
-            print("Press ENTER to use cached selection, or 'r' to reselect:")
+            print("Press ENTER to use cached selection, or 'r' to reselect (5 sec timeout):")
             
-            # Simple input check - if user wants to reselect
+            # Timeout for user input to prevent hanging
+            def get_user_input():
+                try:
+                    return input().strip().lower()
+                except:
+                    return ""
+            
+            import signal
+            def timeout_handler(signum, frame):
+                raise TimeoutError()
+            
             try:
-                user_input = input().strip().lower()
+                # Set timeout for Windows (using threading as signal doesn't work well on Windows)
+                result = []
+                def input_thread():
+                    try:
+                        result.append(input().strip().lower())
+                    except:
+                        result.append("")
+                
+                thread = threading.Thread(target=input_thread)
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout=5.0)
+                
+                user_input = result[0] if result else ""
                 if user_input == 'r':
                     saved_selection = None
-                    print("Will create new selection...")
-                else:
-                    print("Using cached selection...")
-            except KeyboardInterrupt:
-                print("Using cached selection...")
+            except:
+                pass  # Use cached selection on any error
     
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
     if not cap.isOpened():
-        raise RuntimeError("Webcam not found or cannot be opened.")
+        raise RuntimeError(f"Camera {camera_index} not accessible.")
+
+    # Optimize camera settings for performance
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    
+    # Wait for camera to stabilize
+    time.sleep(0.5)
 
     if selection_box_mode and fixed_aspect_ratio:
         print("ASPECT RATIO SELECTION MODE:")
         if saved_selection:
-            print("- Previous selection loaded as default")
-            print("- Press [space] to use current selection")
-        print("- Click and drag to define a new selection area (constant aspect ratio)")
-        print("- After selection, use [w/a/s/d] to fine-tune position")
-        print("- Press [r] to reset and start over")
-        print("- Press [space] to capture the selected region")
-        print("- Press [ESC] to quit")
-        print(f"- Target aspect ratio: {fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}")
+            print("- Previous selection loaded")
+        print("- Click+drag to select, [w/a/s/d] to adjust, [space] to capture, [ESC] to quit")
         
         # Variables for click-and-drag selection
         target_ratio = fixed_aspect_ratio[0] / fixed_aspect_ratio[1]
@@ -136,7 +275,6 @@ def capture_image(
         if saved_selection:
             box_x, box_y, box_w, box_h = saved_selection
             selection_made = True
-            print(f"Using previous selection: {box_w}x{box_h} at ({box_x}, {box_y})")
         else:
             box_x, box_y, box_w, box_h = 0, 0, 0, 0
         
@@ -151,152 +289,119 @@ def capture_image(
                 
             elif event == cv2.EVENT_MOUSEMOVE and drawing:
                 if start_point:
-                    # Calculate the width and height from drag
                     drag_w = abs(x - start_point[0])
                     drag_h = abs(y - start_point[1])
                     
-                    # Prevent division by zero and handle very small movements
                     if drag_w < 10 and drag_h < 10:
-                        # Too small to determine aspect ratio, skip update
                         return
                     elif drag_h == 0:
-                        # Purely horizontal drag - use width to determine height
                         box_w = drag_w
                         box_h = int(box_w / target_ratio)
                     elif drag_w == 0:
-                        # Purely vertical drag - use height to determine width
                         box_h = drag_h
                         box_w = int(box_h * target_ratio)
                     else:
-                        # Normal case - determine which dimension constrains the box
                         if drag_w / drag_h > target_ratio:
-                            # Width is the limiting factor
                             box_h = drag_h
                             box_w = int(box_h * target_ratio)
                         else:
-                            # Height is the limiting factor  
                             box_w = drag_w
                             box_h = int(box_w / target_ratio)
                     
                     # Position the box based on drag direction
-                    if x >= start_point[0]:  # Dragging right
-                        box_x = start_point[0]
-                    else:  # Dragging left
-                        box_x = start_point[0] - box_w
-                        
-                    if y >= start_point[1]:  # Dragging down
-                        box_y = start_point[1]
-                    else:  # Dragging up
-                        box_y = start_point[1] - box_h
+                    box_x = start_point[0] if x >= start_point[0] else start_point[0] - box_w
+                    box_y = start_point[1] if y >= start_point[1] else start_point[1] - box_h
                     
                     # Keep box within camera bounds
-                    if box_x < 0:
-                        box_x = 0
-                    if box_y < 0:
-                        box_y = 0
-                    if box_x + box_w > cap.get(cv2.CAP_PROP_FRAME_WIDTH):
-                        box_x = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) - box_w)
-                    if box_y + box_h > cap.get(cv2.CAP_PROP_FRAME_HEIGHT):
-                        box_y = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) - box_h)
+                    cam_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    cam_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    box_x = max(0, min(cam_w - box_w, box_x))
+                    box_y = max(0, min(cam_h - box_h, box_y))
                         
             elif event == cv2.EVENT_LBUTTONUP:
                 drawing = False
                 if box_w > 0 and box_h > 0:
                     selection_made = True
-                    print("Selection made! Use [w/a/s/d] to adjust position, [r] to reset, [space] to capture.")
         
-        cv2.namedWindow("Live Feed")
+        cv2.namedWindow("Live Feed", cv2.WINDOW_AUTOSIZE)
         cv2.setMouseCallback("Live Feed", mouse_callback)
         
+        frame_count = 0
         while True:
             ret, frame = cap.read()
             if not ret:
+                continue
+            
+            # Skip frames for better performance
+            frame_count += 1
+            if frame_count % 2 != 0:  # Only process every other frame
                 continue
                 
             display_frame = frame.copy()
             
             # Draw the selection box if we have valid dimensions
             if box_w > 0 and box_h > 0:
-                # Change color based on selection state
-                color = (0, 255, 0) if selection_made else (255, 255, 0)  # Green if selected, yellow while dragging
+                color = (0, 255, 0) if selection_made else (255, 255, 0)
                 cv2.rectangle(display_frame, (box_x, box_y), (box_x + box_w, box_y + box_h), color, 2)
                 
                 # Draw corner markers
-                corner_size = 10
-                corners = [
-                    (box_x, box_y), (box_x + box_w, box_y),
-                    (box_x, box_y + box_h), (box_x + box_w, box_y + box_h)
-                ]
+                corners = [(box_x, box_y), (box_x + box_w, box_y), (box_x, box_y + box_h), (box_x + box_w, box_y + box_h)]
                 for (cx, cy) in corners:
-                    cv2.line(display_frame, (cx - corner_size, cy), (cx + corner_size, cy), color, 2)
-                    cv2.line(display_frame, (cx, cy - corner_size), (cx, cy + corner_size), color, 2)
+                    cv2.line(display_frame, (cx - 10, cy), (cx + 10, cy), color, 2)
+                    cv2.line(display_frame, (cx, cy - 10), (cx, cy + 10), color, 2)
                 
-                # Add text overlay with status
-                status = "SELECTED - Use WASD to adjust" if selection_made else "DRAGGING"
-                cv2.putText(display_frame, f"Box: {box_w}x{box_h} - {status}", (box_x, box_y - 10), 
+                status = "SELECTED" if selection_made else "DRAGGING"
+                cv2.putText(display_frame, f"{box_w}x{box_h} - {status}", (box_x, box_y - 10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             
             cv2.imshow("Live Feed", display_frame)
             
-            key = cv2.waitKey(1) & 0xFF
+            key = cv2.waitKey(30) & 0xFF  # Increase wait time for better performance
             if key == 27:  # ESC
-                print("Aborted.")
                 cap.release()
                 cv2.destroyAllWindows()
-                return
+                return None
             elif key == 32:  # Spacebar
                 if box_w > 0 and box_h > 0:
-                    # Capture the selected region
                     selected_region = frame[box_y:box_y + box_h, box_x:box_x + box_w]
-                    path = input_folder / image_name
+                    path = Path(input_folder) / image_name
                     cv2.imwrite(str(path), selected_region)
-                    print(f"Image saved to {path}")
                     
                     # Save bounding box to cache
                     bbox_data = {
                         'bbox': (box_x, box_y, box_w, box_h),
                         'aspect_ratio': fixed_aspect_ratio,
-                        'image_name': image_name
+                        'image_name': image_name,
+                        'camera_index': camera_index
                     }
                     save_bbox_cache(cache_file, bbox_data)
-                    print(f"Bounding box cached for future use")
-                    
                     break
-                else:
-                    print("Please select a region first by clicking and dragging.")
             
-            # WASD controls for fine-tuning position (only after selection is made)
+            # WASD controls for fine-tuning position
             if selection_made:
-                move_step = 5  # Smaller step for fine adjustment
+                move_step = 5
                 cam_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 cam_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 
-                if key == ord('w'):  # Move up
+                if key == ord('w'):
                     box_y = max(0, box_y - move_step)
-                elif key == ord('s'):  # Move down
+                elif key == ord('s'):
                     box_y = min(cam_h - box_h, box_y + move_step)
-                elif key == ord('a'):  # Move left
+                elif key == ord('a'):
                     box_x = max(0, box_x - move_step)
-                elif key == ord('d'):  # Move right
+                elif key == ord('d'):
                     box_x = min(cam_w - box_w, box_x + move_step)
-                elif key == ord('r'):  # Reset selection
+                elif key == ord('r'):
                     selection_made = False
                     box_x, box_y, box_w, box_h = 0, 0, 0, 0
-                    print("Selection reset. Click and drag to make a new selection.")
         
         cap.release()
         cv2.destroyAllWindows()
-        
-        # Return the coordinates of the final selection
         return (box_x, box_y, box_w, box_h)
         
     else:
         # Original behavior for non-selection modes
-        print("Press [space] to capture image, or [ESC] to quit.")
-        if fixed_aspect_ratio:
-            print(f"Fixed aspect ratio mode: {fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}")
-        if fixed_size:
-            print(f"Fixed size mode: {fixed_size[0]}x{fixed_size[1]} pixels")
+        print("Press [space] to capture, [ESC] to quit.")
         
         while True:
             ret, frame = cap.read()
@@ -304,16 +409,14 @@ def capture_image(
                 continue
             cv2.imshow("Live Feed", frame)
 
-            key = cv2.waitKey(1) & 0xFF
+            key = cv2.waitKey(30) & 0xFF
             if key == 27:  # ESC
-                print("Aborted.")
                 cap.release()
                 cv2.destroyAllWindows()
-                return (0, 0, 0, 0)  # Return empty coordinates when aborted
+                return (0, 0, 0, 0)
             elif key == 32:  # Spacebar
-                path = input_folder / image_name
+                path = Path(input_folder) / image_name
                 cv2.imwrite(str(path), frame)
-                print(f"Image saved to {path}")
                 break
 
         cap.release()
@@ -344,9 +447,6 @@ def capture_image(
                 cropped_img = padded_img
                 
             cv2.imwrite(str(path), cropped_img)
-            print(f"Fixed size image ({target_w}x{target_h}) saved to {path}")
-            
-            # Return the crop coordinates for fixed size mode
             return (start_x, start_y, target_w, target_h)
             
         elif fixed_aspect_ratio:
@@ -365,11 +465,8 @@ def capture_image(
                 cropped_img = img[start_y:start_y + new_height, :]
             
             cv2.imwrite(str(path), cropped_img)
-            print(f"Fixed aspect ratio image ({fixed_aspect_ratio[0]}:{fixed_aspect_ratio[1]}) saved to {path}")
-            
-            # Return the crop coordinates for fixed aspect ratio mode
             h, w = cropped_img.shape[:2]
-            return (0, 0, w, h)  # Since we processed the full image
+            return (0, 0, w, h)
         
         else:
             # Original manual cropping behavior
@@ -381,12 +478,10 @@ def capture_image(
             if w > 0 and h > 0:
                 cropped_img = img[int(y):int(y+h), int(x):int(x+w)]
                 cv2.imwrite(str(path), cropped_img)
-                print(f"Cropped image saved to {path}")
-                return (int(x), int(y), int(w), int(h))  # Return the manual crop coordinates
+                return (int(x), int(y), int(w), int(h))
             else:
-                print("No crop selected, original image kept.")
                 h, w = img.shape[:2]
-                return (0, 0, w, h)  # Return full image coordinates
+                return (0, 0, w, h)
 
 def list_monitors() -> list:
     """List available monitors and their properties."""
