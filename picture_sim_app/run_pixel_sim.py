@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import yaml
 
@@ -150,6 +151,18 @@ def run_simulation(settings):
         symlink_heatmap_vorticity.symlink_to(output_path_heatmap_vorticity)
 
         symlink_heatmap_pressure.symlink_to(output_path_heatmap_pressure)
+
+    # Save airfoil data to JSON (use actual AoA, not rounded)
+    airfoil_data = {
+        "airfoil_type": airfoil_type if object_is_airfoil else "unknown",
+        "aoa": round(aoa, 1),
+        "thickness": round(thickness, 3),
+        "characteristic_length": round(l_c, 3)
+    }
+
+    airfoil_data_path = OUTPUT_FOLDER / "airfoil_data.json"
+    with open(airfoil_data_path, "w") as f:
+        json.dump(airfoil_data, f, indent=2)
 
 
 def main() -> None:

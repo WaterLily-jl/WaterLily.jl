@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 from pathlib import Path
 
 from PyQt5.QtWidgets import QApplication, QLabel, QWidget, QHBoxLayout, QVBoxLayout, QDesktopWidget
@@ -8,9 +9,16 @@ from PyQt5.QtCore import QTimer, Qt
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = SCRIPT_DIR / "output"
-CONFIG_PATH = SCRIPT_DIR / "configs" / "settings.yaml"  # <-- added
+CONFIG_PATH = SCRIPT_DIR / "configs" / "settings.yaml"
+AIRFOIL_DATA_PATH = OUTPUT_DIR / "airfoil_data.json"
 GIF_LEFT = OUTPUT_DIR / "particleplot.gif"
 GIF_RIGHT = OUTPUT_DIR / "heatmap_pressure.gif"
+
+AIRFOIL_NAME_MAPPING = {
+    "naca_002": "NACA 0002",
+    "naca_015": "NACA 0015",
+    "naca_030": "NACA 0030",
+}
 
 
 class GifLabel(QLabel):
@@ -91,25 +99,51 @@ class GifDisplay(QWidget):
             self.labels.append(label)
 
         # Create title label as overlay (no layout, positioned manually)
-        self.title_label = QLabel("test title", self)
+        self.title_label = QLabel("Loading...", self)
         self.title_label.setAlignment(Qt.AlignCenter)
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
         self.title_label.setFont(title_font)
-        self.title_label.setStyleSheet("color: black; background-color: white; border-radius: 5px; padding: 5px;")  # White background, black text
+        self.title_label.setStyleSheet("color: black; padding: 5px;")  # Black text, no background
         self.title_label.setAttribute(Qt.WA_TransparentForMouseEvents)  # Allow mouse events to pass through
+        
+        # Update title with airfoil data
+        self.update_title()
         
         # poll symlinks every 2s
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll_symlinks)
         self.timer.start(2000)
 
+    def load_airfoil_data(self):
+        """Load airfoil data from JSON file"""
+        try:
+            if AIRFOIL_DATA_PATH.exists():
+                with open(AIRFOIL_DATA_PATH, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"Error loading airfoil data: {e}")
+        return None
+
+    def update_title(self):
+        """Update title with current airfoil data"""
+        airfoil_data = self.load_airfoil_data()
+        if airfoil_data:
+            airfoil_type = airfoil_data.get('airfoil_type', 'unknown')
+            aoa = airfoil_data.get('aoa', 0)
+            airfoil_name = AIRFOIL_NAME_MAPPING[airfoil_type]
+            title_text = f"Airfoil={airfoil_name}, \t Angle of attack={aoa}°"
+        else:
+            title_text = "No airfoil data available"
+        
+        self.title_label.setText(title_text)
+
     def resizeEvent(self, event):
         """Position the title overlay when window is resized"""
         super().resizeEvent(event)
-        # Position title at top center
-        title_width = 300  # Fixed width for title
+        # Position title at top center with wider width to prevent cropping
+        title_width = min(800, self.width() - 20)  # Use most of screen width, max 800px
         title_height = 40  # Fixed height for title
         x = (self.width() - title_width) // 2
         y = 10  # 10px from top
@@ -118,6 +152,8 @@ class GifDisplay(QWidget):
     def poll_symlinks(self):
         for label in self.labels:
             label.check_update()
+        # Also update title in case airfoil data changed
+        self.update_title()
 
     def show_on_monitor(self):
         """Show the window on the specified monitor"""
