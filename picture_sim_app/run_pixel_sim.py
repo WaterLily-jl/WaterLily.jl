@@ -66,14 +66,20 @@ def run_simulation(settings):
     if plot_mask:
         pixel_body.plot_mask()
 
+    object_is_airfoil = True
+
     if not simulation_settings["use_precomputed_results"]:
         # Estimate characteristic length and angle of attack using PCA
         l_c, aoa, thickness = characteristic_length_and_aoa_pca(
             mask=domain_mask,
             plot_method=image_recognition_debug_mode,
             show_components=show_components_pca,
-            object_is_airfoil=True,
+            object_is_airfoil=object_is_airfoil,
         )
+
+        if object_is_airfoil:
+            # Estimate airfoil type based on thickness and characteristic length
+            airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness / l_c)
 
         run_julia_simulation_script(
             domain_mask=domain_mask,
@@ -95,11 +101,12 @@ def run_simulation(settings):
             mask=domain_mask,
             plot_method=image_recognition_debug_mode,
             show_components=show_components_pca,
-            object_is_airfoil=True,
+            object_is_airfoil=object_is_airfoil,
         )
 
-        # Estimate airfoil type based on thickness and characteristic length
-        airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness / l_c)
+        if object_is_airfoil:
+            # Estimate airfoil type based on thickness and characteristic length
+            airfoil_type = detect_airfoil_type(thickness_to_cord_ratio=thickness / l_c)
 
         # Round angle of attack to nearest multiple of 3
         rounded_aoa = round(aoa / 3) * 3
