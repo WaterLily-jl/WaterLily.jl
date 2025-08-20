@@ -19,13 +19,15 @@ INPUT_FOLDER = SCRIPT_DIR / "input"
 OUTPUT_FOLDER = SCRIPT_DIR / "output"
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
+ASPECT_RATIO = (3,2)
+
 
 def run_simulation(settings):
     """Run one complete simulation cycle."""
     # Capture image (skips bounding box selection and uses cached option)
     capture_image(
         input_folder=INPUT_FOLDER,
-        fixed_aspect_ratio=(16, 9),  # Aspect ratio of the selection box (width:height)
+        fixed_aspect_ratio=tuple(settings["capture_image_aspect_ratio"]),  # Aspect ratio of the selection box (width:height)
         selection_box_mode=True,  # Click-and-drag selection box
         # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
         use_cached_box=True,  # Fixed typo: was use_chached_box
@@ -151,7 +153,7 @@ def main() -> None:
     # First run with interactive selection (don't use cached box)
     capture_image(
         input_folder=INPUT_FOLDER,
-        fixed_aspect_ratio=(16, 9),
+        fixed_aspect_ratio=tuple(settings["capture_image_aspect_ratio"]),
         selection_box_mode=True,
         use_cached_box=False,  # Interactive selection for first run
     )
@@ -175,7 +177,7 @@ def main() -> None:
             print("Reselecting bounding box...")
             capture_image(
                 input_folder=INPUT_FOLDER,
-                fixed_aspect_ratio=(16, 9),
+                fixed_aspect_ratio=tuple(settings["capture_image_aspect_ratio"]),
                 selection_box_mode=True,
                 use_cached_box=False,  # Force interactive selection
             )
