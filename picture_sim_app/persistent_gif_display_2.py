@@ -98,14 +98,26 @@ class GifDisplay(QWidget):
             main_layout.addWidget(label, 1)  # Equal stretch for both labels
             self.labels.append(label)
 
-        # Create title label as overlay (no layout, positioned manually)
+        # Create title label as overlay with improved styling
         self.title_label = QLabel("Loading...", self)
         self.title_label.setAlignment(Qt.AlignCenter)
         title_font = QFont()
-        title_font.setPointSize(24)
+        title_font.setPointSize(18)  # Reduced from 24 to 18
         title_font.setBold(True)
         self.title_label.setFont(title_font)
-        self.title_label.setStyleSheet("color: black; padding: 5px;")  # Black text, no background
+        
+        # Add semi-transparent background and white text for better visibility
+        self.title_label.setStyleSheet("""
+            QLabel {
+                color: white; 
+                background-color: rgba(0, 0, 0, 150); 
+                border-radius: 8px; 
+                padding: 8px;
+            }
+        """)
+        
+        # Make sure title is always on top
+        self.title_label.raise_()
         self.title_label.setAttribute(Qt.WA_TransparentForMouseEvents)  # Allow mouse events to pass through
         
         # Update title with airfoil data
@@ -132,8 +144,8 @@ class GifDisplay(QWidget):
         if airfoil_data:
             airfoil_type = airfoil_data.get('airfoil_type', 'unknown')
             aoa = airfoil_data.get('aoa', 0)
-            airfoil_name = AIRFOIL_NAME_MAPPING[airfoil_type]
-            title_text = f"Airfoil={airfoil_name}, \t Angle of attack={aoa}°"
+            airfoil_name = AIRFOIL_NAME_MAPPING.get(airfoil_type, airfoil_type.upper())
+            title_text = f"Airfoil: {airfoil_name} | AoA: {aoa}°"  # Simplified format
         else:
             title_text = "No airfoil data available"
         
@@ -142,18 +154,23 @@ class GifDisplay(QWidget):
     def resizeEvent(self, event):
         """Position the title overlay when window is resized"""
         super().resizeEvent(event)
-        # Position title at top center with wider width to prevent cropping
-        title_width = min(800, self.width() - 20)  # Use most of screen width, max 800px
-        title_height = 40  # Fixed height for title
+        # Position title at top center with wider sizing for full text visibility
+        title_width = min(800, self.width() - 20)  # Increased max width, smaller margin
+        title_height = 45  # Adequate height for text
         x = (self.width() - title_width) // 2
-        y = 10  # 10px from top
+        y = 10  # Closer to top
         self.title_label.setGeometry(x, y, title_width, title_height)
+        
+        # Ensure title stays on top after resize
+        self.title_label.raise_()
 
     def poll_symlinks(self):
         for label in self.labels:
             label.check_update()
         # Also update title in case airfoil data changed
         self.update_title()
+        # Ensure title stays visible
+        self.title_label.raise_()
 
     def show_on_monitor(self):
         """Show the window on the specified monitor"""
