@@ -2,8 +2,8 @@ import sys
 import os
 from pathlib import Path
 
-from PyQt5.QtWidgets import QApplication, QLabel, QWidget, QHBoxLayout, QDesktopWidget
-from PyQt5.QtGui import QMovie
+from PyQt5.QtWidgets import QApplication, QLabel, QWidget, QHBoxLayout, QVBoxLayout, QDesktopWidget
+from PyQt5.QtGui import QMovie, QFont
 from PyQt5.QtCore import QTimer, Qt
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -76,21 +76,44 @@ class GifDisplay(QWidget):
     def __init__(self, paths, monitor_index=1):
         super().__init__()
         self.monitor_index = monitor_index
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)  # Small margins to prevent edge cropping
-        layout.setSpacing(5)  # Small spacing between GIFs
+        
+        # Main horizontal layout for GIFs (no title space taken)
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(5)
+        
         self.labels = []
         for p in paths:
             label = GifLabel(p)
             # Set minimum size to ensure visibility
             label.setMinimumSize(200, 150)
-            layout.addWidget(label, 1)  # Equal stretch for both labels
+            main_layout.addWidget(label, 1)  # Equal stretch for both labels
             self.labels.append(label)
 
+        # Create title label as overlay (no layout, positioned manually)
+        self.title_label = QLabel("test title", self)
+        self.title_label.setAlignment(Qt.AlignCenter)
+        title_font = QFont()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        self.title_label.setFont(title_font)
+        self.title_label.setStyleSheet("color: black; background-color: white; border-radius: 5px; padding: 5px;")  # White background, black text
+        self.title_label.setAttribute(Qt.WA_TransparentForMouseEvents)  # Allow mouse events to pass through
+        
         # poll symlinks every 2s
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll_symlinks)
         self.timer.start(2000)
+
+    def resizeEvent(self, event):
+        """Position the title overlay when window is resized"""
+        super().resizeEvent(event)
+        # Position title at top center
+        title_width = 300  # Fixed width for title
+        title_height = 40  # Fixed height for title
+        x = (self.width() - title_width) // 2
+        y = 10  # 10px from top
+        self.title_label.setGeometry(x, y, title_width, title_height)
 
     def poll_symlinks(self):
         for label in self.labels:
