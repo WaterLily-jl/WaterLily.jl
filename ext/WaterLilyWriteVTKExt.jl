@@ -1,13 +1,7 @@
 module WaterLilyWriteVTKExt
 
-if isdefined(Base, :get_extension)
-    using WriteVTK
-else
-    using ..WriteVTK
-end
-
-using WaterLily
-import WaterLily: vtkWriter, write!, default_attrib, pvd_collection
+using WriteVTK, WaterLily
+import WaterLily: vtkWriter, save!, default_attrib, pvd_collection
 using Printf: @sprintf
 import Base: close
 
@@ -41,20 +35,20 @@ end
 """
     default_attrib()
 
-Returns a `Dict` containing the `name` and `bound_function` for the default attributes. 
+Returns a `Dict` containing the `name` and `bound_function` for the default attributes.
 The `name` is used as the key in the `vtk` file and the `bound_function` generates the data
 to put in the file. With this approach, any variable can be save to the vtk file.
 """
-_velocity(a::Simulation) = a.flow.u |> Array;
-_pressure(a::Simulation) = a.flow.p |> Array;
+_velocity(a::AbstractSimulation) = a.flow.u |> Array;
+_pressure(a::AbstractSimulation) = a.flow.p |> Array;
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 """
-    write!(w::VTKWriter, sim::Simulation)
+    save!(w::VTKWriter, sim<:AbstractSimulation)
 
 Write the simulation data at time `sim_time(sim)` to a `vti` file and add the file path
 to the collection file.
 """
-function write!(w::VTKWriter,a::Simulation)
+function save!(w::VTKWriter, a::AbstractSimulation)
     k = w.count[1]; N=size(a.flow.p)
     vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n for n in N]...)
     for (name,func) in w.output_attrib

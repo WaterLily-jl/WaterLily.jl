@@ -1,12 +1,6 @@
 module WaterLilyAMDGPUExt
 
-if isdefined(Base, :get_extension)
-    using AMDGPU
-else
-    using ..AMDGPU
-end
-
-using WaterLily
+using AMDGPU, WaterLily
 import WaterLily: L₂
 
 """

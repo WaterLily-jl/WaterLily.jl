@@ -2,8 +2,9 @@
 
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/dev/)
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
-[![CI](https://github.com/WaterLily-jl/WaterLily.jl/workflows/CI/badge.svg?branch=master&event=push)](https://github.com/WaterLily-jl/WaterLily.jl/actions)
+[![CI](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
+[![DOI](https://zenodo.org/badge/DOI/10.1016/j.cpc.2025.109748.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
 
 ![Julia flow](assets/julia.gif)
 
@@ -13,16 +14,16 @@
 
 [![JuliaCon2024 still and link](assets/JuliaCon2024.png)](https://www.youtube.com/watch?v=FwMh2rq9kOU)
 
-If you have used WaterLily for research, please __cite us__! The [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) describes the main features of the solver and provides benchmarking, validation, and profiling results.
+If you have used WaterLily for research, please __cite us__! The [2025 paper](https://doi.org/10.1016/j.cpc.2025.109748) describes the main features of the solver and provides benchmarking, validation, and profiling results.
 ```
-@misc{WeymouthFont2024,
-    title         = {WaterLily.jl: A differentiable and backend-agnostic Julia solver to simulate incompressible viscous flow and dynamic bodies},
-    author        = {Gabriel D. Weymouth and Bernat Font},
-    url           = {https://arxiv.org/abs/2407.16032},
-    eprint        = {2407.16032},
-    archivePrefix = {arXiv},
-    year          = {2024},
-    primaryClass  = {physics.flu-dyn}
+@article{WeymouthFont2025,
+    author = {G.D. Weymouth and B. Font},
+    title = {WaterLily.jl: A differentiable and backend-agnostic Julia solver for incompressible viscous flow around dynamic bodies},
+    doi = {10.1016/j.cpc.2025.109748},
+    journal = {Computer Physics Communications},
+    year = {2025},
+    volume = {315},
+    pages = {109748},
 }
 ```
 
@@ -81,8 +82,8 @@ time = 1:0.1:50 # time scale is sim.L/sim.U
 forces = [get_forces!(circ,t) for t in time];
 
 #Plot it
-plot(time,[first.(forces), last.(forces)],
-    labels=permutedims(["drag","lift"]),
+plot(time,[first.(forces) last.(forces)],
+    labels=["drag" "lift"],
     xlabel="tU/L",
     ylabel="Pressure force coefficients")
 ```
@@ -95,14 +96,12 @@ We can also plot the vorticity field instead of the u-velocity to see a snap-sho
 ω = zeros(size(u));
 @inside ω[I] = WaterLily.curl(3,I,circ.flow.u)*circ.L/circ.U
 
-# Plot it
-clims = (-6,6)
-contourf(clamp.(ω,clims...)'; clims,
-    color=palette(:RdBu,9),linewidth=0,levels=8,
-    aspect_ratio=:equal,border=:none)
+# Plot it using WaterLily's Plots Extension
+flood(ω,clims = (-10,10),border=:none)
 ```
 ![Vorticity field](assets/vort.png)
 
+Note that `flood` is a convience function within WaterLily to create 2D flood plots.
 As you can see, WaterLily correctly predicts that the flow is unsteady, with an alternating vortex street wake, leading to an oscillating side force and drag force.
 
 ## Multi-threading and GPU backends
