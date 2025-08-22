@@ -74,7 +74,7 @@ function measure(body::Meshbody,x::SVector{D,T},t;kwargs...) where {D,T}
     # map to correct location
     ξ = body.map(x,t)
     # we don't need to worry if the geom is a boundary or not
-    # outside(ξ,body.origin,body.width) && return (max(8,2body.half_thk),zeros(SVector{D,T}),zeros(SVector{D,T}))
+    outside(ξ,body.origin,body.width) && return (max(8,2body.half_thk),zeros(SVector{D,T}),zeros(SVector{D,T}))
     # locate the point on the mesh
     #TODO this is what we replace with the BVH
     u = closest(body.mesh,ξ;kwargs...)
