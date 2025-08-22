@@ -155,8 +155,8 @@ class GifDisplay(QWidget):
         """Position the title overlay when window is resized"""
         super().resizeEvent(event)
         # Position title at top center with wider sizing for full text visibility
-        title_width = min(800, self.width() - 20)  # Increased max width, smaller margin
-        title_height = 45  # Adequate height for text
+        title_width = min(1200, self.width()+100)  # Increased max width, smaller margin
+        title_height = 100  # Adequate height for text
         x = (self.width() - title_width) // 2
         y = 10  # Closer to top
         self.title_label.setGeometry(x, y, title_width, title_height)
