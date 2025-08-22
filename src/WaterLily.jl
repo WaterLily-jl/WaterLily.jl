@@ -26,8 +26,8 @@ export AbstractBody,measure_sdf!
 include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
-include("MeshBodies.jl")
-export MeshBody
+# include("MeshBodies.jl")
+# export MeshBody
 
 include("Metrics.jl")
 export MeanFlow,update!,uu!,uu
@@ -170,6 +170,11 @@ function get_body end
 function plot_body_obs! end
 # export
 export viz!, get_body, plot_body_obs!
+
+# default GeometryBasics extention
+function MeshBody end
+# export
+export MeshBody
 
 # Check number of threads when loading WaterLily
 """
