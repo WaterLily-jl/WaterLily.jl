@@ -83,11 +83,11 @@ function measure(body::Meshbody,x::SVector{D,T},t;kwargs...) where {D,T}
     # signed Euclidian distance
     s = ξ-p; d = sign(sum(s.*n))*√sum(abs2,s)
     # velocity at the mesh point
-    J = ForwardDiff.jacobian(ξ->body.map(ξ,t), ξ)
-    dot = ForwardDiff.derivative(t->body.map(ξ,t), t)
+    dξdx = ForwardDiff.jacobian(x->body.map(x,t), x)
+    dξdt = -ForwardDiff.derivative(t->body.map(x,t), t)
     # if the mesh is not a boundary, we need to adjust the distance
     !body.boundary && (d = abs(d)-body.half_thk)
-    return (d,n,-J\dot)
+    return (d,dξdx\n/body.scale,dξdx\dξdt)
 end
 
 using LinearAlgebra: cross
