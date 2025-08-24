@@ -70,9 +70,9 @@ function plot_logger(fname="WaterLily.log")
     idx = findall(==(0.0),@views(predictor[1,:]))
     # plot inital L∞ and L₂ norms of residuals for the predictor step
     p1=plot(1:length(idx),predictor[2,idx],color=:1,ls=:dash,alpha=0.8,label="predictor initial r∞",yaxis=:log,size=(800,400),dpi=600,
-            xlabel="Time step",ylabel="L∞-norm",title="Residuals",ylims=(1e-8,1e0),xlims=(0,length(idx)))
+            xlabel="Time step",ylabel="L∞-norm",title="L∞-norm of residuals",ylims=(1e-8,1e0),xlims=(0,length(idx)))
     p2=plot(1:length(idx),predictor[3,idx],color=:1,ls=:dash,alpha=0.8,label="predictor initial r₂",yaxis=:log,size=(800,400),dpi=600,
-            xlabel="Time step",ylabel="L₂-norm",title="Residuals",ylims=(1e-8,1e0),xlims=(0,length(idx)))
+            xlabel="Time step",ylabel="L₂-norm",title="L₂-norm of residuals",ylims=(1e-8,1e0),xlims=(0,length(idx)))
     # plot final L∞ and L₂ norms of residuals for the predictor
     plot!(p1,1:length(idx),vcat(predictor[2,idx[2:end].-1],predictor[2,end]),color=:1,lw=2,alpha=0.8,label="predictor r∞")
     plot!(p2,1:length(idx),vcat(predictor[3,idx[2:end].-1],predictor[3,end]),color=:1,lw=2,alpha=0.8,label="predictor r₂")

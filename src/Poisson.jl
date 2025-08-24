@@ -9,7 +9,7 @@ The resulting linear system is
 
     Ax = [L+D+L']x = z
 
-where A is symmetric, block-tridiagonal and extremely sparse. Moreover, 
+where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
 ect can be easily implemented and optimized without external libraries.
 
@@ -56,7 +56,7 @@ end
 """
     mult!(p::Poisson,x)
 
-Efficient function for Poisson matrix-vector multiplication. 
+Efficient function for Poisson matrix-vector multiplication.
 Fills `p.z = p.A x` with 0 in the ghost cells.
 """
 function mult!(p::Poisson,x)
@@ -79,16 +79,16 @@ end
 
 Computes the resiual `r = z-Ax` and corrects it such that
 `r = 0` if `iD==0` which ensures local satisfiability
-    and 
+    and
 `sum(r) = 0` which ensures global satisfiability.
 
-The global correction is done by adjusting all points uniformly, 
+The global correction is done by adjusting all points uniformly,
 minimizing the local effect. Other approaches are possible.
 
 Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
-function residual!(p::Poisson) 
+function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
     s = sum(p.r)/length(inside(p.r))
@@ -96,7 +96,7 @@ function residual!(p::Poisson)
     @inside p.r[I] = p.r[I]-s
 end
 
-function increment!(p::Poisson) 
+function increment!(p::Poisson)
     perBC!(p.ϵ,p.perdir)
     @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)
@@ -104,10 +104,10 @@ end
 """
     Jacobi!(p::Poisson; it=1)
 
-Jacobi smoother run `it` times. 
+Jacobi smoother run `it` times.
 Note: This runs for general backends, but is _very_ slow to converge.
 """
-@fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
+@fastmath Jacobi!(p;it=1,kwargs...) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
     increment!(p)
 end
@@ -116,11 +116,11 @@ using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations, 
+Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
-function pcg!(p::Poisson{T};it=6) where T
+function pcg!(p::Poisson{T};it=6, kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     rho = r⋅z
@@ -141,7 +141,7 @@ function pcg!(p::Poisson{T};it=6) where T
         rho = rho2
     end
 end
-smooth!(p) = pcg!(p)
+smooth!(p; kwargs...) = pcg!(p; kwargs...)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
@@ -159,11 +159,11 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;tol=1e-4,itmx=1e3)
+function solver!(p::Poisson;tol=1e-4,itmx=1e3, kwargs...)
     residual!(p); r₂ = L₂(p)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
     while nᵖ<itmx
-        smooth!(p); r₂ = L₂(p); nᵖ+=1
+        smooth!(p; kwargs...); r₂ = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end
