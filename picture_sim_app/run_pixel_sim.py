@@ -63,11 +63,14 @@ def stop_display_processes():
     return stopped
 
 
-def start_display_process(monitor_index=1, use_qt_version=True):
+def start_display_process(monitor_index=1, use_qt_version=True, flip_90_degrees=False):
     """Start the display process."""
     try:
         if use_qt_version:
-            script_path = SCRIPT_DIR / "persistent_gif_display_2.py"
+            if flip_90_degrees:
+                script_path = SCRIPT_DIR / "persistent_gif_display_90_deg.py"
+            else:
+                script_path = SCRIPT_DIR / "persistent_gif_display_2.py"
         else:
             script_path = SCRIPT_DIR / "persistent_gif_display.py"
 
@@ -84,12 +87,12 @@ def start_display_process(monitor_index=1, use_qt_version=True):
         return None
 
 
-def restart_display_process(monitor_index=1, use_qt_version=True):
+def restart_display_process(monitor_index=1, use_qt_version=True, flip_90_degrees=False):
     """Stop existing display processes and start a new one."""
     print("[display] Restarting display process...")
     stopped_pids = stop_display_processes()
     time.sleep(1)  # Brief pause between stop and start
-    new_pid = start_display_process(monitor_index, use_qt_version)
+    new_pid = start_display_process(monitor_index, use_qt_version, flip_90_degrees)
     return new_pid
 
 
@@ -168,6 +171,7 @@ def run_simulation(settings):
     output_path_heatmap_vorticity= OUTPUT_FOLDER / io_settings["heatmap_vorticity_name"]
     output_path_heatmap_pressure = OUTPUT_FOLDER / io_settings["heatmap_pressure_name"]
     # output_path_data = OUTPUT_FOLDER / data_file_name
+    flip_90_degrees = io_settings["flip_90_degrees"]
 
     # Unpack simulation settings:
     simulation_settings = settings["simulation_settings"]
@@ -231,6 +235,9 @@ def run_simulation(settings):
             show_components=show_components_pca,
             object_is_airfoil=object_is_airfoil,
         )
+        if flip_90_degrees:
+            # Rotate the detected angle 90 degrees counterclockwise to match angle if flow is coming from the top
+            aoa -= 90
 
         if object_is_airfoil:
             # Estimate airfoil type based on thickness and characteristic length
@@ -278,9 +285,9 @@ def run_simulation(settings):
         ensure_link(output_path_heatmap_vorticity, symlink_heatmap_vorticity)
         ensure_link(output_path_heatmap_pressure, symlink_heatmap_pressure)
 
-        # Restart display process
-        print("Restarting display process...")
-        restart_display_process(monitor_index=1, use_qt_version=True)
+    # Restart display process
+    print("Restarting display process...")
+    restart_display_process(monitor_index=1, use_qt_version=True, flip_90_degrees=flip_90_degrees)
 
     # Save airfoil data to JSON (use actual AoA, not rounded)
     airfoil_data = {

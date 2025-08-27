@@ -16,6 +16,8 @@ io_settings:
   heatmap_vorticity_name: "heatmap_vorticity.gif"
   # data_file_name: "simulation_data.npz"
 
+  flip_90_degrees: false # Set o true to show the flow coming from the top rather than the side.
+
 capture_image_aspect_ratio: [3, 2]
 
 simulation_settings:
