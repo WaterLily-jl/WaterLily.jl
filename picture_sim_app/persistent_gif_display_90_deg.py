@@ -138,7 +138,7 @@ class GifDisplay(QWidget):
         self.title_label = QLabel("Loading...", self)
         self.title_label.setAlignment(Qt.AlignCenter)
         title_font = QFont()
-        title_font.setPointSize(24)
+        title_font.setPointSize(14)
         title_font.setBold(True)
         self.title_label.setFont(title_font)
         self.title_label.setStyleSheet("color: black; padding: 5px;")  # Black text, no background
@@ -178,12 +178,15 @@ class GifDisplay(QWidget):
     def resizeEvent(self, event):
         """Position the title overlay when window is resized"""
         super().resizeEvent(event)
-        # Position title at top center with wider width to prevent cropping
-        title_width = min(800, self.width() - 20)  # Use most of screen width, max 800px
-        title_height = 40  # Fixed height for title
+        # Position title at top center with wider sizing for full text visibility
+        title_width = min(1400, self.width() + 100)  # Increased max width, smaller margin
+        title_height = 100  # Adequate height for text
         x = (self.width() - title_width) // 2
-        y = 10  # 10px from top
+        y = 10  # Closer to top
         self.title_label.setGeometry(x, y, title_width, title_height)
+
+        # Ensure title stays on top after resize
+        self.title_label.raise_()
 
     def poll_symlinks(self):
         for label in self.labels:
