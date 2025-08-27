@@ -24,8 +24,6 @@ INPUT_FOLDER = SCRIPT_DIR / "input"
 OUTPUT_FOLDER = SCRIPT_DIR / "output"
 OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
 
-CAMERA_INDEX = 1
-
 
 def find_display_processes():
     """Find running display processes by looking for our display scripts."""
@@ -161,7 +159,7 @@ def run_simulation(settings):
         selection_box_mode=True,  # Click-and-drag selection box
         # fixed_size=(800, 600),    # Alternative: exact pixel dimensions
         use_cached_box=True,  # Fixed typo: was use_chached_box
-        camera_index=CAMERA_INDEX,
+        camera_index=settings["io_settings"]["camera_index"],
     )
 
     # File I/O paths
@@ -307,13 +305,15 @@ def main() -> None:
     with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:
         settings = yaml.safe_load(f)
 
+    camera_index = settings["io_settings"]["camera_index"]
+
     # First run with interactive selection (don't use cached box)
     capture_image(
         input_folder=INPUT_FOLDER,
         fixed_aspect_ratio=tuple(settings["capture_image_aspect_ratio"]),
         selection_box_mode=True,
         use_cached_box=False,  # Interactive selection for first run
-        camera_index=CAMERA_INDEX,
+        camera_index=camera_index,
     )
 
     # Run first simulation
@@ -338,7 +338,7 @@ def main() -> None:
                 fixed_aspect_ratio=tuple(settings["capture_image_aspect_ratio"]),
                 selection_box_mode=True,
                 use_cached_box=False,  # Force interactive selection
-                camera_index=CAMERA_INDEX,
+                camera_index=camera_index,
             )
             # Reload settings and run simulation with new box
             with open(SCRIPT_DIR / "configs/settings.yaml", "r") as f:

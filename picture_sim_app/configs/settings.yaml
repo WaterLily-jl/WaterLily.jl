@@ -18,6 +18,8 @@ io_settings:
 
   flip_90_degrees: false # Set o true to show the flow coming from the top rather than the side.
 
+  camera_index: 0
+
 capture_image_aspect_ratio: [3, 2]
 
 simulation_settings:
