@@ -31,7 +31,6 @@ end
 """
 Default visualization function for 2D/3D simulations
 """
-
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
@@ -161,7 +160,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     d==2 && (@assert !(body2mesh) "body2mesh only allowed for 3D plots (d=3).")
-    body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
+    body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
@@ -203,10 +202,14 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         kwargs = remove_kwargs(:levels, :colormap, :clims, :threshhold, :threshhold_color, :extendlow, :extendhigh; kwargs...)
         kwargs = add_kwarg(:colormap=>tidy_colormap, :levels=>tidy_levels, :extendlow=>:auto, :extendhigh=>:auto; kwargs...)
     end
+    if d == 3
+        algorithm = :algorithm in keys(kwargs) ? kwargs[:algorithm] : :mip
+        algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
+    end
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color)
     hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
-    hidedecorations && d==2 && (hidedecorations!(ax))
+    hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
 
     if !isnothing(duration) # time loop for animation
         t₀ = round(WaterLily.sim_time(sim))
@@ -230,7 +233,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
 end
 function viz!(sim, a::AbstractArray; kwargs...)
     kwargs = remove_kwargs(:f, :duration; kwargs...) # do not allow co-visualization (is not a simulation)
-    @assert size(a) == size(sim.flow.σ) "Visualized array has different size than Simulation."
+    @assert size(a) == size(sim.flow.σ) "Visualized array needs to be a scalar and same size as Simulation."
     f(cpu_array, sim) = copyto!(cpu_array, Array(a[inside(a)]))
     viz!(sim; f, duration=nothing, kwargs...)
 end
