@@ -115,41 +115,50 @@ The body fills the zeroth-moment `flow.μ₀` by integrating the mask over a `fl
 leaves the first-moment `μ₁` and velocity `V` zero. Call `update!(body,mask)` with a new mask before 
 calling `measure!(flow,body)` to update the simulation.
 """
-struct PixelBody{T,A<:AbstractArray{T,2}} <: AbstractBody
+struct PixelBody{T,A<:AbstractArray{T,2},B<:AbstractArray{T,3}} <: AbstractBody
     R::CartesianIndices # subarray range
-    mask::A; buff::A # integrated mask and ping-pong buffer
-    function PixelBody(mask::AbstractArray{T,2},dims::NTuple{2,Int};mem=Array) where T
+    mask::A; M₀::A; buff₀::A # mask, global zeroth moment, and buffer
+    M₁::B; buff₁::B # global first moment and buffer
+    function PixelBody(mask::AbstractArray{T,2},dims::NTuple{2,Int};mem=Array,Ti=T) where T
         n,m = dims .+ 2
         W,H = size(mask)
         W₀,H₀ = min(W,ceil(Int,n/m*H)),min(H,ceil(Int,m/n*W))
         R = CartesianIndices(((W-W₀)÷2+1:(W+W₀)÷2,(H-H₀)÷2+1:(H+H₀)÷2))
-        buff = mem{T}(undef,size(R)...)
-        a = new{T,typeof(buff)}(R,similar(buff),buff) # uninitialized
+        M₀ = mem{Ti}(undef,size(R)...)   # size of cropped image W₀ x H₀
+        M₁ = mem{Ti}(undef,size(R)...,2) # 2x cropped image W₀ x H₀ x 2
+        a = new{Ti,typeof(M₀),typeof(M₁)}(R,similar(M₀),M₀,similar(M₀),M₁,similar(M₁)) # uninitialized
         update!(a,mask); a # initialize
     end
 end
 function update!(a::PixelBody{T},mask::AbstractArray{T,2}) where T
     copyto!(a.mask,CartesianIndices(a.mask),mask,a.R)
-    cumsum!(a.buff,a.mask,dims=1)
-    cumsum!(a.mask,a.buff,dims=2) # ping-pong
+    a.mask .= 1 .- a.mask # invert to reduce chances of overflow in cumsum
+    cumsum!(a.buff₀,a.mask,dims=1)
+    cumsum!(a.M₀,a.buff₀,dims=2) # ping-pong
+    @inline moment(Ii,mask) = (I=Base.front(Ii); mask[I]*(I.I)[last(Ii)])
+    @loop a.M₁[Ii] = moment(Ii,a.mask) over Ii ∈ CartesianIndices(a.M₁)
+    cumsum!(a.buff₁,a.M₁,dims=1)
+    cumsum!(a.M₁,a.buff₁,dims=2)
 end
 function measure!(a::Flow{2,T},b::PixelBody;ϵ=1,kwargs...) where T
     a.V .= zero(T); a.σ .= one(T); a.μ₀ .= one(T); a.μ₁ .= zero(T) # init
 
-    # zeroth-moment is the volume-fraction of masked pixels within a cell
-    W,H = size(b.mask); n,m = size(a.σ)
-    function vol_frac(ij,mask)
+    # Truncate the global moments over an ϵ-sized box, and scale by the box size
+    W,H = size(b.mask); ratio = √(length(b.mask)/length(a.σ))
+    function vol_frac(ij,μ₀,μ₁,M₀,M₁)
         i,j = ij.I
-        I₀,J₀ = clamp(floor(Int,(i-ϵ)*W/n),1,W),clamp(floor(Int,(j-ϵ)*H/m),1,H)
-        I₁,J₁ = clamp(ceil(Int,(i+ϵ)*W/n),1,W),clamp(ceil(Int,(j+ϵ)*H/m),1,H)
-        dv = T((I₁-I₀)*(J₁-J₀))
-        (mask[I₀,J₀]+mask[I₁,J₁]-mask[I₀,J₁]-mask[I₁,J₀])/dv
+        I₀,J₀ = clamp(floor(Int,(i-ϵ)*ratio),1,W),clamp(floor(Int,(j-ϵ)*ratio),1,H)
+        I₁,J₁ = clamp(ceil(Int,(i+ϵ)*ratio),1,W),clamp(ceil(Int,(j+ϵ)*ratio),1,H)
+        dv = T((I₁-I₀)*(J₁-J₀)) # box size
+        μ₀[i,j] = 1-(M₀[I₀,J₀]+M₀[I₁,J₁]-M₀[I₀,J₁]-M₀[I₁,J₀])/dv
+        μ₁[i,j,:] = ij .* μ₀[i,j] - (M₁[I₀,J₀,:]+M₁[I₁,J₁,:]-M₁[I₀,J₁,:]-M₁[I₁,J₀,:])/(ratio*dv)
     end
-    WaterLily.@loop a.σ[I] = vol_frac(I,b.mask) over I ∈ inside(a.σ,buff=ceil(Int,ϵ))
+    WaterLily.@loop vol_frac(I,a.σ,b.μ₀,b.M₀,b.M₁) over I ∈ inside(a.σ,buff=ceil(Int,ϵ))
 
     # Interpolate to faces
     for i ∈ 1:2
-        WaterLily.@loop a.μ₀[I,i] = WaterLily.ϕ(i,I,a.σ) over I ∈ inside(a.σ)
+        WaterLily.@loop a.μ₁[I,i,:] = 0.5*(a.μ₀[I-δ(i,I),:]+a.μ₀[I,:]) over I ∈ inside(a.σ)
+        WaterLily.@loop a.μ₀[I,i] = 0.5*(a.σ[I-δ(i,I)]+a.σ[I]) over I ∈ inside(a.σ)
     end
     WaterLily.BC!(a.μ₀,zeros(SVector{2,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
 end
