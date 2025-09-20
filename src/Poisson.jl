@@ -9,7 +9,7 @@ The resulting linear system is
 
     Ax = [L+D+L']x = z
 
-where A is symmetric, block-tridiagonal and extremely sparse. Moreover, 
+where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
 ect can be easily implemented and optimized without external libraries.
 
@@ -26,14 +26,15 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     ϵ :: S # increment/error
     r :: S # residual
     z :: S # source
+    σ :: S # work array
     n :: Vector{Int16} # pressure solver iterations
     perdir :: NTuple # direction of periodic boundary condition
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r = similar(x); fill!(r,0)
-        ϵ,D,iD = copy(r),copy(r),copy(r)
+        ϵ,D,iD,σ = copy(r),copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
-        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
+        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,σ,[],perdir)
     end
 end
 
@@ -56,7 +57,7 @@ end
 """
     mult!(p::Poisson,x)
 
-Efficient function for Poisson matrix-vector multiplication. 
+Efficient function for Poisson matrix-vector multiplication.
 Fills `p.z = p.A x` with 0 in the ghost cells.
 """
 function mult!(p::Poisson,x)
@@ -79,16 +80,16 @@ end
 
 Computes the resiual `r = z-Ax` and corrects it such that
 `r = 0` if `iD==0` which ensures local satisfiability
-    and 
+    and
 `sum(r) = 0` which ensures global satisfiability.
 
-The global correction is done by adjusting all points uniformly, 
+The global correction is done by adjusting all points uniformly,
 minimizing the local effect. Other approaches are possible.
 
 Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
-function residual!(p::Poisson) 
+function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
     s = sum(p.r)/length(inside(p.r))
@@ -96,7 +97,7 @@ function residual!(p::Poisson)
     @inside p.r[I] = p.r[I]-s
 end
 
-function increment!(p::Poisson) 
+function increment!(p::Poisson)
     perBC!(p.ϵ,p.perdir)
     @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)
@@ -104,7 +105,7 @@ end
 """
     Jacobi!(p::Poisson; it=1)
 
-Jacobi smoother run `it` times. 
+Jacobi smoother run `it` times.
 Note: This runs for general backends, but is _very_ slow to converge.
 """
 @fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
@@ -112,29 +113,28 @@ Note: This runs for general backends, but is _very_ slow to converge.
     increment!(p)
 end
 
-using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations, 
+Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
 function pcg!(p::Poisson{T};it=6) where T
-    x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
+    x,r,ϵ,z,σ = p.x,p.r,p.ϵ,p.z,p.σ
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
-    rho = r⋅z
+    rho = dot!(σ, r, z) # r⋅z
     abs(rho)<10eps(T) && return
     for i in 1:it
         perBC!(ϵ,p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/(z⋅ϵ)
+        alpha = rho/dot!(σ, z, ϵ) # /(z⋅ϵ)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
         i==it && return
         @inside z[I] = r[I]*p.iD[I]
-        rho2 = r⋅z
+        rho2 = dot!(σ, r, z) # r⋅z
         abs(rho2)<10eps(T) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
@@ -143,7 +143,7 @@ function pcg!(p::Poisson{T};it=6) where T
 end
 smooth!(p) = pcg!(p)
 
-L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
+L₂(p::Poisson) = dot!(p.σ, p.r, p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
 """

@@ -12,7 +12,7 @@ end
 @fastmath @inline function dot(a,b)
     init=zero(eltype(a))
     @inbounds for ij in eachindex(a)
-     init += a[ij] * b[ij]
+        init += a[ij] * b[ij]
     end
     return init
 end

@@ -166,11 +166,11 @@ end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
 function CFL(a::Flow;Δt_max=10)
-    @inside a.σ[I] = flux_out(I,a.u)
+    @inside a.σ[I] = flux_out(I,a.u,promote_type(Float64, eltype(a.u)))
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
-@fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
-    s = zero(eltype(u))
+@fastmath @inline function flux_out(I::CartesianIndex{d},u,T) where {d}
+    s = zero(T)
     for i in 1:d
         s += @inbounds(max(0.,u[I+δ(i,I),i])+max(0.,-u[I,i]))
     end
