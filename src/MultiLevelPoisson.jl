@@ -92,7 +92,7 @@ function solver!(ml::MultiLevelPoisson;tol=1e-4,itmx=32)
         Vcycle!(ml)
         smooth!(p); r₂ = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
-        r₂<tol && break
+        (r₂<tol || eltype(p.x) === Float16) && break
     end
     perBC!(p.x,p.perdir)
     push!(ml.n,nᵖ);

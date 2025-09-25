@@ -124,7 +124,7 @@ function pcg!(p::Poisson{T};it=6) where T
     x,r,ϵ,z,σ = p.x,p.r,p.ϵ,p.z,p.σ
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     rho = dot!(σ, r, z) # r⋅z
-    abs(rho)<10eps(T) && return
+    abs(rho)<100eps(T) && return
     for i in 1:it
         perBC!(ϵ,p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
@@ -135,7 +135,7 @@ function pcg!(p::Poisson{T};it=6) where T
         i==it && return
         @inside z[I] = r[I]*p.iD[I]
         rho2 = dot!(σ, r, z) # r⋅z
-        abs(rho2)<10eps(T) && return
+        abs(rho2)<100eps(T) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
         rho = rho2

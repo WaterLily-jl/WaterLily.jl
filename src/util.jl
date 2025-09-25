@@ -333,7 +333,9 @@ squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
 using LinearAlgebra: ⋅
 dot!(buff, a, b) = a⋅b
 function dot!(buff, a::AbstractArray{Float16}, b::AbstractArray{Float16})
-    To = promote_type(Float64, eltype(a))
+    To = promote_type(Float32, eltype(a))
     buff .= a .* b
     sum(buff; init=zero(To))
 end
+
+checkflow(u) = all(isfinite.(u))

@@ -161,16 +161,17 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     accelerate!(a.f,t₁,a.g,a.uBC)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    @assert checkflow(a)
     push!(a.Δt,CFL(a))
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
 function CFL(a::Flow;Δt_max=10)
-    @inside a.σ[I] = flux_out(I,a.u,promote_type(Float64, eltype(a.u)))
+    @inside a.σ[I] = flux_out(I,a.u)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
-@fastmath @inline function flux_out(I::CartesianIndex{d},u,T) where {d}
-    s = zero(T)
+@fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
+    s = zero(eltype(u))
     for i in 1:d
         s += @inbounds(max(0.,u[I+δ(i,I),i])+max(0.,-u[I,i]))
     end
@@ -185,3 +186,10 @@ Keyword arguments must be passed to `sim_step!` for them to be carried over the 
 """
 udf!(flow,::Nothing,t; kwargs...) = nothing
 udf!(flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)
+
+"""
+    checkflow(flow::Flow)
+
+Checks if simulation has diverged (ie. velocity field contains NaN).
+"""
+checkflow(flow::Flow) = checkflow(flow.u)
