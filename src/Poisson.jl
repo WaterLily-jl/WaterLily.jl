@@ -112,6 +112,23 @@ Note: This runs for general backends, but is _very_ slow to converge.
     increment!(p)
 end
 
+"""
+    GaussSeidelRB!(p::Poisson; it=6)
+
+Gauss-Seidel Red-Black smoother run `it` times. 
+Note: This runs for general backends, but the LinearIndices might be slow...
+"""
+function GaussSeidelRB!(p; it=6)
+    gauss(I,x,p,flag) = flag && (x[I] += (p.r[I]-mult(I,p.L,p.D,x))*p.iD[I])
+    Lin = LinearIndices(inside(p.x)) # linear indices for red-black
+    @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
+    for _ in 1:it
+        @loop gauss(I,p.ϵ,p,Lin[I]%2==0) over I ∈ inside(p.x) # "red"
+        @loop gauss(I,p.ϵ,p,Lin[I]%2==1) over I ∈ inside(p.x) # "black"
+    end
+    increment!(p) # increment solution and residual
+end
+
 using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
