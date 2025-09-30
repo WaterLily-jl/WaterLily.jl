@@ -116,15 +116,15 @@ end
     GaussSeidelRB!(p::Poisson; it=6)
 
 Gauss-Seidel Red-Black smoother run `it` times. 
-Note: This runs for general backends, but the LinearIndices might be slow...
+Note: This runs for general backends, but `@loop`s over `inside(p.x)` twice.
+A `@vecloop` over `odds` & `evens` would reduce work at the cost of a look-up.
 """
 function GaussSeidelRB!(p; it=6)
-    gauss(I,x,p,flag) = flag && (x[I] += (p.r[I]-mult(I,p.L,p.D,x))*p.iD[I])
-    Lin = LinearIndices(inside(p.x)) # linear indices for red-black
+    gauss(I,x,p,flag) = sum(I.I)%2==flag && (x[I] += (p.r[I]-mult(I,p.L,p.D,x))*p.iD[I])
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
     for _ in 1:it
-        @loop gauss(I,p.ϵ,p,Lin[I]%2==0) over I ∈ inside(p.x) # "red"
-        @loop gauss(I,p.ϵ,p,Lin[I]%2==1) over I ∈ inside(p.x) # "black"
+        @loop gauss(I,p.ϵ,p,0) over I ∈ inside(p.x) # "red"
+        @loop gauss(I,p.ϵ,p,1) over I ∈ inside(p.x) # "black"
     end
     increment!(p) # increment solution and residual
 end
