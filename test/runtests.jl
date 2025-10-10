@@ -3,7 +3,7 @@ using Test
 using StaticArrays
 
 check_compiler(compiler,parse_str) = try occursin(parse_str, read(`$compiler --version`, String)) catch _ false end
-_cuda = check_compiler("nvcc","release")
+_cuda = true #check_compiler("nvcc","release")
 _rocm = check_compiler("hipcc","version")
 _cuda && using CUDA
 _rocm && using AMDGPU

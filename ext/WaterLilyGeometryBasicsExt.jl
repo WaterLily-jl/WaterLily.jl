@@ -193,9 +193,7 @@ using Printf: @sprintf
 # access the WaterLily writer to save the file
 function save!(w,a::Meshbody,t=w.count[1]) #where S<:AbstractSimulation{A,B,C,D,MeshBody}
     k = w.count[1]
-    # points = hcat([[p.data...] for p ∈ a.mesh.position]...)
     points = hcat(Array(a.mesh)...)
-    # cells = [MeshCell(VTKCellTypes.VTK_TRIANGLE, Base.to_index.(face)) for face in faces(a.mesh)]
     cells = [MeshCell(VTKCellTypes.VTK_TRIANGLE, TriangleFace{Int}(3i+1,3i+2,3i+3)) for i in 0:length(a.mesh)-1]
     vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), points, cells)
     for (name,func) in w.output_attrib

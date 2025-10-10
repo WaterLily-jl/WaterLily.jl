@@ -26,9 +26,6 @@ export AbstractBody,measure_sdf!
 include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
-# include("MeshBodies.jl")
-# export MeshBody
-
 include("Metrics.jl")
 export MeanFlow,update!,uu!,uu
 
