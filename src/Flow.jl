@@ -169,10 +169,10 @@ function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
-@fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
+@inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))
     for i in 1:d
-        s += @inbounds(max(0,u[I+δ(i,I),i])+max(0,-u[I,i]))
+        @inbounds s += max(zero(s),u[I+δ(i,I),i])+max(zero(s),-u[I,i])
     end
     return s
 end
