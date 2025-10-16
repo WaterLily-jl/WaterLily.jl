@@ -7,8 +7,19 @@ using GeometryBasics
 using StaticArrays
 using Adapt
 
-struct Meshbody{T,A<:AbstractArray,S<:AbstractVector{T},F<:Function} <: AbstractBody
+# split a vector in two along it's longest dimension
+split_w(width::SVector{N},j) where N = SA[ntuple(i -> i==j ? width[i]/2 : width[i], N)...]
+function Base.split(O::SVector,R::SVector)
+    # split the longest side
+    w = split_w(R, argmax(R))
+    return (O,w), (O+(R-w),w)
+end
+# insde the bbox or not
+WaterLily.inside(x,O,R)::Bool = (all(O .≤ x) && all(x .≤ O+R))
+
+struct Meshbody{T,A<:AbstractArray,P<:AbstractVector,S<:AbstractVector{T},F<:Function} <: AbstractBody
     mesh :: A
+    bvh :: P
     origin :: S
     width :: S
     map   :: F
@@ -16,9 +27,9 @@ struct Meshbody{T,A<:AbstractArray,S<:AbstractVector{T},F<:Function} <: Abstract
     boundary :: Bool
     half_thk :: T
 end
-function MeshBody(mesh::AbstractArray,origin::SVector{3,T},width::SVector{3,T},map=(x,t)->x,
+function MeshBody(mesh::AbstractArray,bvh,origin::SVector{3,T},width::SVector{3,T},map=(x,t)->x,
                   scale=1,boundary=true,half_thk=0) where T
-    return Meshbody(mesh,origin,width,map,T(scale),boundary,T(half_thk))
+    return Meshbody(mesh,bvh,origin,width,map,T(scale),boundary,T(half_thk))
 end
 # make it GPU compatible
 Adapt.@adapt_structure Meshbody
@@ -31,7 +42,7 @@ The mesh is scaled and mapped to the correct location using the `map` function.
 The `boundary` flag indicates if the mesh is a boundary or not, and `half_thk` is used to adjust the distance for non-boundary meshes.
 The `scale` parameter is used to scale the mesh points, and `mem` specifies the memory type for the `Simulation`.
 """
-function MeshBody(file_name::String;map=(x,t)->x,scale=1,boundary=true,half_thk=0,T=Float32,mem=Array)
+function MeshBody(file_name::String;map=(x,t)->x,scale=1,boundary=true,half_thk=0,level=5,T=Float32,mem=Array)
     # read in the mesh
     mesh = endswith(file_name,".inp") ? load_inp(file_name) : load(file_name)
     # scale and map the points to the correct location
@@ -41,16 +52,54 @@ function MeshBody(file_name::String;map=(x,t)->x,scale=1,boundary=true,half_thk=
     end
     # make the scaled mesh
     mesh = GeometryBasics.Mesh(points,GeometryBasics.faces(mesh))
-    return MeshBody(mesh;map,scale,boundary,half_thk,T,mem)
+    return MeshBody(mesh;map,scale,boundary,half_thk,level,T,mem)
 end
-function MeshBody(mesh::Mesh;map=(x,t)->x,scale=1,boundary=true,half_thk=0,T=Float32,mem=Array)
+function MeshBody(mesh::Mesh;map=(x,t)->x,scale=1,boundary=true,half_thk=0,level=5,T=Float32,mem=Array)
     # bounding box
     box = Rect(mesh.position)
     origin,width = SVector{3,T}(box.origin...),SVector{3,T}(box.widths...)
     # device array of the mesh that we store
     mesh = [hcat(vcat([mesh[i]...])...) for i in 1:length(mesh)] |> mem
+    bvh = make_bvh(origin,width,level,mem)
     # make the mesh and return
-    MeshBody(mesh,origin.-max(4,2half_thk),width.+max(8,4half_thk),map,T(scale),boundary,T(half_thk))
+    MeshBody(mesh,bvh,origin.-max(4,2half_thk),width.+max(8,4half_thk),map,T(scale),boundary,T(half_thk))
+end
+
+#TODO the new mesh is organised witht eh points as the row of the SMatrix
+# this means that point 1 is el[1,:], point 2 is el [2.:], etc.
+
+function make_bvh(origin::SVector{3,T},width::SVector{3,T},lvl::Int,mem) where T
+    # store the subdivisions in a binary tree fashion
+    box_array = Vector{NTuple{2,SVector{3,T}}}(undef, 2^lvl-1)
+    box_array[1]=(origin,width)
+    # make the subdivisions
+    for i in 1:2^(lvl-1)-1
+        left,right = split(box_array[i]...)
+        box_array[2i] = left
+        box_array[2i+1] = right
+    end
+    # now for each leave, we make it tight to the mesh
+    WaterLily.@loop box_array[I] = subset(I,box_array) over I ∈ leafs(lvl)
+    # we can now go back and add cildren together to make the true parent
+    # WaterLily.@loop box_array[I] = merge(I,box_array) over I ∈ parents(lvl)
+    for I in parents(lvl)
+        box_array[I] = merge(I,box_array)
+    end
+    return box_array |> mem
+end
+
+@inline leafs(lvl) = CartesianIndices((2^(lvl-1):2^lvl-1,))
+@inline parents(lvl) = reverse(CartesianIndices((1:2^(lvl-1)-1,)))
+@inline children(I) = 2I:2I+oneunit(I)
+
+#TODO nothing yet
+subset(I,boxes) = boxes[I]
+@inline @fastmath function merge(I,bvh)
+    @show I,children(I)
+    left,right = bvh[children(I)]
+    O = min.(left[1], right[1])
+    W = max.(sum(left), sum(right)) - O
+    return (O,W)
 end
 
 # closest triangle index in the mesh
@@ -65,6 +114,11 @@ end
     return u
 end
 
+# @inline closest_bvh(body,x::SVector{T};kwargs...) where T
+#     WaterLily.@loop body.bvh[I] = body.bvh[I] over I in CartesianIndices(body.bvh)
+#     return closest(body.mesh,x;kwargs...)
+# end
+
 # signed distance function
 sdf(body::Meshbody,x,t;kwargs...) = measure(body,x,t;kwargs...)[1]
 
@@ -78,6 +132,7 @@ function measure(body::Meshbody,x::SVector{D,T},t;kwargs...) where {D,T}
     # locate the point on the mesh
     #TODO this is what we replace with the BVH
     u = closest(body.mesh,ξ;kwargs...)
+    # u = closest_bvh(body,ξ;kwargs...)
     # compute the normal and distance
     n,p = normal(body.mesh[u]),SVector(locate(body.mesh[u],x))
     # signed Euclidian distance
