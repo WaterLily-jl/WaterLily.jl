@@ -82,6 +82,20 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
     n = norm2(θ)
     n<=eps(n) ? 0. : θ'*ω(I,u) / n
 end
+"""
+    Streamline function for 2D flows
+"""
+function ψ2D!(ψ::AbstractArray{T,2}, u::AbstractArray{T,3}) where {T}
+    @assert ndims(ψ) == 2 && ndims(u) == 3 "Stream function or velocity fields are not 2D"
+    fill!(ψ, 0)
+    cumsum!(ψ, u[..,1], dims=2)
+    ψ .-= cumsum(u[..,2], dims=1)
+end
+function ψ2D(u)
+    ψ = similar(u, size(u)[1:end-1])
+    ψ2D!(ψ, u)
+    return ψ
+end
 
 """
     nds(body,x,t)
