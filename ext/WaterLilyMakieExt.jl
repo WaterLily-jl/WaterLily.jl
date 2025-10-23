@@ -131,6 +131,8 @@ Keyword arguments:
     - `body::Bool`: Plot the body.
     - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a Makie.volume (faster).
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
+    - `streamlines::Union{Number,Tuple{Number,Symbol},NamedTuple}`: Pass a number, (number, :color), or a NamedTuple with keyword arguments
+        to plot the 2D streamlines as a contour, on top of the array resulting from `f`.
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `hidedecorations::Bool`: Figures without axis details.
