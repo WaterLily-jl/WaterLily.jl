@@ -159,11 +159,12 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         σ[] = WaterLily.squeeze(dat[CIs])
         if body && remeasure
             update_body!(dat, sim)
-            σb_obs[] = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
+            σb_obs[] = @views get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
         end
         if !isnothing(streamlines) && d == 2
-            u2D = @views WaterLily.squeeze(sim.flow.u[CIs_u])
-            copyto!(dat_ψ, ψ2D(u2D) |> ad_f(sim) |> Array)
+            remeasure && WaterLily.update!(pois)
+            ψ!(pois, sim.flow.u)
+            @views copyto!(dat_ψ, pois.x[CI_cut(CIs, cut_dim)] |> ad_f(sim) |> Array)
             ψ_obs[] = dat_ψ
         end
     end
@@ -224,16 +225,22 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     body && plot_body_obs!(ax, σb_obs; color=body_color)
     !isnothing(streamlines) && (@assert d == 2 "Cannot plot streamlines for 3D visualizations")
     if !isnothing(streamlines) && d == 2
+        CIp = CartesianIndices(Tuple(1:n for n in size(sim.flow.σ)))
         if D == 3
             cut_dim = findfirst(==(1), size(CIs))
+            CIp = CI_cut(CIp, cut_dim)
             CIu = range_u(deleteat!([1,2,3],cut_dim)...,cut_dim)
-            CIs_u = CartesianIndices((CIs.indices..., CIu))
+            CIs_u = CartesianIndices((CIp.indices..., CIu))
         else
-            CIs_u = CartesianIndices((CIs.indices..., 1:2))
+            cut_dim, CIu = 0, 1:2
+            CIu = 1:2
+            CIs_u = CartesianIndices((CIp.indices..., CIu))
         end
-        u2D = @views WaterLily.squeeze(sim.flow.u[CIs_u])
-        dat_ψ = ψ2D(u2D) |> ad_f(sim) |> Array
+        pois = MultiLevelPoisson(copy(sim.flow.σ), sim.flow.μ₀, copy(sim.flow.σ))
+        ψ!(pois, sim.flow.u)
+        dat_ψ = pois.x[CI_cut(CIs, cut_dim)] |> ad_f(sim) |> Array
         ψ_obs = dat_ψ |> ad_f(sim) |> Observable
+
         if isa(streamlines, Number)
             streamlines = (levels=streamlines,)
         elseif isa(streamlines, Tuple{Number, Symbol})
@@ -278,5 +285,6 @@ add_kwarg(args...; kwargs...) = (; kwargs..., (p.first => p.second for p in args
 remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(x.first, args))...) |> pairs
 ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 range_u(is, ie, cut_dim) = range(is, ie, step=(cut_dim != 2 ? 1 : 2))
+CI_cut(CIs, cut_dim) = CartesianIndices(Tuple([I for (i,I) in enumerate(CIs.indices) if i!=cut_dim]))
 
 end # module

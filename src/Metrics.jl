@@ -83,18 +83,24 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
     n<=eps(n) ? 0. : θ'*ω(I,u) / n
 end
 """
-    Streamline function for 2D flows
+    ψ(sim)
+
+Streamline function for 2D flows, solving Δψ = -ω. Allocates a new MultiLevelPoisson solver.
 """
-function ψ2D!(ψ::AbstractArray{T,2}, u::AbstractArray{T,3}) where {T}
-    @assert ndims(ψ) == 2 && ndims(u) == 3 "Stream function or velocity fields are not 2D"
-    fill!(ψ, 0)
-    cumsum!(ψ, u[..,1], dims=2)
-    ψ .-= cumsum(u[..,2], dims=1)
+function ψ(sim)
+    pois = MultiLevelPoisson(copy(sim.flow.σ), sim.flow.μ₀, copy(sim.flow.σ))
+    ψ!(pois, sim.flow.u)
+    return pois.x
 end
-function ψ2D(u)
-    ψ = similar(u, size(u)[1:end-1])
-    ψ2D!(ψ, u)
-    return ψ
+"""
+    ψ!(pois, u)
+
+Streamline function for 2D flows, solving Δψ = -ω
+"""
+function ψ!(pois, u)
+    fill!(pois.x, 0)
+    @inside pois.z[I] = -WaterLily.curl(3,I,u)
+    solver!(pois)
 end
 
 """
