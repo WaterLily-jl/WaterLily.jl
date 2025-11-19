@@ -1,5 +1,6 @@
 using GPUArrays
 using ReadVTK, WriteVTK, JLD2
+using FileIO, ImageMagick, ImageCore
 
 backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
@@ -596,4 +597,24 @@ end
         @test all(meanflow1.t .== meanflow2.t)
     end
     @test_nowarn rm(test_dir, recursive=true)
+end
+
+make_egg_noarray(ra=40,rb=20, U=1) = Simulation((5*ra,5*rb),(U,0), rb;
+            body=AutoBody((x,t)->√sum((x[1]-8)^2/ra+(x[2]-8)^2/rb)-1))
+
+using Plots
+
+@testset "WaterLilyPlotsExt.jl" begin   
+    # make a simulation
+    sim = make_egg_noarray();
+
+    # make a gif of the simulation
+    testgif = sim_gif!(sim,duration=0.5, clims=(-5,5),plotbody=true)   
+    fn = testgif.filename
+    testgif = load(fn)
+    
+    # compare output and do cleanup
+    compgif = load("compdata/compgif.gif")
+    @test maximum(channelview(testgif)-channelview(compgif)) < 1
+    rm(fn)
 end
