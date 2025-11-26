@@ -615,6 +615,24 @@ using Plots
     
     # compare output and do cleanup
     compgif = load("compdata/compgif.gif")
-    @test maximum(channelview(testgif)-channelview(compgif)) < 1
+    @test abs(maximum(channelview(testgif)-channelview(compgif))) < 1
     rm(fn)
-end
+
+    xr = -1:0.01:1
+    yr = -1:0.01:1
+    f(x,y) = x^2/2 + y^2/3
+
+    flood(f.(xr,yr'))
+    savefig("temp.png")
+    comp = load("compdata/floodTestNoLims.png")
+    test = load("temp.png")
+    @test abs(maximum(channelview(test)-channelview(comp))) < 1
+    rm("temp.png")
+
+    flood(f.(xr,yr'), clims = (0.00,0.01))
+    savefig("temp.png")
+    comp = load("compdata/floodTestWithLims.png")
+    test = load("temp.png")
+    @test abs(maximum(channelview(test)-channelview(comp))) < 1
+    rm("temp.png")
+end 
