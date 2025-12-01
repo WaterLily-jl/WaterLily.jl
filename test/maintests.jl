@@ -602,9 +602,25 @@ end
 make_egg_noarray(ra=40,rb=20, U=1) = Simulation((5*ra,5*rb),(U,0), rb;
             body=AutoBody((x,t)->√sum((x[1]-8)^2/ra+(x[2]-8)^2/rb)-1))
 
-using Plots
+import Plots
 
 @testset "WaterLilyPlotsExt.jl" begin   
+
+    Plots.plot();
+
+    # make a simulation
+    sim = make_egg_noarray();
+
+    # make a body plot of the simulation setup
+    test = body_plot!(sim)  
+    Plots.savefig(test, "temp.png")
+    test = load("temp.png")
+
+    # compare output and do cleanup
+    comp = load("compdata/compbody.png")
+    @test abs(maximum(channelview(test)-channelview(comp))) < 1
+    rm("temp.png")
+
     # make a simulation
     sim = make_egg_noarray();
 
@@ -623,14 +639,14 @@ using Plots
     f(x,y) = x^2/2 + y^2/3
 
     flood(f.(xr,yr'))
-    savefig("temp.png")
+    Plots.savefig("temp.png")
     comp = load("compdata/floodTestNoLims.png")
     test = load("temp.png")
     @test abs(maximum(channelview(test)-channelview(comp))) < 1
     rm("temp.png")
 
     flood(f.(xr,yr'), clims = (0.00,0.01))
-    savefig("temp.png")
+    Plots.savefig("temp.png")
     comp = load("compdata/floodTestWithLims.png")
     test = load("temp.png")
     @test abs(maximum(channelview(test)-channelview(comp))) < 1
