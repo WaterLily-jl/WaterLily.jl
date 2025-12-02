@@ -30,6 +30,10 @@ include("Metrics.jl")
 export MeanFlow,update!,uu!,uu
 
 abstract type AbstractSimulation end
+
+include("RigidBody.jl")
+export RigidBody,Store,store!,revert!
+
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
                U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
