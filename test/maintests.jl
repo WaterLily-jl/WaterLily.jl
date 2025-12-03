@@ -604,25 +604,23 @@ end
         body = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0],T(0))
         # check sdf
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[0,0]))
-        # new body with linear velocity
-        body = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0],T(π/4);velocity=SA{T}[1.0,0],ω=T(0))
+        # rotate and add linear velocity
+        body = update!(body;θ=T(π/4),velocity=SA{T}[1.0,0])
         # check sdf and velocity
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,0]))
         # add angular velocity
-        body = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0],T(π/4);velocity=SA{T}[1.0,0],ω=T(0.1))
+        body = update!(body;ω=T(0.1))
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,1.5*0.1]))
         # 3D rigid body
         body3D = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0,0],SA{T}[0,0,0])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
         # 3D rigid body with linear and angular velocity
-        body3D = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0,0],SA{T}[0,0,0];
-                        velocity=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
+        body3D = update!(body3D;velocity=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.15,0]))
         @test all(measure(body3D,SA{T}[0,1.5,0],0) .≈ (1/2,SA{T}[0,1,0],SA{T}[0.85,0.,0]))
         @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.85,0.15,0]))
         # three 3D rotations
-        body3D = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0,0],SA{T}[0,0,0];
-                        velocity=SA{T}[1.0,0,0],ω=SA{T}[0,-0.1,0.1])
+        body3D = update!(body3D;velocity=SA{T}[1.0,0,0],ω=SA{T}[0,-0.1,0.1])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.15,0.15]))
         @test all(measure(body3D,SA{T}[0,1.5,1.5],0) .≈ (√(2*(1.5^2))-1,SA{T}[0,√(1/2),√(1/2)],SA{T}[0.7,0.,0]))
         @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.7,0.15,0.15]))
