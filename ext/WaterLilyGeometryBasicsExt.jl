@@ -80,7 +80,7 @@ function make_bvh(origin::SVector{3,T},width::SVector{3,T},lvl::Int,mem) where T
     end
     # now for each leave, we make it tight to the mesh
     WaterLily.@loop box_array[I] = subset(I,box_array) over I ∈ leafs(lvl)
-    # we can now go back and add cildren together to make the true parent
+    # we can now go back and add children together to make the true parent
     # WaterLily.@loop box_array[I] = merge(I,box_array) over I ∈ parents(lvl)
     for I in parents(lvl)
         box_array[I] = merge(I,box_array)
@@ -111,7 +111,7 @@ end
         b = d²_fast(mesh[I],x)
         b<a && (a=b; u=I) # Replace current best
     end
-    return u
+    return u,a
 end
 
 # @inline closest_bvh(body,x::SVector{T};kwargs...) where T
@@ -131,7 +131,7 @@ function measure(body::Meshbody,x::SVector{D,T},t;kwargs...) where {D,T}
     outside(ξ,body.origin,body.width) && return (max(8,2body.half_thk),zeros(SVector{D,T}),zeros(SVector{D,T}))
     # locate the point on the mesh
     #TODO this is what we replace with the BVH
-    u = closest(body.mesh,ξ;kwargs...)
+    u,a = closest(body.mesh,ξ;kwargs...)
     # u = closest_bvh(body,ξ;kwargs...)
     # compute the normal and distance
     n,p = normal(body.mesh[u]),SVector(locate(body.mesh[u],x))
