@@ -19,7 +19,7 @@ body = RigidBody((x,t)->sqrt(sum(abs2,x))-4,SA{Float32}[16,16],0.f0;ω=0.1f0)
 sim = Simulation((32,32),(1,0),8;body)
 for n in 1:10
     # update body motion (example: constant angular velocity)
-    θ_new += sim.body.θ + sim.body.ω*sim.flow.Δt[end]
+    θ_new = sim.body.θ + sim.body.ω*sim.flow.Δt[end]
     sim.body = update!(sim.body; θ=θ_new)
     # remeasure and step
     step!(sim;remeasure=true)
