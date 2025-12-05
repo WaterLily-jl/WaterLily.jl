@@ -14,6 +14,7 @@ function Base.split(O::SVector,R::SVector)
     w = split_w(R, argmax(R))
     return (O,w), (O+(R-w),w)
 end
+
 # insde the bbox or not
 WaterLily.inside(x,O,R)::Bool = (all(O .≤ x) && all(x .≤ O+R))
 

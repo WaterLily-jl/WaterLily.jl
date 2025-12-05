@@ -2,6 +2,59 @@ using WaterLily,StaticArrays
 using GeometryBasics,CUDA,WriteVTK
 using Plots; gr()
 
+
+function locate(tri::SMatrix{T},p::SVector{T}) where T
+    # unpack the triangle vertices
+    a,b,c = tri[:,1],tri[:,2],tri[:,3]
+    ab = b.-a
+    ac = c.-a
+    ap = p.-a
+    d1 = sum(ab.*ap)
+    d2 = sum(ac.*ap)
+    # is point `a` closest?
+    if ((d1 ≤ 0) && (d2 ≤ 0))
+        return a
+    end
+    # is point `b` closest?
+    bp = p.-b
+    d3 = sum(ab.*bp)
+    d4 = sum(ac.*bp)
+    if ((d3 ≥ 0) && (d4 ≤ d3))
+        return b
+    end
+    # is point `c` closest?
+    cp = p.-c
+    d5 = sum(ab.*cp)
+    d6 = sum(ac.*cp)
+    if ((d6 ≥ 0) && (d5 ≤ d6))
+        return c
+    end
+    # is segment 'ab' closest?
+    vc = d1*d4 - d3*d2
+    if ((vc ≤ 0) && (d1 ≥ 0) && (d3 ≤ 0))
+        x =  a .+ ab.*d1 ./ (d1 - d3)
+        return x
+    end
+    #  is segment 'ac' closest?
+    vb = d5*d2 - d1*d6
+    if ((vb ≤ 0) && (d2 ≥ 0) && (d6 ≤ 0))
+        x =  a .+ ac.*d2 ./ (d2 - d6)
+        return x
+    end
+    # is segment 'bc' closest?
+    va = d3*d6 - d5*d4
+    if ((va ≤ 0) && (d4 ≥ d3) && (d5 ≥ d6))
+        x =  b .+ (c .- b) .* (d4 - d3) ./ ((d4 - d3) + (d5 - d6))
+        return x
+    end
+    # closest is interior to `abc`
+    denom = one(T) / (va + vb + vc)
+    v= vb*denom
+    w = vc*denom
+    x = a .+ ab .* v .+ ac .* w
+    return x
+end
+
 # read .inp files
 function load_inp(fname; facetype=GLTriangleFace, pointtype=Point3f)
     #INP file format
@@ -93,30 +146,30 @@ MEMORY = Array
 
 @time measure!(sim)
 
-# make the paraview writer
-wr = vtkWriter("MeshBody";attrib=custom_attrib)
-wr_mesh = vtkWriter("MeshBody_mesh";attrib=Dict("n"=>vtu_normal))
-save!(wr, sim); save!(wr_mesh, sim.body)
-# sim_step!(sim)
-push!(sim.flow.Δt, 1.0)
-save!(wr, sim); save!(wr_mesh, sim.body)
-close(wr); close(wr_mesh)
+# # make the paraview writer
+# wr = vtkWriter("MeshBody";attrib=custom_attrib)
+# wr_mesh = vtkWriter("MeshBody_mesh";attrib=Dict("n"=>vtu_normal))
+# save!(wr, sim); save!(wr_mesh, sim.body)
+# # sim_step!(sim)
+# push!(sim.flow.Δt, 1.0)
+# save!(wr, sim); save!(wr_mesh, sim.body)
+# close(wr); close(wr_mesh)
 
 # grab a random box
-C,R = sim.body.bvh[5]
+# C,R = sim.body.bvh[5]
 
 # split the mesh to submeshed and fit the box tight to it
-function split_fit!(I,box_list,mesh,δ=0)
+function split_fit!(I,box_list,mesh,δ=1)
     (O,W) = box_list[I]
     @show I,O,W
     T = eltype(O)
-    sub_mesh = [] # populate with dummy
+    sub_mesh = Int[] # populate with dummy
     vmax = SVector{3,T}(typemin(T),typemin(T),typemin(T))
     vmin = SVector{3,T}(typemax(T),typemax(T),typemax(T))
     for (i,el) in enumerate(mesh)
         # if any of the vertices is inside, the element is inside
         # if any(all(O .<= el .<= O+W, dims=2))
-        if all(O.-1 .<= el .<= O+W.+2)
+        if all(O.-δ .<= el .<= O+W.+2δ)
             # remember it
             push!(sub_mesh,i)
             # new box, minimum of coordinates sets bounding box
@@ -125,29 +178,29 @@ function split_fit!(I,box_list,mesh,δ=0)
         end
     end
     @show vmin,vmax
-    o = vmin .- T(δ/2)
-    r = (vmax - vmin)/2 .+ T(δ) # make it a bit bigger
+    o = vmin .- T(δ)
+    r = (vmax - vmin)/2 .+ T(2δ) # make it a bit bigger
     # box_list[I] = (o,r) # update the box
     return sub_mesh
 end
-println("\ntesting split")
-lvl = 3
-sim = make_cube(L;mem=MEMORY);
+
+
+lvl = 5
+# sim = make_cube(L;mem=MEMORY);
+sim = make_aorta(L;mem=MEMORY);
 # @show sim.body.bvh
-sub_meshes = []
+sub_meshes_id = Vector[]
 for I in 2^(lvl-1):2^lvl-1 # only on leafs
     subMesh = split_fit!(I,sim.body.bvh,sim.body.mesh,0.0)
-    push!(sub_meshes,subMesh)
+    push!(sub_meshes_id,subMesh)
     @show I, length(subMesh)
 end
 println()
-# @show sim.body.bvh
-
 
 using Plots
 function plot_box(box, ax, k, c)
     lo,up = box[1], box[1]+box[2]
-    lo = lo .+ 0.1k; up = up .- 0.1k
+    lo = lo .+ 0.01k; up = up .- 0.01k
     lines = [
         [lo[1],lo[1],up[1],up[1],lo[1],lo[1],lo[1],up[1],up[1],lo[1]],
         [lo[2],up[2],up[2],lo[2],lo[2],lo[2],up[2],up[2],lo[2],lo[2]],
@@ -164,51 +217,39 @@ colors = distinguishable_colors(length(sim.body.bvh))
 for (k,b) in enumerate(sim.body.bvh)
     plot_box(b,ax,k,colors)
 end
-for (k,sub) in enumerate(sub_meshes)
+for (k,sub) in enumerate(sub_meshes_id)
     subm = sim.body.mesh[sub]
     scatter!([p[1] for p in subm], [p[2] for p in subm], [p[3] for p in subm];
              markersize=8, color=colors[k+2^(lvl-1)-1], label=:none)
 end
 ax
 
+# make sub meshed
+sub_mesh = Vector[]
+for id in sub_meshes_id
+    push!(sub_mesh, sim.body.mesh[id])
+end
 
 @fastmath @inline sibling(current::Int) = current%2==0 ? current+1 : current-1  #0 alloc
 @fastmath @inline parent(current::Int)= fld(current,2)  # 0 alloc
 
-@fastmath function traverse_fsm(x::SVector{3,T},mesh,bvh,subsets) where T
-    # fromParent = 1
-    # fromSibling = 2
-    # fromChild = 3
+@fastmath function traverse_fsm(x::SVector{3,T},sub_meshes::AbstractVector,
+                                bvh::AbstractVector,sub_meshes_id)::Tuple{Int,T} where T
 
     N = fld(length(bvh),2)
-    sol=(0,T(64)) # this one doesn't exist, and we use a square distance
+    u,a=(0,T(64)) # this one doesn't exist, and we use a square distance
     state = :fromParent
     current=1
-    off = length(bvh) - length(subsets)  # offset to access subsets
+    off = length(bvh) - length(sub_meshes)  # offset to access subsets
     while true
-        # @show current,state,sol
-        # if state==:fromChild
-        #     if current==1
-        #         break
-        #     elseif current==2parent(current)
-        #         current = sibling(current)
-        #         state = :fromSibling
-        #     else
-        #         current = parent(current)
-        #         state = :fromChild
-        #     end
         if state==:fromSibling
             hit = inside(x,bvh[current]...)
             if !hit
                 break
-                # current = parent(current)
-                # state = :fromChild
-            elseif current > N #isLeaf(current)
-                sol_leaf = closest(@views(mesh[subsets[current-off]]),x)
-                abs(sol_leaf[2])<abs(sol[2]) && (sol=sol_leaf)
+            elseif current > N
+                v,b = closest(subset(current-off,sub_meshes),x)
+                abs(b)<abs(a) && (a=b; u=subset(current-off,sub_meshes_id)[v])
                 break
-                # current = parent(current)
-                # state = :fromChild
             else
                 current = 2current
                 state = :fromParent
@@ -220,9 +261,9 @@ ax
             elseif !hit
                 current = sibling(current)
                 state = :fromSibling
-            elseif current > N # isLeaf(current)
-                sol_leaf = closest(@views(mesh[subsets[current-off]]),x)
-                abs(sol_leaf[2])<abs(sol[2]) && (sol=sol_leaf)
+            elseif current > N
+                v,b = closest(subset(current-off,sub_meshes),x)
+                abs(b)<abs(a) && (a=b; u=subset(current-off,sub_meshes_id)[v])
                 current = sibling(current)
                 state = :fromSibling
             else
@@ -231,19 +272,92 @@ ax
             end
         end
     end
-    return sol
+    return u,a
 end
+
+@inline subset(I,mesh) = mesh[I]
+
+using BenchmarkTools
 @fastmath @inline d²_fast(tri::SMatrix,x::SVector) = sum(abs2,x-SVector(sum(tri,dims=2)/3))
-@inline function closest(mesh,x::SVector{T};kwargs...) where T
-    u=1; a=b=d²_fast(mesh[1],x) # fast method
+@inline function closest(mesh,x::SVector{D,T};kwargs...)::Tuple{Int,T} where {D,T}
+    u=1; a=b=d²_fast(@views(mesh[1]),x) # fast method
     for I in 2:length(mesh)
-        b = d²_fast(mesh[I],x)
+        b = d²_fast(@views(mesh[I]),x)
         b<a && (a=b; u=I) # Replace current best
     end
     return u,a
 end
 
-x = body.mesh[12][:,1] .+ SVector(0.1f0,0.1f0,0.1f0)
-@time s = traverse_fsm(x,sim.body.mesh,sim.body.bvh,sub_meshes)
+using ForwardDiff
+function measure_bvh(body,x::SVector{D,T},submesh,bvh,sub_meshes_id;t=0) where {D,T}
+    # map to correct location
+    ξ = body.map(x,t)
+    # we don't need to worry if the geom is a boundary or not
+    !(all(body.origin .≤ ξ) && all(ξ .≤ body.origin+body.width)) && return (max(8,2body.half_thk),zeros(SVector{D,T}),zeros(SVector{D,T}))
+    # locate the point on the mesh
+    u,a = traverse_fsm(ξ,submesh,bvh,sub_meshes_id)
+    # check that we have found something
+    u == 0 && return (max(8,2body.half_thk),zeros(SVector{D,T}),zeros(SVector{D,T}))
+    # compute the normal and distance
+    n,p = normal(body.mesh[u]),SVector(locate(body.mesh[u],x))
+    # signed Euclidian distance
+    s = ξ-p; d = sign(sum(s.*n))*√sum(abs2,s)
+    # velocity at the mesh point
+    dξdx = ForwardDiff.jacobian(x->body.map(x,t), x)
+    dξdt = -ForwardDiff.derivative(t->body.map(x,t), t)
+    # if the mesh is not a boundary, we need to adjust the distance
+    !body.boundary && (d = abs(d)-body.half_thk)
+    return (d,dξdx\n/body.scale,dξdx\dξdt)
+end
 
-@time closest(sim.body.mesh,x)
+body = sim.body;
+x = body.mesh[112][:,1] .+ SVector(0.1f0,0.1f0,1f0)
+mesh = sim.body.mesh;
+bvh = sim.body.bvh;
+σ = sim.flow.σ;
+
+# simple tests
+closest(mesh,x)
+traverse_fsm(x,sub_mesh,bvh,sub_meshes_id)
+
+# test a single function
+@btime r = closest($mesh,$x)
+# @code_warntype closest(mesh,x)
+
+@btime s = traverse_fsm($x,$sub_mesh,$bvh,$sub_meshes_id)
+# @which traverse_fsm(x,sub_mesh,bvh)
+# @code_warntype traverse_fsm(x,sub_mesh,bvh)
+
+m1(σ,body) = @inside σ[I] = sdf(body,loc(0,I),0.0)
+m2(σ,sub_mesh,bvh,sub_meshes_id) = @inside σ[I] = traverse_fsm(loc(0,I),sub_mesh,bvh,sub_meshes_id)[2]
+# # measures
+@btime m1($σ,$body)           # 38.265 ms (173 allocations: 12.50 KiB)
+@btime m2($σ,$sub_mesh,$bvh,$sub_meshes_id)  # 0.160 ms (1921 allocations: 89.44 KiB)
+@inside σ[I] = sdf(body,loc(0,I),0.0)
+@inside σ[I] = measure_bvh(body,loc(0,I),sub_mesh,bvh,sub_meshes_id)[1]
+flood(σ[:,:,9])
+flood(σ[:,9,:])
+
+function expand_bvh_points(bvh)
+    points = Float32[]
+    for (C,W) in bvh
+        o = C; u = C+W
+        push!(points, o[1], o[2], o[3])
+        push!(points, u[1], o[2], o[3])
+        push!(points, o[1], u[2], o[3])
+        push!(points, u[1], u[2], o[3])
+        push!(points, o[1], o[2], u[3])
+        push!(points, u[1], o[2], u[3])
+        push!(points, o[1], u[2], u[3])
+        push!(points, u[1], u[2], u[3])
+    end
+    return reshape(points, 3, length(points)÷3)
+end
+
+expand_bvh_points(sim.body.bvh)
+
+points = expand_bvh_points(body.bvh)
+cells = [MeshCell(VTKCellTypes.VTK_VOXEL, collect(8i+1:8i+8)) for i in 0:length(body.bvh)-1]
+vtk = vtk_grid("test_bvh", points, cells)
+vtk["ID"] = 1:length(cells)
+vtk_save(vtk)
