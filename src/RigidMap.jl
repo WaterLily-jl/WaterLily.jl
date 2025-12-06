@@ -1,31 +1,28 @@
 """
-    RigidBody(sdf, center, θ) <: AbstractBody
+    RigidMap(center, θ) <: AbstractBody
 
-  - `sdf(x::AbstractVector,t::Real)::Real`: signed distance function
   - `center::SVector{D}`: coordinate of the center of the body
   - `θ::Union{Real, SVector{3}}`: rotation (angle in 2D, euler angles in 3D)
   - `velocity::SVector{D}=zero(center)`: linear velocity of the center
   - `pivot::SVector{D}=zero(center)`: offset of the pivot point compared to center
   - `ω::Union{Real, SVector{3}}=zero(θ)`: angular velocity (scalar in 2D, vector in 3D)
 
-Implicitly define a geometry by its `sdf` and rigid body motion parameters.
-Note: the `sdf` is defined in the body's local frame, i.e. before rotation and translation.
+Define a `RigidMap` for any `AbstractBody` using rigid body motion parameters.
 
-RigodyBody motion has to be computed externally via a set od ODEs and updated in the
-simulation loop:
+RigidMap updates are computed externally via a set of ODEs and then updated in the
+simulation loop following:
 ```julia
 using WaterLily,StaticArrays
-body = RigidBody((x,t)->sqrt(sum(abs2,x))-4,SA{Float32}[16,16],0.f0;ω=0.1f0)
+body = AutoBody((x,t)->sqrt(sum(abs2,x))-4,RigidMap(SA{Float32}[16,16],0.f0;ω=0.1f0))
 sim = Simulation((32,32),(1,0),8;body)
 for n in 1:10
     # update body motion (example: constant angular velocity)
-    θ_new = sim.body.θ + sim.body.ω*sim.flow.Δt[end]
+    θ_new = sim.body.map.θ + sim.body.map.ω*sim.flow.Δt[end]
     sim.body = update!(sim.body; θ=θ_new)
     # remeasure and step
-    step!(sim;remeasure=true)
+    sim_step!(sim;remeasure=true)
 end
 ```
-
 """
 struct RigidMap{A<:AbstractVector,R} <: Function
     x₀ :: A   # center of translation
@@ -33,11 +30,10 @@ struct RigidMap{A<:AbstractVector,R} <: Function
     V  :: A   # linear velocity of the center
     θ  :: R   # rotation (angle in 2D, euler angles in 3D)
     ω  :: R   # angular velocity (scalar in 2D, vector in 3D)
-    function RigidMap(x₀::SVector, xₚ::SVector, V::SVector, θ::R, ω::R) where R
+    function RigidMap(x₀::SVector,θ::R;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) where R
         new{typeof(x₀),R}(x₀, xₚ, V, θ, ω)
     end
 end
-RigidBody(sdf,x₀,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = AutoBody(sdf,RigidMap(x₀,xₚ,V,θ,ω);compose=true)
 
 function (m::RigidMap)(x::SVector,t=0)::SVector
     return rotation(m.θ)*(x-m.x₀-m.xₚ)+m.xₚ
@@ -52,8 +48,8 @@ rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
 rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[1])*cos(θ[2]) cos(θ[1])*sin(θ[2])*sin(θ[3])-sin(θ[1])*cos(θ[3]) cos(θ[1])*sin(θ[2])*cos(θ[3])+sin(θ[1])*sin(θ[3]);
                                           sin(θ[1])*cos(θ[2]) sin(θ[1])*sin(θ[2])*sin(θ[3])+cos(θ[1])*cos(θ[3]) sin(θ[1])*sin(θ[2])*cos(θ[3])-cos(θ[1])*sin(θ[3]);
                                                -sin(θ[2])                         cos(θ[2])*sin(θ[3])                               cos(θ[2])*cos(θ[3])]
-function update!(body; x₀=body.map.x₀, V=body.map.V,
-                       xₚ=body.map.xₚ, θ=body.map.θ, ω=body.map.ω)
-    !isa(body.map, RigidMap) && return nothing
-    return RigidBody(body.sdf, x₀, θ; xₚ, V, ω)
+
+function update!(body::AutoBody{F,M}; x₀=body.map.x₀, V=body.map.V,
+                 xₚ=body.map.xₚ, θ=body.map.θ, ω=body.map.ω, compose=true) where {F,M<:RigidMap}
+    return AutoBody(body.sdf, RigidMap(x₀, θ; xₚ=xₚ, V=V, ω=ω); compose)
 end

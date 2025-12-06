@@ -597,10 +597,11 @@ end
     end
     @test_nowarn rm(test_dir, recursive=true)
 end
-@testset "RigidBodies" begin
+@testset "RigidMap.jl" begin
     for T ∈ (Float32,Float64)
         # initialize a rigid body
-        body = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0],T(0))
+        sdf(x,t) = sqrt(sum(abs2,x))-1
+        body = AutoBody(sdf, RigidMap(SA{T}[0,0],T(0)))
         # check sdf
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[0,0]))
         # rotate and add linear velocity
@@ -611,7 +612,7 @@ end
         body = update!(body;ω=T(0.1))
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,1.5*0.1]))
         # 3D rigid body
-        body3D = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0,0],SA{T}[0,0,0])
+        body3D = AutoBody(sdf, RigidMap(SA{T}[0,0,0],SA{T}[0,0,0]))
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
         # 3D rigid body with linear and angular velocity
         body3D = update!(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
@@ -625,8 +626,8 @@ end
         @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.7,0.15,0.15]))
         # try measure in the sim using different backends
         for array in arrays
-            body = RigidBody((x,t)->sqrt(sum(abs2,x))-4,SA{T}[16,16,16],SA{T}[0,0,0];
-                             V=SA{T}[0,0,0],ω=SA{T}[0,-0.1,0.1])
+            body = AutoBody((x,t)->sqrt(sum(abs2,x))-4,RigidMap(SA{T}[16,16,16],SA{T}[0,0,0];
+                             V=SA{T}[0,0,0],ω=SA{T}[0,-0.1,0.1]))
             sim = Simulation((32,32,32),(1,0,0),8;body,T,mem=array)
             @test GPUArrays.@allowscalar all(extrema(sim.flow.V) .≈ (-0.9,0.9))
             sim.body = update!(sim.body;x₀=SA{T}[16,16,12])
