@@ -27,7 +27,7 @@ end
 ```
 
 """
-struct RigidMap <: Function
+mutable struct RigidMap <: Function
     x₀ :: SVector   # center of translation
     xₚ :: SVector   # rotation offset
     V  :: SVector   # linear velocity of the center

@@ -29,10 +29,10 @@ export AutoBody,Bodies,measure,sdf,+,-
 include("Metrics.jl")
 export MeanFlow,update!,uu!,uu
 
+abstract type AbstractSimulation end
+
 include("RigidBody.jl")
 export RigidMap
-
-abstract type AbstractSimulation end
 
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
