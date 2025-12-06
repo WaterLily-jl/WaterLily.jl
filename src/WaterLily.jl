@@ -32,7 +32,7 @@ export MeanFlow,update!,uu!,uu
 abstract type AbstractSimulation end
 
 include("RigidBody.jl")
-export RigidMap
+export RigidBody,RigidMap
 
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;

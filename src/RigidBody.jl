@@ -27,13 +27,17 @@ end
 ```
 
 """
-mutable struct RigidMap <: Function
-    x₀ :: SVector   # center of translation
-    xₚ :: SVector   # rotation offset
-    V  :: SVector   # linear velocity of the center
-    θ               # rotation (angle in 2D, euler angles in 3D)
-    ω               # angular velocity (scalar in 2D, vector in 3D)
+struct RigidMap{A<:AbstractVector,R} <: Function
+    x₀ :: A   # center of translation
+    xₚ :: A   # rotation offset
+    V  :: A   # linear velocity of the center
+    θ  :: R   # rotation (angle in 2D, euler angles in 3D)
+    ω  :: R   # angular velocity (scalar in 2D, vector in 3D)
+    function RigidMap(x₀::SVector, xₚ::SVector, V::SVector, θ::R, ω::R) where R
+        new{typeof(x₀),R}(x₀, xₚ, V, θ, ω)
+    end
 end
+RigidBody(sdf,x₀,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = AutoBody(sdf,RigidMap(x₀,xₚ,V,θ,ω);compose=true)
 
 function (m::RigidMap)(x::SVector,t=0)::SVector
     return rotation(m.θ)*(x-m.x₀-m.xₚ)+m.xₚ
@@ -48,26 +52,8 @@ rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
 rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[1])*cos(θ[2]) cos(θ[1])*sin(θ[2])*sin(θ[3])-sin(θ[1])*cos(θ[3]) cos(θ[1])*sin(θ[2])*cos(θ[3])+sin(θ[1])*sin(θ[3]);
                                           sin(θ[1])*cos(θ[2]) sin(θ[1])*sin(θ[2])*sin(θ[3])+cos(θ[1])*cos(θ[3]) sin(θ[1])*sin(θ[2])*cos(θ[3])-cos(θ[1])*sin(θ[3]);
                                                -sin(θ[2])                         cos(θ[2])*sin(θ[3])                               cos(θ[2])*cos(θ[3])]
-"""
-    Store(sim::AbstractSimulation)
-
-Store the current state of a simulation to allow reverting back to it later.
-This is useful for iterative schemes where you may want to try a step and revert if it fails.
-"""
-mutable struct Store
-    uˢ:: AbstractArray
-    pˢ:: AbstractArray
-    b :: AbstractBody
-    function Store(sim::AbstractSimulation)
-        new(copy(sim.flow.u),copy(sim.flow.p),deepcopy(sim.body))
-    end
-end
-function store!(s::Store,sim::AbstractSimulation)
-    s.uˢ .= sim.flow.u; s.pˢ .= sim.flow.p
-    s.b = deepcopy(sim.body)
-end
-function revert!(s::Store,sim::AbstractSimulation)
-    sim.flow.u .= s.uˢ; sim.flow.p .= s.pˢ; pop!(sim.flow.Δt)
-    pop!(sim.pois.n); pop!(sim.pois.n) # pop predictor and corrector
-    sim.body = s.b # nice and simple
+function update!(body; x₀=body.map.x₀, V=body.map.V,
+                       xₚ=body.map.xₚ, θ=body.map.θ, ω=body.map.ω)
+    !isa(body.map, RigidMap) && return nothing
+    return RigidBody(body.sdf, x₀, θ; xₚ, V, ω)
 end

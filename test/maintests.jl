@@ -597,7 +597,6 @@ end
     end
     @test_nowarn rm(test_dir, recursive=true)
 end
-
 @testset "RigidBodies" begin
     for T ∈ (Float32,Float64)
         # initialize a rigid body
@@ -605,7 +604,7 @@ end
         # check sdf
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[0,0]))
         # rotate and add linear velocity
-        body = update!(body;θ=T(π/4),velocity=SA{T}[1.0,0])
+        body = update!(body;θ=T(π/4),V=SA{T}[1.0,0])
         # check sdf and velocity
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,0]))
         # add angular velocity
@@ -615,33 +614,23 @@ end
         body3D = RigidBody((x,t)->sqrt(sum(abs2,x))-1,SA{T}[0,0,0],SA{T}[0,0,0])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
         # 3D rigid body with linear and angular velocity
-        body3D = update!(body3D;velocity=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
+        body3D = update!(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.15,0]))
         @test all(measure(body3D,SA{T}[0,1.5,0],0) .≈ (1/2,SA{T}[0,1,0],SA{T}[0.85,0.,0]))
         @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.85,0.15,0]))
         # three 3D rotations
-        body3D = update!(body3D;velocity=SA{T}[1.0,0,0],ω=SA{T}[0,-0.1,0.1])
+        body3D = update!(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,-0.1,0.1])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.15,0.15]))
         @test all(measure(body3D,SA{T}[0,1.5,1.5],0) .≈ (√(2*(1.5^2))-1,SA{T}[0,√(1/2),√(1/2)],SA{T}[0.7,0.,0]))
         @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.7,0.15,0.15]))
         # try measure in the sim using different backends
         for array in arrays
             body = RigidBody((x,t)->sqrt(sum(abs2,x))-4,SA{T}[16,16,16],SA{T}[0,0,0];
-                             velocity=SA{T}[0,0,0],ω=SA{T}[0,-0.1,0.1])
-            sim = Simulation((32,32,32),(1,0,0),8;body,mem=array)
-            @test all(extrema(sim.flow.V) .≈ (-0.9,0.9))
-            @test all(sim.flow.μ₀[17,17,17,:] .≈ 0)
-            # try storing solution and reverting
-            store = Store(sim)
-            store!(store,sim); sim_step!(sim);
-            @test all(sim.flow.u[4,4,4,:] .≠ store.uˢ[4,4,4,:])
-            @test all(sim.flow.p[4,4,4,:] .≠ store.pˢ[4,4,4,:])
-            # revert
-            revert!(store,sim)
-            @test all(sim.flow.u .≈ store.uˢ)
-            @test all(sim.flow.p .≈ store.pˢ)
-            # check the body
-            @test sim.body == store.b && sim.body === store.b # mmmmh...
+                             V=SA{T}[0,0,0],ω=SA{T}[0,-0.1,0.1])
+            sim = Simulation((32,32,32),(1,0,0),8;body,T,mem=array)
+            @test GPUArrays.@allowscalar all(extrema(sim.flow.V) .≈ (-0.9,0.9))
+            sim.body = update!(sim.body;x₀=SA{T}[16,16,12])
+            @test GPUArrays.@allowscalar all(sim.flow.μ₀[17,17,17,:] .≈ 0)
         end
     end
 end
