@@ -27,59 +27,27 @@ end
 ```
 
 """
-struct RigidBody{D,T,F<:Function,A<:AbstractVector{T},R} <: AbstractBody
-    sdf :: F            # signed distance function
-    center :: A         # center of linear motion
-    velocity :: A       # linear velocity of the center
-    pivot    :: A       # offset of the pivot point compared to center
-    θ :: R              # rotation (angle in 2D, euler angles in 3D)
-    ω :: R              # angular velocity (scalar in 2D, vector in 3D)
-    function RigidBody(sdf,center,θ,velocity,pivot,ω)
-        T,D = eltype(center),length(center)
-        new{D,T,typeof(sdf),typeof(center),typeof(θ)}(sdf,center,velocity,pivot,θ,ω)
-    end
+struct RigidMap <: Function
+    x₀ :: SVector   # center of translation
+    xₚ :: SVector   # rotation offset
+    V  :: SVector   # linear velocity of the center
+    θ               # rotation (angle in 2D, euler angles in 3D)
+    ω               # angular velocity (scalar in 2D, vector in 3D)
 end
-RigidBody(sdf,center,θ;velocity=zero(center),ω=zero(θ),pivot=zero(center)) = RigidBody(sdf,center,θ,velocity,pivot,ω)
-function WaterLily.sdf(body::RigidBody{D,T},x,t=0;kwargs...) where {D,T}
-    R = rotation(body.θ) # compute rotation matrix
-    return body.sdf(R*(x-body.center-body.pivot)+body.pivot,t)
+
+function (m::RigidMap)(x::SVector,t=0)::SVector
+    return rotation(m.θ)*(x-m.x₀-m.xₚ)+m.xₚ
 end
-# 2D rotation using scalar angle
+
+# rigid body velocity
+velocity(map::RigidMap, x::SVector, t=0) = map.V .+ map.ω×(x - map.x₀ - map.xₚ)
+
+# cross product in 2D and rotation matrix in 2D and 3D
+×(a::T,b::SVector{2,T}) where T = a*SA{T}[-b[2],b[1]]
 rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
-# 3D rotation using Euler angles
 rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[1])*cos(θ[2]) cos(θ[1])*sin(θ[2])*sin(θ[3])-sin(θ[1])*cos(θ[3]) cos(θ[1])*sin(θ[2])*cos(θ[3])+sin(θ[1])*sin(θ[3]);
                                           sin(θ[1])*cos(θ[2]) sin(θ[1])*sin(θ[2])*sin(θ[3])+cos(θ[1])*cos(θ[3]) sin(θ[1])*sin(θ[2])*cos(θ[3])-cos(θ[1])*sin(θ[3]);
                                                -sin(θ[2])                         cos(θ[2])*sin(θ[3])                               cos(θ[2])*cos(θ[3])]
-# cross product and new specialized case in 2D scalar angular velocity
-import WaterLily: ×
-×(a::Number,b::SVector{2,T}) where T = a*SA[-b[2],b[1]]
-function WaterLily.measure(body::RigidBody{D,T},x,t;fastd²=Inf) where {D,T}
-    # eval d=f(x,t), and n̂ = ∇f
-    d = WaterLily.sdf(body,x,t)
-    d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
-    n = ForwardDiff.gradient(x->WaterLily.sdf(body,x,t), x)
-    any(isnan.(n)) && return (d,zero(x),zero(x))
-
-    # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
-    #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
-    m = √sum(abs2,n); d /= m; n /= m
-
-    # The rigid body velocity is given by the rigid body motion
-    # v = v + ω×(x-c)
-    v = body.velocity + body.ω×(x-body.center-body.pivot)
-    return (d,n,v)
-end
-
-import WaterLily: update!
-"""
-    update!(body::RigidBody; kwargs...)
-
-"""
-function update!(body::RigidBody; sdf=body.sdf, center=body.center,
-                 velocity=body.velocity, pivot=body.pivot, θ=body.θ, ω=body.ω)
-    return RigidBody(sdf,center,θ,velocity,pivot,ω)
-end
-
 """
     Store(sim::AbstractSimulation)
 
