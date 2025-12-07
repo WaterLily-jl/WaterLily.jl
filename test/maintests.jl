@@ -1,6 +1,7 @@
 using GPUArrays
 using ReadVTK, WriteVTK, JLD2
 using FileIO, ImageMagick, ImageCore
+import Plots
 
 backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
@@ -602,11 +603,9 @@ end
 make_egg_noarray(ra=40,rb=20, U=1) = Simulation((5*ra,5*rb),(U,0), rb;
             body=AutoBody((x,t)->√sum((x[1]-8)^2/ra+(x[2]-8)^2/rb)-1))
 
-import Plots
-
 @testset "WaterLilyPlotsExt.jl" begin   
 
-    Plots.plot();
+    Plots.plot(); # reset the plot
 
     # make a simulation
     sim = make_egg_noarray();
@@ -621,6 +620,8 @@ import Plots
     @test abs(maximum(channelview(test)-channelview(comp))) < 1
     rm("temp.png")
 
+    Plots.plot(); # reset the plot
+    
     # make a simulation
     sim = make_egg_noarray();
 
@@ -634,21 +635,46 @@ import Plots
     @test abs(maximum(channelview(testgif)-channelview(compgif))) < 1
     rm(fn)
 
+    Plots.plot(); # reset the plot
+
+    # make a 2d plot with flood
     xr = -1:0.01:1
     yr = -1:0.01:1
     f(x,y) = x^2/2 + y^2/3
-
     flood(f.(xr,yr'))
+
+    # compare output and do cleanup
     Plots.savefig("temp.png")
     comp = load("compdata/floodTestNoLims.png")
     test = load("temp.png")
     @test abs(maximum(channelview(test)-channelview(comp))) < 1
     rm("temp.png")
 
+    Plots.plot(); # reset the plot
+
     flood(f.(xr,yr'), clims = (0.00,0.01))
     Plots.savefig("temp.png")
+
+    # compare output and do cleanup
     comp = load("compdata/floodTestWithLims.png")
     test = load("temp.png")
     @test abs(maximum(channelview(test)-channelview(comp))) < 1
     rm("temp.png")
+
+    Plots.plot(); # reset the plot
+
+    # make a simulation
+    sim = make_egg_noarray();    
+    
+    # make a plot of the simulation log
+    WaterLily.logger("testLog") # Log the residual of pressure solver
+    sim_step!(sim, 0.5) # Run the simulation
+    plot_logger("testLog.log")
+    Plots.savefig("testLogPlot.png")
+
+    # compare output and do cleanup
+    comp = load("compdata/compLogPlot.png")
+    test = load("testLogPlot.png")
+    @test abs(maximum(channelview(test)-channelview(comp))) < 1    
+    rm("testLogPlot.png")
 end 
