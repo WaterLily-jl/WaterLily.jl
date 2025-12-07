@@ -17,8 +17,8 @@ body = AutoBody((x,t)->sqrt(sum(abs2,x))-4,RigidMap(SA{Float32}[16,16],0.f0;ω=0
 sim = Simulation((32,32),(1,0),8;body)
 for n in 1:10
     # update body motion (example: constant angular velocity)
-    θ_new = sim.body.map.θ + sim.body.map.ω*sim.flow.Δt[end]
-    sim.body = update!(sim.body; θ=θ_new)
+    θ = sim.body.map.θ + sim.body.map.ω*sim.flow.Δt[end]
+    sim.body = setmap(sim.body; θ)
     # remeasure and step
     sim_step!(sim;remeasure=true)
 end
@@ -47,7 +47,7 @@ rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[1])*cos(θ[2]) cos(θ[1])*sin(
                                           sin(θ[1])*cos(θ[2]) sin(θ[1])*sin(θ[2])*sin(θ[3])+cos(θ[1])*cos(θ[3]) sin(θ[1])*sin(θ[2])*cos(θ[3])-cos(θ[1])*sin(θ[3]);
                                                -sin(θ[2])                         cos(θ[2])*sin(θ[3])                               cos(θ[2])*cos(θ[3])]
 using ConstructionBase
-update!(body::AbstractBody; kwargs...) = try
+setmap(body::AbstractBody; kwargs...) = try
     setproperties(body,map=setproperties(body.map; kwargs...))
 catch
     throw(ArgumentError("Cannot update $(body.map) with $kwargs"))

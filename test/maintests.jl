@@ -605,22 +605,22 @@ end
         # check sdf
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[0,0]))
         # rotate and add linear velocity
-        body = update!(body;θ=T(π/4),V=SA{T}[1.0,0])
+        body = setmap(body;θ=T(π/4),V=SA{T}[1.0,0])
         # check sdf and velocity
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,0]))
         # add angular velocity
-        body = update!(body;ω=T(0.1))
+        body = setmap(body;ω=T(0.1))
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,1.5*0.1]))
         # 3D rigid body
         body3D = AutoBody(sdf, RigidMap(SA{T}[0,0,0],SA{T}[0,0,0]))
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
         # 3D rigid body with linear and angular velocity
-        body3D = update!(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
+        body3D = setmap(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.15,0]))
         @test all(measure(body3D,SA{T}[0,1.5,0],0) .≈ (1/2,SA{T}[0,1,0],SA{T}[0.85,0.,0]))
         @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.85,0.15,0]))
         # three 3D rotations
-        body3D = update!(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,-0.1,0.1])
+        body3D = setmap(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,-0.1,0.1])
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.15,0.15]))
         @test all(measure(body3D,SA{T}[0,1.5,1.5],0) .≈ (√(2*(1.5^2))-1,SA{T}[0,√(1/2),√(1/2)],SA{T}[0.7,0.,0]))
         @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.7,0.15,0.15]))
@@ -630,7 +630,7 @@ end
                              V=SA{T}[0,0,0],ω=SA{T}[0,-0.1,0.1]))
             sim = Simulation((32,32,32),(1,0,0),8;body,T,mem=array)
             @test GPUArrays.@allowscalar all(extrema(sim.flow.V) .≈ (-0.9,0.9))
-            sim.body = update!(sim.body;x₀=SA{T}[16,16,12])
+            sim.body = setmap(sim.body;x₀=SA{T}[16,16,12])
             @test GPUArrays.@allowscalar all(sim.flow.μ₀[17,17,17,:] .≈ 0)
         end
     end

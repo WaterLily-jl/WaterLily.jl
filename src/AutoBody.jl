@@ -13,14 +13,13 @@ Both parameters remain independent otherwise. It can be particularly helpful to 
 struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
     map::F2
-    compose::Bool
 end
-AutoBody(sdf, map=(x,t)->x; compose=true) = AutoBody(sdf, map, compose)
+AutoBody(sdf, map=(x,t)->x) = AutoBody(sdf, map)
 
 """
     d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)
 """
-@inline sdf(body::AutoBody,x,t=0;kwargs...) = body.compose ? body.sdf(body.map(x,t),t) : body.sdf(x,t)
+@inline sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(body.map(x,t),t)
 
 using ForwardDiff
 """
