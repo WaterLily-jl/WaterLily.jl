@@ -35,21 +35,21 @@ struct RigidMap{A<:AbstractVector,R} <: Function
     end
 end
 
-function (m::RigidMap)(x::SVector,t=0)::SVector
-    return rotation(m.θ)*(x-m.x₀-m.xₚ)+m.xₚ
-end
+# this is the function map(x,t)
+(map::RigidMap)(x::SVector,t=0)::SVector = rotation(map.θ)*(x-map.x₀-map.xₚ)+map.xₚ
 
 # rigid body velocity
-velocity(map::RigidMap, x::SVector, t=0) = map.V .+ map.ω×(x - map.x₀ - map.xₚ)
+velocity(map::RigidMap,x::SVector,t=0) = map.V+map.ω×(x-map.x₀-map.xₚ)
 
 # cross product in 2D and rotation matrix in 2D and 3D
-×(a::T,b::SVector{2,T}) where T = a*SA{T}[-b[2],b[1]]
+import WaterLily: ×
+×(a::Number,b::SVector{2,T}) where T = a*SA[-b[2],b[1]]
 rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
 rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[1])*cos(θ[2]) cos(θ[1])*sin(θ[2])*sin(θ[3])-sin(θ[1])*cos(θ[3]) cos(θ[1])*sin(θ[2])*cos(θ[3])+sin(θ[1])*sin(θ[3]);
                                           sin(θ[1])*cos(θ[2]) sin(θ[1])*sin(θ[2])*sin(θ[3])+cos(θ[1])*cos(θ[3]) sin(θ[1])*sin(θ[2])*cos(θ[3])-cos(θ[1])*sin(θ[3]);
                                                -sin(θ[2])                         cos(θ[2])*sin(θ[3])                               cos(θ[2])*cos(θ[3])]
 
 function update!(body::AutoBody{F,M}; x₀=body.map.x₀, V=body.map.V,
-                 xₚ=body.map.xₚ, θ=body.map.θ, ω=body.map.ω, compose=true) where {F,M<:RigidMap}
-    return AutoBody(body.sdf, RigidMap(x₀, θ; xₚ=xₚ, V=V, ω=ω); compose)
+                 xₚ=body.map.xₚ, θ=body.map.θ, ω=body.map.ω) where {F<:Function,M<:RigidMap}
+    return AutoBody(body.sdf, RigidMap(x₀, θ; xₚ=xₚ, V=V, ω=ω))
 end

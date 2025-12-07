@@ -7,22 +7,22 @@
 
 Implicitly define a geometry by its `sdf` and optional coordinate `map`. Note: the `map`
 is composed automatically if `compose=true`, i.e. `sdf(x,t) = sdf(map(x,t),t)`.
-Both parameters remain independent otherwise. It can be particularly heplful to set
-`compose=false` when adding mulitple bodies together to create a more complex one.
+Both parameters remain independent otherwise. It can be particularly helpful to set
+`compose=false` when adding multiple bodies together to create a more complex one.
 """
 struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
     map::F2
+    compose::Bool
     function AutoBody(sdf, map=(x,t)->x; compose=true)
-        comp(x,t) = compose ? sdf(map(x,t),t) : sdf(x,t)
-        new{typeof(comp),typeof(map)}(comp, map)
+        new{typeof(sdf),typeof(map)}(sdf, map, compose)
     end
 end
 
 """
-    d = sdf(body::AutoBody,x,t) = body.sdf(x,t)
+    d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)
 """
-sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(x,t)
+sdf(body::AutoBody,x,t=0;kwargs...) = body.compose ? body.sdf(body.map(x,t),t) : body.sdf(x,t)
 
 using ForwardDiff
 """
@@ -35,9 +35,9 @@ Skips the `n,V` calculation when `d²>fastd²`.
 """
 function measure(body::AutoBody,x,t;fastd²=Inf)
     # eval d=f(x,t), and n̂ = ∇f
-    d = body.sdf(x,t)
+    d = sdf(body,x,t)
     d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
-    n = ForwardDiff.gradient(x->body.sdf(x,t), x)
+    n = ForwardDiff.gradient(x->sdf(body,x,t), x)
     any(isnan.(n)) && return (d,zero(x),zero(x))
 
     # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
