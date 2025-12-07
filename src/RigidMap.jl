@@ -26,14 +26,12 @@ end
 """
 struct RigidMap{A<:AbstractVector,R} <: Function
     x₀ :: A   # center of translation
+    θ  :: R   # rotation (angle in 2D, euler angles in 3D)
     xₚ :: A   # rotation offset
     V  :: A   # linear velocity of the center
-    θ  :: R   # rotation (angle in 2D, euler angles in 3D)
     ω  :: R   # angular velocity (scalar in 2D, vector in 3D)
-    function RigidMap(x₀::SVector,θ::R;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) where R
-        new{typeof(x₀),R}(x₀, xₚ, V, θ, ω)
-    end
 end
+RigidMap(x₀::SVector,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x₀, θ, xₚ, V, ω)
 
 # this is the function map(x,t)
 (map::RigidMap)(x::SVector,t=0)::SVector = rotation(map.θ)*(x-map.x₀-map.xₚ)+map.xₚ
@@ -48,8 +46,9 @@ rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
 rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[1])*cos(θ[2]) cos(θ[1])*sin(θ[2])*sin(θ[3])-sin(θ[1])*cos(θ[3]) cos(θ[1])*sin(θ[2])*cos(θ[3])+sin(θ[1])*sin(θ[3]);
                                           sin(θ[1])*cos(θ[2]) sin(θ[1])*sin(θ[2])*sin(θ[3])+cos(θ[1])*cos(θ[3]) sin(θ[1])*sin(θ[2])*cos(θ[3])-cos(θ[1])*sin(θ[3]);
                                                -sin(θ[2])                         cos(θ[2])*sin(θ[3])                               cos(θ[2])*cos(θ[3])]
-
-function update!(body::AutoBody{F,M}; x₀=body.map.x₀, V=body.map.V,
-                 xₚ=body.map.xₚ, θ=body.map.θ, ω=body.map.ω) where {F<:Function,M<:RigidMap}
-    return AutoBody(body.sdf, RigidMap(x₀, θ; xₚ=xₚ, V=V, ω=ω))
+using ConstructionBase
+update!(body::AbstractBody; kwargs...) = try
+    setproperties(body,map=setproperties(body.map; kwargs...))
+catch
+    throw(ArgumentError("Cannot update $(body.map) with $kwargs"))
 end

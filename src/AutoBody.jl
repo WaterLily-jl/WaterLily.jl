@@ -14,15 +14,13 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
     map::F2
     compose::Bool
-    function AutoBody(sdf, map=(x,t)->x; compose=true)
-        new{typeof(sdf),typeof(map)}(sdf, map, compose)
-    end
 end
+AutoBody(sdf, map=(x,t)->x; compose=true) = AutoBody(sdf, map, compose)
 
 """
     d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)
 """
-sdf(body::AutoBody,x,t=0;kwargs...) = body.compose ? body.sdf(body.map(x,t),t) : body.sdf(x,t)
+@inline sdf(body::AutoBody,x,t=0;kwargs...) = body.compose ? body.sdf(body.map(x,t),t) : body.sdf(x,t)
 
 using ForwardDiff
 """

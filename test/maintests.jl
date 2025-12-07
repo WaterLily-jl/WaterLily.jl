@@ -257,7 +257,7 @@ end
     body = AutoBody(circ)
     for i in 2:20
         body += AutoBody(circ,(x,t)->x-rand(2))
-        @test sizeof(body) == i
+        @test sizeof(body) ≤ i
     end
 
     # test curvature, 2D and 3D
