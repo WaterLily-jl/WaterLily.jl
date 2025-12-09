@@ -33,11 +33,9 @@ struct RigidMap{A<:AbstractVector,R} <: Function
 end
 RigidMap(x₀::SVector,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x₀, θ, xₚ, V, ω)
 
-# this is the function map(x,t)
-(map::RigidMap)(x::SVector,t=0)::SVector = rotation(map.θ)*(x-map.x₀-map.xₚ)+map.xₚ
-
-# rigid body velocity
-velocity(map::RigidMap,x::SVector,t=0) = map.V+map.ω×(x-map.x₀-map.xₚ)
+# this is the function map(x,t) AND derivative(t->map(x,t),t)
+(map::RigidMap)(x::SVector,t=0) = rotation(map.θ)*(x-map.x₀-map.xₚ)+map.xₚ
+(map::RigidMap)(x::SVector,::ForwardDiff.Dual{Tag}) where Tag = Dual{Tag}.(map(x),-rotation(map.θ)*(map.V+map.ω×(x-map.x₀-map.xₚ)))
 
 # cross product in 2D and rotation matrix in 2D and 3D
 import WaterLily: ×
@@ -50,5 +48,5 @@ using ConstructionBase
 setmap(body::AbstractBody; kwargs...) = try
     setproperties(body,map=setproperties(body.map; kwargs...))
 catch
-    throw(ArgumentError("Cannot update $(body.map) with $kwargs"))
+    throw(ArgumentError("Cannot update $body with $kwargs"))
 end

@@ -38,14 +38,12 @@ function measure(body::AutoBody,x,t;fastd²=Inf)
     #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
     m = √sum(abs2,n); d /= m; n /= m
 
-    # get velocity from map
-    return (d,n,velocity(body.map, x, t))
+    # The velocity depends on the material change of ξ=m(x,t):
+    #   Dm/Dt=0 → ṁ + (dm/dx)ẋ = 0 ∴  ẋ =-(dm/dx)\ṁ
+    J = ForwardDiff.jacobian(x->body.map(x,t), x)
+    dot = ForwardDiff.derivative(t->body.map(x,t), t)
+    return (d,n,-J\dot)
 end
-
-# The velocity depends on the material change of ξ=m(x,t):
-#   Dm/Dt=0 → ṁ + (dm/dx)ẋ = 0 ∴  ẋ =-(dm/dx)\ṁ
-velocity(map::Function, x, t) = -ForwardDiff.jacobian(x->map(x,t), x)\ForwardDiff.derivative(t->map(x,t), t)
-
 
 using LinearAlgebra: tr
 """
