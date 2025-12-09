@@ -114,8 +114,9 @@ Rate-of-strain tensor.
 """
 S(I::CartesianIndex{2},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:2, j ∈ 1:2]
 S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:3, j ∈ 1:3]
+
 """
-   viscous_force(sim::Simulation)
+    viscous_force(sim::Simulation)
 
 Compute the viscous force on an immersed body.
 """
@@ -129,7 +130,7 @@ function viscous_force(u,ν,df,body,t=0)
 end
 
 """
-   total_force(sim::Simulation)
+    total_force(sim::Simulation)
 
 Compute the total force on an immersed body.
 """
@@ -151,7 +152,7 @@ function pressure_moment(x₀,p,df,body,t=0)
 end
 
 """
-     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+    MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
 
 Holds temporal averages of pressure, velocity, and squared-velocity tensor.
 """

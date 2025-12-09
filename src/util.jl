@@ -25,7 +25,7 @@ end
 
 @inline CI(a...) = CartesianIndex(a...)
 """
-    CIj(j,I,jj)
+    CIj(j,I,k)
 Replace jᵗʰ component of CartesianIndex with k
 """
 CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
@@ -40,7 +40,7 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
-    inside(a)
+    inside(a;buff=1)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
@@ -249,6 +249,7 @@ function exitBC!(u,u⁰,Δt)
 end
 """
     perBC!(a,perdir)
+
 Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
@@ -259,8 +260,9 @@ end
 """
     interp(x::SVector, arr::AbstractArray)
 
-    Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-    Note: This routine works for any number of dimensions.
+Linear interpolation from array `arr` at Cartesian-coordinate `x`.
+
+Note: This routine works for any number of dimensions.
 """
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference

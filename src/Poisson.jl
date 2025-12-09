@@ -1,3 +1,5 @@
+abstract type AbstractPoisson{T,S,V} end
+
 """
     Poisson{N,M}
 
@@ -9,7 +11,7 @@ The resulting linear system is
 
     Ax = [L+D+L']x = z
 
-where A is symmetric, block-tridiagonal and extremely sparse. Moreover, 
+where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
 ect can be easily implemented and optimized without external libraries.
 
@@ -17,7 +19,6 @@ To help iteratively solve the system above, the Poisson structure holds
 helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
 solution method then estimates the error `ϵ=̃A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
 """
-abstract type AbstractPoisson{T,S,V} end
 struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     L :: V # Lower diagonal coefficients
     D :: S # Diagonal coefficients
@@ -56,7 +57,7 @@ end
 """
     mult!(p::Poisson,x)
 
-Efficient function for Poisson matrix-vector multiplication. 
+Efficient function for Poisson matrix-vector multiplication.
 Fills `p.z = p.A x` with 0 in the ghost cells.
 """
 function mult!(p::Poisson,x)
@@ -77,18 +78,18 @@ end
 """
     residual!(p::Poisson)
 
-Computes the resiual `r = z-Ax` and corrects it such that
+Computes the residual `r = z-Ax` and corrects it such that
 `r = 0` if `iD==0` which ensures local satisfiability
-    and 
+    and
 `sum(r) = 0` which ensures global satisfiability.
 
-The global correction is done by adjusting all points uniformly, 
+The global correction is done by adjusting all points uniformly,
 minimizing the local effect. Other approaches are possible.
 
 Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
-function residual!(p::Poisson) 
+function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
     s = sum(p.r)/length(inside(p.r))
@@ -96,7 +97,7 @@ function residual!(p::Poisson)
     @inside p.r[I] = p.r[I]-s
 end
 
-function increment!(p::Poisson) 
+function increment!(p::Poisson)
     perBC!(p.ϵ,p.perdir)
     @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)
@@ -104,7 +105,7 @@ end
 """
     Jacobi!(p::Poisson; it=1)
 
-Jacobi smoother run `it` times. 
+Jacobi smoother run `it` times.
 Note: This runs for general backends, but is _very_ slow to converge.
 """
 @fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
@@ -116,7 +117,7 @@ using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations, 
+Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
@@ -147,7 +148,7 @@ L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
 """
-    solver!(A::Poisson;log,tol,itmx)
+    solver!(A::Poisson;tol=1e-4,itmx=1e3)
 
 Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 
@@ -155,7 +156,6 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `A.x`: Solution vector. Can start with an initial guess.
   - `A.z`: Right-Hand-Side vector. Will be overwritten!
   - `A.n[end]`: stores the number of iterations performed.
-  - `log`: If `true`, this function returns a vector holding the `L₂`-norm of the residual at each iteration.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
 """
