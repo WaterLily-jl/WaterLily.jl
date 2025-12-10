@@ -1,10 +1,11 @@
 """
     RigidMap(center, θ) <: AbstractBody
 
-  - `center::SVector{D}`: coordinate of the center of the body
-  - `θ::Union{Real, SVector{3}}`: rotation (angle in 2D, euler angles in 3D)
-  - `velocity::SVector{D}=zero(center)`: linear velocity of the center
-  - `pivot::SVector{D}=zero(center)`: offset of the pivot point compared to center
+  - `x₀::SVector{D}`: coordinate of the center of the body
+  - `θ::Union{Real, SVector{3}}`: rotation (single angle in 2D, and in 3D these are the rotation angle around
+                                  the x, y, and z axes respectively.)
+  - `V::SVector{D}=zero(center)`: linear velocity of the center
+  - `xₚ::SVector{D}=zero(center)`: offset of the pivot point compared to center
   - `ω::Union{Real, SVector{3}}=zero(θ)`: angular velocity (scalar in 2D, vector in 3D)
 
 Define a `RigidMap` for any `AbstractBody` using rigid body motion parameters.
@@ -41,12 +42,13 @@ RigidMap(x₀::SVector,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x
 import WaterLily: ×
 ×(a::Number,b::SVector{2,T}) where T = a*SA[-b[2],b[1]]
 rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
-rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[1])*cos(θ[2]) cos(θ[1])*sin(θ[2])*sin(θ[3])-sin(θ[1])*cos(θ[3]) cos(θ[1])*sin(θ[2])*cos(θ[3])+sin(θ[1])*sin(θ[3]);
-                                          sin(θ[1])*cos(θ[2]) sin(θ[1])*sin(θ[2])*sin(θ[3])+cos(θ[1])*cos(θ[3]) sin(θ[1])*sin(θ[2])*cos(θ[3])-cos(θ[1])*sin(θ[3]);
-                                               -sin(θ[2])                         cos(θ[2])*sin(θ[3])                               cos(θ[2])*cos(θ[3])]
+rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[3])*cos(θ[2]) cos(θ[3])*sin(θ[2])*sin(θ[1])-sin(θ[3])*cos(θ[1]) cos(θ[3])*sin(θ[2])*cos(θ[1])+sin(θ[3])*sin(θ[1]);
+                                          sin(θ[3])*cos(θ[2]) sin(θ[3])*sin(θ[2])*sin(θ[1])+cos(θ[3])*cos(θ[1]) sin(θ[3])*sin(θ[2])*cos(θ[1])-cos(θ[3])*sin(θ[1]);
+                                               -sin(θ[2])                         cos(θ[2])*sin(θ[1])                               cos(θ[2])*cos(θ[1])]
 using ConstructionBase
 setmap(body::AbstractBody; kwargs...) = try
     setproperties(body,map=setproperties(body.map; kwargs...))
 catch
     throw(ArgumentError("Cannot update $body with $kwargs"))
 end
+setmap(body::SetBody; kwargs...) = setmap(body.a; kwargs...)+setmap(body.b; kwargs...)
