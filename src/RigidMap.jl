@@ -45,10 +45,7 @@ rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
 rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[3])*cos(θ[2]) cos(θ[3])*sin(θ[2])*sin(θ[1])-sin(θ[3])*cos(θ[1]) cos(θ[3])*sin(θ[2])*cos(θ[1])+sin(θ[3])*sin(θ[1]);
                                           sin(θ[3])*cos(θ[2]) sin(θ[3])*sin(θ[2])*sin(θ[1])+cos(θ[3])*cos(θ[1]) sin(θ[3])*sin(θ[2])*cos(θ[1])-cos(θ[3])*sin(θ[1]);
                                                -sin(θ[2])                         cos(θ[2])*sin(θ[1])                               cos(θ[2])*cos(θ[1])]
-using ConstructionBase
-setmap(body::AbstractBody; kwargs...) = try
-    setproperties(body,map=setproperties(body.map; kwargs...))
-catch
-    throw(ArgumentError("Cannot update $body with $kwargs"))
-end
-setmap(body::SetBody; kwargs...) = setmap(body.a; kwargs...)+setmap(body.b; kwargs...)
+import ConstructionBase: setproperties
+setmap(body::AbstractBody; kwargs...) = setproperties(body,map=setproperties(body.map; kwargs...))
+setmap(body::SetBody; kwargs...) = SetBody(body.op,setmap(body.a; kwargs...),setmap(body.b; kwargs...))
+setmap(body::NoBody; kwargs...) = NoBody()
