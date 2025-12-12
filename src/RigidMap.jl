@@ -42,9 +42,9 @@ RigidMap(x₀::SVector,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x
 import WaterLily: ×
 ×(a::Number,b::SVector{2,T}) where T = a*SA[-b[2],b[1]]
 rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
-rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[3])*cos(θ[2]) cos(θ[3])*sin(θ[2])*sin(θ[1])-sin(θ[3])*cos(θ[1]) cos(θ[3])*sin(θ[2])*cos(θ[1])+sin(θ[3])*sin(θ[1]);
-                                          sin(θ[3])*cos(θ[2]) sin(θ[3])*sin(θ[2])*sin(θ[1])+cos(θ[3])*cos(θ[1]) sin(θ[3])*sin(θ[2])*cos(θ[1])-cos(θ[3])*sin(θ[1]);
-                                               -sin(θ[2])                         cos(θ[2])*sin(θ[1])                               cos(θ[2])*cos(θ[1])]
+rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[3])*cos(θ[2]) cos(θ[3])*sin(θ[2])*sin(θ[1])+sin(θ[3])*cos(θ[1]) -cos(θ[3])*sin(θ[2])*cos(θ[1])+sin(θ[3])*sin(θ[1]);
+                                         -sin(θ[3])*cos(θ[2]) -sin(θ[3])*sin(θ[2])*sin(θ[1])+cos(θ[3])*cos(θ[1]) sin(θ[3])*sin(θ[2])*cos(θ[1])+cos(θ[3])*sin(θ[1]);
+                                                sin(θ[2])                         -cos(θ[2])*sin(θ[1])                               cos(θ[2])*cos(θ[1])]
 import ConstructionBase: setproperties
 setmap(body::AbstractBody; kwargs...) = setproperties(body,map=setproperties(body.map; kwargs...))
 setmap(body::SetBody; kwargs...) = SetBody(body.op,setmap(body.a; kwargs...),setmap(body.b; kwargs...))
