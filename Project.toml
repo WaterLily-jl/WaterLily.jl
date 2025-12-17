@@ -5,6 +5,7 @@ version = "1.5.2"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
@@ -43,6 +44,7 @@ WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = ["WriteVTK", "GeometryBasics"]
 
 [compat]
+ConstructionBase = "1.6.0"
 Adapt = "4.3.0"
 DocStringExtensions = "0.9"
 EllipsisNotation = "1.8"
