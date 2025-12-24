@@ -76,6 +76,13 @@ Plot the 2D scalar `σ::Observable` in a 2D contour axis.
 plot_σ_obs!(ax, σ::Observable{Array{T,2}} where T; kwargs...) = Makie.contourf!(ax, σ; kwargs...)
 
 """
+    plot_ψ_obs!(ax, ψ::Observable{Array{T,2}} where T; kwargs...)
+
+Plot the 2D scalar `ψ::Observable` in a 2D contour axis (contour instead of contourf)
+"""
+plot_ψ_obs!(ax, ψ::Observable{Array{T,2}} where T; kwargs...) = Makie.contour!(ax, ψ; kwargs...)
+
+"""
     plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...)
 
 Plot the 3D scalar `σ::Observable` in a 3D volume axis.
@@ -124,6 +131,8 @@ Keyword arguments:
     - `body::Bool`: Plot the body.
     - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a Makie.volume (faster).
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
+    - `streamlines::Union{Number,Tuple{Number,Symbol},NamedTuple}`: Pass a number, (number, :color), or a NamedTuple with keyword arguments
+        to plot the 2D streamlines as a contour, on top of the array resulting from `f`.
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
     - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
     - `hidedecorations::Bool`: Figures without axis details.
@@ -141,7 +150,7 @@ Keyword arguments:
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
     λ=quick, udf=nothing, udf_kwargs=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
-    body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
+    body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false, streamlines=nothing,
     video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
     theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
 
@@ -150,7 +159,13 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         σ[] = WaterLily.squeeze(dat[CIs])
         if body && remeasure
             update_body!(dat, sim)
-            σb_obs[] = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
+            σb_obs[] = @views get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
+        end
+        if !isnothing(streamlines) && d == 2
+            remeasure && WaterLily.update!(pois)
+            ψ!(pois, sim.flow.u)
+            @views copyto!(dat_ψ, @views WaterLily.squeeze(pois.x[CIs]) |> ad_f(sim) |> Array)
+            ψ_obs[] = dat_ψ
         end
     end
     function step_sim_and_viz!(sim, tᵢ)
@@ -163,6 +178,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
+    !isnothing(cut) && (d=2)
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     isnothing(f) && (f = ω_viz!(d))
@@ -208,6 +224,33 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color)
+    !isnothing(streamlines) && (@assert d == 2 "Cannot plot streamlines for 3D visualizations")
+    if !isnothing(streamlines) && d == 2
+        CIp = CartesianIndices(Tuple(1:n for n in size(sim.flow.σ)))
+        if D == 3
+            cut_dim = findfirst(==(1), size(CIs))
+            CIp = CI_cut(CIp, cut_dim)
+            CIu = range_u(deleteat!([1,2,3],cut_dim)...,cut_dim)
+            CIs_u = CartesianIndices((CIp.indices..., CIu))
+        else
+            cut_dim, CIu = 0, 1:2
+            CIu = 1:2
+            CIs_u = CartesianIndices((CIp.indices..., CIu))
+        end
+        pois = MultiLevelPoisson(copy(sim.flow.σ), sim.flow.μ₀, copy(sim.flow.σ))
+        ψ!(pois, sim.flow.u)
+        dat_ψ = @views WaterLily.squeeze(pois.x[CIs]) |> ad_f(sim) |> Array
+        ψ_obs = dat_ψ |> ad_f(sim) |> Observable
+
+        if isa(streamlines, Number)
+            streamlines = (levels=streamlines,)
+        elseif isa(streamlines, Tuple{Number, Symbol})
+            streamlines = (levels=streamlines[1], color=streamlines[2])
+        end
+        @assert isa(streamlines, NamedTuple) "streamlines needs to be a number, (number, :color) tuple, or a NamedTuple"
+        plot_ψ_obs!(ax, ψ_obs; streamlines...)
+    end
+
     hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
     hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
 
@@ -242,5 +285,7 @@ end
 add_kwarg(args...; kwargs...) = (; kwargs..., (p.first => p.second for p in args)...) |> pairs
 remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(x.first, args))...) |> pairs
 ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
+range_u(is, ie, cut_dim) = range(is, ie, step=(cut_dim != 2 ? 1 : 2))
+CI_cut(CIs, cut_dim) = CartesianIndices(Tuple([I for (i,I) in enumerate(CIs.indices) if i!=cut_dim]))
 
 end # module
