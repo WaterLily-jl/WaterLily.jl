@@ -164,7 +164,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         if !isnothing(streamlines) && d == 2
             remeasure && WaterLily.update!(pois)
             ψ!(pois, sim.flow.u)
-            @views copyto!(dat_ψ, pois.x[CI_cut(CIs, cut_dim)] |> ad_f(sim) |> Array)
+            @views copyto!(dat_ψ, @views WaterLily.squeeze(pois.x[CIs]) |> ad_f(sim) |> Array)
             ψ_obs[] = dat_ψ
         end
     end
@@ -178,6 +178,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
+    !isnothing(cut) && (d=2)
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     isnothing(f) && (f = ω_viz!(d))
@@ -238,7 +239,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         end
         pois = MultiLevelPoisson(copy(sim.flow.σ), sim.flow.μ₀, copy(sim.flow.σ))
         ψ!(pois, sim.flow.u)
-        dat_ψ = pois.x[CI_cut(CIs, cut_dim)] |> ad_f(sim) |> Array
+        dat_ψ = @views WaterLily.squeeze(pois.x[CIs]) |> ad_f(sim) |> Array
         ψ_obs = dat_ψ |> ad_f(sim) |> Observable
 
         if isa(streamlines, Number)
