@@ -643,9 +643,9 @@ end
             body = AutoBody((x,t)->sqrt(sum(abs2,x))-4,RigidMap(SA{T}[16,16,16],SA{T}[0,0,0];
                              V=SA{T}[0,0,0],ω=SA{T}[0,-0.1,0.1]))
             sim = Simulation((32,32,32),(1,0,0),8;body,T,mem=array)
-            @test GPUArrays.@allowscalar all(extrema(sim.flow.V) .≈ (-0.9,0.9))
+            @test GPUArrays.@allowscalar all(extrema(sim.bc.V) .≈ (-0.9,0.9))
             sim.body = setmap(sim.body;x₀=SA{T}[16,16,12])
-            @test GPUArrays.@allowscalar all(sim.flow.μ₀[17,17,17,:] .≈ 0)
+            @test GPUArrays.@allowscalar all(sim.bc.μ₀[17,17,17,:] .≈ 0)
         end
     end
     rmap = RigidMap(SA[0.,0.],π/4)
