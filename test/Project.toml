@@ -1,0 +1,9 @@
+[deps]
+WaterLily = "ed894a53-35f9-47f1-b17f-85db9237eebd"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
+TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[sources]
+WaterLily = {path = ".."}
