@@ -1,0 +1,57 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "src/**"
+      - "*.toml"
+    tags: ["*"]
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "src/**"
+      - "*.toml"
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - name: Use Julia cache
+        uses: julia-actions/cache@v5
+      - name: Instantiate environment with development version of the package
+        run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path=pwd()))
+            Pkg.instantiate()'
+      - name: Run doctest
+        run: |
+          julia --project=docs -e '
+            using Documenter: DocMeta, doctest
+            using WaterLily
+            DocMeta.setdocmeta!(WaterLily, :DocTestSetup, :(using WaterLily); recursive=true)
+            doctest(WaterLily)'
+      - name: Generate and deploy documentation
+        run: julia --project=docs docs/make.jl
+        env:
+          JULIA_PKG_SERVER: ""
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          GKSwstype: "100" # https://discourse.julialang.org/t/generation-of-documentation-fails-qt-qpa-xcb-could-not-connect-to-display/60988

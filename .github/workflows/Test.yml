@@ -1,0 +1,52 @@
+name: Test
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'test/**'
+      - 'Project.toml'
+  push:
+    branches:
+      - master
+    tags: '*'
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'test/**'
+      - 'Project.toml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/ReusableTest.yml
+    with:
+      os: ${{ matrix.os }}
+      version: ${{ matrix.version }}
+      arch: ${{ matrix.arch }}
+      allow_failure: ${{ matrix.allow_failure }}
+      run_codecov: ${{ matrix.version == '1' && matrix.os == 'ubuntu-latest' }}
+    secrets:
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1.11'
+          - '1.12'
+        os:
+          - ubuntu-latest
+          - macOS-latest
+          - windows-latest
+        arch:
+          - x64
+        nthreads:
+          - '1'
+          - 'auto'
+        exclude:
+          - os: macOS-latest
+            arch: x86
+        allow_failure: [false]
