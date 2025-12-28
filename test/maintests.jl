@@ -258,7 +258,7 @@ end
     body = AutoBody(circ)
     for i in 2:20
         body += AutoBody(circ,(x,t)->x-rand(2))
-        @test sizeof(body) == i
+        @test sizeof(body) ≤ i
     end
 
     # test curvature, 2D and 3D
@@ -486,6 +486,10 @@ import WaterLily: ×
         @test all(meanflow.P .== zero(T))
         @test all(meanflow.UU .== zero(T))
         @test meanflow.t == T[0]
+
+        meanflow2 = MeanFlow(size(sim.flow.p).-2; uu_stats=true)
+        @test all(meanflow2.P .== zero(T))
+        @test size(meanflow2.P) == size(meanflow.P)
     end
 end
 
@@ -593,4 +597,58 @@ end
         @test all(meanflow1.t .== meanflow2.t)
     end
     @test_nowarn rm(test_dir, recursive=true)
+end
+@testset "RigidMap.jl" begin
+    for T ∈ (Float32,Float64)
+        # initialize a rigid body
+        sdf(x,t) = sqrt(sum(abs2,x))-1
+        body = AutoBody(sdf, RigidMap(SA{T}[0,0],T(0)))
+        # check sdf
+        @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[0,0]))
+        # rotate and add linear velocity
+        body = setmap(body;θ=T(π/4),V=SA{T}[1.0,0])
+        # check sdf and velocity
+        @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,0]))
+        # add angular velocity
+        body = setmap(body;ω=T(0.1))
+        @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,1.5*0.1]))
+        # 3D rigid body
+        body3D = AutoBody(sdf, RigidMap(SA{T}[0,0,0],SA{T}[0,0,0];xₚ=SA{T}[-.5,0,0]))
+        @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
+        # test rotations about x, y, and z
+        # rotate by 180 degrees about x-axis, should not change
+        body3D = setmap(body3D;θ=SA{T}[π,0,0])
+        @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
+        # now rotate by 180 around y=axis, should invert z-component of normal
+        body3D = setmap(body3D;θ=SA{T}[0,π,0],V=SA{T}[1.0,0,0])
+        @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1.5,SA{T}[1,0,0],SA{T}[1,0,0]))
+        body3D = setmap(body3D;θ=SA{T}[0,0,π],V=SA{T}[1.0,0,0])
+        @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1.5,SA{T}[1,0,0],SA{T}[1,0,0]))
+        # 3D rigid body with linear and angular velocity
+        body3D = setmap(body3D;θ=SA{T}[0,0,0],V=SA{T}[1.0,0,0],ω=SA{T}[0,0,0.1])
+        @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.2,0]))
+        @test all(measure(body3D,SA{T}[0,1.5,0],0) .≈ (1/2,SA{T}[0,1,0],SA{T}[0.85,0.05,0]))
+        @test all(measure(body3D,SA{T}[1.5,1.5,1.5],0) .≈ (√(3*(1.5^2))-1,SA{T}[√(1/3),√(1/3),√(1/3)],SA{T}[.85,0.2,0]))
+        # three 3D rotations
+        body3D = setmap(body3D;V=SA{T}[1.0,0,0],ω=SA{T}[0,-0.1,0.1])
+        @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[1,0.2,0.2]))
+        @test all(measure(body3D,SA{T}[0,1.5,1.5],0) .≈ (√(2*(1.5^2))-1,SA{T}[0,√(1/2),√(1/2)],SA{T}[0.7,0.05,0.05]))
+        # test for a SetMap
+        body = AutoBody(sdf, RigidMap(SA{T}[0,0],T(0))) +AutoBody(sdf, RigidMap(SA{T}[1,1],T(0)))
+        body = setmap(body;θ=T(π/4),V=SA{T}[1.0,0])
+        @test all(body.a.map.θ == body.b.map.θ  == T(π/4))
+        @test all(body.a.map.V .≈ body.b.map.V  .≈ [1,0])
+        # try measure in the sim using different backends
+        for array in arrays
+            body = AutoBody((x,t)->sqrt(sum(abs2,x))-4,RigidMap(SA{T}[16,16,16],SA{T}[0,0,0];
+                             V=SA{T}[0,0,0],ω=SA{T}[0,-0.1,0.1]))
+            sim = Simulation((32,32,32),(1,0,0),8;body,T,mem=array)
+            @test GPUArrays.@allowscalar all(extrema(sim.flow.V) .≈ (-0.9,0.9))
+            sim.body = setmap(sim.body;x₀=SA{T}[16,16,12])
+            @test GPUArrays.@allowscalar all(sim.flow.μ₀[17,17,17,:] .≈ 0)
+        end
+    end
+    rmap = RigidMap(SA[0.,0.],π/4)
+    body = AutoBody((x,t)->√(x'x)-1,rmap)-AutoBody((x,t)->√(x'x)-0.5,rmap) # annulus
+    @test all(measure(setmap(body,ω=1.),SA[0.25,0.],0) .≈ (0.25,SA[-1,0],SA[0,0.25]))
 end

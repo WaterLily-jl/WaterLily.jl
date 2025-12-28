@@ -114,8 +114,9 @@ Rate-of-strain tensor.
 """
 S(I::CartesianIndex{2},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:2, j ∈ 1:2]
 S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:3, j ∈ 1:3]
+
 """
-   viscous_force(sim::Simulation)
+    viscous_force(sim::Simulation)
 
 Compute the viscous force on an immersed body.
 """
@@ -129,7 +130,7 @@ function viscous_force(u,ν,df,body,t=0)
 end
 
 """
-   total_force(sim::Simulation)
+    total_force(sim::Simulation)
 
 Compute the total force on an immersed body.
 """
@@ -151,21 +152,28 @@ function pressure_moment(x₀,p,df,body,t=0)
 end
 
 """
-     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+    MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
 
-Holds temporal averages of velocity, squared velocity, pressure, and Reynolds stresses.
+Holds temporal averages of pressure, velocity, and squared-velocity tensor.
 """
 struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
     P :: Sf # pressure scalar field
     U :: Vf # velocity vector field
-    UU :: Mf # squared velocity tensor, u⊗u
+    UU :: Mf # squared-velocity tensor, u⊗u
     t :: Vector{T} # time steps vector
     uu_stats :: Bool # flag to compute UU on-the-fly temporal averages
     function MeanFlow(flow::Flow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
-        f = typeof(flow.u).name.wrapper
-        P = zeros(T, size(flow.p)) |> f
-        U = zeros(T, size(flow.u)) |> f
-        UU = uu_stats ? zeros(T, size(flow.p)...,D,D) |> f : nothing
+        mem = typeof(flow.u).name.wrapper
+        P = zeros(T, size(flow.p)) |> mem
+        U = zeros(T, size(flow.u)) |> mem
+        UU = uu_stats ? zeros(T, size(flow.p)..., D, D) |> mem : nothing
+        new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
+    end
+    function MeanFlow(N::NTuple{D}; mem=Array, T=Float32, t_init=0, uu_stats=false) where {D}
+        Ng = N .+ 2
+        P = zeros(T, Ng) |> mem
+        U = zeros(T, Ng..., D) |> mem
+        UU = uu_stats ? zeros(T, Ng..., D, D) |> mem : nothing
         new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
     end
 end

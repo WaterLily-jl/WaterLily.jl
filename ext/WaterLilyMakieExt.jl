@@ -1,7 +1,8 @@
 module WaterLilyMakieExt
 
-using Makie, WaterLily
+using Makie, WaterLily, ForwardDiff
 using Makie.GeometryBasics, Makie.PlotUtils
+using ForwardDiff: Dual, value
 import WaterLily: viz!, get_body, plot_body_obs!
 
 """
@@ -11,7 +12,7 @@ Measure the body SDF and update the CPU buffer array.
 """
 function update_body!(a_cpu::Array, sim)
     WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
-    copyto!(a_cpu, sim.flow.σ[inside(sim.flow.σ)])
+    copyto!(a_cpu, ad_f(sim)(sim.flow.σ[inside(sim.flow.σ)]))
 end
 
 """
@@ -30,16 +31,15 @@ end
 """
 Default visualization function for 2D/3D simulations
 """
-
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
-    copyto!(cpu_array, a[inside(a)])
+    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
 end
 function ω3D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(cpu_array, a[inside(a)])
+    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
 end
 ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
@@ -83,7 +83,7 @@ Plot the 3D scalar `σ::Observable` in a 3D volume axis.
 plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; kwargs...)
 
 """
-    viz!(sim; f=ω_viz!(ndims(sim.flow.p)), duration=nothing, step=0.1, remeasure=true, verbose=true,
+    viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
         λ=quick, udf=nothing, udf_kwargs=nothing,
         d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
         body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
@@ -134,6 +134,8 @@ Keyword arguments:
     - `theme::Attributes`: Makie theme, eg. `theme_light()` or `theme_latexfonts()`
     - `fig_size::Tuple{Int, Int}`: Figure size.
     - `fig_pad::Int`: Figure padding.
+    - `fig::Makie.Figure`: Figure object.
+    - `axis::Makie.Axis` or `axis::Makie.Axis`: Axis object.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
@@ -141,7 +143,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
-    theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
+    theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
 
     function update_data()
         f(dat, sim)
@@ -158,7 +160,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     d==2 && (@assert !(body2mesh) "body2mesh only allowed for 3D plots (d=3).")
-    body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
+    body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
@@ -166,7 +168,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     isnothing(f) && (f = ω_viz!(d))
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
-    dat = sim.flow.σ[inside(sim.flow.σ)] |> Array
+    dat = sim.flow.σ[inside(sim.flow.σ)] |> ad_f(sim) |> Array
     if d != D && all(>(1), length.(CIs.indices)) # Requesting 2D plot on 3D data, and CIs is not a slice
         isnothing(cut) && (cut = (0, 0, size(dat,3)÷2))
         @assert count(==(0), cut) == 2 "Requesting 2D plot on 3D data, but `cut` is not an slice, eg: (0,0,10)"
@@ -180,15 +182,16 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     f(dat, sim)
-    σ = WaterLily.squeeze(dat[CIs]) |> Observable
+    σ = WaterLily.squeeze(dat[CIs]) |> ad_f(sim) |> Observable
     if body
         update_body!(dat, sim)
-        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> Observable
+        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> ad_f(sim) |> Observable
     end
 
     !isnothing(theme) && set_theme!(theme)
-    fig = Figure(size=fig_size, figure_padding=fig_pad)
-    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
+    new_fig = isnothing(fig)
+    new_fig && (fig = Figure(size=fig_size, figure_padding=fig_pad))
+    isnothing(ax) && (ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation))
     if d == 2 && tidy_colormap
         clims = :clims in keys(kwargs) ? kwargs[:clims] : (-1,1)
         nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 10
@@ -199,10 +202,14 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         kwargs = remove_kwargs(:levels, :colormap, :clims, :threshhold, :threshhold_color, :extendlow, :extendhigh; kwargs...)
         kwargs = add_kwarg(:colormap=>tidy_colormap, :levels=>tidy_levels, :extendlow=>:auto, :extendhigh=>:auto; kwargs...)
     end
+    if d == 3
+        algorithm = :algorithm in keys(kwargs) ? kwargs[:algorithm] : :mip
+        algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
+    end
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color)
     hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
-    hidedecorations && d==2 && (hidedecorations!(ax))
+    hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
 
     if !isnothing(duration) # time loop for animation
         t₀ = round(WaterLily.sim_time(sim))
@@ -214,19 +221,26 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
                 end
             end
         else
-            display(Makie.current_backend().Screen(), fig)
+            new_fig && display(Makie.current_backend().Screen(), fig)
             for tᵢ in range(t₀,t₀+duration;step)
                 step_sim_and_viz!(sim,tᵢ)
             end
         end
         return fig, ax
     end
-    display(Makie.current_backend().Screen(), fig)
+    new_fig && display(Makie.current_backend().Screen(), fig)
     return fig, ax
+end
+function viz!(sim, a::AbstractArray; kwargs...)
+    kwargs = remove_kwargs(:f, :duration; kwargs...) # do not allow co-visualization (is not a simulation)
+    @assert size(a) == size(sim.flow.σ) "Visualized array needs to be a scalar and same size as Simulation."
+    f(cpu_array, sim) = copyto!(cpu_array, Array(a[inside(a)]))
+    viz!(sim; f, duration=nothing, kwargs...)
 end
 
 # Utils
 add_kwarg(args...; kwargs...) = (; kwargs..., (p.first => p.second for p in args)...) |> pairs
 remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(x.first, args))...) |> pairs
+ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 
 end # module

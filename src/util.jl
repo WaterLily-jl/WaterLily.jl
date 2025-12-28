@@ -25,7 +25,7 @@ end
 
 @inline CI(a...) = CartesianIndex(a...)
 """
-    CIj(j,I,jj)
+    CIj(j,I,k)
 Replace jᵗʰ component of CartesianIndex with k
 """
 CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
@@ -82,7 +82,7 @@ function median(a,b,c)
 end
 
 """
-    inside(a)
+    inside(a;buff=1)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
@@ -250,8 +250,9 @@ end
 """
     interp(x::SVector, arr::AbstractArray)
 
-    Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-    Note: This routine works for any number of dimensions.
+Linear interpolation from array `arr` at Cartesian-coordinate `x`.
+
+Note: This routine works for any number of dimensions.
 """
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
