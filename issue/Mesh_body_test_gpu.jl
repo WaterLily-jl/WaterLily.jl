@@ -1,6 +1,8 @@
 using WaterLily,StaticArrays
 using GeometryBasics,CUDA,WriteVTK
 using Plots; gr()
+using ImplicitBVH
+using ImplicitBVH: BBox, BSphere
 
 function make_sphere(L;U=1,mem=CuArray,T=Float32,level=3,use_bvh=true)
     α = π/10.f0 # rotation angle
@@ -52,11 +54,11 @@ MEMORY = Array
 # measure the sime one more
 @time measure!(sim)
 
-# make the paraview writer
-wr = vtkWriter("MeshBody";attrib=custom_attrib)
-wr_mesh = vtkWriter("MeshBody_mesh";attrib=Dict("n"=>vtu_normal))
-@time save!(wr, sim);
-@time save!(wr_mesh, sim.body)
-close(wr)
-close(wr_mesh)
-save!(sim.body.bvh, "bvh")
+# # make the paraview writer
+# wr = vtkWriter("MeshBody";attrib=custom_attrib)
+# wr_mesh = vtkWriter("MeshBody_mesh";attrib=Dict("n"=>vtu_normal))
+# @time save!(wr, sim);
+# @time save!(wr_mesh, sim.body)
+# close(wr)
+# close(wr_mesh)
+# save!(sim.body.bvh, "bvh")
