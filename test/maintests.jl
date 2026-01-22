@@ -97,7 +97,7 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
     end
 end
 
-function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
+function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32, kwargs...) where D
     c = ones(T,N...,D) |> f; BC!(c, ntuple(zero,D))
     x = zeros(T,N) |> f; z = copy(x)
     pois = poisson(x,c,z)
@@ -105,7 +105,7 @@ function Poisson_setup(poisson,N::NTuple{D};f=Array,T=Float32) where D
     I = first(inside(x))
     GPUArrays.@allowscalar @. soln -= soln[I]
     z = mult!(pois,soln)
-    solver!(pois)
+    solver!(pois; kwargs...)
     GPUArrays.@allowscalar @. x -= x[I]
     return L₂(x-soln)/L₂(soln),pois
 end
@@ -122,6 +122,9 @@ end
         err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
         @test pois.n[] < 35
+        err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f,tol=1e-6,itmx=6)
+        @test err < 1e-1    # going down at least
+        @test pois.n[] == 6 # should be 6
     end
 end
 
@@ -145,6 +148,9 @@ end
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
         @test pois.n[] ≤ 3
+        err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f,tol=1e-8,itmx=2)
+        @test err < 1e-6
+        @test pois.n[] == 2 # should be 2
     end
 end
 
@@ -354,7 +360,7 @@ end
 
         # Test with user defined function instead of acceleration
         sim_udf,_ = acceleratingFlow(N;mem=f)
-        sim_step!(sim_udf,1.0; udf=gravity!, jerk=jerk); u_udf = sim_udf.flow.u |> Array
+        sim_step!(sim_udf,1.0; udf=gravity!, udf_kwargs=(:jerk=>jerk,)); u_udf = sim_udf.flow.u |> Array
         uFinal = sim_udf.flow.uBC[1] + 0.5*jerk*WaterLily.time(sim_udf)^2
         @test (
             WaterLily.L₂(u_udf[:,:,1].-uFinal) < 1e-4 &&
