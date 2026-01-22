@@ -113,6 +113,24 @@ Note: This runs for general backends, but is _very_ slow to converge.
     increment!(p)
 end
 
+"""
+    GaussSeidelRB!(p::Poisson; it=6)
+
+Gauss-Seidel Red-Black smoother run `it` times. 
+Note: This runs for general backends, but `@loop`s over `inside(p.x)` twice.
+A `@vecloop` over `odds` & `evens` would reduce work at the cost of a look-up.
+"""
+function GaussSeidelRB!(p; it=6)
+    gauss(I,x,r,L,D,iD,flag) = sum(I.I)%2==flag && (x[I] += (r[I]-mult(I,L,D,x))*iD[I])
+    @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
+    for _ in 1:it
+        perBC!(p.ϵ,p.perdir)
+        @loop gauss(I,p.ϵ,p.r,p.L,p.D,p.iD,0) over I ∈ inside(p.x) # "red"
+        @loop gauss(I,p.ϵ,p.r,p.L,p.D,p.iD,1) over I ∈ inside(p.x) # "black"
+    end
+    increment!(p) # increment solution and residual
+end
+
 using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
