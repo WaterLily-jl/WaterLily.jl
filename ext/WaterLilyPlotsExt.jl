@@ -22,9 +22,14 @@ function flood(f::AbstractArray;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,
 end
 
 addbody(x,y;c=:black) = Plots.plot!(Shape(x,y), c=c, legend=false)
-function body_plot!(sim;levels=[0],lines=:black,R=inside(sim.flow.p))
-    WaterLily.measure_sdf!(sim.flow.σ,sim.body,WaterLily.time(sim))
-    contour!(sim.flow.σ[R]'|>Array;levels,lines)
+body_plot!(sim;kwargs...) = body_plot!(sim.flow,sim.body;kwargs...)
+function body_plot!(body,flow;levels=[0],c=:black,R=inside(flow.p))
+    WaterLily.measure_sdf!(flow.σ,body,time(flow))
+    contour!(flow.σ[R]'|>Array;levels,lines=c)
+end
+function body_plot!(body::WaterLily.PixelBody,flow;R=inside(flow.p),c=:black)
+    W,H = size(body.mask);
+    heatmap!(range(1,size(R,2),H),range(1,size(R,1),W),ones(Int,H,W),alpha=body.mask'|>Array;c)
 end
 
 """

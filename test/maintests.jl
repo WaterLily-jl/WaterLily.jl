@@ -278,6 +278,13 @@ end
     @test all(measure(body1,[3.,4.],0.,fastd²=8) .≈ (sdf(body1,[3.,4.],0.,fastd²=9),zeros(2),zeros(2)))
 end
 
+@testset "PixelBody" begin
+    autobody = AutoBody((x,t)->√(x'*x)-16,(x,t) -> x .- 16)
+    p = zeros(32,32); measure_sdf!(p,circ)
+    mask = p .>= 0 |> UInt16
+
+end
+
 function TGVsim(mem;perdir=(1,2),Re=1e8,T=typeof(Re))
     # Define vortex size, velocity, viscosity
     L = 64; κ = T(2π/L); ν = T(1/(κ*Re));
