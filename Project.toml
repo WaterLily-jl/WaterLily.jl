@@ -1,7 +1,7 @@
 name = "WaterLily"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
-authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
 version = "1.5.2"
+authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -11,6 +11,7 @@ EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
+ImplicitBVH = "932a18dc-bb55-4cd5-bdd6-1368ec9cea29"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
@@ -44,13 +45,14 @@ WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = ["WriteVTK", "GeometryBasics"]
 
 [compat]
-ConstructionBase = "1.6.0"
 Adapt = "4.3.0"
+ConstructionBase = "1.6.0"
 DocStringExtensions = "0.9"
 EllipsisNotation = "1.8"
 FileIO = "1.17.0"
 ForwardDiff = "0.10.18, 1"
 GeometryBasics = "0.5.10"
+ImplicitBVH = "0.7.0"
 KernelAbstractions = "0.9.1"
 LoggingExtras = "1.1"
 MeshIO = "0.5.3"
