@@ -651,3 +651,15 @@ end
     body = AutoBody((x,t)->√(x'x)-1,rmap)-AutoBody((x,t)->√(x'x)-0.5,rmap) # annulus
     @test all(measure(setmap(body,ω=1.),SA[0.25,0.],0) .≈ (0.25,SA[-1,0],SA[0,0.25]))
 end
+@testset "MeshBody" begin
+    # test distance and inside
+    x,r = SA{Float32}[0.0,0.0,0.0], 0.5f0,
+    r = 0.5f0
+    sphere = ImplicitBVH.BSphere{Float32}(x, r)
+    bbox = ImplicitBVH.BBox{Float32}(x .- SA{Float32}[r,r,r], x .+ SA{Float32}[r,r,r])
+    xp = SA{Float32}[1.5,1.5,0]
+    @test dist(xp,sphere) ≈ 4
+    @test dist(xp,bbox) ≈ 2
+    # @btime dist($xp,$sphere) # 2.016 ns (0 allocations: 0 bytes)
+    # @btime dist($xp,$bbox) # 2.803 ns (0 allocations: 0 bytes)
+end

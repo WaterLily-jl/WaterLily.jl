@@ -91,18 +91,28 @@ function MeshBody(mesh::Mesh;map=(x,t)->x,scale=1,boundary=true,half_thk=0,T=Flo
 end
 
 using LinearAlgebra: cross
-@fastmath @inline d²_fast(x::SVector,tri::SMatrix) = sum(abs2,x-center(tri))
+# @fastmath @inline d²_fast(x::SVector,tri::SMatrix) = sum(abs2,x-center(tri))
+@fastmath @inline d²_fast(x::SVector,tri::SMatrix) = sum(abs2,x-locate(x,tri))
 @fastmath @inline normal(tri::SMatrix) = hat(SVector(cross(tri[:,2]-tri[:,1],tri[:,3]-tri[:,1])))
 @fastmath @inline hat(v) = v/(√(v'*v)+eps(eltype(v)))
 @fastmath @inline center(tri::SMatrix) = SVector(sum(tri,dims=2)/3)
-@fastmath @inline inside(x::SVector,b::ImplicitBVH.BoundingVolume) = inside(x,b.volume)
-@fastmath @inline inside(x::SVector,b::ImplicitBVH.BBox) = all(b.lo.-2 .≤ x) && all(x .≤ b.up.+2)
-@fastmath @inline inside(x::SVector,b::ImplicitBVH.BSphere) = sum(abs2,x .- b.x) - b.r^2 ≤ 2
+@fastmath @inline inside(x::SVector, b::ImplicitBVH.BoundingVolume) = inside(x, b.volume)
+@fastmath @inline inside(x::SVector, b::ImplicitBVH.BBox) = all(b.lo.-4 .≤ x) && all(x .≤ b.up.+4)
+@fastmath @inline inside(x::SVector, b::ImplicitBVH.BSphere) = sum(abs2,x .- b.x) - b.r^2 ≤ 4
+
+# compute the distance to primitive
+dist(x, b::ImplicitBVH.BSphere) = sum(abs2,x .- b.x) - b.r
+function dist(x, b::ImplicitBVH.BBox)
+    c = (b.up .+ b.lo) ./ 2
+    r = (b.up .- b.lo) ./ 2
+    sum(abs2, max.(abs.(x .- c) .- r, 0))
+end
+dist(x, b::ImplicitBVH.BoundingVolume) = dist(x, b.volume)
 
 @inline function closest(x::SVector,mesh)
-    u=Int32(1); a=b=d²_fast(x,mesh[1]) # fast method
+    u=Int32(1); a=b=d²_fast(x, mesh[1]) # fast method
     for I in 2:length(mesh)
-        b = d²_fast(x,mesh[I])
+        b = d²_fast(x, mesh[I])
         b<a && (a=b; u=I) # Replace current best
     end
     return u,a
@@ -117,14 +127,14 @@ import ImplicitBVH: memory_index,unsafe_isvirtual
     i=2; for _ in 1:4tree.levels^2 # prevent infinite loops
         @inbounds j = memory_index(tree,i)
         if j ≤ length_nodes # we are on a node
-            inside(x,bvh.nodes[j]) && (i = 2i; continue) # go deeper
+            inside(x, bvh.nodes[j]) && (i = 2i; continue) # go deeper
         else # we reached a leaf
             @inbounds j = bvh.leaves[j-length_nodes].index # correct index in mesh
-            d=d²_fast(x,mesh[j])
+            d = d²_fast(x, mesh[j])
             d<a && (a=d; u=Int32(j))  # Replace current best
         end
         i = i>>trailing_ones(i)+1 # go to sibling, or uncle etc.
-        unsafe_isvirtual(tree, i) && break # search complete!
+        (i==1 || unsafe_isvirtual(tree, i)) && break # search complete!
     end
     return u,a
 end
@@ -165,18 +175,19 @@ WaterLily.sdf(body::Meshbody,x,t;kwargs...) = measure(body,x,t;kwargs...)[1]
 
 using ForwardDiff
 # measure
-function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;kwargs...) where {D,T}
+function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {D,T}
     # map to correct location
     ξ = body.map(x,t)
     # before we try the bvh
-    !inside(ξ,body.bvh.nodes[1]) && return (T(8),zero(SVector{D,T}),zero(SVector{D,T}))
+    !inside(ξ,body.bvh.nodes[1]) && return (T(8),zero(x),zero(x))
     # locate the point on the mesh
-    u,a = closest(ξ,body.bvh,body.mesh)
-    u==Int32(0) && return (T(8),zero(SVector{D,T}),zero(SVector{D,T}))
+    u,d⁰ = closest(ξ,body.bvh,body.mesh)
+    u==Int32(0) && return (d⁰,zero(x),zero(x))
     # compute the normal and distance
     n,p = normal(body.mesh[u]),SVector(locate(ξ,body.mesh[u]))
     # signed Euclidian distance
     s = ξ-p; d = sign(sum(s.*n))*√sum(abs2,s)
+    d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
     # velocity at the mesh point
     dξdx = ForwardDiff.jacobian(x->body.map(x,t), ξ)
     dξdt = -ForwardDiff.derivative(t->body.map(x,t), t)
