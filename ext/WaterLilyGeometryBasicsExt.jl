@@ -1,19 +1,22 @@
 module WaterLilyGeometryBasicsExt
 
 using WaterLily
-import WaterLily: AbstractBody, MeshBody, save!
+import WaterLily: AbstractBody, MeshBody, save!, update!
 using FileIO, MeshIO, StaticArrays
 using ImplicitBVH, GeometryBasics
 
 struct Meshbody{T,M,B,F<:Function} <: AbstractBody
     mesh::M
+    velocity::M
     bvh::B
     map::F
     scale::T
     boundary::Bool
     half_thk::T
 end
-MeshBody(mesh::M,bvh::B;map=(x,t)->x,scale::T=1,boundary=false,half_thk::T=0) where {T,M,B} = Meshbody{T,M,B,typeof(map)}(mesh,bvh,map,scale,boundary,half_thk)
+function MeshBody(mesh::M,vel::M,bvh::B;map=(x,t)->x,scale=1.f0,boundary=false,half_thk=0.f0) where {M,B}
+    return Meshbody{eltype(scale),M,B,typeof(map)}(mesh,vel,bvh,map,scale,boundary,half_thk)
+end
 using Adapt
 # make it GPU compatible
 Adapt.@adapt_structure Meshbody
@@ -34,26 +37,14 @@ Constructor for a MeshBody:
   - `primitive::Union{BBox, BSphere}`: bounding volume primitive to use in the ImplicitBVH. Default is Axis-Aligned Bounding Box.
 
 """
-function MeshBody(file_name::String;map=(x,t)->x,scale::T=1.f0,boundary=true,half_thk=0,mem=Array,primitive=ImplicitBVH.BBox) where T
-    # read in the mesh
-    mesh = load(file_name)
-    # scale and map the points to the correct location
-    points = Point{3,T}[]
-    for pnt in mesh.position
-        push!(points,  Point{3,T}(SA{T}[pnt.data...]*T(scale)))
-    end
-    # make the scaled mesh
-    mesh = GeometryBasics.Mesh(points,GeometryBasics.faces(mesh))
-    return MeshBody(mesh;map,scale,boundary,half_thk,mem,primitive)
-end
-function MeshBody(mesh::Mesh;map=(x,t)->x,scale::T=1.f0,boundary=true,half_thk=0,mem=Array,primitive=ImplicitBVH.BBox) where T
-    # make the BVH
-    bounding_boxes = [primitive{T}(el) for el in mesh] |> mem;
-    bvh = BVH(bounding_boxes, primitive{T})
+MeshBody(file_name::String; kwargs...) = MeshBody(load(file_name); kwargs...)
+function MeshBody(mesh::Mesh; scale::T=1.f0, mem=Array, primitive=ImplicitBVH.BBox, kwargs...) where T
     # device array of the mesh that we store
-    mesh = [hcat(vcat([mesh[i]...])...) for i in 1:length(mesh)] |> mem
+    mesh = [hcat([mesh[i]...]...)*T(scale) for i in 1:length(mesh)] |> mem
+    # make the BVH
+    bvh = BVH(primitive{T}.(mesh), primitive{T})
     # make the mesh and return
-    MeshBody(mesh,bvh;map,scale=T(scale),boundary=boundary,half_thk=T(half_thk))
+    MeshBody(mesh, zero(mesh), bvh; scale=T(scale), kwargs...)
 end
 
 using LinearAlgebra: cross
@@ -67,6 +58,13 @@ import ImplicitBVH: BoundingVolume,BBox,BSphere
 @fastmath @inline inside(x::SVector, b::BoundingVolume) = inside(x, b.volume)
 @fastmath @inline inside(x::SVector, b::BBox) = all(b.lo.-4 .≤ x) && all(x .≤ b.up.+4)
 @fastmath @inline inside(x::SVector, b::BSphere) = sum(abs2,x .- b.x) - b.r^2 ≤ 4
+
+import WaterLily: ×
+# linear shape function to interpolate inside element
+@fastmath @inline shape_value(p::SVector{3,T},t) where T = SA{T}[√sum(abs2,×(t[:,2]-p,t[:,3]-p))
+                                                                 √sum(abs2,×(p-t[:,1],t[:,3]-t[:,1]))
+                                                                 √sum(abs2,×(t[:,2]-t[:,1],p-t[:,1]))]
+@fastmath @inline get_velocity(p::SVector, tri, vel)= (dA=shape_value(p,tri); vel*dA/sum(dA))
 
 # traverse the BVH
 import ImplicitBVH: memory_index,unsafe_isvirtual
@@ -142,8 +140,29 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     # velocity at the mesh point
     dξdx = ForwardDiff.jacobian(x->body.map(x,t), ξ)
     dξdt = -ForwardDiff.derivative(t->body.map(x,t), t)
-    return (d,dξdx\n,dξdx\dξdt)
+    # mesh deformation velocity
+    v = get_velocity(p, body.mesh[u], body.velocity[u])
+    return (d,dξdx\n,dξdx\dξdt+v)
 end
+
+import WaterLily: @loop, update!
+"""
+    update!(body::Meshbody{T},new_mesh::AbstractArray,dt=0;kwargs...)
+
+Updates the mesh body position using the new mesh triangle coordinates.
+
+    xᵢ(t+Δt) = x[i]
+    vᵢ(t+Δt) = (xᵢ(t+Δt) - xᵢ(t))/dt
+    where `x[i]` is the new (t+Δt) position of the control point, `vᵢ` is the velocity at that control point.
+
+"""
+function update!(a::Meshbody{T},new_mesh::AbstractArray,dt=0;kwargs...) where T
+    Rs = CartesianIndices(a.mesh)
+    # if nonzero time step, update the velocity field
+    dt>0 && (@loop a.velocity[I] = (new_mesh[I]-a.mesh[I])/T(dt) over I in Rs)
+    @loop a.mesh[I] = new_mesh[I] over I in Rs
+end
+
 
 import WriteVTK: MeshCell, VTKCellTypes, vtk_grid, vtk_save
 using Printf: @sprintf
