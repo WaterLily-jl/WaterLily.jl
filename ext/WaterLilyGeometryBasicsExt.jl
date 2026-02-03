@@ -19,14 +19,22 @@ using Adapt
 Adapt.@adapt_structure Meshbody
 
 """
-    MeshBody(file_name; map=(x,t)->x, boundary=true, half_thk=0, scale=1, mem=Array, T=Float32)
+    MeshBody(mesh::Union{Mesh, String};
+             map::Function=(x,t)->x, boundary::Bool=true, half_thk::T=0.f0,
+             scale::T=1.f0, mem=Array, primitives::Union{BBox, BSphere}) where T
 
-Create a `MeshBody` from a mesh file. The mesh file can be in `.inp` format or any other format supported by `MeshIO`.
-The mesh is scaled and mapped to the correct location using the `map` function.
-The `boundary` flag indicates if the mesh is a boundary or not, and `half_thk` is used to adjust the distance for non-boundary meshes.
-The `scale` parameter is used to scale the mesh points, and `mem` specifies the memory type for the `Simulation`.
+Constructor for a MeshBody:
+
+  - `mesh::Union{Mesh, String}`: the GeometryBasics.Mesh or path to the mesh file to use to define the geometry.
+  - `map(x::AbstractVector,t::Real)::AbstractVector`: coordinate mapping function.
+  - `boundary::Bool`: whether the mesh is a boundary or not.
+  - `half_thk::T`: half thickness to apply if the mesh is not a boundary, the type defines the base type of the MeshBody, default is Float32.
+  - `scale::T`: scale factor to apply to the mesh points, the type defines the base type of the MeshBody, default is Float32.
+  - `mem`: memory location. `Array`, `CuArray`, `ROCm` to run on CPU, NVIDIA, or AMD devices, respectively.
+  - `primitive::Union{BBox, BSphere}`: bounding volume primitive to use in the ImplicitBVH. Default is Axis-Aligned Bounding Box.
+
 """
-function MeshBody(file_name::String;map=(x,t)->x,scale=1,boundary=true,half_thk=0,T=Float32,mem=Array,primitive=ImplicitBVH.BBox)
+function MeshBody(file_name::String;map=(x,t)->x,scale::T=1.f0,boundary=true,half_thk=0,mem=Array,primitive=ImplicitBVH.BBox) where T
     # read in the mesh
     mesh = load(file_name)
     # scale and map the points to the correct location
@@ -36,9 +44,9 @@ function MeshBody(file_name::String;map=(x,t)->x,scale=1,boundary=true,half_thk=
     end
     # make the scaled mesh
     mesh = GeometryBasics.Mesh(points,GeometryBasics.faces(mesh))
-    return MeshBody(mesh;map,scale,boundary,half_thk,T,mem,primitive)
+    return MeshBody(mesh;map,scale,boundary,half_thk,mem,primitive)
 end
-function MeshBody(mesh::Mesh;map=(x,t)->x,scale=1,boundary=true,half_thk=0,T=Float32,mem=Array,primitive=ImplicitBVH.BBox)
+function MeshBody(mesh::Mesh;map=(x,t)->x,scale::T=1.f0,boundary=true,half_thk=0,mem=Array,primitive=ImplicitBVH.BBox) where T
     # make the BVH
     bounding_boxes = [primitive{T}(el) for el in mesh] |> mem;
     bvh = BVH(bounding_boxes, primitive{T})
@@ -124,6 +132,7 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     !inside(ξ,body.bvh.nodes[1]) && return (T(8),zero(x),zero(x))
     # locate the point on the mesh
     u,d⁰ = closest(ξ,body.bvh,body.mesh)
+    u==0 && return (T(8),zero(x),zero(x)) # no closest found
     # compute the normal and distance
     n,p = normal(body.mesh[u]),SVector(locate(ξ,body.mesh[u]))
     # signed Euclidian distance
