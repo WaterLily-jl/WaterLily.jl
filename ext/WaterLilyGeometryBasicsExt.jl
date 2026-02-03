@@ -3,49 +3,7 @@ module WaterLilyGeometryBasicsExt
 using WaterLily
 import WaterLily: AbstractBody, MeshBody, save!
 using FileIO, MeshIO, StaticArrays
-using GeometryBasics
-using ImplicitBVH
-
-# @TODO these two functions will live somewhere else
-# read .inp files
-function load_inp(fname; facetype=GLTriangleFace, pointtype=Point3f)
-    #INP file format
-    @assert endswith(fname,".inp") "file type not supported"
-    fs = open(fname)
-
-    points = pointtype[]
-    faces = facetype[]
-    node_idx = Int[]
-    cnt = 0
-
-    # read the first 3 lines if there is the "*heading" keyword
-    line = readline(fs)
-    contains(line,"*heading") && (line = readline(fs))
-    BlockType = contains(line,"*NODE") ? Val{:NodeBlock}() : Val{:DataBlock}()
-
-    # read the file
-    while !eof(fs)
-        line = readline(fs)
-        contains(line,"*ELSET, ELSET=") && (cnt+=1)
-        BlockType, line = parse_blocktype!(BlockType, fs, line)
-        if BlockType == Val{:NodeBlock}()
-            push!(node_idx, parse(Int,split(line,",")[1])) # keep track of the node index of the inp file
-            push!(points, pointtype(parse.(eltype(pointtype),split(line,",")[2:4])))
-        elseif BlockType == Val{:ElementBlock}()
-            nodes = parse.(Int,split(line,",")[2:end])
-            push!(faces, TriangleFace{Int}(facetype([findfirst(==(node),node_idx) for node in nodes])...)) # parse the face
-        else
-            continue
-        end
-    end
-    close(fs) # close file stream
-    return Mesh(points, faces)
-end
-function parse_blocktype!(block, io, line)
-    contains(line,"*NODE") && return block=Val{:NodeBlock}(),readline(io)
-    contains(line,"*ELEMENT") && return block=Val{:ElementBlock}(),readline(io)
-    return block, line
-end
+using ImplicitBVH, GeometryBasics
 
 struct Meshbody{T,M,B,F<:Function} <: AbstractBody
     mesh::M
@@ -70,7 +28,7 @@ The `scale` parameter is used to scale the mesh points, and `mem` specifies the 
 """
 function MeshBody(file_name::String;map=(x,t)->x,scale=1,boundary=true,half_thk=0,T=Float32,mem=Array,primitive=ImplicitBVH.BBox)
     # read in the mesh
-    mesh = endswith(file_name,".inp") ? load_inp(file_name) : load(file_name)
+    mesh = load(file_name)
     # scale and map the points to the correct location
     points = Point{3,T}[]
     for pnt in mesh.position
@@ -96,27 +54,11 @@ using LinearAlgebra: cross
 @fastmath @inline normal(tri::SMatrix) = hat(SVector(cross(tri[:,2]-tri[:,1],tri[:,3]-tri[:,1])))
 @fastmath @inline hat(v) = v/(√(v'*v)+eps(eltype(v)))
 @fastmath @inline center(tri::SMatrix) = SVector(sum(tri,dims=2)/3)
-@fastmath @inline inside(x::SVector, b::ImplicitBVH.BoundingVolume) = inside(x, b.volume)
-@fastmath @inline inside(x::SVector, b::ImplicitBVH.BBox) = all(b.lo.-4 .≤ x) && all(x .≤ b.up.+4)
-@fastmath @inline inside(x::SVector, b::ImplicitBVH.BSphere) = sum(abs2,x .- b.x) - b.r^2 ≤ 4
 
-# compute the distance to primitive
-dist(x, b::ImplicitBVH.BSphere) = sum(abs2,x .- b.x) - b.r
-function dist(x, b::ImplicitBVH.BBox)
-    c = (b.up .+ b.lo) ./ 2
-    r = (b.up .- b.lo) ./ 2
-    sum(abs2, max.(abs.(x .- c) .- r, 0))
-end
-dist(x, b::ImplicitBVH.BoundingVolume) = dist(x, b.volume)
-
-@inline function closest(x::SVector,mesh)
-    u=Int32(1); a=b=d²_fast(x, mesh[1]) # fast method
-    for I in 2:length(mesh)
-        b = d²_fast(x, mesh[I])
-        b<a && (a=b; u=I) # Replace current best
-    end
-    return u,a
-end
+import ImplicitBVH: BoundingVolume,BBox,BSphere
+@fastmath @inline inside(x::SVector, b::BoundingVolume) = inside(x, b.volume)
+@fastmath @inline inside(x::SVector, b::BBox) = all(b.lo.-4 .≤ x) && all(x .≤ b.up.+4)
+@fastmath @inline inside(x::SVector, b::BSphere) = sum(abs2,x .- b.x) - b.r^2 ≤ 4
 
 # traverse the BVH
 import ImplicitBVH: memory_index,unsafe_isvirtual
@@ -182,11 +124,11 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     !inside(ξ,body.bvh.nodes[1]) && return (T(8),zero(x),zero(x))
     # locate the point on the mesh
     u,d⁰ = closest(ξ,body.bvh,body.mesh)
-    u==Int32(0) && return (d⁰,zero(x),zero(x))
     # compute the normal and distance
     n,p = normal(body.mesh[u]),SVector(locate(ξ,body.mesh[u]))
     # signed Euclidian distance
     s = ξ-p; d = sign(sum(s.*n))*√sum(abs2,s)
+    !body.boundary && (d = abs(d)-body.half_thk) # if the mesh is not a boundary, we need to adjust the distance
     d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
     # velocity at the mesh point
     dξdx = ForwardDiff.jacobian(x->body.map(x,t), ξ)
@@ -199,7 +141,10 @@ using Printf: @sprintf
 # access the WaterLily writer to save the file
 function save!(w,a::Meshbody,t=w.count[1]) #where S<:AbstractSimulation{A,B,C,D,MeshBody}
     k = w.count[1]
-    points = get_points(a.mesh)
+    points = zeros(Float32, 3, 3length(a.mesh))
+    for (i,el) in enumerate(Array(a.mesh))
+        points[:,3i-2:3i] = el
+    end
     cells = [MeshCell(VTKCellTypes.VTK_TRIANGLE, TriangleFace{Int}(3i+1,3i+2,3i+3)) for i in 0:length(a.mesh)-1]
     vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), points, cells)
     for (name,func) in w.output_attrib
@@ -208,14 +153,6 @@ function save!(w,a::Meshbody,t=w.count[1]) #where S<:AbstractSimulation{A,B,C,D,
     end
     vtk_save(vtk); w.count[1]=k+1
     w.collection[round(t,digits=4)]=vtk
-end
-
-function get_points(mesh)
-    pts = zeros(Float32, 3, 3length(mesh))
-    for (i,el) in enumerate(Array(mesh))
-        pts[:,3i-2:3i] = el
-    end
-    return pts
 end
 
 end # module
