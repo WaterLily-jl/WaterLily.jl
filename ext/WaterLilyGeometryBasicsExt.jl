@@ -161,7 +161,11 @@ function update!(a::Meshbody{T},new_mesh::AbstractArray,dt=0;kwargs...) where T
     # if nonzero time step, update the velocity field
     dt>0 && (@loop a.velocity[I] = (new_mesh[I]-a.mesh[I])/T(dt) over I in Rs)
     @loop a.mesh[I] = new_mesh[I] over I in Rs
+    # update the BVH
+    update_bvh(a, bvh=BVH(ImplicitBVH.BBox{T}.(a.mesh), ImplicitBVH.BBox{T}))
 end
+import ConstructionBase: setproperties
+update_bvh(body::Meshbody; bvh) = setproperties(body, bvh=bvh)
 
 
 import WriteVTK: MeshCell, VTKCellTypes, vtk_grid, vtk_save
