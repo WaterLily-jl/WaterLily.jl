@@ -259,8 +259,17 @@ end
 """
     interp(x::SVector, arr::AbstractArray)
 
-    Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-    Note: This routine works for any number of dimensions.
+Linear interpolation from array `arr` at Cartesian-coordinate `x`.
+Note: This routine works for any number of dimensions.
+
+To interpolate from an `arr<:GPUArray`, the call for `interp` should be wrapped inside a `@loop`
+to avoid getting a scalar indexing error.
+```julia
+interp_u = CuArray(zeros(N, 3))
+xs = CuArray([SA{Float32}[(i-1), 0, 0] for i in 1:N])
+@WaterLily.loop interp_u[I,:] .= WaterLily.interp(xs[I], sim.flow.u) over I in CartesianIndices(1:N)
+```
+and N=1 can be used if only one value is required.
 """
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # check that we are inside the array to interpolate (cartesian coords)
