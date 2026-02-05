@@ -265,9 +265,11 @@ Note: This routine works for any number of dimensions.
 To interpolate from an `arr<:GPUArray`, the call for `interp` should be wrapped inside a `@loop`
 to avoid getting a scalar indexing error.
 ```julia
-interp_u = CuArray(zeros(N, 3))
-xs = CuArray([SA{Float32}[(i-1), 0, 0] for i in 1:N])
-@WaterLily.loop interp_u[I,:] .= WaterLily.interp(xs[I], sim.flow.u) over I in CartesianIndices(1:N)
+p = CUDA.rand(10,18)
+u = CUDA.rand(10,18,2)
+x = CuArray([SA_F32[i-1.5,2i+0.5] for i in 1:8])
+WaterLily.interp.(x,Ref(p)) # Broadcast
+WaterLily.interp.(x,Ref(u)) # Broadcast (x=[-0.5,2.5] is shifted to [0,2.5])
 ```
 and N=1 can be used if only one value is required.
 """
