@@ -1,7 +1,7 @@
 module WaterLilyGeometryBasicsExt
 
 using WaterLily
-import WaterLily: AbstractBody, MeshBody, save!, update!
+import WaterLily: AbstractBody, SetBody, MeshBody, save!, update!
 using FileIO, MeshIO, StaticArrays
 using ImplicitBVH, GeometryBasics
 
@@ -170,7 +170,7 @@ Updates the mesh body position using the new mesh triangle coordinates.
     where `x[i]` is the new (t+Δt) position of the control point, `vᵢ` is the velocity at that control point.
 
 """
-function update!(a::Meshbody{T},new_mesh::AbstractArray,dt=0;kwargs...) where T
+function update!(a::Meshbody{T},new_mesh::AbstractArray,dt=0) where T
     Rs = CartesianIndices(a.mesh)
     # if nonzero time step, update the velocity field
     dt>0 && (@loop a.velocity[I] = (new_mesh[I]-a.mesh[I])/T(dt) over I in Rs)
@@ -178,9 +178,11 @@ function update!(a::Meshbody{T},new_mesh::AbstractArray,dt=0;kwargs...) where T
     # update the BVH
     update_bvh(a, bvh=BVH(ImplicitBVH.BBox{T}.(a.mesh), ImplicitBVH.BBox{T}))
 end
+update!(body::AbstractBody,args...) = body
+update!(body::SetBody,args...) = SetBody(body.op,update!(body.a,args...),update!(body.b,args...))
+
 import ConstructionBase: setproperties
 update_bvh(body::Meshbody; bvh) = setproperties(body, bvh=bvh)
-
 
 import WriteVTK: MeshCell, VTKCellTypes, vtk_grid, vtk_save
 using Printf: @sprintf
@@ -200,5 +202,6 @@ function save!(w,a::Meshbody,t=w.count[1]) #where S<:AbstractSimulation{A,B,C,D,
     vtk_save(vtk); w.count[1]=k+1
     w.collection[round(t,digits=4)]=vtk
 end
-
+save!(w,a::AbstractBody,t) = nothing
+save!(w,a::SetBody,t) = (save!(w,a.a,t); save!(w,a.b,t))
 end # module
