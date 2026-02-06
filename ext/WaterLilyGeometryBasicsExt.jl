@@ -5,7 +5,7 @@ import WaterLily: AbstractBody, MeshBody, save!, update!
 using FileIO, MeshIO, StaticArrays
 using ImplicitBVH, GeometryBasics
 
-struct Meshbody{T,M,B,F<:Function} <: AbstractBody
+struct Meshbody{T,M,B,F} <: AbstractBody
     mesh::M
     velocity::M
     bvh::B
@@ -68,9 +68,9 @@ import WaterLily: ×
 
 # traverse the BVH
 import ImplicitBVH: memory_index,unsafe_isvirtual
-@inline function closest(x::SVector{D,T},bvh::ImplicitBVH.BVH,mesh) where {D,T}
+@inline function closest(x::SVector{D,T}, bvh::ImplicitBVH.BVH, mesh) where {D,T}
     tree = bvh.tree; length_nodes = length(bvh.nodes)
-    u=Int32(0);a=d=T(64) # initial guess @TODO sensitive to initial a
+    u=Int32(0);a=d=T(64) # initial guess #TODO sensitive to initial a
     # Depth-First-Search
     i=2; for _ in 1:4tree.levels^2 # prevent infinite loops
         @inbounds j = memory_index(tree,i)
@@ -131,6 +131,7 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     # locate the point on the mesh
     u,d⁰ = closest(ξ,body.bvh,body.mesh)
     u==0 && return (T(8),zero(x),zero(x)) # no closest found
+    # u==0 && return check_inside(ξ, body.bvh) # no closest found
     # compute the normal and distance
     n,p = normal(body.mesh[u]),SVector(locate(ξ,body.mesh[u]))
     # signed Euclidian distance
@@ -143,6 +144,19 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     # mesh deformation velocity
     v = get_velocity(p, body.mesh[u], body.velocity[u])
     return (d,dξdx\n,dξdx\dξdt+v)
+end
+
+# check if a point is inside the mesh, using ray-casting
+@inline function check_inside(x₀::SVector{D,T}, bvh) where {D,T}
+    mem = typeof(bvh.nodes).name.wrapper
+    # rays in each dimension from starting point x₀
+    points, directions = mem(repeat(x₀, 1, 6,)), mem([1 -1 0 0 0 0; 0 0 1 -1 0 0; 0 0 0 0 1 -1])
+    # traverse the bvh
+    traversal = ImplicitBVH.traverse_rays(bvh, points, directions)
+    # check that we collide in each direction at least once, otherwise we are outside
+    d = sort(unique(getindex.(traversal.contacts, 2))) == collect(1:6) ? T(-8) : T(8)
+    # if we are inside, negative large distance
+    (d,zero(x₀),zero(x₀))
 end
 
 import WaterLily: @loop, update!

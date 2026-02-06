@@ -729,9 +729,10 @@ end
         # not so trivial
         @test GPUArrays.@allowscalar all(closest(SA{T}[0.1,0.1,0.5], bvh, mesh) .≈ (1, 0.5^2))
 
-        # # test measure all at once
+        # test measure all at once
         measure = WaterLily.measure
         body = MeshBody(mesh, zero(mesh), bvh)
+        @test GPUArrays.@allowscalar all(body.bvh.nodes[1].lo .≈ [0,0,0]) # lowest point of tri1
         # we know this point
         @test GPUArrays.@allowscalar all(measure(body, x1, 0) .≈ (0,[0,0,1],[0,0,0]))
         @test GPUArrays.@allowscalar all(measure(body, x2, 0) .≈ (0,[0,0,1],[0,0,0]))
@@ -740,8 +741,13 @@ end
         @test GPUArrays.@allowscalar all(measure(body, xr, 0)[1] .≈ sdf(body, xr, 0)) # same call behind, should be the same
         # update! by moving the mesh by +1 in all directions
         new_mesh = mem([tri1 .+ 1, R*tri1 .+ 2])
-        update!(body, new_mesh, 1.0)
+        body = update!(body, new_mesh, 1.0)
         @test GPUArrays.@allowscalar all(body.velocity[1] .≈ 1) && all(body.velocity[2] .≈ 1) # unit velocity is all directions
         @test GPUArrays.@allowscalar all(measure(body, x1.+1, 0) .≈ (0,[0,0,1],[1,1,1])) # now we have a unit velocity
+        # check that bvh has aslo moved
+        @test GPUArrays.@allowscalar all(body.bvh.nodes[1].lo .≈ [1,1,1])
+        # try inside SetBody
+        body += AutoBody((x,t)->42.f0) # the answer!
+        @test GPUArrays.@allowscalar all(measure(body, x1.+1, 0) .≈ (0,[0,0,1],[1,1,1]))
     end
 end
