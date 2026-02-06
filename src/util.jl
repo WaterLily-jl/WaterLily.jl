@@ -257,14 +257,33 @@ perBC!(a, perdir, N = size(a)) = for j ∈ perdir
     @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
     @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
 end
+
+using EllipsisNotation
 """
     interp(x::SVector, arr::AbstractArray)
 
 Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-
 Note: This routine works for any number of dimensions.
+
+To interpolate from an `arr<:GPUArray`, the call for `interp` should be broadcasted over the coordinates `x` as follows:
+```julia
+p = CUDA.rand(10,18)
+u = CUDA.rand(10,18,2)
+x = CuArray([SA_F32[i-1.5, 2i+0.5] for i in 1:8])
+WaterLily.interp.(x, Ref(p)) # Broadcast
+WaterLily.interp.(x, Ref(u)) # Broadcast (x=[-0.5,2.5] is shifted to [0,2.5] because we are in a vector field)
+```
 """
+function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
+    !(all(0 .≤ x) && all(x .≤ size(varr)[1:D].-2)) && return zero(x)
+    # Shift to align with each staggered grid component and interpolate
+    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
+    return SVector{D,T}(_interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
+end
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
+    !(all(0 .≤ x) && all(x .≤ size(arr).-2)) ? zero(T) : _interp(x, arr)
+end
+function _interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
     x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
@@ -278,12 +297,6 @@ function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
         s += arr[J]*weight
     end
     return s
-end
-using EllipsisNotation
-function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
-    # Shift to align with each staggered grid component and interpolate
-    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
 end
 
 """
