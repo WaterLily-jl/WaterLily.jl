@@ -1,9 +1,10 @@
 name = "WaterLily"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
-version = "1.5.1"
+version = "1.5.2"
 
 [deps]
+ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -38,6 +39,7 @@ WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = "WriteVTK"
 
 [compat]
+ConstructionBase = "1.6.0"
 DocStringExtensions = "0.9"
 EllipsisNotation = "1.8"
 ForwardDiff = "0.10.18, 1"
