@@ -1,5 +1,5 @@
 using GPUArrays
-using ReadVTK, WriteVTK, JLD2
+using ReadVTK, WriteVTK, JLD2, GeometryBasics, ImplicitBVH
 
 backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
@@ -650,4 +650,104 @@ end
     rmap = RigidMap(SA[0.,0.],π/4)
     body = AutoBody((x,t)->√(x'x)-1,rmap)-AutoBody((x,t)->√(x'x)-0.5,rmap) # annulus
     @test all(measure(setmap(body,ω=1.),SA[0.25,0.],0) .≈ (0.25,SA[-1,0],SA[0,0.25]))
+end
+@testset "MeshBody" begin
+    T = Float32; mem = Array
+    # the reference triangle
+    tri1 = SA{T}[0 1 0; 0 0 1; 0 0 0]
+    R = SA{T}[cos(π/4) -sin(π/4) 0; sin(π/4) cos(π/4) 0; 0 0 1]
+    normal = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).normal
+    @test all(normal(tri1) .≈ [0,0,1])
+    @test all(normal(R*tri1) .≈ R*normal(tri1))
+    hat = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).hat
+    vec = SA{T}[3,4,0]
+    @test all(hat(vec) .≈ vec./5)
+    @test all(hat(zero(vec)) .≈ zero(vec)) # edge case
+    d²_fast = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).d²_fast
+    @test d²_fast(SA{T}[0.1,0.1,0.1], tri1) ≈ 0.1^2
+    @test d²_fast(SA{T}[0.5,0.5,0.0], tri1) ≈ 0^2
+    @test d²_fast(R*SA{T}[0.1,0.1,0.1], R*tri1) ≈ 0.1^2 # invariant under rotation
+    center = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).center
+    @test all(center(tri1) .≈ SA{T}[1/3,1/3,0])
+    @test all(abs.(center(R*tri1) .- R*SA{T}[1/3,1/3,0]) .< eps(Float32))
+
+    # bounding volume functions
+    import ImplicitBVH: BBox, BSphere
+    inside = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).inside
+    bbox = BBox{T}(SA{T}[-1.0,-1.0,-1.0], SA{T}[1.0,1.0,1.0]) # extends from -5:5
+    bsphere = BSphere{T}(SA{T}[0.0,0.0,0.0], T(1.0)) # radius 5.0
+    @test inside(SA{T}[0.0,0.0,0.0], bbox)
+    @test !inside(SA{T}[5.01,0.0,0.0], bbox)
+    @test inside(SA{T}[0.0,0.0,0.0], bsphere)
+    @test !inside(SA{T}[5.01,0.0,0.0], bsphere)
+
+    # shape function and get_velocity
+    shape_value = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).shape_value
+    tri = SA{T}[0 1 0; 0 0 1; 0 0 0]
+    p = SA{T}[0.1,0.1,0.0]
+    # value at nodes
+    @test all(shape_value(SA{T}[0,0,0], tri) .≈ [1,0,0])
+    @test all(shape_value(SA{T}[0,1,0], tri) .≈ [0,0,1])
+    @test all(shape_value(SA{T}[1,0,0], tri) .≈ [0,1,0])
+    # value at mid edges
+    @test all(shape_value(SA{T}[0,.5,0], tri) .≈ [.5,0,.5])
+    @test all(shape_value(SA{T}[.5,0,0], tri) .≈ [.5,.5,0])
+    @test all(shape_value(SA{T}[.5,.5,0], tri) .≈ [0,.5,.5])
+    # value inside
+    x = rand() # in the plane of the triangle
+    @test sum(shape_value(SA{T}[x,1-x,0], tri)) .≈ 1 #partition to unity
+    # velocity interpolation
+    get_velocity = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).get_velocity
+    vel = SA{T}[1 1 1; 0 0 0; 0 0 0]
+    @test all(get_velocity(p, tri, vel) .≈ [1,0,0])
+    @test all(get_velocity(p, tri, R*vel) .≈ R*[1,0,0])
+
+    # test locator
+    locate = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).locate
+    x1 = SA{T}[0,0,0]
+    @test all(locate(x1, tri1) .≈ x1)
+    x2 = SA{T}[0.1,0.1,0.0]
+    @test all(locate(x2, tri1) .≈ x2)
+    @test all(locate(x2.+SA{T}[0,0,10.0], tri1) .≈ x2)
+    x3 = SA{T}[-1.0,0.5,0.0]
+    @test all(locate(x3, tri1) .≈ SA{T}[0.0,0.5,0.0])
+    x4 = SA{T}[0.5,0.5,0.0]
+    @test all(locate(x4, tri1) .≈ x4)
+    @test all(locate(SA{T}[.5,.5,10], tri1) .≈ x4)
+    @test all(locate(SA{T}[1,1,1], tri1) .≈ [0.5,0.5,0.0])
+
+    for mem in arrays
+        # test closest point search in BVH
+        closest = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).closest
+        mesh = mem([tri1, R*tri1 .+ 1])
+        bounding_boxes = ImplicitBVH.BBox{T}.(mesh)
+        bvh = ImplicitBVH.BVH(bounding_boxes, ImplicitBVH.BBox{T})
+        # trivial locate
+        @test GPUArrays.@allowscalar all(closest(x1, bvh, mesh) .≈ (1, 0))
+        # @btime $closest($x1, $bvh,$mesh) 30.225 ns (0 allocations: 0 bytes)
+        @test GPUArrays.@allowscalar all(closest(SA{T}[1,1,1], bvh, mesh) .≈ (2, 0))
+        # not so trivial
+        @test GPUArrays.@allowscalar all(closest(SA{T}[0.1,0.1,0.5], bvh, mesh) .≈ (1, 0.5^2))
+
+        # test measure all at once
+        measure = WaterLily.measure
+        body = MeshBody(mesh, zero(mesh), bvh)
+        @test GPUArrays.@allowscalar all(body.bvh.nodes[1].lo .≈ [0,0,0]) # lowest point of tri1
+        # we know this point
+        @test GPUArrays.@allowscalar all(measure(body, x1, 0) .≈ (0,[0,0,1],[0,0,0]))
+        @test GPUArrays.@allowscalar all(measure(body, x2, 0) .≈ (0,[0,0,1],[0,0,0]))
+        @test GPUArrays.@allowscalar all(measure(body, SA{T}[.5,.5,100], 0) .≈ (8,[0,0,0],[0,0,0]))
+        xr = SVector{3,T}(rand(3))
+        @test GPUArrays.@allowscalar all(measure(body, xr, 0)[1] .≈ sdf(body, xr, 0)) # same call behind, should be the same
+        # update! by moving the mesh by +1 in all directions
+        new_mesh = mem([tri1 .+ 1, R*tri1 .+ 2])
+        body = update!(body, new_mesh, 1.0)
+        @test GPUArrays.@allowscalar all(body.velocity[1] .≈ 1) && all(body.velocity[2] .≈ 1) # unit velocity is all directions
+        @test GPUArrays.@allowscalar all(measure(body, x1.+1, 0) .≈ (0,[0,0,1],[1,1,1])) # now we have a unit velocity
+        # check that bvh has aslo moved
+        @test GPUArrays.@allowscalar all(body.bvh.nodes[1].lo .≈ [1,1,1])
+        # try inside SetBody
+        body += AutoBody((x,t)->42.f0) # the answer!
+        @test GPUArrays.@allowscalar all(measure(body, x1.+1, 0) .≈ (0,[0,0,1],[1,1,1]))
+    end
 end

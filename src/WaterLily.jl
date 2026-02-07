@@ -172,6 +172,11 @@ function plot_body_obs! end
 # export
 export viz!, get_body, plot_body_obs!
 
+# default GeometryBasics extention
+function MeshBody end
+# export
+export MeshBody
+
 # Check number of threads when loading WaterLily
 """
     check_nthreads()
