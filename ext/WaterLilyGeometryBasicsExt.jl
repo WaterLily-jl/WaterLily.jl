@@ -68,7 +68,7 @@ import WaterLily: ×
 
 # traverse the BVH
 import ImplicitBVH: memory_index,unsafe_isvirtual
-@inline function closest(x::SVector{D,T}, bvh::ImplicitBVH.BVH, mesh) where {D,T}
+@inline function closest(x::SVector{D,T},bvh::ImplicitBVH.BVH,mesh,::Val{true}) where {D,T}
     tree = bvh.tree; length_nodes = length(bvh.nodes)
     u=Int32(0);a=d=T(64) # initial guess #TODO sensitive to initial a
     # Depth-First-Search
@@ -83,6 +83,53 @@ import ImplicitBVH: memory_index,unsafe_isvirtual
         end
         i = i>>trailing_ones(i)+1 # go to sibling, or uncle etc.
         (i==1 || unsafe_isvirtual(tree, i)) && break # search complete!
+    end
+    return u,a
+end
+
+@inline function down(x,l,r,i)
+    dl = dist(x, l)
+    dl ≤ 0 && return 2i
+    dr = dist(x, r)
+    ((dr ≤ 0) || (dr < dl)) && return 2i+1
+    return 2i
+end
+@inline function closest(x::SVector{D,T},bvh::BVH,mesh,::Val{false}) where {D,T}
+    tree = bvh.tree; length_nodes = length(bvh.nodes)
+    u=Int32(1); leaf=0; a=d=T(1e6) # initial guess
+    # start at top
+    i=1; while leaf < 2 # max check two leafs
+        @inbounds j = memory_index(tree, i)
+        if j ≤ length_nodes # we are on a node
+            @inbounds Il = memory_index(bvh.tree, 2i)
+            @inbounds Ir = memory_index(bvh.tree, 2i+1)
+            @inbounds i = down(x, bvh.nodes[Il], bvh.nodes[Ir], i)
+        else # we reached a leaf
+            @inbounds j = bvh.leaves[j-length_nodes].index # correct index in mesh
+            d = d²_fast(x, mesh[j])
+            d<a && (a=d; u=Int32(j))  # Replace current best
+            i = i%2==0 ? i+1 : i-1; leaf += 1 # check sibling
+        end
+        unsafe_isvirtual(tree, i) && (i = i%2==0 ? i+1 : i-1) # go down sibling if virtual
+    end
+    return u,a
+end
+
+# compute the distance to primitive
+dist(x, b::BSphere) = sum(abs2,x .- b.x) - b.r
+function dist(x, b::BBox)
+    c = (b.up .+ b.lo) ./ 2
+    r = (b.up .- b.lo) ./ 2
+    sum(abs2, max.(abs.(x .- c) .- r, 0))
+end
+dist(x, b::BoundingVolume) = dist(x, b.volume)
+
+# old brute-force function
+@inline function closest(x::SVector,mesh)
+    u=Int32(1); a=b=d²_fast(x, mesh[1]) # fast method
+    for I in 2:length(mesh)
+        b = d²_fast(x, mesh[I])
+        b<a && (a=b; u=I) # Replace current best
     end
     return u,a
 end
@@ -129,7 +176,7 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     # before we try the bvh
     !inside(ξ,body.bvh.nodes[1]) && return (T(8),zero(x),zero(x))
     # locate the point on the mesh
-    u,d⁰ = closest(ξ,body.bvh,body.mesh)
+    u,d⁰ = closest(ξ,body.bvh,body.mesh,Val(false))
     u==0 && return (T(8),zero(x),zero(x)) # no closest found
     # u==0 && return check_inside(ξ, body.bvh) # no closest found
     # compute the normal and distance
@@ -186,7 +233,12 @@ update_bvh(body::Meshbody; bvh) = setproperties(body, bvh=bvh)
 
 import WriteVTK: MeshCell, VTKCellTypes, vtk_grid, vtk_save
 using Printf: @sprintf
-# access the WaterLily writer to save the file
+"""
+
+    save!(writer::VTKWriter, body::Meshbody, t=writer.count[1])
+
+Saves the mesh body as a VTK file using the WriteVTK package. The file name is generated using the writer's directory name, base file name, and the current count.
+"""
 function save!(w,a::Meshbody,t=w.count[1]) #where S<:AbstractSimulation{A,B,C,D,MeshBody}
     k = w.count[1]
     points = zeros(Float32, 3, 3length(a.mesh))
