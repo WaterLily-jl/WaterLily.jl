@@ -31,8 +31,8 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 [extensions]
 WaterLilyAMDGPUExt = "AMDGPU"
 WaterLilyCUDAExt = "CUDA"
-WaterLilyMakieExt = "Makie"
 WaterLilyJLD2Ext = "JLD2"
+WaterLilyMakieExt = "Makie"
 WaterLilyMeshingExt = ["Makie", "Meshing"]
 WaterLilyPlotsExt = "Plots"
 WaterLilyReadVTKExt = "ReadVTK"
@@ -55,7 +55,10 @@ julia = "1.10"
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+ImageCore = "a09fc81d-aa75-5fe9-8630-4744c3626534"
+ImageMagick = "6218d12a-5da1-5696-b52f-db25d2ecc6d1"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
@@ -68,4 +71,17 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2"]
+test = [
+    "AMDGPU",
+    "BenchmarkTools",
+    "CUDA",
+    "FileIO",
+    "GPUArrays",
+    "ImageMagick",
+    "ImageCore",
+    "JLD2",
+    "Plots",
+    "ReadVTK",
+    "Test",
+    "WriteVTK",
+]
