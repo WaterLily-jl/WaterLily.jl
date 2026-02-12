@@ -1,9 +1,13 @@
-# WaterLily.jl
+# WaterLily
 
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/dev/)
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
-[![CI](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
+[![Stable Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/stable)
+[![Development documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/dev)
+[![Test workflow status](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Test.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
+[![Lint workflow Status](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml/badge.svg?branch=main)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml?query=branch%3Amain)
+[![Docs workflow Status](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Docs.yml/badge.svg?branch=main)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Docs.yml?query=branch%3Amain)
+[![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)
 [![DOI](https://zenodo.org/badge/DOI/10.1016/j.cpc.2025.109748.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
 
 ![Julia flow](assets/julia.gif)

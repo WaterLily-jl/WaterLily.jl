@@ -1,9 +1,20 @@
 .ipynb_checkpoints
 .vscode/
 .DS_Store
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+*.rej
+.DS_Store
+.benchmarkci
 Manifest.toml
 LocalPreferences.toml
 /docs/build/
+benchmark/*.json
+coverage
+docs/build/
+env
+node_modules
 
 # gfx
 *.png
