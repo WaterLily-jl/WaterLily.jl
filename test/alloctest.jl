@@ -16,20 +16,20 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
     sim = Sim(Float32(π/36))
 
     sim_step!(sim) # runs with λ=quick
-    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
+    b = @benchmarkable mom_step!($sim.flow, $sim.pois, $sim.bc) samples=100; tune!(b) # check 100 times
     r = run(b)
     println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
 
     sim_step!(sim; λ=cds)
-    b = @benchmarkable mom_step!($sim.flow, $sim.pois; λ=$cds) samples=100; tune!(b) # check 100 times
+    b = @benchmarkable mom_step!($sim.flow, $sim.pois, $sim.bc; λ=$cds) samples=100; tune!(b) # check 100 times
     r = run(b)
     println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
 
     sim = Sim(Float32(π/36); perdir=(2,))
     sim_step!(sim)
-    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
+    b = @benchmarkable mom_step!($sim.flow, $sim.pois, $sim.bc) samples=100; tune!(b) # check 100 times
     r = run(b)
     println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)

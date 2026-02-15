@@ -40,6 +40,48 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
+    ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n})
+
+Finite-volume derivative of scalar field `f` on cell `I` and direction `a`
+"""
+@inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
+"""
+    @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n})
+
+Finite-volume derivative of vector field `u` on cell `I`, direction (and component) `a`.
+"""
+@inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
+
+
+@inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])/2
+@inline ϕu(a,I,f,u,λ) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuP(a,Ip,I,f,u,λ) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuL(a,I,f,u,λ) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuR(a,I,f,u,λ) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+@fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
+@fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
+@fastmath cds(u,c,d) = (c+d)/2
+
+@fastmath @inline function div(I::CartesianIndex{m},u) where {m}
+    init=zero(eltype(u))
+    for i in 1:m
+     init += @inbounds ∂(i,I,u)
+    end
+    return init
+end
+
+function median(a,b,c)
+    if a>b
+        b>=c && return b
+        a>c && return c
+    else
+        b<=c && return b
+        a<c && return c
+    end
+    return a
+end
+
+"""
     inside(a;buff=1)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
@@ -205,58 +247,6 @@ function slice(dims::NTuple{N},i,j,low=1) where N
     CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
 end
 
-"""
-    BC!(a,A)
-
-Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
-is applied to the tangential components.
-"""
-BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
-    N,n = size_u(a)
-    for i ∈ 1:n, j ∈ 1:n
-        if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
-        else
-            if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
-                end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
-            else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
-            end
-        end
-    end
-end
-
-"""
-    exitBC!(u,u⁰,U,Δt)
-
-Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
-"""
-function exitBC!(u,u⁰,Δt)
-    N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux
-    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
-end
-"""
-    perBC!(a,perdir)
-
-Apply periodic conditions to the ghost cells of a _scalar_ field.
-"""
-perBC!(a,::Tuple{}) = nothing
-perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
-end
 """
     interp(x::SVector, arr::AbstractArray)
 
