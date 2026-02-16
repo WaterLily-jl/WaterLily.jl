@@ -176,7 +176,7 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     # before we try the bvh
     !inside(ξ,body.bvh.nodes[1]) && return (T(8),zero(x),zero(x))
     # locate the point on the mesh
-    u,d⁰ = closest(ξ,body.bvh,body.mesh,Val(false))
+    u,d⁰ = closest(ξ,body.bvh,body.mesh,Val(true))
     u==0 && return (T(8),zero(x),zero(x)) # no closest found
     # u==0 && return check_inside(ξ, body.bvh) # no closest found
     # compute the normal and distance
