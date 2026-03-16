@@ -129,7 +129,7 @@ function pcg!(p::Poisson{T};it=6) where T
     for i in 1:it
         perBC!(ϵ,p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/perdot(z,ϵ,perdir)
+        alpha = rho/perdot(z,ϵ,p.perdir)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
