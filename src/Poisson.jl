@@ -113,6 +113,36 @@ Note: This runs for general backends, but is _very_ slow to converge.
     increment!(p)
 end
 
+@fastmath @inline function gauss(I::CartesianIndex{d},r,L,iD,x) where {d}
+    s = @inbounds(r[I])
+    for i in 1:d
+        s -= @inbounds(x[I-δ(i,I)]*L[I,i] + x[I+δ(i,I)]*L[I+δ(i,I),i])
+    end
+    return s*@inbounds(iD[I])
+end
+
+@inline function gauss_rb(x,r,L,D,iD,color,Iv)
+    k = @inbounds(2*Iv.I[end] - (sum(Iv.I[1:end-1]) + color) % 2) # shift the grid in z direction depending on the RB cell.
+    I = CartesianIndex(Iv.I[1:end-1]..., k)+oneunit(Iv) # make sure it is the cell inside.
+    x[I] = gauss(I,r,L,iD,x)
+end
+
+@inline function half_rangez(x::AbstractArray{T,N}) where{T,N}
+    Nin = size(x) .- 2
+    return CartesianIndices(ntuple((i) -> ifelse(i==N,1:Nin[i]÷2,1:Nin[i]), N))
+end
+function GaussSeidelRB!(p; it=6)
+    @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
+
+    half_range = half_rangez(p.ϵ)  # set up cell range to be calculated.
+    for _ in 1:it
+        perBC!(p.ϵ,p.perdir)
+        @loop gauss_rb(p.ϵ,p.r,p.L,p.D,p.iD,0,I) over I ∈ half_range  # red
+        @loop gauss_rb(p.ϵ,p.r,p.L,p.D,p.iD,1,I) over I ∈ half_range  # black
+    end
+    increment!(p) # increment solution and residual
+end
+
 using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
@@ -142,7 +172,7 @@ function pcg!(p::Poisson{T};it=6) where T
         rho = rho2
     end
 end
-smooth!(p) = pcg!(p)
+smooth!(p) = GaussSeidelRB!(p)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
