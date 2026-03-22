@@ -96,16 +96,8 @@ import ImplicitBVH: memory_index,unsafe_isvirtual
     return a,u
 end
 
-@inline function down(x,l,r,i)
-    dl = dist(x, l)
-    dl ≤ 0 && return 2i
-    dr = dist(x, r)
-    ((dr ≤ 0) || (dr < dl)) && return 2i+1
-    return 2i
-end
-
 # compute the square distance to primitive
-dist(x, b::BSphere) = sum(abs2,x .- b.x) - b.r
+dist(x, b::BSphere) = max(√sum(abs2,x .- b.x) - b.r, 0)^2
 function dist(x, b::BBox)
     c = (b.up .+ b.lo) ./ 2
     r = (b.up .- b.lo) ./ 2
