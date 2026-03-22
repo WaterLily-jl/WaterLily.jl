@@ -751,29 +751,20 @@ end
         @test GPUArrays.@allowscalar all(measure(body, x1.+1, 0) .≈ (0,[0,0,1],[1,1,1]))
     end
     
-    # Analytic SDF for a box with half-extents (a,b,c) centered at origin
-    function box_sdf(x::SVector{3,T}, half_extents::SVector{3,T}=SA{T}[1, 1, 1]) where T
-        q = abs.(x) .- half_extents
-        return √sum(abs2,max.(q, zero(T))) + min(maximum(q), zero(T))
-    end
-    
-    # Load the box mesh using the public API
-    box_file = joinpath(@__DIR__, "meshes", "box.stl")
-    sphere_file = joinpath(@__DIR__, "meshes", "sphere.stl")
+    # Compare BVH traversal against brute-force for correctness
+    closest = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).closest
+    locate = Base.get_extension(WaterLily, :WaterLilyGeometryBasicsExt).locate
+    test_points = [SA{T}[r*sin(φ)*cos(θ), r*sin(φ)*sin(θ), r*cos(φ)] for r in T[0.2, 0.35, 0.65, 1.3], θ in T[0.7, 2.1, 4.3], φ in T[0.9, 1.8]]
     for mem in arrays
-        body = MeshBody(box_file; scale=1.f0, mem, boundary=true)
-        for x in [SA{T}[0, 0, 0], SA{T}[0.5, 0.5, 0.5], 
-                    SA{T}[1, 0, 0], SA{T}[0, 1, 0], SA{T}[0, 0, 1],
-                    SA{T}[2, 0, 0], SA{T}[1.5, 1.5, 1.5], SA{T}[1, 1, 1]]
-            @show x, sdf(body, x, 0), box_sdf(x)
-            @test sdf(body, x, 0) ≈ box_sdf(x)
+        for mesh_file in ["sphere.stl","box.stl"]
+            body = MeshBody(joinpath(@__DIR__, "meshes", mesh_file); scale=1.f0, mem, boundary=true)
+            for x in test_points
+                d_brute, u_brute = closest(x, body.mesh)  # brute-force ground truth
+                d_bvh, u_bvh = closest(x, body.bvh, body.mesh)  # BVH traversal
+                @test d_bvh ≈ d_brute  # same squared distance
+                @test u_bvh == u_brute || locate(x, body.mesh[u_brute]) ≈ locate(x, body.mesh[u_bvh])
+                mesh_file == "sphere.stl" && @test sdf(body, x) ≈ √(x'x)-0.5f0  atol=15e-3
+            end
         end
-        body = MeshBody(sphere_file; scale=1.f0, mem, boundary=true)
-        for x in [SA{T}[0, 0, 0], SA{T}[0.5, 0.5, 0.5], 
-                    SA{T}[1, 0, 0], SA{T}[0, 1, 0], SA{T}[0, 0, 1],
-                    SA{T}[2, 0, 0], SA{T}[1.5, 1.5, 1.5], SA{T}[1, 1, 1]]
-            @show x, sdf(body, x, 0), √sum(abs2, x)-0.5f0
-            @test isapprox(sdf(body, x, 0), √sum(abs2, x)-0.5f0, rtol=15e-3)
-        end            
     end
 end
