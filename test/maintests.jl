@@ -750,4 +750,30 @@ end
         body += AutoBody((x,t)->42.f0) # the answer!
         @test GPUArrays.@allowscalar all(measure(body, x1.+1, 0) .≈ (0,[0,0,1],[1,1,1]))
     end
+    
+    # Analytic SDF for a box with half-extents (a,b,c) centered at origin
+    function box_sdf(x::SVector{3,T}, half_extents::SVector{3,T}=SA{T}[1, 1, 1]) where T
+        q = abs.(x) .- half_extents
+        return √sum(abs2,max.(q, zero(T))) + min(maximum(q), zero(T))
+    end
+    
+    # Load the box mesh using the public API
+    box_file = joinpath(@__DIR__, "meshes", "box.stl")
+    sphere_file = joinpath(@__DIR__, "meshes", "sphere.stl")
+    for mem in arrays
+        body = MeshBody(box_file; scale=1.f0, mem, boundary=true)
+        for x in [SA{T}[0, 0, 0], SA{T}[0.5, 0.5, 0.5], 
+                    SA{T}[1, 0, 0], SA{T}[0, 1, 0], SA{T}[0, 0, 1],
+                    SA{T}[2, 0, 0], SA{T}[1.5, 1.5, 1.5], SA{T}[1, 1, 1]]
+            @show x, sdf(body, x, 0), box_sdf(x)
+            @test sdf(body, x, 0) ≈ box_sdf(x)
+        end
+        body = MeshBody(sphere_file; scale=1.f0, mem, boundary=true)
+        for x in [SA{T}[0, 0, 0], SA{T}[0.5, 0.5, 0.5], 
+                    SA{T}[1, 0, 0], SA{T}[0, 1, 0], SA{T}[0, 0, 1],
+                    SA{T}[2, 0, 0], SA{T}[1.5, 1.5, 1.5], SA{T}[1, 1, 1]]
+            @show x, sdf(body, x, 0), √sum(abs2, x)-0.5f0
+            @test isapprox(sdf(body, x, 0), √sum(abs2, x)-0.5f0, rtol=15e-3)
+        end            
+    end
 end

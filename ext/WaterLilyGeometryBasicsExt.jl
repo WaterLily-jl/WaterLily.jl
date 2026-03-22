@@ -23,7 +23,7 @@ Adapt.@adapt_structure Meshbody
 
 """
     MeshBody(mesh::Union{Mesh, String};
-             map::Function=(x,t)->x, boundary::Bool=true, half_thk::T=0.f0,
+             map::Function=(x,t)->x, boundary::Bool=false, half_thk::T=0.f0,
              scale::T=1.f0, mem=Array, primitives::Union{BBox, BSphere}) where T
 
 Constructor for a MeshBody:
@@ -57,7 +57,7 @@ using LinearAlgebra: cross
 import ImplicitBVH: BoundingVolume,BBox,BSphere
 @fastmath @inline inside(x::SVector, b::BoundingVolume) = inside(x, b.volume)
 @fastmath @inline inside(x::SVector, b::BBox) = all(b.lo.-4 .≤ x) && all(x .≤ b.up.+4)
-@fastmath @inline inside(x::SVector, b::BSphere) = sum(abs2,x .- b.x) - b.r^2 ≤ 4
+@fastmath @inline inside(x::SVector, b::BSphere) = √sum(abs2,x .- b.x) - b.r ≤ 4
 
 import WaterLily: ×
 # linear shape function to interpolate inside element
@@ -66,25 +66,34 @@ import WaterLily: ×
                                                                  √sum(abs2,×(t[:,2]-t[:,1],p-t[:,1]))]
 @fastmath @inline get_velocity(p::SVector, tri, vel)= (dA=shape_value(p,tri); vel*dA/sum(dA))
 
+# brute-force fallback when the BVH is not available
+closest(x::SVector,mesh) = findmin(tri->d²_fast(x, tri),mesh)
+
 # traverse the BVH
 import ImplicitBVH: memory_index,unsafe_isvirtual
-@inline function closest(x::SVector{D,T},bvh::ImplicitBVH.BVH,mesh,::Val{true}) where {D,T}
+@inline function closest(x::SVector{D,T},bvh::ImplicitBVH.BVH,mesh;a=floatmax(T),verbose=false) where {D,T}
     tree = bvh.tree; length_nodes = length(bvh.nodes)
-    u=Int32(0);a=d=T(64) # initial guess #TODO sensitive to initial a
+    u=ncheck=lcheck=tcheck=Int32(0) # initialize
     # Depth-First-Search
-    i=2; for _ in 1:4tree.levels^2 # prevent infinite loops
+    i=1; while true
         @inbounds j = memory_index(tree,i)
         if j ≤ length_nodes # we are on a node
-            inside(x, bvh.nodes[j]) && (i = 2i; continue) # go deeper
+            verbose && (ncheck += 1)
+            dist(x, bvh.nodes[j]) < a && (i = 2i; continue) # go deeper if closer than current best
         else # we reached a leaf
-            @inbounds j = bvh.leaves[j-length_nodes].index # correct index in mesh
-            d = d²_fast(x, mesh[j])
-            d<a && (a=d; u=Int32(j))  # Replace current best
+            verbose && (lcheck += 1)
+            if dist(x, bvh.leaves[j-length_nodes]) < a
+                verbose && (tcheck += 1)
+                @inbounds j = bvh.leaves[j-length_nodes].index # correct index in mesh
+                d = d²_fast(x, mesh[j])
+                d<a && (a=d; u=Int32(j))  # Replace current best
+            end
         end
         i = i>>trailing_ones(i)+1 # go to sibling, or uncle etc.
         (i==1 || unsafe_isvirtual(tree, i)) && break # search complete!
     end
-    return u,a
+    verbose && println("Checked $ncheck nodes, $lcheck leaves, $tcheck triangles")
+    return a,u
 end
 
 @inline function down(x,l,r,i)
@@ -94,28 +103,8 @@ end
     ((dr ≤ 0) || (dr < dl)) && return 2i+1
     return 2i
 end
-@inline function closest(x::SVector{D,T},bvh::BVH,mesh,::Val{false}) where {D,T}
-    tree = bvh.tree; length_nodes = length(bvh.nodes)
-    u=Int32(1); leaf=0; a=d=T(1e6) # initial guess
-    # start at top
-    i=1; while leaf < 2 # max check two leafs
-        @inbounds j = memory_index(tree, i)
-        if j ≤ length_nodes # we are on a node
-            @inbounds Il = memory_index(bvh.tree, 2i)
-            @inbounds Ir = memory_index(bvh.tree, 2i+1)
-            @inbounds i = down(x, bvh.nodes[Il], bvh.nodes[Ir], i)
-        else # we reached a leaf
-            @inbounds j = bvh.leaves[j-length_nodes].index # correct index in mesh
-            d = d²_fast(x, mesh[j])
-            d<a && (a=d; u=Int32(j))  # Replace current best
-            i = i%2==0 ? i+1 : i-1; leaf += 1 # check sibling
-        end
-        unsafe_isvirtual(tree, i) && (i = i%2==0 ? i+1 : i-1) # go down sibling if virtual
-    end
-    return u,a
-end
 
-# compute the distance to primitive
+# compute the square distance to primitive
 dist(x, b::BSphere) = sum(abs2,x .- b.x) - b.r
 function dist(x, b::BBox)
     c = (b.up .+ b.lo) ./ 2
@@ -123,16 +112,6 @@ function dist(x, b::BBox)
     sum(abs2, max.(abs.(x .- c) .- r, 0))
 end
 dist(x, b::BoundingVolume) = dist(x, b.volume)
-
-# old brute-force function
-@inline function closest(x::SVector,mesh)
-    u=Int32(1); a=b=d²_fast(x, mesh[1]) # fast method
-    for I in 2:length(mesh)
-        b = d²_fast(x, mesh[I])
-        b<a && (a=b; u=I) # Replace current best
-    end
-    return u,a
-end
 
 # locate the closest point p to x on triangle tri
 function locate(x::SVector{T},tri::SMatrix{T}) where T
@@ -174,11 +153,10 @@ function WaterLily.measure(body::Meshbody,x::SVector{D,T},t;fastd²=Inf) where {
     # map to correct location
     ξ = body.map(x,t)
     # before we try the bvh
-    !inside(ξ,body.bvh.nodes[1]) && return (T(8),zero(x),zero(x))
+    !inside(ξ,body.bvh.nodes[1]) && return (T(4),zero(x),zero(x))
     # locate the point on the mesh
-    u,d⁰ = closest(ξ,body.bvh,body.mesh,Val(true))
-    u==0 && return (T(8),zero(x),zero(x)) # no closest found
-    # u==0 && return check_inside(ξ, body.bvh) # no closest found
+    _,u = closest(ξ,body.bvh,body.mesh;a = body.boundary ? floatmax(T) : T(16))
+    u==0 && return (T(4),zero(x),zero(x)) # no triangles within distance "a"
     # compute the normal and distance
     n,p = normal(body.mesh[u]),SVector(locate(ξ,body.mesh[u]))
     # signed Euclidian distance
