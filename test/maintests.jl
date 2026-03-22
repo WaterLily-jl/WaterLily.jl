@@ -94,6 +94,14 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
        @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
        @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(3.5,3),b))==Float64
        @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
+
+        # test on perdot
+        σ1 = rand(Ng...) |> f # scalar
+        σ2 = rand(Ng...) |> f # another scalar 
+        # use ≈ instead of == as summation in different order might result in slight difference in floating point expressions
+        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
+        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
+        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
     end
 end
 

@@ -257,6 +257,14 @@ perBC!(a, perdir, N = size(a)) = for j ∈ perdir
     @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
     @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
 end
+using LinearAlgebra: ⋅
+"""
+    perdot(a,b,perdir)
+
+Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
+"""
+perdot(a,b,::Tuple{}) = a⋅b
+perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
 """
     interp(x::SVector, arr::AbstractArray)
 
