@@ -121,24 +121,20 @@ end
     return s*@inbounds(iD[I])
 end
 
-@inline function gauss_rb(x,r,L,D,iD,color,Iv)
-    k = @inbounds(2*Iv.I[end] - (sum(Iv.I[1:end-1]) + color) % 2) # shift the grid in z direction depending on the RB cell.
-    I = CartesianIndex(Iv.I[1:end-1]..., k)+oneunit(Iv) # make sure it is the cell inside.
+@inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
+    k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
+    I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
     x[I] = gauss(I,r,L,iD,x)
 end
 
-@inline function half_rangez(x::AbstractArray{T,N}) where{T,N}
-    Nin = size(x) .- 2
-    return CartesianIndices(ntuple((i) -> ifelse(i==N,1:Nin[i]÷2,1:Nin[i]), N))
+@inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
+    return CartesianIndices(ntuple( i-> i==N ? (2:size(x,i)÷2) : (2:size(x,i)-1), N))
 end
-function GaussSeidelRB!(p; it=6)
+function GaussSeidelRB!(p; it=4)
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
-
-    half_range = half_rangez(p.ϵ)  # set up cell range to be calculated.
-    for _ in 1:it
-        perBC!(p.ϵ,p.perdir)
-        @loop gauss_rb(p.ϵ,p.r,p.L,p.D,p.iD,0,I) over I ∈ half_range  # red
-        @loop gauss_rb(p.ϵ,p.r,p.L,p.D,p.iD,1,I) over I ∈ half_range  # black
+    perBC!(p.ϵ,p.perdir)
+    for i ∈ 1:it
+        @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
     increment!(p) # increment solution and residual
 end
