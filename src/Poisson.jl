@@ -97,10 +97,10 @@ function residual!(p::Poisson)
     @inside p.r[I] = p.r[I]-s
 end
 
-function increment!(p::Poisson)
+function increment!(p::Poisson;ω=0.8)
     perBC!(p.ϵ,p.perdir)
-    @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
-           p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)
+    @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
+           p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
 end
 """
     Jacobi!(p::Poisson; it=1)
