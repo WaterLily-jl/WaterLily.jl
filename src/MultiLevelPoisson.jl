@@ -47,6 +47,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     z::S
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
+    ω :: Vector{T}
     perdir :: NTuple # direction of periodic boundary condition
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=10,perdir=()) where T
         levels = Poisson[Poisson(x,L,z;perdir)]
@@ -55,7 +56,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],[T(1)],perdir)
     end
 end
 
@@ -67,18 +68,18 @@ function update!(ml::MultiLevelPoisson)
     end
 end
 
-function Vcycle!(ml::MultiLevelPoisson;l=1)
+function Vcycle!(ml::MultiLevelPoisson;l=1,ω=ml.ω[1])
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
     Jacobi!(fine)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
-    l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
-    smooth!(coarse)
+    l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
+    smooth!(coarse;ω)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
-    increment!(fine)
+    increment!(fine; ω)
 end
 
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
@@ -87,13 +88,22 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 function solver!(ml::MultiLevelPoisson;tol=1e-4,itmx=32)
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $(ml.ω[1])\n"
     while nᵖ<itmx
-        Vcycle!(ml)
-        smooth!(p); r₂ = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $r₂\n"
+        Vcycle!(ml; ω=ml.ω[1])
+        smooth!(p; ω=ml.ω[1]); 
+        rnew = L₂(p); 
+        nᵖ+=1
+        @log ", $nᵖ, $(L∞(p)), $rnew, $(ml.ω[1])\n"
+        if     rnew ≥ r₂
+            ml.ω[1] = max(0.2, 0.9*ml.ω[1])
+        elseif rnew < r₂
+            ml.ω[1] = min(1.0, 1.02*ml.ω[1])
+        end
+        r₂ = rnew
         r₂<tol && break
     end
     perBC!(p.x,p.perdir)
     push!(ml.n,nᵖ);
+    ml.ω[1] = 1.0
 end

@@ -97,7 +97,7 @@ function residual!(p::Poisson)
     @inside p.r[I] = p.r[I]-s
 end
 
-function increment!(p::Poisson;ω=0.8)
+function increment!(p::Poisson{T};ω=T(1)) where {T}
     perBC!(p.ϵ,p.perdir)
     @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
@@ -130,13 +130,13 @@ end
 @inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
     return CartesianIndices(ntuple( i-> i==N ? (2:size(x,i)÷2) : (2:size(x,i)-1), N))
 end
-function GaussSeidelRB!(p; it=4)
+function GaussSeidelRB!(p::Poisson{T};it=4, ω=T(1)) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
     perBC!(p.ϵ,p.perdir)
     for i ∈ 1:it
         @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
-    increment!(p) # increment solution and residual
+    increment!(p;ω) # increment solution and residual
 end
 
 using LinearAlgebra: ⋅
@@ -168,7 +168,7 @@ function pcg!(p::Poisson{T};it=6) where T
         rho = rho2
     end
 end
-smooth!(p) = GaussSeidelRB!(p)
+smooth! = GaussSeidelRB!
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
