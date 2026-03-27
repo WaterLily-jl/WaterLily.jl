@@ -14,7 +14,7 @@ struct Meshbody{T,M,B,F} <: AbstractBody
     boundary::Bool
     half_thk::T
 end
-function MeshBody(mesh::M,vel::M,bvh::B;map=(x,t)->x,scale=1.f0,boundary=false,half_thk=0.f0) where {M,B}
+function MeshBody(mesh::M,vel::M,bvh::B;map=(x,t)->x,scale=1.f0,boundary=false,half_thk=1.866f0) where {M,B}
     return Meshbody{eltype(scale),M,B,typeof(map)}(mesh,vel,bvh,map,scale,boundary,half_thk)
 end
 using Adapt
@@ -23,7 +23,7 @@ Adapt.@adapt_structure Meshbody
 
 """
     MeshBody(mesh::Union{Mesh, String};
-             map::Function=(x,t)->x, boundary::Bool=false, half_thk::T=0.f0,
+             map::Function=(x,t)->x, boundary::Bool=false, half_thk::T=1.866f0,
              scale::T=1.f0, mem=Array, primitives::Union{BBox, BSphere}) where T
 
 Constructor for a MeshBody:

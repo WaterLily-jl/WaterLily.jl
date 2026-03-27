@@ -173,7 +173,7 @@ function plot_body_obs! end
 export viz!, get_body, plot_body_obs!
 
 # default GeometryBasics extention
-function MeshBody end
+function MeshBody(args...;kwargs...); throw(MissingException("`MeshBody` requires `using GeometryBasics` to load the extension")); end
 # export
 export MeshBody
 
