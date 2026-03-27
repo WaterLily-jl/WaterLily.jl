@@ -90,6 +90,9 @@ struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
     a::Ta
     b::Tb
 end
+using Adapt
+# make it GPU compatible
+Adapt.@adapt_structure SetBody
 
 # Lazy constructors
 Base.:∪(a::AbstractBody, b::AbstractBody) = SetBody(min,a,b)
