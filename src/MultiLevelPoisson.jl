@@ -47,7 +47,6 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     z::S
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
-    ω :: Vector{T}
     perdir :: NTuple # direction of periodic boundary condition
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=10,perdir=()) where T
         levels = Poisson[Poisson(x,L,z;perdir)]
@@ -56,7 +55,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],[T(1)],perdir)
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
 
@@ -68,7 +67,7 @@ function update!(ml::MultiLevelPoisson)
     end
 end
 
-function Vcycle!(ml::MultiLevelPoisson;l=1,ω=ml.ω[1])
+function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
     Jacobi!(fine)
@@ -85,25 +84,23 @@ end
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(ml::MultiLevelPoisson;tol=1e-4,itmx=32)
+function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     p = ml.levels[1]
-    residual!(p); r₂ = L₂(p)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $(ml.ω[1])\n"
+    residual!(p); r₂ = L₂(p); ω = T(1)
+    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx
-        Vcycle!(ml; ω=ml.ω[1])
-        smooth!(p; ω=ml.ω[1]); 
-        rnew = L₂(p); 
-        nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $rnew, $(ml.ω[1])\n"
+        Vcycle!(ml; ω)
+        smooth!(p; ω); 
+        rnew = L₂(p); nᵖ+=1
+        @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
         if     rnew ≥ r₂
-            ml.ω[1] = max(0.2, 0.9*ml.ω[1])
+            ω = max(0.2, 0.9ω) |> T
         elseif rnew < r₂
-            ml.ω[1] = min(1.0, 1.02*ml.ω[1])
+            ω = min(1.0, 1.02ω) |> T
         end
         r₂ = rnew
         r₂<tol && break
     end
     perBC!(p.x,p.perdir)
     push!(ml.n,nᵖ);
-    ml.ω[1] = 1.0
 end

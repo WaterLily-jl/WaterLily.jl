@@ -97,7 +97,7 @@ function residual!(p::Poisson)
     @inside p.r[I] = p.r[I]-s
 end
 
-function increment!(p::Poisson{T};ω=T(1)) where {T}
+function increment!(p::Poisson{T};ω=1) where {T}
     perBC!(p.ϵ,p.perdir)
     @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
@@ -130,7 +130,7 @@ end
 @inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
     return CartesianIndices(ntuple( i-> i==N ? (2:size(x,i)÷2) : (2:size(x,i)-1), N))
 end
-function GaussSeidelRB!(p::Poisson{T};it=4, ω=T(1)) where {T}
+function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
     perBC!(p.ϵ,p.perdir)
     for i ∈ 1:it
@@ -147,7 +147,7 @@ Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iteratio
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
-function pcg!(p::Poisson{T};it=6) where T
+function pcg!(p::Poisson{T};it=6,ω=1) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     rho = r⋅z
