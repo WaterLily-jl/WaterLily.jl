@@ -1,6 +1,7 @@
 using WaterLily
 using Test
 using StaticArrays
+using TestItemRunner
 
 check_compiler(compiler,parse_str) = try occursin(parse_str, read(`$compiler --version`, String)) catch _ false end
 _cuda = check_compiler("nvcc","release")
@@ -15,4 +16,9 @@ function setup_backends()
 end
 
 arrays = setup_backends()
-Threads.nthreads() > 1 ? include("maintests.jl") : include("alloctest.jl")
+
+if Threads.nthreads() == 1
+    include("alloctest.jl")
+else
+    @run_package_tests verbose=true
+end
