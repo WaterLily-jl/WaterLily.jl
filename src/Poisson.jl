@@ -168,7 +168,6 @@ function pcg!(p::Poisson{T};it=6,ω=1) where T
         rho = rho2
     end
 end
-smooth! = GaussSeidelRB!
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
@@ -189,7 +188,7 @@ function solver!(p::Poisson;tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
     while nᵖ<itmx
-        smooth!(p); r₂ = L₂(p); nᵖ+=1
+        pcg!(p); r₂ = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end

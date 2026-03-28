@@ -84,6 +84,8 @@ end
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
+smooth! = GaussSeidelRB!
+
 function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p); ω = T(1)

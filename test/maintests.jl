@@ -520,17 +520,17 @@ end
         # Test accelerating from U=0 to U=1
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(circle,accel), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [2,1]
+        @test sim.pois.n == [3,2]
         @test maximum(sim.flow.u) > maximum(sim.flow.V) > 0
         # Test that non-uniform V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,rotate), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [2,1]
+        @test sim.pois.n == [3,1]
         @test 1 > sim.flow.Δt[end] > 0.5
         # Test that divergent V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,bend), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [2,1]
+        @test sim.pois.n == [3,1]
         @test 1.2 > sim.flow.Δt[end] > 0.8
     end
 end
