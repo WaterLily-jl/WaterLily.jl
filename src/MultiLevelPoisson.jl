@@ -67,31 +67,40 @@ function update!(ml::MultiLevelPoisson)
     end
 end
 
-function Vcycle!(ml::MultiLevelPoisson;l=1)
+function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
     Jacobi!(fine)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
-    l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
-    smooth!(coarse)
+    l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
+    smooth!(coarse;ω)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
-    increment!(fine)
+    increment!(fine; ω)
 end
 
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
-function solver!(ml::MultiLevelPoisson;tol=1e-4,itmx=32)
+smooth! = GaussSeidelRB!
+
+function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     p = ml.levels[1]
-    residual!(p); r₂ = L₂(p)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+    residual!(p); r₂ = L₂(p); ω = T(1)
+    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx
-        Vcycle!(ml)
-        smooth!(p); r₂ = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $r₂\n"
+        Vcycle!(ml; ω)
+        smooth!(p; ω); 
+        rnew = L₂(p); nᵖ+=1
+        @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
+        if     rnew ≥ r₂
+            ω = max(0.2, 0.9ω) |> T
+        elseif rnew < r₂
+            ω = min(1.0, 1.02ω) |> T
+        end
+        r₂ = rnew
         r₂<tol && break
     end
     perBC!(p.x,p.perdir)
