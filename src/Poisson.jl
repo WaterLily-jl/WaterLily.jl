@@ -108,7 +108,7 @@ end
 Jacobi smoother run `it` times.
 Note: This runs for general backends, but is _very_ slow to converge.
 """
-@fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
+@fastmath Jacobi!(p;it=1,kwargs...) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
     increment!(p)
 end
@@ -121,7 +121,7 @@ Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iteratio
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
-function pcg!(p::Poisson{T};it=6) where T
+function pcg!(p::Poisson{T};it=6, kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     rho = r⋅z
@@ -142,7 +142,7 @@ function pcg!(p::Poisson{T};it=6) where T
         rho = rho2
     end
 end
-smooth!(p) = pcg!(p)
+smooth!(p; kwargs...) = pcg!(p; kwargs...)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
@@ -159,11 +159,11 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;tol=1e-4,itmx=1e3)
+function solver!(p::Poisson;tol=1e-4,itmx=1e3, kwargs...)
     residual!(p); r₂ = L₂(p)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
     while nᵖ<itmx
-        smooth!(p); r₂ = L₂(p); nᵖ+=1
+        smooth!(p; kwargs...); r₂ = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end
