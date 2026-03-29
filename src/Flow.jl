@@ -72,7 +72,7 @@ accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
 """
-    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
+    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
