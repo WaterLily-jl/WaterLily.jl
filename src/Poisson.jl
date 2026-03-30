@@ -105,8 +105,8 @@ end
 """
     Jacobi!(p::Poisson; it=1)
 
-Jacobi smoother run `it` times.
-Note: This runs for general backends, but is _very_ slow to converge.
+Jacobi smoother. Runs `it` iterations with relaxation parameter `ω` scaling the deferred corrections in `increment!`.
+Note: This runs for general backends but converges _very_ slowly.
 """
 @fastmath Jacobi!(p;it=1,ω=1) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
@@ -130,6 +130,14 @@ end
 @inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
     return CartesianIndices(ntuple( i-> i==N ? (2:size(x,i)÷2) : (2:size(x,i)-1), N))
 end
+
+"""
+    GaussSeidelRB!(p::Poisson;it=4, ω=1)
+
+Red-black Gauss-Seidel smoother. Runs at most `it` iterations; a complete red-black cycle requires `it` to be even.
+`ω` under-/over-relaxs the solution through scaling the deferred corrections in `increment!`.
+Note: This performs best on GPU configurations and is the default smoother.
+"""
 function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
     perBC!(p.ϵ,p.perdir)
@@ -143,9 +151,9 @@ using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations,
+Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
-Note: This runs for general backends and is the default smoother.
+Note: This runs for general backends; kwargs is a placeholder for `ω` compatibility.
 """
 function pcg!(p::Poisson{T};it=6,kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
