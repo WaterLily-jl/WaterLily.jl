@@ -108,9 +108,9 @@ end
 Jacobi smoother run `it` times.
 Note: This runs for general backends, but is _very_ slow to converge.
 """
-@fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
+@fastmath Jacobi!(p;it=1,ω=1) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
-    increment!(p)
+    increment!(p;ω)
 end
 
 @fastmath @inline function gauss(I::CartesianIndex{d},r,L,iD,x) where {d}
@@ -147,7 +147,7 @@ Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iteratio
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends and is the default smoother.
 """
-function pcg!(p::Poisson{T};it=6,ω=1) where T
+function pcg!(p::Poisson{T};it=6,kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     rho = r⋅z
