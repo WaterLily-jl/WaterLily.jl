@@ -134,7 +134,7 @@ end
 """
     GaussSeidelRB!(p::Poisson;it=4, ω=1)
 
-Red-black Gauss-Seidel smoother. Runs at most `it` iterations; a complete red-black cycle requires `it` to be even.
+Red-black Gauss-Seidel smoother. Runs `it` iterations; a complete red-black cycle requires `it` to be even.
 `ω` under-/over-relaxs the solution through scaling the deferred corrections in `increment!`.
 Note: This performs best on GPU configurations and is the default smoother.
 """
@@ -153,7 +153,7 @@ using LinearAlgebra: ⋅
 
 Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
-Note: This runs for general backends; kwargs is a placeholder for `ω` compatibility.
+Note: This runs for general backends.
 """
 function pcg!(p::Poisson{T};it=6,kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
