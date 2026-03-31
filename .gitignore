@@ -19,6 +19,7 @@ LocalPreferences.toml
 *.txt
 *.log
 *.json
+*.nsys-rep
 
 # paraview
 *.vti
