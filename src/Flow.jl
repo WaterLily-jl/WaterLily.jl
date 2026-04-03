@@ -146,7 +146,7 @@ Integrate the `Flow` one time step using the [Boundary Data Immersion Method](ht
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
 @fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;λ=quick,udf=nothing,kwargs...) where N
-    copyto!(a.u⁰,a.u); scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+    copyto!(a.u⁰,a.u); fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     conv_diff!(a.f,a.u⁰,a.σ,λ;ν=a.ν,perdir=a.perdir)
@@ -160,11 +160,10 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,t₁; kwargs...)
     accelerate!(a.f,t₁,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    BDIM!(a); rmul!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     push!(a.Δt,CFL(a))
 end
-scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
 function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
