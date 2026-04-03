@@ -160,7 +160,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,t₁; kwargs...)
     accelerate!(a.f,t₁,a.g,a.uBC)
-    BDIM!(a); rmul!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    BDIM!(a); rmul!(a.u,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     push!(a.Δt,CFL(a))
 end
