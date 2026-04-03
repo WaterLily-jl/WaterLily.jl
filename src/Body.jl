@@ -25,7 +25,7 @@ at time `t` using an immersion kernel of size `ϵ`.
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
 function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
-    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=(2+ϵ)^2
+    fill!(a.V,0); fill!(a.μ₀,0); fill!(a.μ₁,0); d²=(2+ϵ)^2
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         d[I] = sdf(body,loc(0,I,T),t,fastd²=d²)
         if d[I]^2<d²
