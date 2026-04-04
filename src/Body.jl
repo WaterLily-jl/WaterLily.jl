@@ -26,7 +26,7 @@ See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016
 """
 function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     fill!(a.V,0); fill!(a.μ₀,0); fill!(a.μ₁,0); d²=(2+ϵ)^2
-    @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
+    @fastmath @inline function fillμ!(μ₀,μ₁,V,d,I)
         d[I] = sdf(body,loc(0,I,T),t,fastd²=d²)
         if d[I]^2<d²
             for i ∈ 1:N
@@ -43,7 +43,7 @@ function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
             end
         end
     end
-    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
+    @loop fillμ!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
 end
