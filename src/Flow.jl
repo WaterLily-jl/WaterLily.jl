@@ -160,10 +160,11 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,t₁; kwargs...)
     accelerate!(a.f,t₁,a.g,a.uBC)
-    BDIM!(a); rmul!(a.u,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
     push!(a.Δt,CFL(a))
 end
+scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
 function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
