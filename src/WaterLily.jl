@@ -12,7 +12,27 @@ using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
 
 include("BC.jl")
-export AbstractBC,BC,BC!
+export AbstractBC,BC,BC!,pressureBC!,ParallelBC
+
+# ── MPI parallel interface (implemented by WaterLilyMPIExt) ───────────────────
+"""
+    global_offset(Val(N), T=Float32) → SVector{N,T}
+
+Return the global coordinate offset for this MPI rank (requires `init_global_grid`
+to have been called). Implemented by `WaterLilyMPIExt` when `ImplicitGlobalGrid`
+and `MPI` are loaded.
+"""
+function global_offset end
+
+"""
+    set_comm!(comm)
+
+Set the MPI communicator used for global Poisson reductions (default: `MPI.COMM_WORLD`).
+Implemented by `WaterLilyMPIExt` when `ImplicitGlobalGrid` and `MPI` are loaded.
+"""
+function set_comm! end
+
+export global_offset, set_comm!
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
@@ -156,10 +176,11 @@ function load!(sim::AbstractSimulation; kwargs...)
     load!(sim, Val{ext}(); kwargs...)
 end
 function save! end
+function save_parallel! end
 function vtkWriter end
 function default_attrib end
 function pvd_collection end
-export load!, save!, vtkWriter, default_attrib
+export load!, save!, save_parallel!, vtkWriter, default_attrib
 
 # default Plots functions
 function flood end

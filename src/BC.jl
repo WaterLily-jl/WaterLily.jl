@@ -5,8 +5,8 @@ Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
 function exitBC!(u,u⁰,Δt)
     N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux
+    exitR = slice(N.-2,N[1]-1,1,3)              # exit slice excluding ghosts
+    U = sum(@view(u[slice(N.-2,3,1,3),1]))/length(exitR) # inflow mass flux
     @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
     ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
@@ -17,12 +17,24 @@ Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+    @loop a[I] = a[CIj(j,I,N[j]-3)] over I ∈ slice(N,1,j)
+    @loop a[I] = a[CIj(j,I,N[j]-2)] over I ∈ slice(N,2,j)
+    @loop a[I] = a[CIj(j,I,3)] over I ∈ slice(N,N[j]-1,j)
+    @loop a[I] = a[CIj(j,I,4)] over I ∈ slice(N,N[j],j)
 end
 
 
 abstract type AbstractBC{D,T,Sf,Vf,Tf} end
+
+"""
+    pressureBC!(x, bc::AbstractBC)
+
+Hook called after the pressure Poisson solve in `project!`, with `x = flow.p`.
+The default is a no-op. Subtypes of `AbstractBC` (e.g. for parallel runs) can
+override this to exchange pressure ghost cells across MPI subdomain boundaries.
+"""
+pressureBC!(x, ::AbstractBC) = nothing
+pressureBC!(x, bc::AbstractBC, _) = pressureBC!(x, bc)  # default: ignore Poisson arg
 """
     BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Sf,Vf,Tf}
 
@@ -41,12 +53,53 @@ struct BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function BC(N::NTuple{D}, uBC; perdir=(), exitBC=false, mem=Array, T=Float32) where D
-        Ng = N .+ 2
+        Ng = N .+ 4
         Nd = (Ng..., D)
         σ, V, μ₀, μ₁ = zeros(T, Ng) |> mem, zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),exitBC,perdir)
         new{D,T,typeof(σ),typeof(μ₀),typeof(μ₁)}(V,μ₀,μ₁,σ,uBC,exitBC,perdir)
     end
+end
+
+"""
+    ParallelBC{D,T,Sf,Vf,Tf} <: AbstractBC{D,T,Sf,Vf,Tf}
+
+MPI-aware boundary condition for domain-decomposed WaterLily simulations.
+Shares all internal arrays with the original `BC` (no copies).
+
+Construct after building the simulation:
+
+    sim.bc = ParallelBC(sim.bc)          # niter=1: one solve + halo exchange
+    sim.bc = ParallelBC(sim.bc; niter=3) # Schwarz: 3 solve+exchange cycles
+
+`niter` controls the number of Schwarz pressure iterations per `project!` call.
+The MPI-aware `BC!`, `pressureBC!`, `residual!`, and `L₂` overrides are activated
+automatically by the `WaterLilyMPIExt` extension when `ImplicitGlobalGrid` and `MPI`
+are loaded.
+"""
+struct ParallelBC{D,T,Sf,Vf,Tf} <: AbstractBC{D,T,Sf,Vf,Tf}
+    V      :: Vf
+    μ₀     :: Vf
+    μ₁     :: Tf
+    σ      :: Sf
+    uBC    :: Union{NTuple{D,Number},Function}
+    exitBC :: Bool
+    perdir :: NTuple
+    niter  :: Int
+end
+
+"""
+    ParallelBC(bc::BC; niter=1)
+
+Wrap an existing `BC`, sharing all arrays (no copy).
+Requires `ImplicitGlobalGrid` and `MPI` to be loaded (activates `WaterLilyMPIExt`).
+"""
+function ParallelBC(bc::BC{D,T,Sf,Vf,Tf}; niter=1) where {D,T,Sf,Vf,Tf}
+    ParallelBC{D,T,Sf,Vf,Tf}(
+        bc.V, bc.μ₀, bc.μ₁, bc.σ,
+        bc.uBC, bc.exitBC, bc.perdir,
+        niter,
+    )
 end
 
 """
@@ -62,17 +115,24 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+            @loop a[I,i] = a[CIj(j,I,N[j]-3),i] over I ∈ slice(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,N[j]-2),i] over I ∈ slice(N,2,j)
+            @loop a[I,i] = a[CIj(j,I,3),i] over I ∈ slice(N,N[j]-1,j)
+            @loop a[I,i] = a[CIj(j,I,4),i] over I ∈ slice(N,N[j],j)
         else
             if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2)
+                for s ∈ (1,2,3)
                     @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
+                if !saveexit || i>1
+                    @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j]-1,j)
+                end
+                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)
             else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+2δ(j,I),i]-uBC(i,loc(i,I+2δ(j,I)),t) over I ∈ slice(N,1,j)
+                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,2,j)
+                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j]-1,j)
+                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-2δ(j,I),i]-uBC(i,loc(i,I-2δ(j,I)),t) over I ∈ slice(N,N[j],j)
             end
         end
     end
@@ -86,11 +146,11 @@ end
     return s/2
 end
 
-# Neumann BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+# Neumann BC Building block — with 2 ghost cells, full stencil works at boundary faces
+lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,3,j,3)
+upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j]-1,j,3)
 
 # Periodic BC Building block
 lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
+    Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,3,j,3)
+upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,3)] over I ∈ slice(N,N[j]-1,j,3)

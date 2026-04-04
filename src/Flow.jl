@@ -47,7 +47,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}} <: AbstractFlow{D,
     ν :: T # kinematic viscosity
     g :: Union{Function,Nothing} # acceleration field funciton
     function Flow(N::NTuple{D}, bc::AbstractBC; Δt=0.25, ν=0., g=nothing, uλ=nothing, mem=Array, T=Float32) where D
-        Ng = N .+ 2
+        Ng = N .+ 4
         Nd = (Ng..., D)
         isnothing(uλ) && (uλ = ic_function(bc.uBC))
         u = Array{T}(undef, Nd...) |> mem
@@ -80,6 +80,7 @@ function project!(a::Flow{n},b::AbstractPoisson,bc::AbstractBC,t; w=1) where n
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
+    pressureBC!(b.x, bc, b)  # hook for parallel: can iterate solve+halo
     for i ∈ 1:n  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
