@@ -95,7 +95,7 @@ Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _vector_ array on face `j` with size `dims`.
 """
 function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (4:dims[i]-2) : (3:dims[i]-1), N))
+    CartesianIndices(ntuple( i-> 3:dims[i]-1, N))
 end
 @inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(3:i-2),dims)...,1:N))
 @inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(3:i-2),size(u)[1:end-1]))
@@ -108,6 +108,20 @@ size_u(u) = splitn(size(u))
 L₂ norm of array `a` excluding ghosts.
 """
 L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+
+# ── Global reduction / halo hooks ────────────────────────────────────────────
+#
+# Serial no-ops that WaterLilyMPIExt overrides with MPI.Allreduce / halo exchange.
+# Using these in Poisson.jl, Flow.jl etc. eliminates the need for MPI-specific
+# overrides of pcg!, residual!, L₂, increment!, solver!, Vcycle!, CFL.
+
+using LinearAlgebra: ⋅
+global_dot(a, b)    = a ⋅ b
+global_sum(a)       = sum(a)
+global_length(r)    = length(r)
+global_min(a, b)    = min(a, b)
+scalar_halo!(x)     = nothing
+velocity_halo!(u)   = nothing
 
 """
     @inside <expr>
@@ -223,7 +237,7 @@ using StaticArrays
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 2.5 .- 0.5 .* δ(i,I).I)
+@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
@@ -256,7 +270,7 @@ Note: This routine works for any number of dimensions.
 """
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
-    x = x .+ 2.5f0; i = floor.(Int,x); y = x.-i
+    x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
     # CartesianIndices around x
     I = CartesianIndex(i...); R = I:I+oneunit(I)

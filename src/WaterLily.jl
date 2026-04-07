@@ -6,7 +6,8 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,@inside,inside,δ,apply!,loc,@log,set_backend,backend
+export L₂,@inside,inside,δ,apply!,loc,@log,set_backend,backend,
+       global_dot,global_sum,global_length,global_min,scalar_halo!,velocity_halo!
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
@@ -103,7 +104,9 @@ mutable struct Simulation <: AbstractSimulation
         bc = BC(dims,uBC;perdir,exitBC,T,mem)
         flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
         measure!(body,bc;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,bc.μ₀,flow.σ;perdir),bc)
+        Lp = copy(bc.μ₀)
+        wallBC_L!(Lp, perdir)
+        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,Lp,flow.σ;perdir),bc)
     end
 end
 
@@ -148,6 +151,8 @@ Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
 function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
     measure!(sim.body,sim.bc;t,ϵ=sim.ϵ)
+    sim.pois.levels[1].L .= sim.bc.μ₀
+    wallBC_L!(sim.pois.levels[1].L, sim.pois.perdir)
     update!(sim.pois)
 end
 

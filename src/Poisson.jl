@@ -90,15 +90,15 @@ Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
 function residual!(p::Poisson)
-    perBC!(p.x,p.perdir)
+    perBC!(p.x,p.perdir); scalar_halo!(p.x)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
-    s = sum(p.r)/length(inside(p.r))
+    s = global_sum(p.r)/global_length(inside(p.r))
     abs(s) <= 2eps(eltype(s)) && return
     @inside p.r[I] = p.r[I]-s
 end
 
 function increment!(p::Poisson)
-    perBC!(p.ϵ,p.perdir)
+    perBC!(p.ϵ,p.perdir); scalar_halo!(p.ϵ)
     @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)
 end
@@ -113,7 +113,6 @@ Note: This runs for general backends, but is _very_ slow to converge.
     increment!(p)
 end
 
-using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
 
@@ -124,18 +123,18 @@ Note: This runs for general backends and is the default smoother.
 function pcg!(p::Poisson{T};it=6) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
-    rho = r⋅z
+    rho = global_dot(r,z)
     abs(rho)<10eps(T) && return
     for i in 1:it
-        perBC!(ϵ,p.perdir)
+        perBC!(ϵ,p.perdir); scalar_halo!(ϵ)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/(z⋅ϵ)
+        alpha = rho/global_dot(z,ϵ)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
         i==it && return
         @inside z[I] = r[I]*p.iD[I]
-        rho2 = r⋅z
+        rho2 = global_dot(r,z)
         abs(rho2)<10eps(T) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
@@ -144,8 +143,20 @@ function pcg!(p::Poisson{T};it=6) where T
 end
 smooth!(p) = pcg!(p)
 
-L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
+L₂(p::Poisson) = global_dot(p.r, p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
+
+"""
+    pin_pressure!(x)
+
+Remove the mean of scalar field `x` over the interior cells.
+This pins the null-space mode of the all-Neumann Poisson operator
+so that the absolute pressure does not drift between time steps.
+"""
+function pin_pressure!(x)
+    s = global_sum(x)/global_length(inside(x))
+    @inside x[I] = x[I] - s
+end
 
 """
     solver!(A::Poisson;tol=1e-4,itmx=1e3)
@@ -167,6 +178,6 @@ function solver!(p::Poisson;tol=1e-4,itmx=1e3)
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end
-    perBC!(p.x,p.perdir)
+    perBC!(p.x,p.perdir); scalar_halo!(p.x)
     push!(p.n,nᵖ)
 end

@@ -2,16 +2,9 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     r .= zero(eltype(r))
     N,n = size_u(u)
     for i ∈ 1:n, j ∈ 1:n
-        # if it is periodic direction
-        tagper = (j in perdir)
-        # treatment for bottom boundary with BCs
-        lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
-        # inner cells
         @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
                r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
-        # treatment for upper boundary with BCs
-        upperBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
     end
 end
 
@@ -53,7 +46,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}} <: AbstractFlow{D,
         u = Array{T}(undef, Nd...) |> mem
         isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
         BC!(u, bc)
-        exitBC!(u,u,0.)
+        exitBC!(u,u,0)
         f, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
         new{D,T,typeof(p),typeof(u)}(u,copy(u),f,p,σ,T[Δt],T(ν),g)
     end
@@ -80,6 +73,7 @@ function project!(a::Flow{n},b::AbstractPoisson,bc::AbstractBC,t; w=1) where n
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
+    pin_pressure!(b.x)
     pressureBC!(b.x, bc, b)  # hook for parallel: can iterate solve+halo
     for i ∈ 1:n  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
@@ -114,7 +108,7 @@ scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
 function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
-    min(Δt_max,inv(maximum(a.σ)+5a.ν))
+    global_min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))

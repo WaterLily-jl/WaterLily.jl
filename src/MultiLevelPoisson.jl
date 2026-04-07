@@ -29,6 +29,7 @@ function restrictL!(a::AbstractArray{T},b;perdir=()) where T
         @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->3:n-2,Na))
     end
     BC!(a,zeros(SVector{n,T}),false,perdir)  # correct μ₀ @ boundaries
+    wallBC_L!(a, perdir)
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
@@ -94,6 +95,6 @@ function solver!(ml::MultiLevelPoisson;tol=1e-4,itmx=32)
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end
-    perBC!(p.x,p.perdir)
+    perBC!(p.x,p.perdir); scalar_halo!(p.x)
     push!(ml.n,nᵖ);
 end

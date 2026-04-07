@@ -33,7 +33,7 @@ Hook called after the pressure Poisson solve in `project!`, with `x = flow.p`.
 The default is a no-op. Subtypes of `AbstractBC` (e.g. for parallel runs) can
 override this to exchange pressure ghost cells across MPI subdomain boundaries.
 """
-pressureBC!(x, ::AbstractBC) = nothing
+pressureBC!(x, ::AbstractBC) = scalar_halo!(x)
 pressureBC!(x, bc::AbstractBC, _) = pressureBC!(x, bc)  # default: ignore Poisson arg
 """
     BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Sf,Vf,Tf}
@@ -121,7 +121,7 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
             @loop a[I,i] = a[CIj(j,I,4),i] over I ∈ slice(N,N[j],j)
         else
             if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2,3)
+                for s ∈ (1,2)
                     @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
                 end
                 if !saveexit || i>1
@@ -138,6 +138,21 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     end
 end
 
+"""
+    wallBC_L!(L, perdir=())
+
+Zero the Poisson conductivity `L` at physical (non-periodic) boundary faces.
+This decouples the boundary cell from the ghost cell, giving an implicit
+Neumann pressure BC (∂p/∂n = 0) at domain walls.
+"""
+function wallBC_L!(L, perdir=())
+    N, n = size_u(L)
+    for j in 1:n
+        j in perdir && continue
+        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, 3, j)
+    end
+end
+
 @fastmath @inline function μddn(I::CartesianIndex{np1},μ,f) where np1
     s = zero(eltype(f))
     for j ∈ 1:np1-1
@@ -146,11 +161,3 @@ end
     return s/2
 end
 
-# Neumann BC Building block — with 2 ghost cells, full stencil works at boundary faces
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,3,j,3)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j]-1,j,3)
-
-# Periodic BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,3,j,3)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,3)] over I ∈ slice(N,N[j]-1,j,3)
