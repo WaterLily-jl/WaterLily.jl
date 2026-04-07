@@ -101,7 +101,7 @@ Base.:-(a::AbstractBody) = SetBody(-,a,NoBody())
 Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
 
 # Measurements
-function measure(body::SetBody,x,t;fastd²=Inf)
+function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T 
     body.op(measure(body.a,x,t;fastd²),measure(body.b,x,t;fastd²)) # can't mapreduce within GPU kernel
 end
-measure(body::SetBody{typeof(-)},x,t;fastd²=Inf) = ((d,n,V) = measure(body.a,x,t;fastd²); (-d,-n,V))
+measure(body::SetBody{typeof(-)},x::AbstractVector{T},t;fastd²=T(Inf)) where T = ((d,n,V) = measure(body.a,x,t;fastd²); (-d,-n,V))

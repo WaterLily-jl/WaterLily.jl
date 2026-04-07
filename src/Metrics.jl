@@ -88,8 +88,8 @@ end
 
 BDIM-masked surface normal.
 """
-@inline function nds(body,x,t)
-    d,n,_ = measure(body,x,t,fastd²=1)
+@inline function nds(body,x::AbstractVector{T},t) where T
+    d,n,_ = measure(body,x,t,fastd²=one(T))
     n*WaterLily.kern(clamp(d,-1,1))
 end
 
