@@ -20,17 +20,19 @@ Queries the body geometry to fill the arrays:
 - `flow.μ₁`, First kernel moment scaled by the body normal
 - `flow.V`,  Body velocity
 
-at time `t` using an immersion kernel of size `ϵ`.
+at time `t` using an immersion kernel of size `ϵ`. The velocity is only filled within a narrow band
+of size `2+ϵ` around the body. This function also fills `flow.σ` with the signed distance function.
 
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
 function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=(2+ϵ)^2
+    measure_sdf!(a.σ, body, t; fastd²=d²) # measure separately to allow specialization
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
-        d[I] = sdf(body,loc(0,I,T),t,fastd²=d²)
         if d[I]^2<d²
             for i ∈ 1:N
                 dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T),t,fastd²=d²)
+                dᵢ = abs(dᵢ) ≤ 0.5 ? dᵢ : copysign(dᵢ,d[I]) # enforce sign consistency
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
                 for j ∈ 1:N
