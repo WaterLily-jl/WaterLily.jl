@@ -25,6 +25,7 @@ end
 
 
 abstract type AbstractBC{D,T,Sf,Vf,Tf} end
+exitBC!(u,u⁰,Δt,bc::AbstractBC) = exitBC!(u,u⁰,Δt)
 
 """
     pressureBC!(x, bc::AbstractBC)

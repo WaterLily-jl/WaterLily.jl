@@ -23,7 +23,7 @@ module WaterLilyMPIExt
 __precompile__(false)
 
 using WaterLily
-import WaterLily: @loop, measure!, wallBC_L!
+import WaterLily: @loop, measure!, wallBC_L!, exitBC!
 using ImplicitGlobalGrid
 using MPI
 using StaticArrays
@@ -83,58 +83,50 @@ function _get_mpi_bufs(::Type{T}, slab_shape::Tuple, dim::Int) where T
     end
 end
 
+function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
+    # Return a view of arr sliced to indices `r` in dimension `dim`, all others `:`.
+    colons = ntuple(i -> i == dim ? r : (:), ndims(arr))
+    @view arr[colons...]
+end
+
+# Pre-allocated request buffer (max 4 requests per dim exchange)
+const _mpi_reqs = MPI.Request[MPI.REQUEST_NULL for _ in 1:4]
+
 function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
-    g   = ImplicitGlobalGrid.global_grid()
-    nd  = _ndims_active()
-    N   = size(arr)
+    g    = ImplicitGlobalGrid.global_grid()
+    nd   = _ndims_active()
+    N    = size(arr)
     comm = _comm[]
     for dim in 1:nd
-        nleft  = g.neighbors[1, dim]   # MPI_PROC_NULL = -1 if no neighbour
+        nleft  = g.neighbors[1, dim]
         nright = g.neighbors[2, dim]
-        # Slab shape: two cells thick in dimension `dim` (halowidth=2)
+        (nleft < 0 && nright < 0) && continue
+
         slab_shape = ntuple(i -> i == dim ? 2 : N[i], ndims(arr))
-        slab_CI    = CartesianIndices(slab_shape)
         send_left, recv_left, send_right, recv_right = _get_mpi_bufs(T, slab_shape, dim)
-        fill!(send_left, zero(T)); fill!(send_right, zero(T))
-        fill!(recv_left, zero(T)); fill!(recv_right, zero(T))
-        # Fill send buffers: indices 3,4 (left interior) and N[dim]-3,N[dim]-2 (right interior)
-        for I in slab_CI
-            k = I[dim]  # 1 or 2
-            J_left  = CartesianIndex(ntuple(i -> i == dim ? 2+k          : I[i], ndims(arr)))
-            J_right = CartesianIndex(ntuple(i -> i == dim ? N[dim]-4+k   : I[i], ndims(arr)))
-            send_left[I]  = arr[J_left]
-            send_right[I] = arr[J_right]
-        end
-        reqs = MPI.Request[]
-        # Send right interior → right neighbour; recv from left neighbour into left ghost
+
+        # Pack send buffers using contiguous slab views
+        copyto!(send_left,  _slab(arr, dim, 3:4))
+        copyto!(send_right, _slab(arr, dim, N[dim]-3:N[dim]-2))
+
+        # Post all sends/recvs
+        nreqs = 0
         if nright >= 0
-            push!(reqs, MPI.Isend(send_right, comm; dest=nright, tag=dim * 10))
+            nreqs += 1; _mpi_reqs[nreqs] = MPI.Isend(send_right, comm; dest=nright, tag=dim*10)
+            nreqs += 1; _mpi_reqs[nreqs] = MPI.Irecv!(recv_right, comm; source=nright, tag=dim*10+1)
         end
         if nleft >= 0
-            push!(reqs, MPI.Irecv!(recv_left, comm; source=nleft, tag=dim * 10))
+            nreqs += 1; _mpi_reqs[nreqs] = MPI.Isend(send_left, comm; dest=nleft, tag=dim*10+1)
+            nreqs += 1; _mpi_reqs[nreqs] = MPI.Irecv!(recv_left, comm; source=nleft, tag=dim*10)
         end
-        # Send left interior → left neighbour; recv from right neighbour into right ghost
+        MPI.Waitall(MPI.RequestSet(_mpi_reqs[1:nreqs]))
+
+        # Unpack recv buffers
         if nleft >= 0
-            push!(reqs, MPI.Isend(send_left, comm; dest=nleft, tag=dim * 10 + 1))
+            copyto!(_slab(arr, dim, 1:2), recv_left)
         end
         if nright >= 0
-            push!(reqs, MPI.Irecv!(recv_right, comm; source=nright, tag=dim * 10 + 1))
-        end
-        MPI.Waitall(reqs)
-        # Copy received data into ghost cells (indices 1,2 and N-1,N)
-        if nleft >= 0
-            for I in slab_CI
-                k = I[dim]
-                J = CartesianIndex(ntuple(i -> i == dim ? k : I[i], ndims(arr)))
-                arr[J] = recv_left[I]
-            end
-        end
-        if nright >= 0
-            for I in slab_CI
-                k = I[dim]
-                J = CartesianIndex(ntuple(i -> i == dim ? N[dim]-2+k : I[i], ndims(arr)))
-                arr[J] = recv_right[I]
-            end
+            copyto!(_slab(arr, dim, N[dim]-1:N[dim]), recv_right)
         end
     end
 end
@@ -210,6 +202,47 @@ end
 
 function WaterLily.BC!(u, bc::WaterLily.ParallelBC, t=0)
     WaterLily.BC!(u, bc.uBC, bc.exitBC, bc.perdir, t)
+    _velocity_halo!(u)
+end
+
+# ── MPI-aware exitBC! ────────────────────────────────────────────────────────
+#
+# Serial exitBC! applies convective exit at local N[1]-1 and computes inflow
+# from local index 3.  In MPI mode only the rightmost-x rank has the real exit,
+# and only the leftmost-x rank has the real inflow.  Global reductions are needed
+# for the mean inflow velocity U and the mass-flux correction.
+
+function WaterLily.exitBC!(u, u⁰, Δt, ::WaterLily.ParallelBC)
+    g    = ImplicitGlobalGrid.global_grid()
+    comm = _comm[]
+    N, _ = WaterLily.size_u(u)
+
+    is_inflow  = g.neighbors[1, 1] < 0
+    is_exit    = g.neighbors[2, 1] < 0
+
+    # All ranks participate in Allreduce for exit face area
+    local_exit_len = is_exit ? length(WaterLily.slice(N .- 2, N[1] - 1, 1, 3)) : 0
+    global_exit_len = MPI.Allreduce(local_exit_len, MPI.SUM, comm)
+
+    # All ranks participate in Allreduce for mean inflow velocity
+    local_inflow_sum = is_inflow ? sum(@view(u[WaterLily.slice(N .- 2, 3, 1, 3), 1])) : zero(eltype(u))
+    U = MPI.Allreduce(local_inflow_sum, MPI.SUM, comm) / global_exit_len
+
+    # Convective exit on rightmost-x ranks only
+    if is_exit
+        exitR = WaterLily.slice(N .- 2, N[1] - 1, 1, 3)
+        @loop u[I, 1] = u⁰[I, 1] - U * Δt * (u⁰[I, 1] - u⁰[I - WaterLily.δ(1, I), 1]) over I ∈ exitR
+    end
+
+    # All ranks participate in Allreduce for mass flux correction
+    local_exit_sum = is_exit ? sum(@view(u[WaterLily.slice(N .- 2, N[1] - 1, 1, 3), 1])) : zero(eltype(u))
+    global_exit_sum = MPI.Allreduce(local_exit_sum, MPI.SUM, comm)
+    ∮u = global_exit_sum / global_exit_len - U
+    if is_exit
+        exitR = WaterLily.slice(N .- 2, N[1] - 1, 1, 3)
+        @loop u[I, 1] -= ∮u over I ∈ exitR
+    end
+
     _velocity_halo!(u)
 end
 

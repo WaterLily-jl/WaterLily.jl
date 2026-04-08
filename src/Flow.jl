@@ -69,7 +69,7 @@ function project!(a::Flow{n},b::AbstractPoisson,bc::AbstractBC,t; w=1) where n
     BDIM!(a,bc)
     w != 1 && scale_u!(a,w)
     BC!(a.u,bc,t)
-    bc.exitBC && w != 0.5 && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
+    bc.exitBC && w != 0.5 && exitBC!(a.u,a.u⁰,a.Δt[end],bc) # convective exit
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
