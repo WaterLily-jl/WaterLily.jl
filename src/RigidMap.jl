@@ -25,18 +25,21 @@ for n in 1:10
 end
 ```
 """
-struct RigidMap{A<:AbstractVector,R} <: Function
+struct RigidMap{A<:AbstractVector,R,M} <: Function
     x₀ :: A   # center of translation
     θ  :: R   # rotation (angle in 2D, euler angles in 3D)
     xₚ :: A   # rotation offset
     V  :: A   # linear velocity of the center
     ω  :: R   # angular velocity (scalar in 2D, vector in 3D)
+    R̂  :: M   # rotation matrix (precomputed for efficiency)
 end
-RigidMap(x₀::SVector,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x₀, θ, xₚ, V, ω)
+RigidMap(x₀::SVector,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x₀, θ, xₚ, V, ω, rotation(θ))
 
 # this is the function map(x,t) AND derivative(t->map(x,t),t)
-(map::RigidMap)(x::SVector,t=0) = rotation(map.θ)*(x-map.x₀-map.xₚ)+map.xₚ
-(map::RigidMap)(x::SVector,::ForwardDiff.Dual{Tag}) where Tag = Dual{Tag}.(map(x),-rotation(map.θ)*(map.V+map.ω×(x-map.x₀-map.xₚ)))
+(m::RigidMap)(x::SVector,t=0) = m.R̂*(x-m.x₀-m.xₚ)+m.xₚ
+(m::RigidMap)(x::SVector,t::ForwardDiff.Dual{Tag}) where Tag = Dual{Tag}.(m(x),map_velocity(m, x, t))
+map_jacobian(m::RigidMap, x, t) = m.R̂
+map_velocity(m::RigidMap, x, t) = -m.R̂*(m.V + m.ω×(x-m.x₀-m.xₚ))
 
 # cross product in 2D and rotation matrix in 2D and 3D
 import WaterLily: ×
@@ -45,7 +48,9 @@ rotation(θ::T) where T = SA{T}[cos(θ) sin(θ); -sin(θ) cos(θ)]
 rotation(θ::SVector{3,T}) where T = SA{T}[cos(θ[3])*cos(θ[2]) cos(θ[3])*sin(θ[2])*sin(θ[1])+sin(θ[3])*cos(θ[1]) -cos(θ[3])*sin(θ[2])*cos(θ[1])+sin(θ[3])*sin(θ[1]);
                                          -sin(θ[3])*cos(θ[2]) -sin(θ[3])*sin(θ[2])*sin(θ[1])+cos(θ[3])*cos(θ[1]) sin(θ[3])*sin(θ[2])*cos(θ[1])+cos(θ[3])*sin(θ[1]);
                                                 sin(θ[2])                         -cos(θ[2])*sin(θ[1])                               cos(θ[2])*cos(θ[1])]
-import ConstructionBase: setproperties
+
+import ConstructionBase: setproperties, constructorof
+constructorof(::Type{<:RigidMap}) = (x₀,θ,xₚ,V,ω,_) -> RigidMap(x₀,θ;xₚ,V,ω) # force precomputation of R̂
 setmap(body::AbstractBody; kwargs...) = setproperties(body,map=setproperties(body.map; kwargs...))
 setmap(body::SetBody; kwargs...) = SetBody(body.op,setmap(body.a; kwargs...),setmap(body.b; kwargs...))
 setmap(body::NoBody; kwargs...) = NoBody()
