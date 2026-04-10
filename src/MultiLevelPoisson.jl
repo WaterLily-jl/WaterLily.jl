@@ -23,12 +23,12 @@ function restrictML(b::Poisson)
     restrictL!(aL,b.L,perdir=b.perdir)
     Poisson(ax,aL,copy(ax);b.perdir)
 end
-function restrictL!(a::AbstractArray{T},b;perdir=()) where T
+function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
         @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
-    BC!(a,zeros(SVector{n,T}),false,perdir)  # correct μ₀ @ boundaries
+    BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
