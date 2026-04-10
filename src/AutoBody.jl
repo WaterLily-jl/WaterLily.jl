@@ -28,21 +28,13 @@ The velocity is determined _solely_ from the optional `map` function.
 Skips the `n,V` calculation when `d²>fastd²`.
 """
 function measure(body::AutoBody,x,t;fastd²=Inf)
-    # eval d=f(x,t), and n̂ = ∇f
     d = sdf(body,x,t)
-    d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
-    n = ForwardDiff.gradient(x->sdf(body,x,t), x)
-    any(isnan.(n)) && return (d,zero(x),zero(x))
-
-    # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
-    #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
-    m = √sum(abs2,n); d /= m; n /= m
-
-    # The velocity depends on the material change of ξ=m(x,t):
-    #   Dm/Dt=0 → ṁ + (dm/dx)ẋ = 0 ∴  ẋ =-(dm/dx)\ṁ
-    J = ForwardDiff.jacobian(x->body.map(x,t), x)
-    dot = ForwardDiff.derivative(t->body.map(x,t), t)
-    return (d,n,-J\dot)
+    d^2>fastd² && return (d,zero(x),zero(x))
+    n = ForwardDiff.gradient(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
+    any(isnan, n) && return (d,zero(x),zero(x))               # handle non-diff'able points
+    J = ForwardDiff.jacobian(x->body.map(x,t), x)             # for mapping n,V to x-frame
+    n = J'n; m = √sum(abs2,n); d /= m; n /= m                 # chain rule then normalise
+    return (d, n, -J\ForwardDiff.derivative(t->body.map(x,t), t))
 end
 
 using LinearAlgebra: tr
