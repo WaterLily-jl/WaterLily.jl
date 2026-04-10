@@ -33,4 +33,9 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
     r = run(b)
     println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+
+    b = @benchmarkable measure!($sim) samples=100; tune!(b) # check 100 times
+    r = run(b)
+    println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
+    @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
 end
