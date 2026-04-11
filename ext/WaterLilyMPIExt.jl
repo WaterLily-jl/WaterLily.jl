@@ -11,11 +11,16 @@ in serial.  This extension overrides them with MPI.Allreduce and halo
 exchange, eliminating the need for MPI-specific overrides of pcg!,
 residual!, L₂, increment!, solver!, Vcycle!, CFL, and pin_pressure!.
 
+The N+4 grid layout is symmetric: BC! and halo exchange both operate on
+indices 1,2 (left) and M-1,M (right).  No save/restore logic is needed.
+
 Functions still overridden here (beyond hooks):
   BC!         — serial BC! + velocity halo exchange
-  wallBC_L!   — skip zeroing at MPI-internal left boundaries + halo on L
+  wallBC_L!   — zero L at physical walls only (skip MPI-internal) + halo on L
   measure!    — halo exchange on μ₀, V, μ₁
+  exitBC!     — global reductions for inflow/outflow mass flux
   update!     — halo exchange on coarse L after restriction
+  divisible   — stricter coarsening threshold (N>8) for multigrid
 """
 module WaterLilyMPIExt
 
@@ -27,7 +32,6 @@ import WaterLily: @loop, measure!, wallBC_L!, exitBC!
 using ImplicitGlobalGrid
 using MPI
 using StaticArrays
-using LinearAlgebra: ⋅
 
 # ── Communicator ──────────────────────────────────────────────────────────────
 
@@ -173,7 +177,7 @@ end
 
 # ── Global reduction / halo hooks ────────────────────────────────────────────
 
-WaterLily.global_dot(a, b)    = MPI.Allreduce(a ⋅ b, MPI.SUM, _comm[])
+WaterLily.global_dot(a, b)    = MPI.Allreduce(sum(@inbounds(a[I]*b[I]) for I ∈ WaterLily.inside(a)), MPI.SUM, _comm[])
 WaterLily.global_sum(a)       = MPI.Allreduce(sum(a), MPI.SUM, _comm[])
 WaterLily.global_length(r)    = MPI.Allreduce(length(r), MPI.SUM, _comm[])
 WaterLily.global_min(a, b)    = MPI.Allreduce(min(a, b), MPI.MIN, _comm[])
@@ -250,12 +254,15 @@ end
 
 function WaterLily.wallBC_L!(L, perdir=())
     g  = ImplicitGlobalGrid.global_grid()
-    nd = _ndims_active()
     N, n = WaterLily.size_u(L)
     for j in 1:n
         j in perdir && continue
-        g.neighbors[1, j] >= 0 && continue   # MPI-internal left: skip zeroing
-        @loop L[I,j] = zero(eltype(L)) over I ∈ WaterLily.slice(N, 3, j)
+        if g.neighbors[1, j] < 0  # physical left wall
+            @loop L[I,j] = zero(eltype(L)) over I ∈ WaterLily.slice(N, 3, j)
+        end
+        if g.neighbors[2, j] < 0  # physical right wall
+            @loop L[I,j] = zero(eltype(L)) over I ∈ WaterLily.slice(N, N[j]-1, j)
+        end
     end
     _velocity_halo!(L)
 end
@@ -267,7 +274,7 @@ function WaterLily.update!(ml::WaterLily.MultiLevelPoisson)
     for l in 2:length(ml.levels)
         WaterLily.restrictL!(ml.levels[l].L, ml.levels[l-1].L,
                              perdir=ml.levels[l-1].perdir)
-        _velocity_halo!(ml.levels[l].L)
+        # Note: restrictL! calls wallBC_L! which already does _velocity_halo!
         WaterLily.update!(ml.levels[l])
     end
 end

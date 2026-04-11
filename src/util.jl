@@ -115,8 +115,7 @@ L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 # Using these in Poisson.jl, Flow.jl etc. eliminates the need for MPI-specific
 # overrides of pcg!, residual!, L₂, increment!, solver!, Vcycle!, CFL.
 
-using LinearAlgebra: ⋅
-global_dot(a, b)    = a ⋅ b
+global_dot(a, b)    = sum(@inbounds(a[I]*b[I]) for I ∈ inside(a))
 global_sum(a)       = sum(a)
 global_length(r)    = length(r)
 global_min(a, b)    = min(a, b)
