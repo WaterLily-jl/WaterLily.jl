@@ -150,7 +150,8 @@ function wallBC_L!(L, perdir=())
     N, n = size_u(L)
     for j in 1:n
         j in perdir && continue
-        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, 3, j)
+        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, 3, j)       # left wall
+        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, N[j]-1, j)  # right wall
     end
 end
 
