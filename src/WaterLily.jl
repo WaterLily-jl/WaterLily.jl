@@ -19,11 +19,12 @@ export AbstractBC,BC,BC!,pressureBC!,ParallelBC
 """
     global_offset(Val(N), T=Float32) → SVector{N,T}
 
-Return the global coordinate offset for this MPI rank (requires `init_global_grid`
-to have been called). Implemented by `WaterLilyMPIExt` when `ImplicitGlobalGrid`
-and `MPI` are loaded.
+Return the global coordinate offset for this MPI rank.  Serial default returns
+zero.  Overridden by `WaterLilyMPIExt` to return the rank-local origin in global
+index space (requires `init_global_grid` to have been called first).
 """
-function global_offset end
+global_offset(::Val{N}, ::Type{T}=Float32) where {N,T} = zero(SVector{N,T})
+global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
 
 """
     set_comm!(comm)
@@ -33,7 +34,25 @@ Implemented by `WaterLilyMPIExt` when `ImplicitGlobalGrid` and `MPI` are loaded.
 """
 function set_comm! end
 
-export global_offset, set_comm!
+"""
+    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
+
+Initialize MPI domain decomposition for WaterLily.  Determines the optimal MPI
+topology, computes local subdomain dimensions, initializes ImplicitGlobalGrid,
+and sets the communicator.  Returns the local interior dimensions, rank ID, and
+MPI communicator.  Implemented by `WaterLilyMPIExt`.
+"""
+function init_waterlily_mpi end
+
+"""
+    maybe_parallel(bc) → bc or ParallelBC(bc)
+
+Identity in serial.  Overridden by `WaterLilyMPIExt` to wrap `BC` in `ParallelBC`
+so that MPI-aware dispatches are activated automatically.
+"""
+maybe_parallel(bc) = bc
+
+export global_offset, set_comm!, init_waterlily_mpi
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
@@ -102,6 +121,7 @@ mutable struct Simulation <: AbstractSimulation
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
         bc = BC(dims,uBC;perdir,exitBC,T,mem)
+        bc = maybe_parallel(bc)
         flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
         measure!(body,bc;ϵ)
         Lp = copy(bc.μ₀)

@@ -50,7 +50,69 @@ function WaterLily.global_offset(::Val{N}, ::Type{T}=Float32) where {N,T}
     g = ImplicitGlobalGrid.global_grid()
     SVector{N,T}(ntuple(d -> T(g.coords[d] * (g.nxyz[d] - g.overlaps[d])), N))
 end
-WaterLily.global_offset(N::Int, T::Type=Float32) = WaterLily.global_offset(Val(N), T)
+
+# ── MPI initialization ───────────────────────────────────────────────────────
+
+"""
+    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
+
+Initialize MPI domain decomposition for WaterLily.
+
+1. Determines the optimal MPI topology via `MPI.Dims_create`
+2. Computes local subdomain dimensions (`global_dims .÷ topology`)
+3. Initializes ImplicitGlobalGrid with the correct overlaps and halowidths
+4. Sets the MPI communicator for WaterLily's global reductions
+
+Returns `(local_dims::NTuple{N,Int}, rank::Int, comm::MPI.Comm)`.
+
+The `Simulation` constructor automatically wraps `BC` in `ParallelBC` and
+`AutoBody` automatically applies the global coordinate offset, so parallel
+user scripts need only differ from serial by calling this function and using
+`local_dims` instead of `global_dims` in the `Simulation` constructor.
+"""
+function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
+    MPI.Initialized() || MPI.Init()
+    nprocs = MPI.Comm_size(MPI.COMM_WORLD)
+
+    # Optimal MPI topology for N active dimensions
+    mpi_dims = Tuple(Int.(MPI.Dims_create(nprocs, zeros(Int, N))))
+
+    # Local interior dims
+    local_dims = global_dims .÷ mpi_dims
+    all(global_dims .== local_dims .* mpi_dims) ||
+        error("Global dims $global_dims not evenly divisible by MPI topology " *
+              "$mpi_dims with $nprocs ranks")
+
+    # Pad to 3D for IGG (which always expects 3 dimensions)
+    igg_local = ntuple(d -> d <= N ? local_dims[d] + 4 : 1, 3)
+    igg_mpi   = ntuple(d -> d <= N ? mpi_dims[d] : 1, 3)
+    igg_per   = ntuple(d -> d <= N && d in perdir ? 1 : 0, 3)
+
+    me, dims, np, coords, comm = init_global_grid(
+        igg_local...;
+        dimx = igg_mpi[1], dimy = igg_mpi[2], dimz = igg_mpi[3],
+        overlaps = (4, 4, 4),
+        halowidths = (2, 2, 2),
+        periodx = igg_per[1], periody = igg_per[2], periodz = igg_per[3],
+        init_MPI = false,
+    )
+
+    _comm[] = comm
+
+    if me == 0
+        topo = join(string.(dims[1:N]), "×")
+        loc  = join(string.(local_dims), "×")
+        glob = join(string.(global_dims), "×")
+        @info "WaterLily MPI: $(np) ranks, topology=$(topo), " *
+              "local=$(loc), global=$(glob)"
+    end
+
+    return local_dims, me, comm
+end
+
+# ── Auto-ParallelBC ──────────────────────────────────────────────────────────
+
+WaterLily.maybe_parallel(bc::WaterLily.BC) = WaterLily.ParallelBC(bc)
 
 # ── Dimension helpers ─────────────────────────────────────────────────────────
 
