@@ -115,8 +115,17 @@ L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 # Using these in Poisson.jl, Flow.jl etc. eliminates the need for MPI-specific
 # overrides of pcg!, residual!, L₂, increment!, solver!, Vcycle!, CFL.
 
-global_dot(a, b)    = sum(@inbounds(a[I]*b[I]) for I ∈ inside(a))
-global_sum(a)       = sum(a)
+using LinearAlgebra: ⋅
+function dot_R(a, b, R)
+    length(R) == length(a) && return a⋅b
+    return @views a[R]⋅b[R]
+end
+function sum_R(a, R)
+    length(R) == length(a) && return sum(a)
+    return @views sum(a[R])
+end
+global_dot(a, b; R=inside(a)) = dot_R(a, b, R)
+global_sum(a; R=inside(a)) = sum_R(a, R)
 global_length(r)    = length(r)
 global_min(a, b)    = min(a, b)
 scalar_halo!(x)     = nothing

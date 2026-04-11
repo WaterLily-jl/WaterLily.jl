@@ -1,7 +1,7 @@
 module WaterLilyCUDAExt
 
 using CUDA, WaterLily
-import WaterLily: L₂
+import WaterLily: L₂, global_dot
 
 """
     __init__()

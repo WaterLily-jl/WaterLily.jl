@@ -239,12 +239,12 @@ end
 
 # ── Global reduction / halo hooks ────────────────────────────────────────────
 
-WaterLily.global_dot(a, b)    = MPI.Allreduce(sum(@inbounds(a[I]*b[I]) for I ∈ WaterLily.inside(a)), MPI.SUM, _comm[])
-WaterLily.global_sum(a)       = MPI.Allreduce(sum(a), MPI.SUM, _comm[])
-WaterLily.global_length(r)    = MPI.Allreduce(length(r), MPI.SUM, _comm[])
-WaterLily.global_min(a, b)    = MPI.Allreduce(min(a, b), MPI.MIN, _comm[])
-WaterLily.scalar_halo!(x)     = _scalar_halo!(x)
-WaterLily.velocity_halo!(u)   = _velocity_halo!(u)
+WaterLily.global_dot(a, b; R=inside(a)) = MPI.Allreduce(WaterLily.dot_R(a, b, R), MPI.SUM, _comm[])
+WaterLily.global_sum(a; R=inside(a)) = MPI.Allreduce(WaterLily.sum_R(a, R), MPI.SUM, _comm[])
+WaterLily.global_length(r) = MPI.Allreduce(length(r), MPI.SUM, _comm[])
+WaterLily.global_min(a, b) = MPI.Allreduce(min(a, b), MPI.MIN, _comm[])
+WaterLily.scalar_halo!(x) = _scalar_halo!(x)
+WaterLily.velocity_halo!(u) = _velocity_halo!(u)
 
 # ── MPI-aware measure! ────────────────────────────────────────────────────────
 

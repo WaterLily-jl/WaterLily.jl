@@ -154,8 +154,7 @@ This pins the null-space mode of the all-Neumann Poisson operator
 so that the absolute pressure does not drift between time steps.
 """
 function pin_pressure!(x)
-    s = sum(@inbounds(x[I]) for I ∈ inside(x))
-    s = global_sum(s)/global_length(inside(x))
+    s = global_sum(x)/global_length(inside(x))
     @inside x[I] = x[I] - s
 end
 
