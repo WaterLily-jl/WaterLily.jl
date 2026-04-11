@@ -44,8 +44,9 @@ function measure!(body::AbstractBody,bc::AbstractBC{N,T};t=zero(T),ϵ=1) where {
         end
     end
     @loop fill!(bc.μ₀,bc.μ₁,bc.V,bc.σ,I) over I ∈ inside(bc.σ)
-    BC!(bc.μ₀,zeros(SVector{N,T}),false,bc.perdir) # BC on μ₀, don't fill normal component yet
-    BC!(bc.V,zeros(SVector{N,T}),bc.exitBC,bc.perdir)
+    BC!(bc.μ₀,zeros(SVector{N,T}),false,bc.perdir) # BC on μ₀ (includes velocity_halo!)
+    BC!(bc.V,zeros(SVector{N,T}),bc.exitBC,bc.perdir) # BC on V (includes velocity_halo!)
+    velocity_halo!(reshape(bc.μ₁, size(bc.σ)..., :)) # halo on μ₁ tensor (no-op in serial)
 end
 
 # Convolution kernel and its moments

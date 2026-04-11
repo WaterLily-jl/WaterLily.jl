@@ -25,14 +25,14 @@ end
 
 
 abstract type AbstractBC{D,T,Sf,Vf,Tf} end
-exitBC!(u,u⁰,Δt,bc::AbstractBC) = exitBC!(u,u⁰,Δt)
+exitBC!(u,u⁰,Δt,::AbstractBC) = exitBC!(u,u⁰,Δt)
 
 """
     pressureBC!(x, bc::AbstractBC)
 
 Hook called after the pressure Poisson solve in `project!`, with `x = flow.p`.
-The default is a no-op. Subtypes of `AbstractBC` (e.g. for parallel runs) can
-override this to exchange pressure ghost cells across MPI subdomain boundaries.
+Calls `scalar_halo!(x)` which is a no-op in serial and exchanges pressure
+ghost cells across MPI subdomain boundaries when the MPI extension is loaded.
 """
 pressureBC!(x, ::AbstractBC) = scalar_halo!(x)
 pressureBC!(x, bc::AbstractBC, _) = pressureBC!(x, bc)  # default: ignore Poisson arg
@@ -60,47 +60,6 @@ struct BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}
         BC!(μ₀,ntuple(zero, D),exitBC,perdir)
         new{D,T,typeof(σ),typeof(μ₀),typeof(μ₁)}(V,μ₀,μ₁,σ,uBC,exitBC,perdir)
     end
-end
-
-"""
-    ParallelBC{D,T,Sf,Vf,Tf} <: AbstractBC{D,T,Sf,Vf,Tf}
-
-MPI-aware boundary condition for domain-decomposed WaterLily simulations.
-Shares all internal arrays with the original `BC` (no copies).
-
-Construct after building the simulation:
-
-    sim.bc = ParallelBC(sim.bc)          # niter=1: one solve + halo exchange
-    sim.bc = ParallelBC(sim.bc; niter=3) # Schwarz: 3 solve+exchange cycles
-
-`niter` controls the number of Schwarz pressure iterations per `project!` call.
-The MPI-aware `BC!`, `pressureBC!`, `residual!`, and `L₂` overrides are activated
-automatically by the `WaterLilyMPIExt` extension when `ImplicitGlobalGrid` and `MPI`
-are loaded.
-"""
-struct ParallelBC{D,T,Sf,Vf,Tf} <: AbstractBC{D,T,Sf,Vf,Tf}
-    V      :: Vf
-    μ₀     :: Vf
-    μ₁     :: Tf
-    σ      :: Sf
-    uBC    :: Union{NTuple{D,Number},Function}
-    exitBC :: Bool
-    perdir :: NTuple
-    niter  :: Int
-end
-
-"""
-    ParallelBC(bc::BC; niter=1)
-
-Wrap an existing `BC`, sharing all arrays (no copy).
-Requires `ImplicitGlobalGrid` and `MPI` to be loaded (activates `WaterLilyMPIExt`).
-"""
-function ParallelBC(bc::BC{D,T,Sf,Vf,Tf}; niter=1) where {D,T,Sf,Vf,Tf}
-    ParallelBC{D,T,Sf,Vf,Tf}(
-        bc.V, bc.μ₀, bc.μ₁, bc.σ,
-        bc.uBC, bc.exitBC, bc.perdir,
-        niter,
-    )
 end
 
 """
@@ -137,6 +96,7 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
             end
         end
     end
+    velocity_halo!(a)
 end
 
 """

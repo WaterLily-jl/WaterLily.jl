@@ -13,7 +13,7 @@ using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
 
 include("BC.jl")
-export AbstractBC,BC,BC!,pressureBC!,ParallelBC
+export AbstractBC,BC,BC!,pressureBC!
 
 # ── MPI parallel interface (implemented by WaterLilyMPIExt) ───────────────────
 """
@@ -43,14 +43,6 @@ and sets the communicator.  Returns the local interior dimensions, rank ID, and
 MPI communicator.  Implemented by `WaterLilyMPIExt`.
 """
 function init_waterlily_mpi end
-
-"""
-    maybe_parallel(bc) → bc or ParallelBC(bc)
-
-Identity in serial.  Overridden by `WaterLilyMPIExt` to wrap `BC` in `ParallelBC`
-so that MPI-aware dispatches are activated automatically.
-"""
-maybe_parallel(bc) = bc
 
 export global_offset, set_comm!, init_waterlily_mpi
 
@@ -121,7 +113,6 @@ mutable struct Simulation <: AbstractSimulation
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
         bc = BC(dims,uBC;perdir,exitBC,T,mem)
-        bc = maybe_parallel(bc)
         flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
         measure!(body,bc;ϵ)
         Lp = copy(bc.μ₀)

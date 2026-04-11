@@ -8,18 +8,13 @@ and boundary conditions at MPI-subdomain interfaces.
 The serial WaterLily code uses hook functions (global_dot, global_sum,
 global_length, global_min, scalar_halo!, velocity_halo!) that are no-ops
 in serial.  This extension overrides them with MPI.Allreduce and halo
-exchange, eliminating the need for MPI-specific overrides of pcg!,
-residual!, L₂, increment!, solver!, Vcycle!, CFL, and pin_pressure!.
-
-The N+4 grid layout is symmetric: BC! and halo exchange both operate on
-indices 1,2 (left) and M-1,M (right).  No save/restore logic is needed.
+exchange.  The serial BC!, measure!, pressureBC!, and Poisson solver
+already call these hooks, so no MPI-specific overrides are needed for
+them.
 
 Functions still overridden here (beyond hooks):
-  BC!         — serial BC! + velocity halo exchange
   wallBC_L!   — zero L at physical walls only (skip MPI-internal) + halo on L
-  measure!    — halo exchange on μ₀, V, μ₁
   exitBC!     — global reductions for inflow/outflow mass flux
-  update!     — halo exchange on coarse L after restriction
   divisible   — stricter coarsening threshold (N>8) for multigrid
 """
 module WaterLilyMPIExt
@@ -28,7 +23,7 @@ module WaterLilyMPIExt
 __precompile__(false)
 
 using WaterLily
-import WaterLily: @loop, measure!, wallBC_L!, exitBC!
+import WaterLily: @loop, wallBC_L!, exitBC!
 using ImplicitGlobalGrid
 using MPI
 using StaticArrays
@@ -65,10 +60,10 @@ Initialize MPI domain decomposition for WaterLily.
 
 Returns `(local_dims::NTuple{N,Int}, rank::Int, comm::MPI.Comm)`.
 
-The `Simulation` constructor automatically wraps `BC` in `ParallelBC` and
-`AutoBody` automatically applies the global coordinate offset, so parallel
-user scripts need only differ from serial by calling this function and using
-`local_dims` instead of `global_dims` in the `Simulation` constructor.
+`AutoBody` automatically applies the global coordinate offset and the serial
+hook functions (velocity_halo!, scalar_halo!, global_dot, etc.) are overridden
+by this extension, so parallel user scripts need only differ from serial by
+calling this function and using `local_dims` in the `Simulation` constructor.
 """
 function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     MPI.Initialized() || MPI.Init()
@@ -109,10 +104,6 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
 
     return local_dims, me, comm
 end
-
-# ── Auto-ParallelBC ──────────────────────────────────────────────────────────
-
-WaterLily.maybe_parallel(bc::WaterLily.BC) = WaterLily.ParallelBC(bc)
 
 # ── Dimension helpers ─────────────────────────────────────────────────────────
 
@@ -246,31 +237,6 @@ WaterLily.global_min(a, b) = MPI.Allreduce(min(a, b), MPI.MIN, _comm[])
 WaterLily.scalar_halo!(x) = _scalar_halo!(x)
 WaterLily.velocity_halo!(u) = _velocity_halo!(u)
 
-# ── MPI-aware measure! ────────────────────────────────────────────────────────
-
-function WaterLily.measure!(::WaterLily.NoBody, bc::WaterLily.ParallelBC; kwargs...)
-    _velocity_halo!(bc.μ₀)
-end
-
-function WaterLily.measure!(body::WaterLily.AbstractBody, bc::WaterLily.ParallelBC;
-                              t=zero(eltype(bc.σ)), ϵ=1, kwargs...)
-    invoke(WaterLily.measure!,
-           Tuple{WaterLily.AbstractBody, WaterLily.AbstractBC},
-           body, bc; t, ϵ, kwargs...)
-    _velocity_halo!(bc.μ₀)
-    _velocity_halo!(bc.V)
-    nd = _ndims_active()
-    μ₁_flat = reshape(bc.μ₁, size(bc.μ₁)[1:nd]..., :)
-    _velocity_halo!(μ₁_flat)
-end
-
-# ── MPI-aware BC! ─────────────────────────────────────────────────────────────
-
-function WaterLily.BC!(u, bc::WaterLily.ParallelBC, t=0)
-    WaterLily.BC!(u, bc.uBC, bc.exitBC, bc.perdir, t)
-    _velocity_halo!(u)
-end
-
 # ── MPI-aware exitBC! ────────────────────────────────────────────────────────
 #
 # Serial exitBC! applies convective exit at local N[1]-1 and computes inflow
@@ -278,7 +244,7 @@ end
 # and only the leftmost-x rank has the real inflow.  Global reductions are needed
 # for the mean inflow velocity U and the mass-flux correction.
 
-function WaterLily.exitBC!(u, u⁰, Δt, ::WaterLily.ParallelBC)
+function WaterLily.exitBC!(u, u⁰, Δt, ::WaterLily.BC)
     g    = ImplicitGlobalGrid.global_grid()
     comm = _comm[]
     N, _ = WaterLily.size_u(u)
@@ -327,18 +293,6 @@ function WaterLily.wallBC_L!(L, perdir=())
         end
     end
     _velocity_halo!(L)
-end
-
-# ── MPI-aware update! (MultiLevelPoisson) ────────────────────────────────────
-
-function WaterLily.update!(ml::WaterLily.MultiLevelPoisson)
-    WaterLily.update!(ml.levels[1])
-    for l in 2:length(ml.levels)
-        WaterLily.restrictL!(ml.levels[l].L, ml.levels[l-1].L,
-                             perdir=ml.levels[l-1].perdir)
-        # Note: restrictL! calls wallBC_L! which already does _velocity_halo!
-        WaterLily.update!(ml.levels[l])
-    end
 end
 
 # ── MPI-aware divisible ───────────────────────────────────────────────────────
