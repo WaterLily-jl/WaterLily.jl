@@ -20,7 +20,7 @@ function logger(fname::String="WaterLily")
     end;
     global_logger(logger);
     # put header in file
-    @log "p/c, iter, r∞, r₂\n"
+    @log "p/c, iter, r∞, r₂, ω\n"
 end
 
 @inline CI(a...) = CartesianIndex(a...)
@@ -116,16 +116,10 @@ L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 # overrides of pcg!, residual!, L₂, increment!, solver!, Vcycle!, CFL.
 
 using LinearAlgebra: ⋅
-function dot_R(a, b, R)
-    length(R) == length(a) && return a⋅b
-    return @views a[R]⋅b[R]
-end
-function sum_R(a, R)
-    length(R) == length(a) && return sum(a)
-    return @views sum(a[R])
-end
-global_dot(a, b; R=inside(a)) = dot_R(a, b, R)
-global_sum(a; R=inside(a)) = sum_R(a, R)
+local_dot(a, b) = a⋅b
+global_dot(a, b) = local_dot(a, b)
+local_sum(a) = sum(a)
+global_sum(a) = local_sum(a)
 global_length(r)    = length(r)
 global_min(a, b)    = min(a, b)
 scalar_halo!(x)     = nothing

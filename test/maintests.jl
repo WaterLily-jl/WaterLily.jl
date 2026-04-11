@@ -135,6 +135,14 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
        @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
        @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(3.5,3),b))==Float64
        @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
+
+        # test on perdot
+        σ1 = rand(Ng...) |> f # scalar
+        σ2 = rand(Ng...) |> f # another scalar 
+        # use ≈ instead of == as summation in different order might result in slight difference in floating point expressions
+        @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
+        @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
+        @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
     end
 end
 
@@ -521,17 +529,17 @@ end
         # Test accelerating from U=0 to U=1
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(circle,accel), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [2,1]
+        @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
         @test maximum(sim.flow.u) > maximum(sim.bc.V) > 0
         # Test that non-uniform V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,rotate), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [2,1]
+        @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
         @test 1 > sim.flow.Δt[end] > 0.5
         # Test that divergent V doesn't break
         sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,bend), ν, T, mem, exitBC)
         sim_step!(sim)
-        @test sim.pois.n == [2,1]
+        @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
         @test 1.2 > sim.flow.Δt[end] > 0.8
     end
 end

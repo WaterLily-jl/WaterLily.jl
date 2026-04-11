@@ -24,6 +24,17 @@ perBC!(a, perdir, N = size(a)) = for j ∈ perdir
 end
 
 
+using LinearAlgebra: ⋅
+"""
+    perdot(a,b,perdir)
+
+Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
+"""
+local_perdot(a,b,::Tuple{}) = a⋅b
+local_perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+global_perdot(a,b,tup::Tuple{}) = local_perdot(a,b,tup)
+global_perdot(a,b,perdir,R=inside(a)) = local_perdot(a,b,perdir,R)
+
 abstract type AbstractBC{D,T,Sf,Vf,Tf} end
 exitBC!(u,u⁰,Δt,::AbstractBC) = exitBC!(u,u⁰,Δt)
 

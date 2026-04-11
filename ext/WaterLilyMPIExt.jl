@@ -229,9 +229,10 @@ function _velocity_halo!(u::AbstractArray{T,N}) where {T,N}
 end
 
 # ── Global reduction / halo hooks ────────────────────────────────────────────
-
-WaterLily.global_dot(a, b; R=inside(a)) = MPI.Allreduce(WaterLily.dot_R(a, b, R), MPI.SUM, _comm[])
-WaterLily.global_sum(a; R=inside(a)) = MPI.Allreduce(WaterLily.sum_R(a, R), MPI.SUM, _comm[])
+WaterLily.global_dot(a, b) = MPI.Allreduce(WaterLily.local_dot(a,b), MPI.SUM, _comm[])
+WaterLily.global_sum(a) = MPI.Allreduce(WaterLily.local_sum(a), MPI.SUM, _comm[])
+WaterLily.global_perdot(a,b,perdir) = MPI.Allreduce(WaterLily.local_perdot(a,b,perdir), MPI.SUM, _comm[])
+WaterLily.global_perdot(a,b,tup::Tuple{}) = MPI.Allreduce(WaterLily.local_perdot(a,b,tup), MPI.SUM, _comm[])
 WaterLily.global_length(r) = MPI.Allreduce(length(r), MPI.SUM, _comm[])
 WaterLily.global_min(a, b) = MPI.Allreduce(min(a, b), MPI.MIN, _comm[])
 WaterLily.scalar_halo!(x) = _scalar_halo!(x)
