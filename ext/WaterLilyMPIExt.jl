@@ -8,7 +8,7 @@ and boundary conditions at MPI-subdomain interfaces.
 The serial WaterLily code uses hook functions (global_dot, global_sum,
 global_length, global_min, scalar_halo!, velocity_halo!) that are no-ops
 in serial.  This extension overrides them with MPI.Allreduce and halo
-exchange.  The serial BC!, measure!, pressureBC!, and Poisson solver
+exchange.  The serial BC!, measure!, and Poisson solver
 already call these hooks, so no MPI-specific overrides are needed for
 them.
 

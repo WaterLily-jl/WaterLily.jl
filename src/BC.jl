@@ -28,15 +28,6 @@ abstract type AbstractBC{D,T,Sf,Vf,Tf} end
 exitBC!(u,u⁰,Δt,::AbstractBC) = exitBC!(u,u⁰,Δt)
 
 """
-    pressureBC!(x, bc::AbstractBC)
-
-Hook called after the pressure Poisson solve in `project!`, with `x = flow.p`.
-Calls `scalar_halo!(x)` which is a no-op in serial and exchanges pressure
-ghost cells across MPI subdomain boundaries when the MPI extension is loaded.
-"""
-pressureBC!(x, ::AbstractBC) = scalar_halo!(x)
-pressureBC!(x, bc::AbstractBC, _) = pressureBC!(x, bc)  # default: ignore Poisson arg
-"""
     BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Sf,Vf,Tf}
 
 Boundary condition struct holding extending `AbstractBC`. It hold the necessary fields to impose the boundary conditions

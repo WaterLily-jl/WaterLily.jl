@@ -13,7 +13,7 @@ using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
 
 include("BC.jl")
-export AbstractBC,BC,BC!,pressureBC!
+export AbstractBC,BC,BC!
 
 # ── MPI parallel interface (implemented by WaterLilyMPIExt) ───────────────────
 """
