@@ -5,43 +5,41 @@ Activated automatically when ImplicitGlobalGrid and MPI are loaded alongside
 WaterLily.  Provides MPI-aware overrides for global reductions, halo exchange,
 and boundary conditions at MPI-subdomain interfaces.
 
-The serial WaterLily code uses hook functions (global_dot, global_sum,
-global_length, global_min, scalar_halo!, velocity_halo!) that are no-ops
-in serial.  This extension overrides them with MPI.Allreduce and halo
-exchange.  The serial BC!, measure!, and Poisson solver
-already call these hooks, so no MPI-specific overrides are needed for
-them.
+Uses the `AbstractParMode` dispatch pattern: serial WaterLily dispatches all
+hooks through `par_mode[]` (defaults to `Serial()`).  This extension defines
+`Parallel <: AbstractParMode` and adds new dispatch methods — no method
+overwriting, so precompilation works normally.
 
-Functions still overridden here (beyond hooks):
-  wallBC_L!   — zero L at physical walls only (skip MPI-internal) + halo on L
-  exitBC!     — global reductions for inflow/outflow mass flux
-  divisible   — stricter coarsening threshold (N>8) for multigrid
+Functions with MPI-specific behavior (via dispatch or subtype specialization):
+  _wallBC_L!  — zero L at physical walls only (skip MPI-internal) + halo on L
+  exitBC!     — global reductions for inflow/outflow mass flux (dispatches on ::BC)
+  _divisible  — stricter coarsening threshold (N>8) for multigrid
 """
 module WaterLilyMPIExt
 
-# Disable precompilation: WaterLily functions are overridden here
-__precompile__(false)
-
 using WaterLily
-import WaterLily: @loop, wallBC_L!, exitBC!
+import WaterLily: @loop, exitBC!
 using ImplicitGlobalGrid
 using MPI
 using StaticArrays
 
-# ── Communicator ──────────────────────────────────────────────────────────────
+# ── MPI parallel mode ────────────────────────────────────────────────────────
 
-const _comm = Ref{MPI.Comm}(MPI.COMM_WORLD)
-WaterLily.set_comm!(comm::MPI.Comm) = (_comm[] = comm)
+struct Parallel <: WaterLily.AbstractParMode
+    comm::MPI.Comm
+end
+
+_comm() = (WaterLily.par_mode[]::Parallel).comm
 
 # ── Global coordinate offset ──────────────────────────────────────────────────
 
 """
-    global_offset(Val(N), T=Float32) → SVector{N,T}
+    _global_offset(Val(N), T, ::Parallel) → SVector{N,T}
 
 Rank-local origin in global WaterLily index space.
   offset[d] = coords[d] * (nxyz[d] - overlaps[d])  =  coords[d] * nx_loc
 """
-function WaterLily.global_offset(::Val{N}, ::Type{T}=Float32) where {N,T}
+function WaterLily._global_offset(::Val{N}, ::Type{T}, ::Parallel) where {N,T}
     g = ImplicitGlobalGrid.global_grid()
     SVector{N,T}(ntuple(d -> T(g.coords[d] * (g.nxyz[d] - g.overlaps[d])), N))
 end
@@ -56,14 +54,9 @@ Initialize MPI domain decomposition for WaterLily.
 1. Determines the optimal MPI topology via `MPI.Dims_create`
 2. Computes local subdomain dimensions (`global_dims .÷ topology`)
 3. Initializes ImplicitGlobalGrid with the correct overlaps and halowidths
-4. Sets the MPI communicator for WaterLily's global reductions
+4. Sets `par_mode[] = Parallel(comm)` for dispatch-based MPI hooks
 
 Returns `(local_dims::NTuple{N,Int}, rank::Int, comm::MPI.Comm)`.
-
-`AutoBody` automatically applies the global coordinate offset and the serial
-hook functions (velocity_halo!, scalar_halo!, global_dot, etc.) are overridden
-by this extension, so parallel user scripts need only differ from serial by
-calling this function and using `local_dims` in the `Simulation` constructor.
 """
 function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     MPI.Initialized() || MPI.Init()
@@ -92,7 +85,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
         init_MPI = false,
     )
 
-    _comm[] = comm
+    WaterLily.par_mode[] = Parallel(comm)
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -141,7 +134,6 @@ function _get_mpi_bufs(::Type{T}, slab_shape::Tuple, dim::Int) where T
 end
 
 function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
-    # Return a view of arr sliced to indices `r` in dimension `dim`, all others `:`.
     colons = ntuple(i -> i == dim ? r : (:), ndims(arr))
     @view arr[colons...]
 end
@@ -153,7 +145,7 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
     g    = ImplicitGlobalGrid.global_grid()
     nd   = _ndims_active()
     N    = size(arr)
-    comm = _comm[]
+    comm = _comm()
     for dim in 1:nd
         nleft  = g.neighbors[1, dim]
         nright = g.neighbors[2, dim]
@@ -196,7 +188,7 @@ function _is_fine(arr::AbstractArray)
     size(arr)[1:nd] == Tuple(g.nxyz[1:nd])
 end
 
-function _scalar_halo!(arr::AbstractArray)
+function _do_scalar_halo!(arr::AbstractArray)
     if _is_fine(arr)
         _scalar_halo_igg!(arr)
     else
@@ -216,27 +208,27 @@ function _get_halo_buf(::Type{T}, dims::NTuple{N,Int}) where {T,N}
     get!(() -> Array{T}(undef, dims), _halo_bufs, (T, dims))
 end
 
-function _velocity_halo!(u::AbstractArray{T,N}) where {T,N}
+function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
     D   = size(u, N)                    # number of components (last dim)
     sp  = ntuple(_ -> :, N-1)           # all spatial dims as Colons
     sdims = size(u)[1:N-1]              # spatial dimensions
     tmp = _get_halo_buf(T, sdims)       # single pre-allocated buffer
     for d in 1:D
         copyto!(tmp, @view u[sp..., d])
-        _scalar_halo!(tmp)
+        _do_scalar_halo!(tmp)
         copyto!(@view(u[sp..., d]), tmp)
     end
 end
 
-# ── Global reduction / halo hooks ────────────────────────────────────────────
-WaterLily.global_dot(a, b) = MPI.Allreduce(WaterLily.local_dot(a,b), MPI.SUM, _comm[])
-WaterLily.global_sum(a) = MPI.Allreduce(WaterLily.local_sum(a), MPI.SUM, _comm[])
-WaterLily.global_perdot(a,b,perdir) = MPI.Allreduce(WaterLily.local_perdot(a,b,perdir), MPI.SUM, _comm[])
-WaterLily.global_perdot(a,b,tup::Tuple{}) = MPI.Allreduce(WaterLily.local_perdot(a,b,tup), MPI.SUM, _comm[])
-WaterLily.global_length(r) = MPI.Allreduce(length(r), MPI.SUM, _comm[])
-WaterLily.global_min(a, b) = MPI.Allreduce(min(a, b), MPI.MIN, _comm[])
-WaterLily.scalar_halo!(x) = _scalar_halo!(x)
-WaterLily.velocity_halo!(u) = _velocity_halo!(u)
+# ── Dispatch hooks for Parallel ──────────────────────────────────────────────
+WaterLily._global_dot(a, b, ::Parallel)          = MPI.Allreduce(WaterLily.local_dot(a,b), MPI.SUM, _comm())
+WaterLily._global_sum(a, ::Parallel)              = MPI.Allreduce(WaterLily.local_sum(a), MPI.SUM, _comm())
+WaterLily._global_perdot(a, b, tup::Tuple{}, ::Parallel)  = MPI.Allreduce(WaterLily.local_perdot(a,b,tup), MPI.SUM, _comm())
+WaterLily._global_perdot(a, b, perdir, R, ::Parallel)     = MPI.Allreduce(WaterLily.local_perdot(a,b,perdir,R), MPI.SUM, _comm())
+WaterLily._global_length(r, ::Parallel)           = MPI.Allreduce(length(r), MPI.SUM, _comm())
+WaterLily._global_min(a, b, ::Parallel)           = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
+WaterLily._scalar_halo!(x, ::Parallel)            = _do_scalar_halo!(x)
+WaterLily._velocity_halo!(u, ::Parallel)          = _do_velocity_halo!(u)
 
 # ── MPI-aware exitBC! ────────────────────────────────────────────────────────
 #
@@ -247,7 +239,7 @@ WaterLily.velocity_halo!(u) = _velocity_halo!(u)
 
 function WaterLily.exitBC!(u, u⁰, Δt, ::WaterLily.BC)
     g    = ImplicitGlobalGrid.global_grid()
-    comm = _comm[]
+    comm = _comm()
     N, _ = WaterLily.size_u(u)
 
     is_inflow  = g.neighbors[1, 1] < 0
@@ -276,12 +268,12 @@ function WaterLily.exitBC!(u, u⁰, Δt, ::WaterLily.BC)
         @loop u[I, 1] -= ∮u over I ∈ exitR
     end
 
-    _velocity_halo!(u)
+    _do_velocity_halo!(u)
 end
 
 # ── MPI-aware wallBC_L! ──────────────────────────────────────────────────────
 
-function WaterLily.wallBC_L!(L, perdir=())
+function WaterLily._wallBC_L!(L, perdir, ::Parallel)
     g  = ImplicitGlobalGrid.global_grid()
     N, n = WaterLily.size_u(L)
     for j in 1:n
@@ -293,11 +285,11 @@ function WaterLily.wallBC_L!(L, perdir=())
             @loop L[I,j] = zero(eltype(L)) over I ∈ WaterLily.slice(N, N[j]-1, j)
         end
     end
-    _velocity_halo!(L)
+    _do_velocity_halo!(L)
 end
 
 # ── MPI-aware divisible ───────────────────────────────────────────────────────
 
-WaterLily.divisible(N::Integer) = mod(N,2)==0 && N>8
+WaterLily._divisible(N, ::Parallel) = mod(N,2)==0 && N>8
 
 end # module WaterLilyMPIExt

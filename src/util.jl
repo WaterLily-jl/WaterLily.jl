@@ -109,21 +109,35 @@ L₂ norm of array `a` excluding ghosts.
 """
 L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 
-# ── Global reduction / halo hooks ────────────────────────────────────────────
+# ── Parallel mode dispatch ───────────────────────────────────────────────────
 #
-# Serial no-ops that WaterLilyMPIExt overrides with MPI.Allreduce / halo exchange.
-# Using these in Poisson.jl, Flow.jl etc. eliminates the need for MPI-specific
-# overrides of pcg!, residual!, L₂, increment!, solver!, Vcycle!, CFL.
+# Serial WaterLily defines hooks (global_dot, scalar_halo!, etc.) that dispatch
+# on `par_mode[]`.  The MPI extension defines `Parallel <: AbstractParMode` and
+# adds new methods for that type — no method overwriting needed.
+
+abstract type AbstractParMode end
+struct Serial <: AbstractParMode end
+const par_mode = Ref{AbstractParMode}(Serial())
+
+# ── Global reduction / halo hooks ────────────────────────────────────────────
 
 using LinearAlgebra: ⋅
 local_dot(a, b) = a⋅b
-global_dot(a, b) = local_dot(a, b)
 local_sum(a) = sum(a)
-global_sum(a) = local_sum(a)
-global_length(r)    = length(r)
-global_min(a, b)    = min(a, b)
-scalar_halo!(x)     = nothing
-velocity_halo!(u)   = nothing
+
+global_dot(a, b)    = _global_dot(a, b, par_mode[])
+global_sum(a)       = _global_sum(a, par_mode[])
+global_length(r)    = _global_length(r, par_mode[])
+global_min(a, b)    = _global_min(a, b, par_mode[])
+scalar_halo!(x)     = _scalar_halo!(x, par_mode[])
+velocity_halo!(u)   = _velocity_halo!(u, par_mode[])
+
+_global_dot(a, b, ::Serial) = local_dot(a, b)
+_global_sum(a, ::Serial)    = local_sum(a)
+_global_length(r, ::Serial) = length(r)
+_global_min(a, b, ::Serial) = min(a, b)
+_scalar_halo!(x, ::Serial)  = nothing
+_velocity_halo!(u, ::Serial) = nothing
 
 """
     @inside <expr>

@@ -7,7 +7,8 @@ using DocStringExtensions
 
 include("util.jl")
 export L₂,@inside,inside,δ,apply!,loc,@log,set_backend,backend,
-       global_dot,global_sum,global_length,global_min,scalar_halo!,velocity_halo!
+       global_dot,global_sum,global_length,global_min,scalar_halo!,velocity_halo!,
+       AbstractParMode,Serial,par_mode
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
@@ -20,19 +21,12 @@ export AbstractBC,BC,BC!
     global_offset(Val(N), T=Float32) → SVector{N,T}
 
 Return the global coordinate offset for this MPI rank.  Serial default returns
-zero.  Overridden by `WaterLilyMPIExt` to return the rank-local origin in global
-index space (requires `init_global_grid` to have been called first).
+zero.  The MPI extension adds a method for `Parallel` that returns the rank-local
+origin in global index space.
 """
-global_offset(::Val{N}, ::Type{T}=Float32) where {N,T} = zero(SVector{N,T})
+global_offset(::Val{N}, ::Type{T}=Float32) where {N,T} = _global_offset(Val(N), T, par_mode[])
 global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
-
-"""
-    set_comm!(comm)
-
-Set the MPI communicator used for global Poisson reductions (default: `MPI.COMM_WORLD`).
-Implemented by `WaterLilyMPIExt` when `ImplicitGlobalGrid` and `MPI` are loaded.
-"""
-function set_comm! end
+_global_offset(::Val{N}, ::Type{T}, ::Serial) where {N,T} = zero(SVector{N,T})
 
 """
     init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
@@ -44,7 +38,7 @@ MPI communicator.  Implemented by `WaterLilyMPIExt`.
 """
 function init_waterlily_mpi end
 
-export global_offset, set_comm!, init_waterlily_mpi
+export global_offset, init_waterlily_mpi
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
@@ -156,9 +150,9 @@ function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,k
 end
 
 """
-    measure!(sim::Simulation,t=timeNext(sim))
+    measure!(sim::Simulation,t=sum(sim.flow.Δt))
 
-Measure a dynamic `body` to update the `flow` and `pois` coefficients.
+Measure a dynamic `body` to update the `bc` and `pois` coefficients.
 """
 function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
     measure!(sim.body,sim.bc;t,ϵ=sim.ϵ)

@@ -34,7 +34,8 @@ end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
-@inline divisible(N) = mod(N,2)==0 && N>4
+@inline divisible(N) = _divisible(N, par_mode[])
+@inline _divisible(N, ::Serial) = mod(N,2)==0 && N>4
 @inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 """
     MultiLevelPoisson{N,M}

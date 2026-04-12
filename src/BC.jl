@@ -32,8 +32,10 @@ Apply dot product to the inner cells of two _scalar_ fields, assuming zero value
 """
 local_perdot(a,b,::Tuple{}) = a⋅b
 local_perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
-global_perdot(a,b,tup::Tuple{}) = local_perdot(a,b,tup)
-global_perdot(a,b,perdir,R=inside(a)) = local_perdot(a,b,perdir,R)
+global_perdot(a,b,tup::Tuple{}) = _global_perdot(a, b, tup, par_mode[])
+global_perdot(a,b,perdir,R=inside(a)) = _global_perdot(a, b, perdir, R, par_mode[])
+_global_perdot(a, b, tup::Tuple{}, ::Serial) = local_perdot(a, b, tup)
+_global_perdot(a, b, perdir, R, ::Serial) = local_perdot(a, b, perdir, R)
 
 abstract type AbstractBC{D,T,Sf,Vf,Tf} end
 exitBC!(u,u⁰,Δt,::AbstractBC) = exitBC!(u,u⁰,Δt)
@@ -108,7 +110,8 @@ Zero the Poisson conductivity `L` at physical (non-periodic) boundary faces.
 This decouples the boundary cell from the ghost cell, giving an implicit
 Neumann pressure BC (∂p/∂n = 0) at domain walls.
 """
-function wallBC_L!(L, perdir=())
+wallBC_L!(L, perdir=()) = _wallBC_L!(L, perdir, par_mode[])
+function _wallBC_L!(L, perdir, ::Serial)
     N, n = size_u(L)
     for j in 1:n
         j in perdir && continue
