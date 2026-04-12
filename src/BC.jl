@@ -74,7 +74,7 @@ A Dirichlet condition `a[I,i]=A[i]` is applied to the vector component _normal_ 
 For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition is applied to the tangential components.
 """
 BC!(a,bc::BC,t=0) = BC!(a,bc.uBC,bc.exitBC,bc.perdir,t)
-BC!(a,uBC,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->uBC[i],saveexit,perdir,t)
+BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
 function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n

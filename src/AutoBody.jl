@@ -12,38 +12,31 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     map::F2
 end
 AutoBody(sdf, map=(x,t)->x) = AutoBody(sdf, map)
+_apply_offset(body::AutoBody, offset) =
+    AutoBody(body.sdf, let m=body.map, o=offset; (x,t)->m(x .+ o, t); end)
 
 """
-    d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x+offset,t),t)
-
-The local coordinate `x` is shifted by `global_offset` so that the user's
-SDF and map functions always receive global coordinates.  In serial the
-offset is zero; in MPI it is the rank-local origin.
+    d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)
 """
-@inline sdf(body::AutoBody,x::SVector{N},t=0;kwargs...) where N =
-    body.sdf(body.map(x .+ global_offset(Val(N)),t),t)
+@inline sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(body.map(x,t),t)
 
 using ForwardDiff
 """
     d,n,V = measure(body::AutoBody,x,t;fastd²=Inf)
 
 Determine the implicit geometric properties from the `sdf` and `map`.
-The local coordinate `x` is shifted by `global_offset` so that the user's
-SDF and map functions always receive global coordinates.
-The gradient of `d=sdf(map(xg,t))` is used to improve `d` for pseudo-sdfs.
+The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
 The velocity is determined _solely_ from the optional `map` function.
 Skips the `n,V` calculation when `d²>fastd²`.
 """
-function measure(body::AutoBody,x::SVector{N},t;fastd²=Inf) where N
-    # shift to global coordinates (zero in serial, rank offset in MPI)
-    xg = x .+ global_offset(Val(N))
+function measure(body::AutoBody,x,t;fastd²=Inf)
     d = sdf(body,x,t)
     d^2>fastd² && return (d,zero(x),zero(x))
-    n = ForwardDiff.gradient(ξ->body.sdf(ξ,t), body.map(xg,t)) # body-frame only
+    n = ForwardDiff.gradient(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
     any(isnan, n) && return (d,zero(x),zero(x))               # handle non-diff'able points
-    J = ForwardDiff.jacobian(x->body.map(x,t), xg)            # for mapping n,V to x-frame
+    J = ForwardDiff.jacobian(x->body.map(x,t), x)             # for mapping n,V to x-frame
     n = J'n; m = √sum(abs2,n); d /= m; n /= m                 # chain rule then normalise
-    return (d, n, -J\ForwardDiff.derivative(t->body.map(xg,t), t))
+    return (d, n, -J\ForwardDiff.derivative(t->body.map(x,t), t))
 end
 
 using LinearAlgebra: tr

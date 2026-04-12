@@ -23,6 +23,10 @@ export AbstractBC,BC,BC!
 Return the global coordinate offset for this MPI rank.  Serial default returns
 zero.  The MPI extension adds a method for `Parallel` that returns the rank-local
 origin in global index space.
+
+Note: this is only called from host code (e.g. `Simulation` constructor), never
+from inside GPU kernels.  `AutoBody` captures the offset at construction time
+so that GPU kernels receive a concrete `SVector` value.
 """
 global_offset(::Val{N}, ::Type{T}=Float32) where {N,T} = _global_offset(Val(N), T, par_mode[])
 global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
@@ -106,6 +110,8 @@ mutable struct Simulation <: AbstractSimulation
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
+        offset = global_offset(Val(N), T)
+        body = iszero(offset) ? body : _apply_offset(body, offset)
         bc = BC(dims,uBC;perdir,exitBC,T,mem)
         flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
         measure!(body,bc;ϵ)

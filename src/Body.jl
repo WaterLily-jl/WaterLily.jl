@@ -26,7 +26,7 @@ of size `2+ϵ` around the body. This function also fills `flow.σ` with the sign
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
 function measure!(body::AbstractBody,bc::AbstractBC{N,T};t=zero(T),ϵ=1) where {N,T}
-    bc.V .= zero(T); bc.μ₀ .= one(T); bc.μ₁ .= zero(T); d²=(2+ϵ)^2
+    bc.V .= zero(T); bc.μ₀ .= one(T); bc.μ₁ .= zero(T); d²=T(2+ϵ)^2
     measure_sdf!(bc.σ, body, t; fastd²=d²) # measure separately to allow specialization
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         if d[I]^2<d²
@@ -83,6 +83,16 @@ measure(::NoBody,x::AbstractVector,args...;kwargs...)=(Inf,zero(x),zero(x))
 function measure!(::NoBody,::AbstractBC;kwargs...) end # skip measure! entirely
 
 """
+    _apply_offset(body, offset) → body
+
+Wrap a body's coordinate mapping to include the MPI global offset.
+Called once at `Simulation` construction time so that GPU kernels never
+need to call `global_offset` (which dispatches through `par_mode[]`).
+In serial the offset is zero and the body is returned unchanged.
+"""
+_apply_offset(body::AbstractBody, offset) = body
+
+"""
     SetBody
 
 Body defined as a lazy set operation on two `AbstractBody`s.
@@ -93,6 +103,8 @@ struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
     a::Ta
     b::Tb
 end
+_apply_offset(body::SetBody, offset) =
+    SetBody(body.op, _apply_offset(body.a, offset), _apply_offset(body.b, offset))
 
 # Lazy constructors
 Base.:∪(a::AbstractBody, b::AbstractBody) = SetBody(min,a,b)
