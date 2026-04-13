@@ -1,5 +1,5 @@
-@inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
-@inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
+@inline up(I::CartesianIndex,a=0) = (2I-3oneunit(I)):(2I-2oneunit(I)-δ(a,I))
+@inline down(I::CartesianIndex) = CI((I+3oneunit(I)).I .÷2)
 @fastmath @inline function restrict(I::CartesianIndex,b)
     s = zero(eltype(b))
     for J ∈ up(I)
@@ -17,7 +17,7 @@ end
 
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
-    Na = map(i->1+i÷2,N)
+    Na = map(i->2+i÷2,N)
     aL = similar(b.L,(Na...,n)); fill!(aL,0)
     ax = similar(b.x,Na); fill!(ax,0)
     restrictL!(aL,b.L,perdir=b.perdir)
@@ -26,14 +26,16 @@ end
 function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
-        @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
+        @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->3:n-2,Na))
     end
     BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries
+    wallBC_L!(a, perdir)
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
-@inline divisible(N) = mod(N,2)==0 && N>4
+@inline divisible(N) = _divisible(N, par_mode[])
+@inline _divisible(N, ::Serial) = mod(N,2)==0 && N>4
 @inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 """
     MultiLevelPoisson{N,M}
@@ -92,7 +94,7 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω); 
+        smooth!(p; ω);
         rnew = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
         if     rnew ≥ r₂
@@ -103,6 +105,6 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
         r₂ = rnew
         r₂<tol && break
     end
-    perBC!(p.x,p.perdir)
+    perBC!(p.x,p.perdir); scalar_halo!(p.x)
     push!(ml.n,nᵖ);
 end

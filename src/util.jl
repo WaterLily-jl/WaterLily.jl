@@ -40,11 +40,53 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
+    ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n})
+
+Finite-volume derivative of scalar field `f` on cell `I` and direction `a`
+"""
+@inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
+"""
+    @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n})
+
+Finite-volume derivative of vector field `u` on cell `I`, direction (and component) `a`.
+"""
+@inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
+
+
+@inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])/2
+@inline ϕu(a,I,f,u,λ) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuP(a,Ip,I,f,u,λ) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuL(a,I,f,u,λ) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+@inline ϕuR(a,I,f,u,λ) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+@fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
+@fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
+@fastmath cds(u,c,d) = (c+d)/2
+
+@fastmath @inline function div(I::CartesianIndex{m},u) where {m}
+    init=zero(eltype(u))
+    for i in 1:m
+     init += @inbounds ∂(i,I,u)
+    end
+    return init
+end
+
+function median(a,b,c)
+    if a>b
+        b>=c && return b
+        a>c && return c
+    else
+        b<=c && return b
+        a<c && return c
+    end
+    return a
+end
+
+"""
     inside(a;buff=1)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
-@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
+@inline inside(a::AbstractArray;buff=2) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
 """
     inside_u(dims,j)
@@ -53,10 +95,10 @@ Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _vector_ array on face `j` with size `dims`.
 """
 function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
+    CartesianIndices(ntuple( i-> 3:dims[i]-1, N))
 end
-@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
-@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(2:i-1),size(u)[1:end-1]))
+@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(3:i-2),dims)...,1:N))
+@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(3:i-2),size(u)[1:end-1]))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
@@ -66,6 +108,36 @@ size_u(u) = splitn(size(u))
 L₂ norm of array `a` excluding ghosts.
 """
 L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+
+# ── Parallel mode dispatch ───────────────────────────────────────────────────
+#
+# Serial WaterLily defines hooks (global_dot, scalar_halo!, etc.) that dispatch
+# on `par_mode[]`.  The MPI extension defines `Parallel <: AbstractParMode` and
+# adds new methods for that type — no method overwriting needed.
+
+abstract type AbstractParMode end
+struct Serial <: AbstractParMode end
+const par_mode = Ref{AbstractParMode}(Serial())
+
+# ── Global reduction / halo hooks ────────────────────────────────────────────
+
+using LinearAlgebra: ⋅
+local_dot(a, b) = a⋅b
+local_sum(a) = sum(a)
+
+global_dot(a, b)    = _global_dot(a, b, par_mode[])
+global_sum(a)       = _global_sum(a, par_mode[])
+global_length(r)    = _global_length(r, par_mode[])
+global_min(a, b)    = _global_min(a, b, par_mode[])
+scalar_halo!(x)     = _scalar_halo!(x, par_mode[])
+velocity_halo!(u)   = _velocity_halo!(u, par_mode[])
+
+_global_dot(a, b, ::Serial) = local_dot(a, b)
+_global_sum(a, ::Serial)    = local_sum(a)
+_global_length(r, ::Serial) = length(r)
+_global_min(a, b, ::Serial) = min(a, b)
+_scalar_halo!(x, ::Serial)  = nothing
+_velocity_halo!(u, ::Serial) = nothing
 
 """
     @inside <expr>
@@ -206,75 +278,15 @@ function slice(dims::NTuple{N},i,j,low=1) where N
 end
 
 """
-    BC!(a,A)
-
-Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
-is applied to the tangential components.
-"""
-BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
-    N,n = size_u(a)
-    for i ∈ 1:n, j ∈ 1:n
-        if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
-        else
-            if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
-                end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
-            else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
-            end
-        end
-    end
-end
-
-"""
-    exitBC!(u,u⁰,U,Δt)
-
-Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
-"""
-function exitBC!(u,u⁰,Δt)
-    N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux
-    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
-end
-"""
-    perBC!(a,perdir)
-
-Apply periodic conditions to the ghost cells of a _scalar_ field.
-"""
-perBC!(a,::Tuple{}) = nothing
-perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
-end
-using LinearAlgebra: ⋅
-"""
-    perdot(a,b,perdir)
-
-Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
-"""
-perdot(a,b,::Tuple{}) = a⋅b
-perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
-"""
     interp(x::SVector, arr::AbstractArray)
 
 Linear interpolation from array `arr` at Cartesian-coordinate `x`.
 
 Note: This routine works for any number of dimensions.
 """
-function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
+function interp(x::SVector{D,T}, arr::AbstractArray{T,D}; offset=zero(x)) where {D,T}
     # Index below the interpolation coordinate and the difference
-    x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
+    x = x .- offset .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
     # CartesianIndices around x
     I = CartesianIndex(i...); R = I:I+oneunit(I)
@@ -288,10 +300,10 @@ function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     return s
 end
 using EllipsisNotation
-function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
+function interp(x::SVector{D,T}, varr::AbstractArray{T}; offset=zero(x)) where {D,T}
     # Shift to align with each staggered grid component and interpolate
     @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
+    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i]);offset) for i in 1:D)
 end
 
 """
