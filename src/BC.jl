@@ -1,9 +1,10 @@
 """
-    exitBC!(u,u⁰,U,Δt)
+    exitBC!(u,u⁰,Δt)
 
 Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
-function exitBC!(u,u⁰,Δt)
+exitBC!(u,u⁰,Δt) = _exitBC!(u,u⁰,Δt,par_mode[])
+function _exitBC!(u,u⁰,Δt,::Serial)
     N,_ = size_u(u)
     exitR = slice(N.-2,N[1]-1,1,3)              # exit slice excluding ghosts
     U = sum(@view(u[slice(N.-2,3,1,3),1]))/length(exitR) # inflow mass flux
@@ -38,7 +39,6 @@ _global_perdot(a, b, tup::Tuple{}, ::Serial) = local_perdot(a, b, tup)
 _global_perdot(a, b, perdir, R, ::Serial) = local_perdot(a, b, perdir, R)
 
 abstract type AbstractBC{D,T,Sf,Vf,Tf} end
-exitBC!(u,u⁰,Δt,::AbstractBC) = exitBC!(u,u⁰,Δt)
 
 """
     BC{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractBC{D,T,Sf,Vf,Tf}

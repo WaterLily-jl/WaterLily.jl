@@ -12,13 +12,13 @@ overwriting, so precompilation works normally.
 
 Functions with MPI-specific behavior (via dispatch or subtype specialization):
   _wallBC_L!  — zero L at physical walls only (skip MPI-internal) + halo on L
-  exitBC!     — global reductions for inflow/outflow mass flux (dispatches on ::BC)
+  _exitBC!    — global reductions for inflow/outflow mass flux (dispatches on ::Parallel)
   _divisible  — stricter coarsening threshold (N>8) for multigrid
 """
 module WaterLilyMPIExt
 
 using WaterLily
-import WaterLily: @loop, exitBC!
+import WaterLily: @loop
 using ImplicitGlobalGrid
 using MPI
 using StaticArrays
@@ -237,7 +237,7 @@ WaterLily._velocity_halo!(u, ::Parallel)          = _do_velocity_halo!(u)
 # and only the leftmost-x rank has the real inflow.  Global reductions are needed
 # for the mean inflow velocity U and the mass-flux correction.
 
-function WaterLily.exitBC!(u, u⁰, Δt, ::WaterLily.BC)
+function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
     g    = ImplicitGlobalGrid.global_grid()
     comm = _comm()
     N, _ = WaterLily.size_u(u)
