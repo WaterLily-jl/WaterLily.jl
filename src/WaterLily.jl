@@ -112,6 +112,11 @@ mutable struct Simulation <: AbstractSimulation
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
         offset = global_offset(Val(N), T)
         body = iszero(offset) ? body : _apply_offset(body, offset)
+        if !iszero(offset)
+            uBC isa Function && (uBC = let o=offset, f=uBC; (i,x,t)->f(i,x.+o,t); end)
+            g isa Function   && (g   = let o=offset, f=g;   (i,x,t)->f(i,x.+o,t); end)
+            uλ isa Function  && (uλ  = let o=offset, f=uλ;  (i,x)->f(i,x.+o);     end)
+        end
         bc = BC(dims,uBC;perdir,exitBC,T,mem)
         flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
         measure!(body,bc;ϵ)
