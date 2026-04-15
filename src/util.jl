@@ -321,7 +321,6 @@ end
     divisible(N)
 
 Check if array dimension `N` is divisible for multigrid coarsening.
-MPI extension requires stricter threshold (N>8).
 """
 divisible(N) = _divisible(N, par_mode[])
 _divisible(N, ::Serial) = mod(N,2)==0 && N>4

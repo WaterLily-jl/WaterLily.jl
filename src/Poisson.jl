@@ -36,12 +36,13 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     z :: S # source
     n :: Vector{Int16} # pressure solver iterations
     perdir :: NTuple # direction of periodic boundary condition
+    inslen :: Int # global number of inside cells (precomputed to avoid Allreduce)
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r = similar(x); fill!(r,0)
         ϵ,D,iD = copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
-        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
+        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir,global_length(inside(x)))
     end
 end
 
@@ -99,7 +100,7 @@ without the corrections, no solution exists.
 function residual!(p::Poisson)
     comm!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
-    s = global_sum(p.r)/global_length(inside(p.r))
+    s = global_sum(p.r)/p.inslen
     abs(s) <= 2eps(eltype(s)) && return
     @inside p.r[I] = p.r[I]-s
 end

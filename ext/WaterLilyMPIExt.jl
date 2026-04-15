@@ -13,7 +13,11 @@ overwriting, so precompilation works normally.
 Functions with MPI-specific behavior (via dispatch on `::Parallel`):
   _wallBC_L!  — zero L at physical walls only (skip MPI-internal) + halo on L
   _exitBC!    — global reductions for inflow/outflow mass flux
-  _divisible  — stricter coarsening threshold (N>8) for multigrid
+  _divisible  — same coarsening threshold as serial (N>4)
+
+Halo exchange uses a cached `_has_neighbors` flag to skip all exchange
+when no MPI neighbors exist (e.g. np=1 non-periodic), eliminating the
+overhead of IGG's `update_halo!` and buffer copies in that case.
 """
 module WaterLilyMPIExt
 
@@ -86,6 +90,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     )
 
     WaterLily.par_mode[] = Parallel(comm)
+    _init_has_neighbors!()
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -102,6 +107,14 @@ end
 
 # Number of active spatial dimensions (nxyz > 1) in the IGG grid.
 _ndims_active() = sum(ImplicitGlobalGrid.global_grid().nxyz .> 1)
+
+# True if any MPI neighbor exists in any active dimension (cached after init).
+const _has_neighbors = Ref(false)
+function _init_has_neighbors!()
+    g = ImplicitGlobalGrid.global_grid()
+    nd = _ndims_active()
+    _has_neighbors[] = any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:nd)
+end
 
 # ── Scalar halo exchange (fine grid — via IGG) ───────────────────────────────
 
@@ -154,11 +167,11 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
         slab_shape = ntuple(i -> i == dim ? 2 : N[i], ndims(arr))
         send_left, recv_left, send_right, recv_right = _get_mpi_bufs(T, slab_shape, dim)
 
-        # Pack send buffers using contiguous slab views
+        # Pack send buffers
         copyto!(send_left,  _slab(arr, dim, 3:4))
         copyto!(send_right, _slab(arr, dim, N[dim]-3:N[dim]-2))
 
-        # Post all sends/recvs
+        # Post all non-blocking sends/recvs, then Waitall for max overlap
         nreqs = 0
         if nright >= 0
             nreqs += 1; _mpi_reqs[nreqs] = MPI.Isend(send_right, comm; dest=nright, tag=dim*10)
@@ -189,6 +202,7 @@ function _is_fine(arr::AbstractArray)
 end
 
 function _do_scalar_halo!(arr::AbstractArray)
+    _has_neighbors[] || return
     if _is_fine(arr)
         _scalar_halo_igg!(arr)
     else
@@ -205,6 +219,7 @@ function _get_halo_buf(::Type{T}, dims::NTuple{N,Int}) where {T,N}
 end
 
 function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
+    _has_neighbors[] || return
     D   = size(u, N)                    # number of components (last dim)
     sp  = ntuple(_ -> :, N-1)           # all spatial dims as Colons
     sdims = size(u)[1:N-1]              # spatial dimensions
@@ -284,7 +299,10 @@ function WaterLily._wallBC_L!(L, perdir, ::Parallel)
 end
 
 # ── MPI-aware divisible ───────────────────────────────────────────────────────
+# Same threshold as serial (N>4). Coarse-level comm cost is negligible thanks
+# to `_has_neighbors` short-circuiting (no exchange when no MPI neighbors exist)
+# and tiny array sizes at the coarsest levels.
 
-WaterLily._divisible(N, ::Parallel) = mod(N,2)==0 && N>8
+WaterLily._divisible(N, ::Parallel) = mod(N,2)==0 && N>4
 
 end # module WaterLilyMPIExt
