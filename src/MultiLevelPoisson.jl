@@ -1,5 +1,21 @@
+"""
+    up(I, a=0)
+
+Return the fine-grid `CartesianIndices` range that maps to coarse cell `I`.
+When `a≠0`, the range is shifted by `-δ(a,I)` for staggered (face) restriction.
+"""
 @inline up(I::CartesianIndex,a=0) = (2I-3oneunit(I)):(2I-2oneunit(I)-δ(a,I))
+"""
+    down(I)
+
+Map fine-grid index `I` to the corresponding coarse-grid index.
+"""
 @inline down(I::CartesianIndex) = CI((I.I .- 1) .÷ 2 .+ 2)
+"""
+    restrict(I, b)
+
+Sum the fine-grid scalar values in `b` that map to coarse cell `I`.
+"""
 @fastmath @inline function restrict(I::CartesianIndex,b)
     s = zero(eltype(b))
     for J ∈ up(I)
@@ -7,6 +23,12 @@
     end
     return s
 end
+"""
+    restrictL(I, i, b)
+
+Restrict the Poisson conductivity `b` in dimension `i` from the fine grid
+to coarse cell `I`, averaging the two fine-grid face values.
+"""
 @fastmath @inline function restrictL(I::CartesianIndex,i,b)
     s = zero(eltype(b))
     for J ∈ up(I,i)
@@ -15,6 +37,12 @@ end
     return 0.5s
 end
 
+"""
+    restrictML(b::Poisson)
+
+Build a new coarse-level `Poisson` from fine-level `b` by restricting the
+conductivity `L` and allocating matching solution/residual arrays.
+"""
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
     Na = map(i->i÷2+2,N)
@@ -23,6 +51,12 @@ function restrictML(b::Poisson)
     restrictL!(aL,b.L,perdir=b.perdir)
     Poisson(ax,aL,copy(ax);b.perdir)
 end
+"""
+    restrictL!(a, b; perdir=())
+
+Restrict the fine-grid conductivity `b` into coarse-grid `a`, then apply
+boundary conditions (`BC!` and `wallBC_L!`) on the coarse level.
+"""
 function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
@@ -36,10 +70,10 @@ prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 """
-    MultiLevelPoisson{N,M}
+    MultiLevelPoisson{T,S,V}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
-The only variable is `levels`, a vector of nested `Poisson` systems.
+The main field is `levels`, a vector of nested `Poisson` systems from fine to coarse.
 """
 struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     x::S
@@ -67,6 +101,13 @@ function update!(ml::MultiLevelPoisson)
     end
 end
 
+"""
+    Vcycle!(ml::MultiLevelPoisson; l=1, ω=1)
+
+Perform one multigrid V-cycle starting at level `l`: smooth on the fine grid,
+restrict the residual, solve (or recurse) on the coarse grid, then prolongate
+and correct the fine-grid solution.
+"""
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
@@ -86,6 +127,13 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 smooth! = GaussSeidelRB!
 
+"""
+    solver!(ml::MultiLevelPoisson; tol=1e-4, itmx=32)
+
+Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until the
+`L₂`-norm residual drops below `tol`.  Ends with `pin_pressure!` + `comm!`
+to remove the null-space mode and synchronize halos.
+"""
 function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p); ω = T(1)

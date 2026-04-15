@@ -12,6 +12,13 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     map::F2
 end
 AutoBody(sdf, map=(x,t)->x) = AutoBody(sdf, map)
+"""
+    _apply_offset(body::AutoBody, offset)
+
+Wrap the body's `map` function so that rank-local coordinates are shifted
+by `offset` before evaluation.  This lets users write SDFs in global
+coordinates while each MPI rank indexes with local coordinates.
+"""
 _apply_offset(body::AutoBody, offset) =
     AutoBody(body.sdf, let m=body.map, o=offset; (x,t)->m(x .+ o, t); end)
 

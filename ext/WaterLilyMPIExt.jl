@@ -10,9 +10,9 @@ hooks through `par_mode[]` (defaults to `Serial()`).  This extension defines
 `Parallel <: AbstractParMode` and adds new dispatch methods — no method
 overwriting, so precompilation works normally.
 
-Functions with MPI-specific behavior (via dispatch or subtype specialization):
+Functions with MPI-specific behavior (via dispatch on `::Parallel`):
   _wallBC_L!  — zero L at physical walls only (skip MPI-internal) + halo on L
-  _exitBC!    — global reductions for inflow/outflow mass flux (dispatches on ::Parallel)
+  _exitBC!    — global reductions for inflow/outflow mass flux
   _divisible  — stricter coarsening threshold (N>8) for multigrid
 """
 module WaterLilyMPIExt

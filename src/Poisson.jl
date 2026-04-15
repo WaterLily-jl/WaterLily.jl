@@ -1,7 +1,7 @@
 abstract type AbstractPoisson{T,S,V} end
 
 """
-    Poisson{N,M}
+    Poisson{T, S, V}
 
 Composite type for conservative variable coefficient Poisson equations:
 
@@ -13,11 +13,18 @@ The resulting linear system is
 
 where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
-ect can be easily implemented and optimized without external libraries.
+etc. can be easily implemented and optimized without external libraries.
 
-To help iteratively solve the system above, the Poisson structure holds
-helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
-solution method then estimates the error `ϵ=̃A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
+The conductivity `L` is initialized from `flow.μ₀` and modified by
+`wallBC_L!` (zero at physical walls for Neumann BCs). Ghost-cell
+synchronization uses `comm!` (= `perBC!` + `scalar_halo!`) rather than
+bare `perBC!`, so that MPI rank-internal boundaries are handled correctly.
+
+To help iteratively solve the system, the structure holds helper arrays
+for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative solution
+method estimates the error `ϵ≈A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
+The solver ends with `pin_pressure!` + `comm!` to remove the null-space
+mode and synchronize halos.
 """
 struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     L :: V # Lower diagonal coefficients
@@ -58,7 +65,7 @@ end
     mult!(p::Poisson,x)
 
 Efficient function for Poisson matrix-vector multiplication.
-Fills `p.z = p.A x` with 0 in the ghost cells.
+Fills `p.z = Ax` with 0 in the ghost cells, where `A` is the Poisson matrix implied by `L` and `D`.
 """
 function mult!(p::Poisson,x)
     @assert axes(p.z)==axes(x)
@@ -135,7 +142,7 @@ end
     GaussSeidelRB!(p::Poisson;it=4, ω=1)
 
 Red-black Gauss-Seidel smoother. Runs `it` iterations; a complete red-black cycle requires `it` to be even.
-`ω` under-/over-relaxs the solution through scaling the deferred corrections in `increment!`.
+`ω` under-/over-relaxes the solution through scaling the deferred corrections in `increment!`.
 Note: This performs best on GPU configurations and is the default smoother.
 """
 function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
@@ -150,7 +157,7 @@ end
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
+Conjugate-Gradient smoother with Jacobi preconditioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends.
 """
@@ -180,16 +187,19 @@ L₂(p::Poisson) = global_dot(p.r, p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
 """
-    solver!(A::Poisson;tol=1e-4,itmx=1e3)
+    solver!(A::Poisson; tol=1e-4, itmx=1e3)
 
-Approximate iterative solver for the Poisson matrix equation `Ax=b`.
+Iterative solver for the Poisson matrix equation `Ax=b` using
+preconditioned conjugate gradients (`pcg!`).
 
-  - `A`: Poisson matrix with working arrays.
-  - `A.x`: Solution vector. Can start with an initial guess.
-  - `A.z`: Right-Hand-Side vector. Will be overwritten!
-  - `A.n[end]`: stores the number of iterations performed.
+  - `A.x`: Solution vector (can start with an initial guess).
+  - `A.z`: Right-hand-side vector (overwritten).
+  - `A.n[end]`: Number of iterations performed.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
+
+Ends with `pin_pressure!` (remove null-space mean) and `comm!`
+(halo sync) so the solution is ready for use in `project!`.
 """
 function solver!(p::Poisson;tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)

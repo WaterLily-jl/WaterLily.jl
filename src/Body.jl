@@ -97,7 +97,13 @@ struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
     b::Tb
 end
 
-# Default _apply_offset: identity for generic bodies
+"""
+    _apply_offset(body::AbstractBody, offset)
+
+Wrap the body's coordinate mapping so rank-local coordinates are shifted by
+`offset` before evaluation.  Default is identity (no-op).  `SetBody` recurses
+into its children; `AutoBody` wraps the `map` function (see `AutoBody.jl`).
+"""
 _apply_offset(body::AbstractBody, offset) = body
 _apply_offset(body::SetBody, offset) = SetBody(body.op, _apply_offset(body.a, offset), _apply_offset(body.b, offset))
 

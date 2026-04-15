@@ -60,7 +60,7 @@ export RigidMap,setmap
 
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
-               U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
+               U=√sum(abs2,uBC), Δt=0.25, ν=0., ϵ=1, g=nothing,
                perdir=(), exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array)

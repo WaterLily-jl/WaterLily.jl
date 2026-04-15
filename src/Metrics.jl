@@ -72,10 +72,12 @@ Compute ``∥𝛚∥`` at the center of cell `I`.
 """
 ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
 """
-    ω_θ(I::CartesianIndex{3},z,center,u)
+    ω_θ(I::CartesianIndex{3}, z, center, u; offset=zero(SVector{3,eltype(u)}))
 
 Compute ``𝛚⋅𝛉`` at the center of cell `I` where ``𝛉`` is the azimuth
-direction around vector `z` passing through `center`.
+direction around vector `z` passing through `center`.  The optional
+`offset` shifts the cell location — used in MPI parallel to map
+rank-local indices to global coordinates.
 """
 function ω_θ(I::CartesianIndex{3},z,center,u;offset=zero(SVector{3,eltype(u)}))
     θ = z × (loc(0,I,eltype(u))+offset-SVector{3}(center))
@@ -138,9 +140,11 @@ total_force(sim) = pressure_force(sim) .+ viscous_force(sim)
 
 using LinearAlgebra: cross
 """
-    pressure_moment(x₀,sim::Simulation)
+    pressure_moment(x₀, sim::Simulation; offset=zero(x₀))
 
-Computes the pressure moment on an immersed body relative to point x₀.
+Compute the pressure moment on an immersed body relative to point `x₀`.
+The optional `offset` shifts cell locations — used in MPI parallel to map
+rank-local indices to global coordinates.
 """
 pressure_moment(x₀,sim;kwargs...) = pressure_moment(x₀,sim.flow,sim.body;kwargs...)
 pressure_moment(x₀,flow,body;kwargs...) = pressure_moment(x₀,flow.p,flow.f,body,time(flow);kwargs...)

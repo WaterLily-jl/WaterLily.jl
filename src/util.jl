@@ -32,7 +32,6 @@ Replace jᵗʰ component of CartesianIndex with k
 CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
 
 """
-    δ(i,N::Int)
     δ(i,I::CartesianIndex{N}) where {N}
 
 Return a CartesianIndex of dimension `N` which is one at index `i` and zero elsewhere.
@@ -62,11 +61,6 @@ end
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
-"""
-    L₂(a)
-
-L₂ norm of array `a` excluding ghosts.
-"""
 local_dot(a, b) = a⋅b
 local_sum(a) = sum(a)
 
@@ -95,6 +89,13 @@ end
 # Could also use ScopedValues in Julia 1.11+
 using Preferences
 const backend = @load_preference("backend", "KernelAbstractions")
+"""
+    set_backend(new_backend::String)
+
+Set the loop execution backend to `"SIMD"` (single-threaded) or
+`"KernelAbstractions"` (multi-threaded CPU / GPU).  The preference is
+persisted via Preferences.jl; a Julia restart is required.
+"""
 function set_backend(new_backend::String)
     if !(new_backend in ("SIMD", "KernelAbstractions"))
         throw(ArgumentError("Invalid backend: \"$(new_backend)\""))
@@ -182,7 +183,7 @@ using StaticArrays
     loc(i,I) = loc(Ii)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
-Using `i=0` returns the cell center s.t. `loc = I`.
+Using `i=0` returns the cell center s.t. `loc(0,I) = I .- 1.5`.
 """
 @inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
 @inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
@@ -217,19 +218,51 @@ abstract type AbstractParMode end
 struct Serial <: AbstractParMode end
 const par_mode = Ref{AbstractParMode}(Serial())
 
-# Global reductions (serial = local)
-global_dot(a, b)  = _global_dot(a, b, par_mode[])
-global_sum(a)     = _global_sum(a, par_mode[])
-global_length(r)  = _global_length(r, par_mode[])
-global_min(a, b)  = _global_min(a, b, par_mode[])
+"""
+    global_dot(a, b)
+
+Global dot product `a⋅b`.  In serial, equivalent to `a⋅b`.
+The MPI extension replaces this with `MPI.Allreduce(…, SUM)`.
+"""
+global_dot(a, b) = _global_dot(a, b, par_mode[])
+"""
+    global_sum(a)
+
+Global sum of array `a`.  MPI-aware via dispatch on `par_mode[]`.
+"""
+global_sum(a) = _global_sum(a, par_mode[])
+"""
+    global_length(r)
+
+Global length of index range `r`.  MPI-aware via dispatch on `par_mode[]`.
+"""
+global_length(r) = _global_length(r, par_mode[])
+"""
+    global_min(a, b)
+
+Global minimum of `a` and `b`.  MPI-aware via dispatch on `par_mode[]`.
+"""
+global_min(a, b) = _global_min(a, b, par_mode[])
+
 _global_dot(a, b, ::Serial) = local_dot(a, b)
 _global_sum(a, ::Serial)    = local_sum(a)
 _global_length(r, ::Serial) = length(r)
 _global_min(a, b, ::Serial) = min(a, b)
 
+"""
+    L₂(a)
+
+L₂ norm of array `a` over interior cells (excluding ghost cells).
+"""
 L₂(a) = (R = inside(a); @view(a[R])⋅@view(a[R]))
 
-# Perdot (scalar dot product respecting periodic BCs)
+"""
+    global_perdot(a, b, perdir)
+
+Dot product of `a` and `b` respecting periodic boundary conditions.
+When `perdir` is empty, uses the full arrays; otherwise restricts to interior cells.
+MPI-aware via dispatch on `par_mode[]`.
+"""
 local_perdot(a,b,::Tuple{}) = a⋅b
 local_perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
 global_perdot(a,b,tup::Tuple{}) = _global_perdot(a, b, tup, par_mode[])
@@ -237,11 +270,23 @@ global_perdot(a,b,perdir,R=inside(a)) = _global_perdot(a, b, perdir, R, par_mode
 _global_perdot(a, b, tup::Tuple{}, ::Serial) = local_perdot(a, b, tup)
 _global_perdot(a, b, perdir, R, ::Serial) = local_perdot(a, b, perdir, R)
 
-# Communication hooks (serial defaults)
-scalar_halo!(x)    = _scalar_halo!(x, par_mode[])
-velocity_halo!(u)  = _velocity_halo!(u, par_mode[])
-_scalar_halo!(x, ::Serial)   = nothing
-_velocity_halo!(u, ::Serial)  = nothing
+"""
+    scalar_halo!(x)
+
+Exchange halo cells for scalar array `x`.  No-op in serial.
+The MPI extension routes fine-grid arrays through IGG `update_halo!`
+and coarse multigrid arrays through direct `MPI.Isend`/`MPI.Irecv!`.
+"""
+scalar_halo!(x) = _scalar_halo!(x, par_mode[])
+"""
+    velocity_halo!(u)
+
+Exchange halo cells for a velocity (vector) array `u`.  No-op in serial.
+The MPI extension exchanges each component separately via `scalar_halo!`.
+"""
+velocity_halo!(u) = _velocity_halo!(u, par_mode[])
+_scalar_halo!(x, ::Serial) = nothing
+_velocity_halo!(u, ::Serial) = nothing
 
 """
     pin_pressure!(x)
@@ -282,7 +327,7 @@ divisible(N) = _divisible(N, par_mode[])
 _divisible(N, ::Serial) = mod(N,2)==0 && N>4
 
 """
-    BC!(a,A)
+    BC!(a, uBC, saveexit=false, perdir=(), t=0)
 
 Apply domain boundary conditions to the ghost cells of a _vector_ field.
 A Dirichlet condition is applied to the _normal_ component; zero Neumann to tangential.
@@ -364,11 +409,11 @@ function _velocity_comm!(a, perdir, ::Serial)
 end
 
 """
-    interp(x::SVector, arr::AbstractArray)
+    interp(x::SVector, arr::AbstractArray; offset=zero(x))
 
 Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-
-Note: This routine works for any number of dimensions.
+The optional `offset` shifts `x` before indexing — used in MPI parallel
+to map global coordinates to rank-local array indices.
 """
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}; offset=zero(x)) where {D,T}
     # Index below the interpolation coordinate and the difference
@@ -410,7 +455,7 @@ For example, the standard Smagorinsky–Lilly model for the sub-grid scale stres
 
 It can be implemented as
     `smagorinsky(I::CartesianIndex{m} where m; S, Cs, Δ) = @views (Cs*Δ)^2*sqrt(dot(S[I,:,:],S[I,:,:]))`
-and passed into `sim_step!` as a keyword argument together with the varibles than the function needs (`S`, `Cs`, and `Δ`):
+and passed into `sim_step!` as a keyword argument together with the variables that the function needs (`S`, `Cs`, and `Δ`):
     `sim_step!(sim, ...; udf=sgs, νₜ=smagorinsky, S, Cs, Δ)`
 """
 function sgs!(flow, t; νₜ, S, Cs, Δ)
