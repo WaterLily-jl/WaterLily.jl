@@ -1,5 +1,6 @@
 using KernelAbstractions: get_backend, @index, @kernel
 using LoggingExtras
+using LinearAlgebra: ⋅
 
 # custom log macro
 _psolver = Logging.LogLevel(-123) # custom log level for pressure solver, needs the negative sign
@@ -40,11 +41,12 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
-    inside(a;buff=1)
+    inside(a;buff=2)
 
-Return CartesianIndices range excluding a single layer of cells on all boundaries.
+Return CartesianIndices range excluding `buff` layers of cells on all boundaries.
+Default `buff=2` matches the N+4 staggered grid layout (2 ghost/boundary cells per side).
 """
-@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
+@inline inside(a::AbstractArray;buff=2) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
 """
     inside_u(dims,j)
@@ -55,8 +57,8 @@ a _vector_ array on face `j` with size `dims`.
 function inside_u(dims::NTuple{N},j) where {N}
     CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
 end
-@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
-@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(2:i-1),size(u)[1:end-1]))
+@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(3:i-2),dims)...,1:N))
+@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(3:i-2),size(u)[1:end-1]))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
@@ -65,7 +67,8 @@ size_u(u) = splitn(size(u))
 
 L₂ norm of array `a` excluding ghosts.
 """
-L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+local_dot(a, b) = a⋅b
+local_sum(a) = sum(a)
 
 """
     @inside <expr>
@@ -205,44 +208,120 @@ function slice(dims::NTuple{N},i,j,low=1) where N
     CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
 end
 
+# ── AbstractParMode dispatch pattern ──────────────────────────────────────────
+#
+# Serial WaterLily dispatches all hooks through `par_mode[]` (defaults to Serial()).
+# The MPI extension adds `Parallel <: AbstractParMode` with MPI-aware methods —
+# no method overwriting, so precompilation works normally.
+abstract type AbstractParMode end
+struct Serial <: AbstractParMode end
+const par_mode = Ref{AbstractParMode}(Serial())
+
+# Global reductions (serial = local)
+global_dot(a, b)  = _global_dot(a, b, par_mode[])
+global_sum(a)     = _global_sum(a, par_mode[])
+global_length(r)  = _global_length(r, par_mode[])
+global_min(a, b)  = _global_min(a, b, par_mode[])
+_global_dot(a, b, ::Serial) = local_dot(a, b)
+_global_sum(a, ::Serial)    = local_sum(a)
+_global_length(r, ::Serial) = length(r)
+_global_min(a, b, ::Serial) = min(a, b)
+
+L₂(a) = (R = inside(a); @view(a[R])⋅@view(a[R]))
+
+# Perdot (scalar dot product respecting periodic BCs)
+local_perdot(a,b,::Tuple{}) = a⋅b
+local_perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+global_perdot(a,b,tup::Tuple{}) = _global_perdot(a, b, tup, par_mode[])
+global_perdot(a,b,perdir,R=inside(a)) = _global_perdot(a, b, perdir, R, par_mode[])
+_global_perdot(a, b, tup::Tuple{}, ::Serial) = local_perdot(a, b, tup)
+_global_perdot(a, b, perdir, R, ::Serial) = local_perdot(a, b, perdir, R)
+
+# Communication hooks (serial defaults)
+scalar_halo!(x)    = _scalar_halo!(x, par_mode[])
+velocity_halo!(u)  = _velocity_halo!(u, par_mode[])
+_scalar_halo!(x, ::Serial)   = nothing
+_velocity_halo!(u, ::Serial)  = nothing
+
+"""
+    pin_pressure!(x)
+
+Remove the mean of scalar field `x` over the interior cells.
+This pins the null-space mode of the all-Neumann Poisson operator
+so that the absolute pressure does not drift between time steps.
+"""
+function pin_pressure!(x)
+    s = global_sum(x)/global_length(inside(x))
+    @inside x[I] = x[I] - s
+end
+
+"""
+    wallBC_L!(L, perdir=())
+
+Zero the Poisson conductivity `L` at physical (non-periodic) boundary faces.
+This decouples the boundary cell from the ghost cell, giving an implicit
+Neumann pressure BC (∂p/∂n = 0) at domain walls.
+"""
+wallBC_L!(L, perdir=()) = _wallBC_L!(L, perdir, par_mode[])
+function _wallBC_L!(L, perdir, ::Serial)
+    N, n = size_u(L)
+    for j in 1:n
+        j in perdir && continue
+        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, 3, j)       # left wall
+        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, N[j]-1, j)  # right wall
+    end
+end
+
+"""
+    divisible(N)
+
+Check if array dimension `N` is divisible for multigrid coarsening.
+MPI extension requires stricter threshold (N>8).
+"""
+divisible(N) = _divisible(N, par_mode[])
+_divisible(N, ::Serial) = mod(N,2)==0 && N>4
+
 """
     BC!(a,A)
 
-Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
-is applied to the tangential components.
+Apply domain boundary conditions to the ghost cells of a _vector_ field.
+A Dirichlet condition is applied to the _normal_ component; zero Neumann to tangential.
+Periodic directions are handled by `velocity_comm!` (called at the end),
+separating domain BCs from communication BCs.
 """
 BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
 function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
-        if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
-        else
-            if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
-                end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
-            else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
+        j in perdir && continue  # periodic handled by velocity_comm!
+        if i==j # Normal direction, Dirichlet
+            for s ∈ (1,2)
+                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
             end
+            if !saveexit || i>1
+                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j]-1,j)
+            end
+            @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)
+        else    # Tangential directions, Neumann
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+2δ(j,I),i]-uBC(i,loc(i,I+2δ(j,I)),t) over I ∈ slice(N,1,j)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,2,j)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j]-1,j)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-2δ(j,I),i]-uBC(i,loc(i,I-2δ(j,I)),t) over I ∈ slice(N,N[j],j)
         end
     end
+    velocity_comm!(a, perdir)
 end
 
 """
-    exitBC!(u,u⁰,U,Δt)
+    exitBC!(u,u⁰,Δt)
 
 Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
-function exitBC!(u,u⁰,Δt)
+exitBC!(u,u⁰,Δt) = _exitBC!(u,u⁰,Δt,par_mode[])
+function _exitBC!(u,u⁰,Δt,::Serial)
     N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux
+    exitR = slice(N.-2,N[1]-1,1,3)              # exit slice excluding ghosts
+    U = sum(@view(u[slice(N.-2,2,1,3),1]))/length(exitR) # inflow mass flux (at Dirichlet face)
     @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
     ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
@@ -254,17 +333,36 @@ Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+    @loop a[I] = a[CIj(j,I,N[j]-3)] over I ∈ slice(N,1,j)
+    @loop a[I] = a[CIj(j,I,N[j]-2)] over I ∈ slice(N,2,j)
+    @loop a[I] = a[CIj(j,I,3)] over I ∈ slice(N,N[j]-1,j)
+    @loop a[I] = a[CIj(j,I,4)] over I ∈ slice(N,N[j],j)
 end
-using LinearAlgebra: ⋅
-"""
-    perdot(a,b,perdir)
 
-Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
 """
-perdot(a,b,::Tuple{}) = a⋅b
-perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+    comm!(a, perdir)
+
+Scalar communication: periodic BC copy + MPI halo exchange.
+In serial, just applies `perBC!`. In parallel, MPI halo handles everything.
+"""
+comm!(a, perdir) = _comm!(a, perdir, par_mode[])
+_comm!(a, perdir, ::Serial) = perBC!(a, perdir)
+
+"""
+    velocity_comm!(a, perdir)
+
+Velocity communication: periodic BC copy + MPI halo exchange.
+In serial, copies periodic ghost cells for all velocity components.
+In parallel, MPI halo handles everything.
+"""
+velocity_comm!(a, perdir) = _velocity_comm!(a, perdir, par_mode[])
+function _velocity_comm!(a, perdir, ::Serial)
+    _, n = size_u(a)
+    for i ∈ 1:n
+        perBC!(@view(a[..,i]), perdir)
+    end
+end
+
 """
     interp(x::SVector, arr::AbstractArray)
 
@@ -272,9 +370,9 @@ Linear interpolation from array `arr` at Cartesian-coordinate `x`.
 
 Note: This routine works for any number of dimensions.
 """
-function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
+function interp(x::SVector{D,T}, arr::AbstractArray{T,D}; offset=zero(x)) where {D,T}
     # Index below the interpolation coordinate and the difference
-    x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
+    x = x .- offset .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
     # CartesianIndices around x
     I = CartesianIndex(i...); R = I:I+oneunit(I)
@@ -288,10 +386,10 @@ function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     return s
 end
 using EllipsisNotation
-function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
+function interp(x::SVector{D,T}, varr::AbstractArray{T}; offset=zero(x)) where {D,T}
     # Shift to align with each staggered grid component and interpolate
     @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
+    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i]);offset) for i in 1:D)
 end
 
 """
@@ -339,3 +437,4 @@ ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
 ic_function(uBC::Tuple) = (i,x)->uBC[i]
 
 squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
+

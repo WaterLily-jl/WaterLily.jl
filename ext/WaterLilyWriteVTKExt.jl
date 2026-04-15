@@ -42,13 +42,19 @@ to put in the file. With this approach, any variable can be save to the vtk file
 _velocity(a::AbstractSimulation) = a.flow.u |> Array;
 _pressure(a::AbstractSimulation) = a.flow.p |> Array;
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
-"""
-    save!(w::VTKWriter, sim<:AbstractSimulation)
 
-Write the simulation data at time `sim_time(sim)` to a `vti` file and add the file path
-to the collection file.
+"""
+    save!(w::VTKWriter, a::AbstractSimulation)
+
+Write the simulation data to VTK files.  Dispatches on `par_mode[]`:
+  - Serial  → single `.vti` file
+  - Parallel → per-rank `.vti` pieces + `.pvti` header (rank 0)
 """
 function save!(w::VTKWriter, a::AbstractSimulation)
+    _save!(w, a, WaterLily.par_mode[])
+end
+
+function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.Serial)
     k = w.count[1]; N=size(a.flow.p)
     vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n for n in N]...)
     for (name,func) in w.output_attrib
@@ -58,6 +64,63 @@ function save!(w::VTKWriter, a::AbstractSimulation)
     vtk_save(vtk); w.count[1]=k+1
     w.collection[round(sim_time(a),digits=4)]=vtk
 end
+
+function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.AbstractParMode)
+    mpi_id = Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI")
+    igg_id = Base.PkgId(Base.UUID("4d7a3746-15be-11ea-1130-334b0c4f5fa0"), "ImplicitGlobalGrid")
+
+    if !haskey(Base.loaded_modules, mpi_id) || !haskey(Base.loaded_modules, igg_id)
+        _save!(w, a, WaterLily.Serial()); return
+    end
+
+    MPIMod = Base.loaded_modules[mpi_id]
+    IGG    = Base.loaded_modules[igg_id]
+
+    comm   = MPIMod.COMM_WORLD
+    me     = MPIMod.Comm_rank(comm)
+    nprocs = MPIMod.Comm_size(comm)
+    nprocs == 1 && (_save!(w, a, WaterLily.Serial()); return)
+
+    g    = IGG.global_grid()
+    nd   = sum(g.nxyz .> 1)               # active spatial dimensions
+    nx   = ntuple(d -> g.nxyz[d] - g.overlaps[d], nd)   # interior cells per rank
+
+    # Gather every rank's coords so all ranks build the same extents array.
+    my_coords  = Int32[g.coords[d] for d in 1:nd]
+    all_coords = MPIMod.Allgather(my_coords, comm)
+    coords_mat = reshape(all_coords, nd, nprocs)
+
+    # Extents use VTK point indices (nx+1 points → nx cells).
+    # Adjacent ranks overlap by 1 point so ParaView sees contiguous pieces.
+    extents = [
+        ntuple(d -> (Int(coords_mat[d,r]) * nx[d] + 1):(Int(coords_mat[d,r]) * nx[d] + nx[d] + 1), nd)
+        for r in 1:nprocs
+    ]
+
+    k     = w.count[1]
+    fname = joinpath(w.dir_name, @sprintf("%s_%06i", w.fname, k))
+
+    pvtk = pvtk_grid(fname,
+                     ntuple(d -> collect(Float32, extents[me+1][d]), nd)...;
+                     part = me + 1, extents = extents)
+
+    for (name, func) in w.output_attrib
+        data = func(a)
+        if ndims(data) > nd          # vector field (spatial..., D)
+            pvtk[name, VTKCellData()] = components_first(data)
+        else                         # scalar field
+            pvtk[name, VTKCellData()] = data
+        end
+    end
+
+    if me == 0
+        w.collection[round(sim_time(a), digits=4)] = pvtk
+    else
+        vtk_save(pvtk)
+    end
+    w.count[1] = k + 1
+end
+
 """
     close(w::VTKWriter)
 

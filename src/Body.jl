@@ -46,8 +46,9 @@ function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
         end
     end
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
-    BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
+    BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir)
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
+    velocity_halo!(reshape(a.μ₁, size(a.σ)..., :)) # halo on μ₁ tensor (no-op in serial)
 end
 
 # Convolution kernel and its moments
@@ -79,7 +80,10 @@ Use for a simulation without a body.
 """
 struct NoBody <: AbstractBody end
 measure(::NoBody,x::AbstractVector,args...;kwargs...)=(Inf,zero(x),zero(x))
-function measure!(::Flow,::NoBody;kwargs...) end # skip measure! entirely
+function measure!(a::Flow{N,T},::NoBody;kwargs...) where {N,T}
+    a.μ₀ .= one(T)
+    BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir)
+end
 
 """
     SetBody
@@ -92,6 +96,10 @@ struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
     a::Ta
     b::Tb
 end
+
+# Default _apply_offset: identity for generic bodies
+_apply_offset(body::AbstractBody, offset) = body
+_apply_offset(body::SetBody, offset) = SetBody(body.op, _apply_offset(body.a, offset), _apply_offset(body.b, offset))
 
 # Lazy constructors
 Base.:∪(a::AbstractBody, b::AbstractBody) = SetBody(min,a,b)

@@ -77,8 +77,8 @@ Compute ``∥𝛚∥`` at the center of cell `I`.
 Compute ``𝛚⋅𝛉`` at the center of cell `I` where ``𝛉`` is the azimuth
 direction around vector `z` passing through `center`.
 """
-function ω_θ(I::CartesianIndex{3},z,center,u)
-    θ = z × (loc(0,I,eltype(u))-SVector{3}(center))
+function ω_θ(I::CartesianIndex{3},z,center,u;offset=zero(SVector{3,eltype(u)}))
+    θ = z × (loc(0,I,eltype(u))+offset-SVector{3}(center))
     n = norm2(θ)
     n<=eps(n) ? 0. : θ'*ω(I,u) / n
 end
@@ -142,12 +142,12 @@ using LinearAlgebra: cross
 
 Computes the pressure moment on an immersed body relative to point x₀.
 """
-pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
-pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
-function pressure_moment(x₀,p,df,body,t=0)
+pressure_moment(x₀,sim;kwargs...) = pressure_moment(x₀,sim.flow,sim.body;kwargs...)
+pressure_moment(x₀,flow,body;kwargs...) = pressure_moment(x₀,flow.p,flow.f,body,time(flow);kwargs...)
+function pressure_moment(x₀,p,df,body,t=0;offset=zero(x₀))
     Tp = eltype(p); To = promote_type(Float64,Tp)
     df .= zero(Tp)
-    @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
+    @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)+offset-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
@@ -170,7 +170,7 @@ struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
         new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
     end
     function MeanFlow(N::NTuple{D}; mem=Array, T=Float32, t_init=0, uu_stats=false) where {D}
-        Ng = N .+ 2
+        Ng = N .+ 4
         P = zeros(T, Ng) |> mem
         U = zeros(T, Ng..., D) |> mem
         UU = uu_stats ? zeros(T, Ng..., D, D) |> mem : nothing
