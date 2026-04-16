@@ -80,10 +80,7 @@ Use for a simulation without a body.
 """
 struct NoBody <: AbstractBody end
 measure(::NoBody,x::AbstractVector,args...;kwargs...)=(Inf,zero(x),zero(x))
-function measure!(a::Flow{N,T},::NoBody;kwargs...) where {N,T}
-    a.μ₀ .= one(T)
-    BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir)
-end
+function measure!(::Flow,::NoBody;kwargs...) end # μ₀ already ones from Flow constructor
 
 """
     SetBody
