@@ -99,6 +99,7 @@ mutable struct Simulation <: AbstractSimulation
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
+        check_mem(mem)
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
         offset = global_offset(Val(N), T)
@@ -212,16 +213,32 @@ export viz!, get_body, plot_body_obs!
 
 Check the number of threads available for the Julia session that loads WaterLily.
 A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstractions enabled.
+Skipped during precompilation (which always runs single-threaded).
 """
 function check_nthreads()
+    ccall(:jl_generating_output, Cint, ()) != 0 && return  # skip during precompilation
     if backend == "KernelAbstractions" && Threads.nthreads() == 1
         @warn """
         Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
         Use JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU backends.
-        For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")
-        """
+        For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")"""
     end
 end
-check_nthreads()
+function __init__()
+    check_nthreads()
+end
+
+"""
+    check_mem(mem)
+
+Check that the memory type `mem` is compatible with the current backend.
+GPU array types (anything other than `Array`) require the KernelAbstractions backend.
+"""
+function check_mem(mem)
+    if backend == "SIMD" && mem !== Array
+        error("GPU memory (mem=$mem) requires the KernelAbstractions backend. " *
+              "Set it with: WaterLily.set_backend(\"KernelAbstractions\") then restart the Julia session.")
+    end
+end
 
 end # module
