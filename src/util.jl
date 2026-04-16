@@ -354,9 +354,9 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
             else
                 @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)
             end
-        else    # Tangential directions, Neumann (both ghosts copy from first interior cell)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,3),i]-uBC(i,loc(i,CIj(j,I,3)),t) over I ∈ slice(N,1:2,j)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,N[j]-2),i]-uBC(i,loc(i,CIj(j,I,N[j]-2)),t) over I ∈ slice(N,N[j]-1:N[j],j)
+        else    # Tangential directions, Neumann: mirror about wall face (between 2,3 and M-2,M-1)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,5-I[j]),i]-uBC(i,loc(i,CIj(j,I,5-I[j])),t) over I ∈ slice(N,1:2,j)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,2N[j]-3-I[j]),i]-uBC(i,loc(i,CIj(j,I,2N[j]-3-I[j])),t) over I ∈ slice(N,N[j]-1:N[j],j)
         end
     end
     velocity_comm!(a, perdir)

@@ -41,17 +41,17 @@ skip(name) = !isempty(test_filter) && !occursin(test_filter, name)
         # Normal Dirichlet: indices 1,2 (left) and M-1,M (right)
         @test GPUArrays.@allowscalar all(u[1, :, 1] .== U[1]) && all(u[2, :, 1] .== U[1]) &&
             all(u[end-1, :, 1] .== U[1]) && all(u[end, :, 1] .== U[1])
-        # Tangential Neumann: ghost cells copy from nearest interior
-        @test GPUArrays.@allowscalar all(u[3:end-2, 1, 1] .== u[3:end-2, 3, 1]) &&
-            all(u[3:end-2, 2, 1] .== u[3:end-2, 3, 1]) &&
+        # Tangential Neumann: ghost cells mirror about wall face (2nd-order)
+        @test GPUArrays.@allowscalar all(u[3:end-2, 2, 1] .== u[3:end-2, 3, 1]) &&
+            all(u[3:end-2, 1, 1] .== u[3:end-2, 4, 1]) &&
             all(u[3:end-2, end-1, 1] .== u[3:end-2, end-2, 1]) &&
-            all(u[3:end-2, end, 1] .== u[3:end-2, end-2, 1])
+            all(u[3:end-2, end, 1] .== u[3:end-2, end-3, 1])
         @test GPUArrays.@allowscalar all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) &&
             all(u[:, end-1, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
-        @test GPUArrays.@allowscalar all(u[1, 3:end-2, 2] .== u[3, 3:end-2, 2]) &&
-            all(u[2, 3:end-2, 2] .== u[3, 3:end-2, 2]) &&
+        @test GPUArrays.@allowscalar all(u[2, 3:end-2, 2] .== u[3, 3:end-2, 2]) &&
+            all(u[1, 3:end-2, 2] .== u[4, 3:end-2, 2]) &&
             all(u[end-1, 3:end-2, 2] .== u[end-2, 3:end-2, 2]) &&
-            all(u[end, 3:end-2, 2] .== u[end-2, 3:end-2, 2])
+            all(u[end, 3:end-2, 2] .== u[end-3, 3:end-2, 2])
 
         GPUArrays.@allowscalar u[end-1,:,1] .= 3
         BC!(u,U,true) # save exit values (only end-1 is saved, end gets Dirichlet)
