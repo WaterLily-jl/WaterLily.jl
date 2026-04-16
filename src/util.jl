@@ -202,11 +202,14 @@ applyS!(f,c,offset=global_offset(Val(ndims(c)),eltype(c))) = @loop c[I] = f(loc(
     slice(dims,i,j,low=1)
 
 Return `CartesianIndices` range slicing through an array of size `dims` in
-dimension `j` at index `i`. `low` optionally sets the lower extent of the range
-in the other dimensions.
+dimension `j` at index `i` (or range `i`). `low` optionally sets the lower
+extent of the range in the other dimensions.
 """
 function slice(dims::NTuple{N},i,j,low=1) where N
     CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
+end
+function slice(dims::NTuple{N},i::AbstractUnitRange,j,low=1) where N
+    CartesianIndices(ntuple( k-> k==j ? i : (low:dims[k]), N))
 end
 
 # ── AbstractParMode dispatch pattern ──────────────────────────────────────────
@@ -345,18 +348,15 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     for i ∈ 1:n, j ∈ 1:n
         j in perdir && continue  # periodic handled by velocity_comm!
         if i==j # Normal direction, Dirichlet
-            for s ∈ (1,2)
-                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
-            end
+            @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,1:2,j)
             if !saveexit || i>1
-                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j]-1,j)
+                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j]-1:N[j],j)
+            else
+                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)
             end
-            @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)
-        else    # Tangential directions, Neumann
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+2δ(j,I),i]-uBC(i,loc(i,I+2δ(j,I)),t) over I ∈ slice(N,1,j)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,2,j)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j]-1,j)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-2δ(j,I),i]-uBC(i,loc(i,I-2δ(j,I)),t) over I ∈ slice(N,N[j],j)
+        else    # Tangential directions, Neumann (both ghosts copy from first interior cell)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,3),i]-uBC(i,loc(i,CIj(j,I,3)),t) over I ∈ slice(N,1:2,j)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,N[j]-2),i]-uBC(i,loc(i,CIj(j,I,N[j]-2)),t) over I ∈ slice(N,N[j]-1:N[j],j)
         end
     end
     velocity_comm!(a, perdir)
@@ -383,10 +383,8 @@ Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-3)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,N[j]-2)] over I ∈ slice(N,2,j)
-    @loop a[I] = a[CIj(j,I,3)] over I ∈ slice(N,N[j]-1,j)
-    @loop a[I] = a[CIj(j,I,4)] over I ∈ slice(N,N[j],j)
+    @loop a[I] = a[CIj(j,I,I[j]+N[j]-4)] over I ∈ slice(N,1:2,j)
+    @loop a[I] = a[CIj(j,I,I[j]-N[j]+4)] over I ∈ slice(N,N[j]-1:N[j],j)
 end
 
 """
