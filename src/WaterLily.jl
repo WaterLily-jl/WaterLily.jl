@@ -7,7 +7,8 @@ using DocStringExtensions
 
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend,
-       global_dot,global_sum,global_length,global_min,scalar_halo!,velocity_halo!,
+       global_allreduce,global_dot,global_sum,global_length,global_min,
+       scalar_halo!,velocity_halo!,
        comm!,velocity_comm!,wallBC_L!,pin_pressure!,
        AbstractParMode,Serial,par_mode
 
@@ -105,7 +106,6 @@ mutable struct Simulation <: AbstractSimulation
         if !iszero(offset)
             uBC isa Function && (uBC = let o=offset, f=uBC; (i,x,t)->f(i,x.+o,t); end)
             g isa Function   && (g   = let o=offset, f=g;   (i,x,t)->f(i,x.+o,t); end)
-            uλ isa Function  && (uλ  = let o=offset, f=uλ;  (i,x)->f(i,x.+o);     end)
         end
         flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)

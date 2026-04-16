@@ -196,8 +196,8 @@ Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` o
 a function `f(x)` to the center of a uniform array `c`.
 """
 apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
-applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ CartesianIndices(c)
-applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
+applyV!(f,c,offset=global_offset(Val(ndims(c)-1),eltype(c))) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))+offset) over Ii ∈ CartesianIndices(c)
+applyS!(f,c,offset=global_offset(Val(ndims(c)),eltype(c))) = @loop c[I] = f(loc(0,I,eltype(c))+offset) over I ∈ CartesianIndices(c)
 """
     slice(dims,i,j,low=1)
 
@@ -224,19 +224,19 @@ const par_mode = Ref{AbstractParMode}(Serial())
 Global dot product `a⋅b`.  In serial, equivalent to `a⋅b`.
 The MPI extension replaces this with `MPI.Allreduce(…, SUM)`.
 """
-global_dot(a, b) = _global_dot(a, b, par_mode[])
+global_dot(a, b) = global_allreduce(local_dot(a, b))
 """
     global_sum(a)
 
 Global sum of array `a`.  MPI-aware via dispatch on `par_mode[]`.
 """
-global_sum(a) = _global_sum(a, par_mode[])
+global_sum(a) = global_allreduce(local_sum(a))
 """
     global_length(r)
 
 Global length of index range `r`.  MPI-aware via dispatch on `par_mode[]`.
 """
-global_length(r) = _global_length(r, par_mode[])
+global_length(r) = global_allreduce(length(r))
 """
     global_min(a, b)
 
@@ -244,10 +244,18 @@ Global minimum of `a` and `b`.  MPI-aware via dispatch on `par_mode[]`.
 """
 global_min(a, b) = _global_min(a, b, par_mode[])
 
-_global_dot(a, b, ::Serial) = local_dot(a, b)
-_global_sum(a, ::Serial)    = local_sum(a)
-_global_length(r, ::Serial) = length(r)
 _global_min(a, b, ::Serial) = min(a, b)
+
+"""
+    global_allreduce(x)
+
+Reduce a pre-computed value `x` (scalar or vector) across all MPI ranks
+with element-wise summation.  In serial, returns `x` unchanged.
+This is the primitive that other global reductions build on:
+`global_sum(a) = global_allreduce(local_sum(a))`.
+"""
+global_allreduce(x) = _global_allreduce(x, par_mode[])
+_global_allreduce(x, ::Serial) = x
 
 """
     L₂(a)
@@ -265,10 +273,8 @@ MPI-aware via dispatch on `par_mode[]`.
 """
 local_perdot(a,b,::Tuple{}) = a⋅b
 local_perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
-global_perdot(a,b,tup::Tuple{}) = _global_perdot(a, b, tup, par_mode[])
-global_perdot(a,b,perdir,R=inside(a)) = _global_perdot(a, b, perdir, R, par_mode[])
-_global_perdot(a, b, tup::Tuple{}, ::Serial) = local_perdot(a, b, tup)
-_global_perdot(a, b, perdir, R, ::Serial) = local_perdot(a, b, perdir, R)
+global_perdot(a,b,tup::Tuple{}) = global_allreduce(local_perdot(a, b, tup))
+global_perdot(a,b,perdir,R=inside(a)) = global_allreduce(local_perdot(a, b, perdir, R))
 
 """
     scalar_halo!(x)
@@ -408,13 +414,13 @@ function _velocity_comm!(a, perdir, ::Serial)
 end
 
 """
-    interp(x::SVector, arr::AbstractArray; offset=zero(x))
+    interp(x::SVector, arr::AbstractArray, offset=zero(x))
 
 Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-The optional `offset` shifts `x` before indexing — used in MPI parallel
-to map global coordinates to rank-local array indices.
+`offset` shifts `x` before indexing — used in MPI parallel to map
+global coordinates to rank-local array indices (pass `flow.offset`).
 """
-function interp(x::SVector{D,T}, arr::AbstractArray{T,D}; offset=zero(x)) where {D,T}
+function interp(x::SVector{D,T}, arr::AbstractArray{T,D}, offset=zero(x)) where {D,T}
     # Index below the interpolation coordinate and the difference
     x = x .- offset .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
@@ -430,10 +436,10 @@ function interp(x::SVector{D,T}, arr::AbstractArray{T,D}; offset=zero(x)) where 
     return s
 end
 using EllipsisNotation
-function interp(x::SVector{D,T}, varr::AbstractArray{T}; offset=zero(x)) where {D,T}
+function interp(x::SVector{D,T}, varr::AbstractArray{T}, offset=zero(x)) where {D,T}
     # Shift to align with each staggered grid component and interpolate
     @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i]);offset) for i in 1:D)
+    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i]),offset) for i in 1:D)
 end
 
 """

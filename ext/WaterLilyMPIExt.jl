@@ -232,11 +232,7 @@ function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
 end
 
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
-WaterLily._global_dot(a, b, ::Parallel)          = MPI.Allreduce(WaterLily.local_dot(a,b), MPI.SUM, _comm())
-WaterLily._global_sum(a, ::Parallel)              = MPI.Allreduce(WaterLily.local_sum(a), MPI.SUM, _comm())
-WaterLily._global_perdot(a, b, tup::Tuple{}, ::Parallel)  = MPI.Allreduce(WaterLily.local_perdot(a,b,tup), MPI.SUM, _comm())
-WaterLily._global_perdot(a, b, perdir, R, ::Parallel)     = MPI.Allreduce(WaterLily.local_perdot(a,b,perdir,R), MPI.SUM, _comm())
-WaterLily._global_length(r, ::Parallel)           = MPI.Allreduce(length(r), MPI.SUM, _comm())
+WaterLily._global_allreduce(x, ::Parallel)        = MPI.Allreduce(x, MPI.SUM, _comm())
 WaterLily._global_min(a, b, ::Parallel)           = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
 WaterLily._scalar_halo!(x, ::Parallel)            = _do_scalar_halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel)          = _do_velocity_halo!(u)

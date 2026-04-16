@@ -98,14 +98,27 @@ struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
 end
 
 """
+    OffsetBody(body, offset) <: AbstractBody
+
+Wraps any `AbstractBody` so that rank-local coordinates are shifted by
+`offset` to global coordinates before `measure`/`sdf` evaluation.
+Created automatically by `_apply_offset`; users should not construct directly.
+"""
+struct OffsetBody{B<:AbstractBody,O} <: AbstractBody
+    body::B
+    offset::O
+end
+measure(b::OffsetBody,x,t;kwargs...) = measure(b.body, x .+ b.offset, t; kwargs...)
+sdf(b::OffsetBody,x,t=0;kwargs...) = sdf(b.body, x .+ b.offset, t; kwargs...)
+
+"""
     _apply_offset(body::AbstractBody, offset)
 
-Wrap the body's coordinate mapping so rank-local coordinates are shifted by
-`offset` before evaluation.  Default is identity (no-op).  `SetBody` recurses
-into its children; `AutoBody` wraps the `map` function (see `AutoBody.jl`).
+Wrap the body in an `OffsetBody` so that rank-local coordinates are shifted
+by `offset` before evaluation.  Works for any `AbstractBody` subtype.
 """
-_apply_offset(body::AbstractBody, offset) = body
-_apply_offset(body::SetBody, offset) = SetBody(body.op, _apply_offset(body.a, offset), _apply_offset(body.b, offset))
+_apply_offset(body::AbstractBody, offset) = OffsetBody(body, offset)
+_apply_offset(body::NoBody, offset) = body
 
 # Lazy constructors
 Base.:∪(a::AbstractBody, b::AbstractBody) = SetBody(min,a,b)
