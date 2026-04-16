@@ -158,7 +158,7 @@ pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 function pressure_moment(x₀,flow::Flow{N,T},body,t=time(flow)) where {N,T}
     pressure_moment(x₀,flow.p,flow.f,body,t,global_offset(Val(N),T))
 end
-function pressure_moment(x₀,p,df,body,t,offset)
+function pressure_moment(x₀,p,df,body,t,offset=zero(x₀))
     Tp = eltype(p); To = promote_type(Float64,Tp)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)+offset-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
