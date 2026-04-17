@@ -102,12 +102,6 @@ mutable struct Simulation <: AbstractSimulation
         check_mem(mem)
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        offset = global_offset(Val(N), T)
-        body = iszero(offset) ? body : _apply_offset(body, offset)
-        if !iszero(offset)
-            uBC isa Function && (uBC = let o=offset, f=uBC; (i,x,t)->f(i,x.+o,t); end)
-            g isa Function   && (g   = let o=offset, f=g;   (i,x,t)->f(i,x.+o,t); end)
-        end
         flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         Lp = copy(flow.μ₀); wallBC_L!(Lp, perdir)

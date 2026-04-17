@@ -119,19 +119,22 @@ For example
 becomes
 
     @simd for I ∈ R
-        @fastmath @inbounds a[I,i] += sum(loc(i,I))
+        @fastmath @inbounds a[I,i] += sum(loc(i,I,offset))
     end
 
 on serial execution, or
 
-    @kernel function kern(a,i,@Const(I0))
+    @kernel function kern(a,i,@Const(offset),@Const(I0))
         I ∈ @index(Global,Cartesian)+I0
-        @fastmath @inbounds a[I,i] += sum(loc(i,I))
+        @fastmath @inbounds a[I,i] += sum(loc(i,I,offset))
     end
-    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
+    kern(get_backend(a),64)(a,i,offset,R[1]-oneunit(R[1]),ndrange=size(R))
 
-when multi-threading on CPU or using CuArrays.
-Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
+when multi-threading on CPU or using CuArrays.  The macro rewrites every
+`loc(...)` call in `expr` to append a captured `offset` argument so that
+`loc` returns *global* coordinates in MPI-parallel runs; in serial the
+captured value is `nothing` and `loc(...,nothing)` falls back to local
+coordinates.  `get_backend` is used on the _first_ variable in `expr`.
 """
 macro loop(args...)
     ex,_,itr = args
@@ -141,27 +144,30 @@ macro loop(args...)
     setdiff!(sym,[I]) # don't want to pass I as an argument
     symT = [gensym() for _ in 1:length(sym)] # generate a list of types for each symbol
     symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
-    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
+    @gensym(kern, kern_, offset) # unique kernel names + captured offset symbol
+    inject_loc_offset!(ex, offset) # rewrite loc(...) → loc(..., offset) in ex
     @static if backend == "KernelAbstractions"
         return quote
-            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
+            local $offset = WaterLily._loop_offset(eltype($(sym[1])))
+            @kernel function $kern_($(symWtypes...),@Const($offset),@Const(I0)) where {$(symT...)}
                 $I = @index(Global,Cartesian)
                 $I += I0
                 @fastmath @inbounds $ex
             end
-            function $kern($(symWtypes...)) where {$(symT...)}
-                $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+            function $kern($(symWtypes...),$offset) where {$(symT...)}
+                $kern_(get_backend($(sym[1])),64)($(sym...),$offset,$R[1]-oneunit($R[1]),ndrange=size($R))
             end
-            $kern($(sym...))
+            $kern($(sym...),$offset)
         end |> esc
     else # backend == "SIMD"
         return quote
-            function $kern($(symWtypes...)) where {$(symT...)}
+            local $offset = WaterLily._loop_offset(eltype($(sym[1])))
+            function $kern($(symWtypes...),$offset) where {$(symT...)}
                 @simd for $I ∈ $R
                     @fastmath @inbounds $ex
                 end
             end
-            $kern($(sym...))
+            $kern($(sym...),$offset)
         end |> esc
     end
 end
@@ -178,15 +184,44 @@ rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 joinsymtype(sym::Symbol,symT::Symbol) = Expr(:(::), sym, symT)
 joinsymtype(sym,symT) = zip(sym,symT) .|> x->joinsymtype(x...)
 
+# Walk `ex` and append `offset` to every bare `loc(...)` call so that positions
+# inside a @loop body are in global coordinates.  Matches `loc` only — qualified
+# names like `WaterLily.loc` are left alone.
+function inject_loc_offset!(ex::Expr, offset)
+    if ex.head === :call && ex.args[1] === :loc
+        push!(ex.args, offset)
+    end
+    for a in ex.args
+        a isa Expr && inject_loc_offset!(a, offset)
+    end
+    return ex
+end
+inject_loc_offset!(ex, offset) = ex
+
 using StaticArrays
 """
     loc(i,I) = loc(Ii)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc(0,I) = I .- 1.5`.
+
+Inside a `@loop` body the macro automatically appends the MPI rank-local
+offset so `loc(...)` returns *global* coordinates — user code is identical
+in serial and parallel.  Outside `@loop`, `loc(...)` returns rank-local
+coordinates; add `global_offset(Val(N), T)` explicitly to get global ones.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
-@inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
+@inline loc(i,I::CartesianIndex{N},T::Type=Float32) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
+@inline loc(Ii::CartesianIndex,T::Type=Float32) = loc(last(Ii),Base.front(Ii),T)
+# SVector offset overloads — used by the @loop auto-injection
+@inline loc(i,I::CartesianIndex{N},offset::SVector{N,T}) where {N,T} = loc(i,I,T) + offset
+@inline loc(Ii::CartesianIndex,offset::SVector) = loc(last(Ii),Base.front(Ii),eltype(offset)) + offset
+@inline loc(i,I::CartesianIndex{N},T::Type,offset::SVector{N}) where N = loc(i,I,T) + offset
+@inline loc(Ii::CartesianIndex,T::Type,offset::SVector) = loc(last(Ii),Base.front(Ii),T) + offset
+# Nothing sentinel: serial @loop passes `nothing` — no-ops to the plain loc
+@inline loc(i,I::CartesianIndex,::Nothing) = loc(i,I)
+@inline loc(Ii::CartesianIndex,::Nothing) = loc(Ii)
+@inline loc(i,I::CartesianIndex,T::Type,::Nothing) = loc(i,I,T)
+@inline loc(Ii::CartesianIndex,T::Type,::Nothing) = loc(Ii,T)
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
@@ -196,8 +231,8 @@ Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` o
 a function `f(x)` to the center of a uniform array `c`.
 """
 apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
-applyV!(f,c,offset=global_offset(Val(ndims(c)-1),eltype(c))) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))+offset) over Ii ∈ CartesianIndices(c)
-applyS!(f,c,offset=global_offset(Val(ndims(c)),eltype(c))) = @loop c[I] = f(loc(0,I,eltype(c))+offset) over I ∈ CartesianIndices(c)
+applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ CartesianIndices(c)
+applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
 """
     slice(dims,i,j,low=1)
 
@@ -220,6 +255,17 @@ end
 abstract type AbstractParMode end
 struct Serial <: AbstractParMode end
 const par_mode = Ref{AbstractParMode}(Serial())
+
+"""
+    _loop_offset(::Type{T})
+
+Return the offset captured into `@loop` bodies so `loc(...)` calls inside the
+expression return global coordinates.  Serial returns `nothing` (no-op — the
+`loc(..., ::Nothing)` overload falls back to plain `loc(...)`); the MPI
+extension returns an `SVector{N,T}` rank-local offset.
+"""
+_loop_offset(::Type{T}) where T = _loop_offset(T, par_mode[])
+_loop_offset(::Type{T}, ::Serial) where T = nothing
 
 """
     global_dot(a, b)

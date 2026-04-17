@@ -48,6 +48,10 @@ function WaterLily._global_offset(::Val{N}, ::Type{T}, ::Parallel) where {N,T}
     SVector{N,T}(ntuple(d -> T(g.coords[d] * (g.nxyz[d] - g.overlaps[d])), N))
 end
 
+# MPI-aware @loop auto-offset: returns SVector sized for the active spatial dims
+WaterLily._loop_offset(::Type{T}, p::Parallel) where T =
+    WaterLily._global_offset(Val(_ndims_active()), T, p)
+
 # ── MPI initialization ───────────────────────────────────────────────────────
 
 """

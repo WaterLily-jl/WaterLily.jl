@@ -28,10 +28,11 @@ See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016
 function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=T(2+ϵ)^2
     measure_sdf!(a.σ, body, t; fastd²=d²) # measure separately to allow specialization
+    offset = global_offset(Val(N), T) # rank-local → global coords (zero in serial)
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         if d[I]^2<d²
             for i ∈ 1:N
-                dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T),t,fastd²=d²)
+                dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T)+offset,t,fastd²=d²)
                 dᵢ = abs(dᵢ) ≤ 0.5 ? dᵢ : copysign(dᵢ,d[I]) # enforce sign consistency
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
@@ -93,29 +94,6 @@ struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
     a::Ta
     b::Tb
 end
-
-"""
-    OffsetBody(body, offset) <: AbstractBody
-
-Wraps any `AbstractBody` so that rank-local coordinates are shifted by
-`offset` to global coordinates before `measure`/`sdf` evaluation.
-Created automatically by `_apply_offset`; users should not construct directly.
-"""
-struct OffsetBody{B<:AbstractBody,O} <: AbstractBody
-    body::B
-    offset::O
-end
-measure(b::OffsetBody,x,t;kwargs...) = measure(b.body, x .+ b.offset, t; kwargs...)
-sdf(b::OffsetBody,x,t=0;kwargs...) = sdf(b.body, x .+ b.offset, t; kwargs...)
-
-"""
-    _apply_offset(body::AbstractBody, offset)
-
-Wrap the body in an `OffsetBody` so that rank-local coordinates are shifted
-by `offset` before evaluation.  Works for any `AbstractBody` subtype.
-"""
-_apply_offset(body::AbstractBody, offset) = OffsetBody(body, offset)
-_apply_offset(body::NoBody, offset) = body
 
 # Lazy constructors
 Base.:∪(a::AbstractBody, b::AbstractBody) = SetBody(min,a,b)

@@ -149,19 +149,15 @@ using LinearAlgebra: cross
 
 Compute the pressure moment on an immersed body relative to point `x₀`.
 MPI-aware: each rank computes its local contribution, then
-`global_allreduce` sums across ranks.
-
-The low-level method takes an explicit `offset` to map rank-local indices
-to global coordinates (pass `global_offset(Val(N), T)`).
+`global_allreduce` sums across ranks.  The `@loop` macro auto-injects the
+rank-local offset into `loc(...)` so coordinates are global.
 """
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
-function pressure_moment(x₀,flow::Flow{N,T},body,t=time(flow)) where {N,T}
-    pressure_moment(x₀,flow.p,flow.f,body,t,global_offset(Val(N),T))
-end
-function pressure_moment(x₀,p,df,body,t,offset=zero(x₀))
+pressure_moment(x₀,flow::Flow,body,t=time(flow)) = pressure_moment(x₀,flow.p,flow.f,body,t)
+function pressure_moment(x₀,p,df,body,t)
     Tp = eltype(p); To = promote_type(Float64,Tp)
     df .= zero(Tp)
-    @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)+offset-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
+    @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
     global_allreduce(sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array)
 end
 
