@@ -117,6 +117,10 @@ Keyword arguments:
     - `CIs::CartesianIndices`: Range of Cartesian indices to render.
     - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render, and defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
+    - `sym::Tuple`: Mirror the visualization data for simulations that only model a symmetric half (or quarter/octant) of the
+        full body. Defaults to `nothing` (no mirroring). Length must match the plot dimension `d`. A non-zero entry flags the
+        dimension to mirror: e.g. `d=2, sym=(0,1)` mirrors along the 2nd plot axis; `d=3, sym=(1,1,0)` mirrors along the 1st and
+        2nd plot axes. Both the scalar field and the body SDF are mirrored; the axis `limits` are doubled along mirrored dims.
     - `tidy_colormap::Bool`: Adjusts the colormap to have a fully transparent color near 0 values. Additional plotting options
         passed into `kwargs` (eg. colormap, levels) are preserved.
         Pass `threshhold::Number` to adjust the near-0 range`, `threshhold_color::RGBA` to set to a color different from white, and
@@ -140,17 +144,17 @@ Keyword arguments:
 """
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
     λ=quick, udf=nothing, udf_kwargs=nothing,
-    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
+    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
     theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
 
     function update_data()
         f(dat, sim)
-        σ[] = WaterLily.squeeze(dat[CIs])
+        σ[] = mirror_sym(WaterLily.squeeze(dat[CIs]), sym)
         if body && remeasure
             update_body!(dat, sim)
-            σb_obs[] = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
+            σb_obs[] = get_body(mirror_sym(WaterLily.squeeze(dat[CIs]), sym), Val{body2mesh}())
         end
     end
     function step_sim_and_viz!(sim, tᵢ)
@@ -163,6 +167,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
+    !isnothing(sym) && @assert length(sym) == d "sym kwarg must have length equal to plot dimension d=$d, got $(length(sym))."
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     isnothing(f) && (f = ω_viz!(d))
@@ -176,16 +181,17 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         CIs = Tuple(i == cut_dim ? (cut[i]:cut[i]) : CIs.indices[i] for i in 1:D) |> CartesianIndices
     end
     limits = Tuple((1,n) for n in size(CIs) if n > 1)
+    !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (1, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
     if isnothing(fig_size)
         fig_size = (1200, 1200)
         d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))
     end
 
     f(dat, sim)
-    σ = WaterLily.squeeze(dat[CIs]) |> ad_f(sim) |> Observable
+    σ = mirror_sym(WaterLily.squeeze(dat[CIs]), sym) |> ad_f(sim) |> Observable
     if body
         update_body!(dat, sim)
-        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> ad_f(sim) |> Observable
+        σb_obs = get_body(mirror_sym(WaterLily.squeeze(dat[CIs]), sym), Val{body2mesh}()) |> ad_f(sim) |> Observable
     end
 
     !isnothing(theme) && set_theme!(theme)
@@ -242,5 +248,21 @@ end
 add_kwarg(args...; kwargs...) = (; kwargs..., (p.first => p.second for p in args)...) |> pairs
 remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(x.first, args))...) |> pairs
 ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
+
+"""
+    mirror_sym(arr, sym)
+
+Mirror `arr` along each dimension `i` with `sym[i] != 0` by concatenating `reverse(arr; dims=i)` before `arr`.
+`sym === nothing` returns `arr` unchanged. `length(sym)` must equal `ndims(arr)`.
+"""
+mirror_sym(arr::AbstractArray, ::Nothing) = arr
+function mirror_sym(arr::AbstractArray{T,N}, sym) where {T,N}
+    out = arr
+    for i in 1:N
+        sym[i] == 0 && continue
+        out = cat(reverse(out; dims=i), out; dims=i)
+    end
+    return out
+end
 
 end # module
