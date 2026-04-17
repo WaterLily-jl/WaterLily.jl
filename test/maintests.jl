@@ -23,6 +23,23 @@ skip(name) = !isempty(test_filter) && !occursin(test_filter, name)
     sym = [:a, :b, :c]
     @test WaterLily.joinsymtype(sym,[:A,:B,:C]) == Expr[:(a::A), :(b::B), :(c::C)]
 
+    # @loop's loc(...) → loc(..., offset) rewrite (MPI rank-local offset)
+    locref = GlobalRef(WaterLily, :loc)
+    rmlines(e) = Base.remove_linenums!(e)
+    walk(e) = rmlines(WaterLily.inject_loc_offset!(e, :_off))
+    # plain: rewritten to GlobalRef + appended offset
+    @test walk(:(c[I] = f(loc(0,I,T)))) == rmlines(:(c[I] = f($locref(0,I,T,_off))))
+    # qualified WaterLily.loc is untouched (head :. not :call)
+    @test walk(:(a[I] = WaterLily.loc(0,I))) == rmlines(:(a[I] = WaterLily.loc(0,I)))
+    # let-binding shadows: inner loc(I) left alone
+    @test walk(:(let loc = g; a[I] = loc(I); end)) ==
+          rmlines(:(let loc = g; a[I] = loc(I); end))
+    # lambda param shadows only inside its body; outer loc still rewritten
+    @test walk(:(a[I] = loc(0,I) + (loc -> loc(5))(I))) ==
+          rmlines(:(a[I] = $locref(0,I,_off) + (loc -> loc(5))(I)))
+    # short-form fn def shadows in body
+    @test walk(:(loc(x) = loc(x+1))) == rmlines(:(loc(x) = loc(x+1)))
+
     for f ∈ arrays
         p = zeros(6,7) |> f
         apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin

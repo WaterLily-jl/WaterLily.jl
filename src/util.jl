@@ -184,19 +184,54 @@ rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 joinsymtype(sym::Symbol,symT::Symbol) = Expr(:(::), sym, symT)
 joinsymtype(sym,symT) = zip(sym,symT) .|> x->joinsymtype(x...)
 
-# Walk `ex` and append `offset` to every bare `loc(...)` call so that positions
-# inside a @loop body are in global coordinates.  Matches `loc` only — qualified
-# names like `WaterLily.loc` are left alone.
-function inject_loc_offset!(ex::Expr, offset)
-    if ex.head === :call && ex.args[1] === :loc
+# Walk `ex` and append `offset` to every bare `loc(...)` call so positions
+# inside a @loop body are in global coordinates.  The rewrite uses
+# `GlobalRef(@__MODULE__, :loc)` so the call resolves unambiguously to
+# WaterLily.loc, even if the caller's module does not `using WaterLily:loc`.
+# Scope-aware: `function`, lambda (`->`), `let`, and `for` scopes that bind
+# the symbol `loc` disable the rewrite within their body.  Qualified names
+# like `WaterLily.loc` are untouched because their head is `:.`, not `:call`.
+function inject_loc_offset!(ex, offset, shadowed::Bool=false)
+    ex isa Expr || return ex
+    h = ex.head
+    if h === :function || h === :->
+        inner = shadowed || _binds_loc(ex.args[1])
+        inject_loc_offset!(ex.args[end], offset, inner)
+        return ex
+    elseif h === :(=) && ex.args[1] isa Expr && ex.args[1].head === :call
+        # short-form fn def: f(x) = body
+        inner = shadowed || _binds_loc(ex.args[1])
+        inject_loc_offset!(ex.args[2], offset, inner)
+        return ex
+    elseif h === :let || h === :for
+        bind, body = ex.args[1], ex.args[end]
+        inject_loc_offset!(bind, offset, shadowed)
+        inner = shadowed || _binds_loc(bind)
+        inject_loc_offset!(body, offset, inner)
+        return ex
+    end
+    if h === :call && ex.args[1] === :loc && !shadowed
+        ex.args[1] = GlobalRef(@__MODULE__, :loc)
         push!(ex.args, offset)
     end
-    for a in ex.args
-        a isa Expr && inject_loc_offset!(a, offset)
-    end
+    foreach(a -> inject_loc_offset!(a, offset, shadowed), ex.args)
     return ex
 end
-inject_loc_offset!(ex, offset) = ex
+
+# Does this LHS expression bind the symbol `loc`?  Used to detect scopes
+# (function/lambda params, let/for bindings) that shadow WaterLily.loc.
+_binds_loc(s::Symbol) = s === :loc
+function _binds_loc(ex::Expr)
+    h = ex.head
+    if h === :tuple || h === :block || h === :call
+        any(_binds_loc, ex.args)
+    elseif h === :(::) || h === :(=) || h === :kw || h === :...
+        _binds_loc(ex.args[1])
+    else
+        false
+    end
+end
+_binds_loc(_) = false
 
 using StaticArrays
 """
