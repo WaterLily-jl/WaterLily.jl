@@ -12,7 +12,7 @@ Measure the body SDF and update the CPU buffer array.
 """
 function update_body!(a_cpu::Array, sim)
     WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
-    copyto!(a_cpu, ad_f(sim)(sim.flow.σ[inside(sim.flow.σ)]))
+    copyto!(a_cpu, ad_f(sim)(@view sim.flow.σ[inside(sim.flow.σ)]))
 end
 
 """
@@ -34,12 +34,12 @@ Default visualization function for 2D/3D simulations
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
-    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
+    copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
 end
 function ω3D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
+    copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
 end
 ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
@@ -151,10 +151,12 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
 
     function update_data()
         f(dat, sim)
-        σ[] = mirror_sym(WaterLily.squeeze(dat[CIs]), sym)
+        mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym)
+        σ[] = σ_buf
         if body && remeasure
             update_body!(dat, sim)
-            σb_obs[] = get_body(mirror_sym(WaterLily.squeeze(dat[CIs]), sym), Val{body2mesh}())
+            mirror_sym!(σb_buf, WaterLily.squeeze(@view dat[CIs]), sym)
+            σb_obs[] = get_body(σb_buf, Val{body2mesh}())
         end
     end
     function step_sim_and_viz!(sim, tᵢ)
@@ -188,10 +190,16 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     f(dat, sim)
-    σ = mirror_sym(WaterLily.squeeze(dat[CIs]), sym) |> ad_f(sim) |> Observable
+    slice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
+    σ_buf = similar(dat, mirror_size(slice0, sym))
+    mirror_sym!(σ_buf, slice0, sym)
+    σ = Observable(σ_buf)
     if body
         update_body!(dat, sim)
-        σb_obs = get_body(mirror_sym(WaterLily.squeeze(dat[CIs]), sym), Val{body2mesh}()) |> ad_f(sim) |> Observable
+        bslice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
+        σb_buf = similar(dat, mirror_size(bslice0, sym))
+        mirror_sym!(σb_buf, bslice0, sym)
+        σb_obs = Observable(get_body(σb_buf, Val{body2mesh}()))
     end
 
     !isnothing(theme) && set_theme!(theme)
@@ -250,19 +258,40 @@ remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(
 ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 
 """
+    mirror_size(arr, sym)
+
+Size of the mirrored array: each dimension `i` with `sym[i] != 0` is doubled. Returns `size(arr)` if `sym === nothing`.
+"""
+mirror_size(arr::AbstractArray, ::Nothing) = size(arr)
+mirror_size(arr::AbstractArray{T,N}, sym) where {T,N} = ntuple(i -> sym[i] != 0 ? 2*size(arr,i) : size(arr,i), N)
+
+"""
     mirror_sym(arr, sym)
 
-Mirror `arr` along each dimension `i` with `sym[i] != 0` by concatenating `reverse(arr; dims=i)` before `arr`.
-`sym === nothing` returns `arr` unchanged. `length(sym)` must equal `ndims(arr)`.
+Allocating mirror: returns a new array with `arr` reflected along each dimension `i` where `sym[i] != 0`.
+`sym === nothing` returns `arr` unchanged. Use [`mirror_sym!`](@ref) to fill a pre-allocated buffer.
 """
 mirror_sym(arr::AbstractArray, ::Nothing) = arr
 function mirror_sym(arr::AbstractArray{T,N}, sym) where {T,N}
-    out = arr
-    for i in 1:N
-        sym[i] == 0 && continue
-        out = cat(reverse(out; dims=i), out; dims=i)
+    buf = similar(arr, mirror_size(arr, sym))
+    mirror_sym!(buf, arr, sym)
+end
+
+"""
+    mirror_sym!(dst, src, sym)
+
+In-place mirror: fills `dst` from `src` reflected along each dimension `i` where `sym[i] != 0`.
+`dst` must have size `mirror_size(src, sym)`. `sym === nothing` does a plain `copyto!`.
+"""
+mirror_sym!(dst::AbstractArray, src::AbstractArray, ::Nothing) = copyto!(dst, src)
+function mirror_sym!(dst::AbstractArray{T,N}, src::AbstractArray{S,N}, sym) where {T,S,N}
+    Ns = size(src)
+    @inbounds for I in CartesianIndices(dst)
+        J = CartesianIndex(ntuple(i -> sym[i] != 0 ?
+            (I[i] <= Ns[i] ? Ns[i] + 1 - I[i] : I[i] - Ns[i]) : I[i], N))
+        dst[I] = src[J]
     end
-    return out
+    return dst
 end
 
 end # module
