@@ -26,7 +26,7 @@ struct VTKWriter
     count         :: Vector{Int}
 end
 function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32)
-    !isdir(dir) && mkdir(dir)
+    mkpath(dir)  # race-safe: multiple MPI ranks may enter here at once
     VTKWriter(fname,dir,pvd_collection(fname),attrib,[0])
 end
 function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k)
