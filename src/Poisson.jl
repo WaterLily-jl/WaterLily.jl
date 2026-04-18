@@ -50,7 +50,9 @@ using ForwardDiff: Dual,Tag
 Base.eps(::Type{D}) where D<:Dual{Tag{G,T}} where {G,T} = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
-    @inside iD[I] = abs2(D[I])<2eps(eltype(D)) ? 0. : inv(D[I])
+    # Precision-independent threshold: in F64, 2eps(T)≈4e-16 is too tight and
+    # leaves tiny-D interface cells with huge iD that drift under multigrid.
+    @inside iD[I] = abs2(D[I])<2eps(Float32) ? 0. : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
