@@ -24,15 +24,23 @@ function load!(a::AbstractSimulation, ::Val{:pvd}; kwargs...)
     attrib = get(Dict(kwargs), :attrib, default_attrib())
     vtk = VTKFile(PVDFile(fname).vtk_filenames[end])
     extent = filter(!iszero,ReadVTK.get_whole_extent(vtk)[2:2:end]);
-    # check dimensions match
+    # VTK stores interior cells only (buff=2 ghost layers stripped on save).
+    Ni = collect(size(a.flow.p) .- 4)
     text = "The dimensions of the simulation do not match the dimensions of the vtk file."
-    @assert extent.+1 == collect(size(a.flow.p)) text
-    # fill the arrays for pressure and velocity
-    point_data = ReadVTK.get_point_data(vtk)
+    @assert extent == Ni text
+    # load into the interior region; ghosts are refreshed by BC!
+    cell_data = ReadVTK.get_cell_data(vtk)
     pressure = get(Dict(kwargs), :pressure, "Pressure")
     velocity = get(Dict(kwargs), :velocity, "Velocity")
-    copyto!(a.flow.p, WaterLily.squeeze(Array(get_data_reshaped(point_data[pressure]))));
-    copyto!(a.flow.u, WaterLily.squeeze(components_last(Array(get_data_reshaped(point_data[velocity])))));
+    p_data = WaterLily.squeeze(Array(get_data_reshaped(cell_data[pressure], cell_data=true)))
+    u_data = WaterLily.squeeze(components_last(Array(get_data_reshaped(cell_data[velocity], cell_data=true))))
+    nd = length(Ni)
+    p_int = ntuple(d -> 3:size(a.flow.p, d)-2, nd)
+    u_int = ntuple(d -> d <= nd ? (3:size(a.flow.u, d)-2) : Colon(), ndims(a.flow.u))
+    copyto!(view(a.flow.p, p_int...), p_data)
+    copyto!(view(a.flow.u, u_int...), u_data)
+    WaterLily.BC!(a.flow.u, a.flow.uBC, a.flow.exitBC, a.flow.perdir)
+    WaterLily.comm!(a.flow.p, a.flow.perdir)
     # reset time to work with the new time step
     a.flow.Δt[end] = PVDFile(fname).timesteps[end]*a.L/a.U
     push!(a.flow.Δt,WaterLily.CFL(a.flow))
