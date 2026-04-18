@@ -378,17 +378,6 @@ velocity_halo!(u) = _velocity_halo!(u, par_mode[])
 _scalar_halo!(x, ::Serial) = nothing
 _velocity_halo!(u, ::Serial) = nothing
 
-"""
-    pin_pressure!(x)
-
-Remove the mean of scalar field `x` over the interior cells.
-This pins the null-space mode of the all-Neumann Poisson operator
-so that the absolute pressure does not drift between time steps.
-"""
-function pin_pressure!(x)
-    s = global_sum(x)/global_length(inside(x))
-    @inside x[I] = x[I] - s
-end
 
 """
     wallBC_L!(L, perdir=())

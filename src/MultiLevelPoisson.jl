@@ -151,6 +151,6 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
         r₂ = rnew
         r₂<tol && break
     end
-    pin_pressure!(p.x); comm!(p.x,p.perdir)
+    pin_pressure!(p); comm!(p.x,p.perdir)
     push!(ml.n,nᵖ);
 end

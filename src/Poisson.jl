@@ -212,6 +212,22 @@ function solver!(p::Poisson;tol=1e-4,itmx=1e3)
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end
-    pin_pressure!(p.x); comm!(p.x,p.perdir)
+    pin_pressure!(p); comm!(p.x,p.perdir)
     push!(p.n,nᵖ)
+end
+
+"""
+    pin_pressure!(p::Poisson)
+
+Remove the null-space (constant) mode by subtracting the mean pressure
+over fluid cells, and zero body cells (`iD==0`).  Body cells are dead
+to the Poisson solve and their values are physically meaningless, so
+forcing them to zero keeps serial and parallel runs bit-identical
+inside the body (multigrid prolongation otherwise leaks coarse-level
+solutions into fine body cells via `increment!`).
+"""
+function pin_pressure!(p::Poisson)
+    @inside p.z[I] = p.x[I] * (p.iD[I] != 0)        # fluid-only mask of p
+    s = global_sum(p.z) / global_allreduce(count(!=(0), p.iD))
+    @inside p.x[I] = (p.x[I] - s) * (p.iD[I] != 0)  # shift fluid, zero body
 end
