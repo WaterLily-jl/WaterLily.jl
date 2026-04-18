@@ -39,9 +39,22 @@ Returns a `Dict` containing the `name` and `bound_function` for the default attr
 The `name` is used as the key in the `vtk` file and the `bound_function` generates the data
 to put in the file. With this approach, any variable can be save to the vtk file.
 """
-_velocity(a::AbstractSimulation) = a.flow.u |> Array;
-_pressure(a::AbstractSimulation) = a.flow.p |> Array;
+_velocity(a::AbstractSimulation) = a.flow.u
+_pressure(a::AbstractSimulation) = a.flow.p
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
+
+"""
+    _interior(data, nd, N_int)
+
+Return `data` with `buff=2` ghost layers stripped from the first `nd`
+spatial dimensions. If `data` is already at interior size (matches
+`N_int`), pass through untouched.
+"""
+function _interior(data::AbstractArray, nd::Int, N_int::NTuple)
+    size(data)[1:nd] == N_int && return data
+    axs = ntuple(d -> d <= nd ? (3:size(data,d)-2) : Colon(), ndims(data))
+    return Array(@view data[axs...])
+end
 
 """
     save!(w::VTKWriter, a::AbstractSimulation)
@@ -49,17 +62,23 @@ default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 Write the simulation data to VTK files.  Dispatches on `par_mode[]`:
   - Serial  → single `.vti` file
   - Parallel → per-rank `.vti` pieces + `.pvti` header (rank 0)
+
+Attribute functions may return full-sized arrays (with `buff=2` ghost
+cells) or already-stripped interior arrays; ghost layers are removed
+automatically so the output contains interior cells only.
 """
 function save!(w::VTKWriter, a::AbstractSimulation)
     _save!(w, a, WaterLily.par_mode[])
 end
 
 function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.Serial)
-    k = w.count[1]; N=size(a.flow.p)
-    vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n for n in N]...)
-    for (name,func) in w.output_attrib
-        # this seems bad, but I @benchmark it and it's the same as just calling func()
-        vtk[name] = size(func(a))==N ? func(a) : components_first(func(a))
+    k = w.count[1]
+    nd = ndims(a.flow.p)
+    N_int = size(a.flow.p) .- 4
+    vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n+1 for n in N_int]...)
+    for (name, func) in w.output_attrib
+        data = _interior(func(a), nd, N_int)
+        vtk[name, VTKCellData()] = ndims(data) > nd ? components_first(data) : data
     end
     vtk_save(vtk); w.count[1]=k+1
     w.collection[round(sim_time(a),digits=4)]=vtk
@@ -101,11 +120,12 @@ function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.AbstractParMode
     fname = joinpath(w.dir_name, @sprintf("%s_%06i", w.fname, k))
 
     pvtk = pvtk_grid(fname,
-                     ntuple(d -> collect(Float32, extents[me+1][d]), nd)...;
+                     ntuple(d -> extents[me+1][d], nd)...;
                      part = me + 1, extents = extents)
 
+    N_int = size(a.flow.p) .- 4
     for (name, func) in w.output_attrib
-        data = func(a)
+        data = _interior(func(a), nd, N_int)
         if ndims(data) > nd          # vector field (spatial..., D)
             pvtk[name, VTKCellData()] = components_first(data)
         else                         # scalar field
