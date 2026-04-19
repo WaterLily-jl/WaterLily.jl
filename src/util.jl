@@ -380,14 +380,15 @@ _velocity_halo!(u, ::Serial) = nothing
 
 
 """
-    wallBC_L!(L, perdir=())
+    pressureBC!(L, perdir=())
 
-Zero the Poisson conductivity `L` at physical (non-periodic) boundary faces.
-This decouples the boundary cell from the ghost cell, giving an implicit
-Neumann pressure BC (∂p/∂n = 0) at domain walls.
+Apply the pressure wall BC by zeroing the Poisson lower diagonal `L` at
+physical (non-periodic) boundary faces. This decouples the boundary cell
+from the ghost cell, giving an implicit Neumann pressure BC (∂p/∂n = 0)
+at domain walls.
 """
-wallBC_L!(L, perdir=()) = _wallBC_L!(L, perdir, par_mode[])
-function _wallBC_L!(L, perdir, ::Serial)
+pressureBC!(L, perdir=()) = _pressureBC!(L, perdir, par_mode[])
+function _pressureBC!(L, perdir, ::Serial)
     N, n = size_u(L)
     for j in 1:n
         j in perdir && continue

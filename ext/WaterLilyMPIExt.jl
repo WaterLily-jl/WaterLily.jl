@@ -11,7 +11,7 @@ hooks through `par_mode[]` (defaults to `Serial()`).  This extension defines
 overwriting, so precompilation works normally.
 
 Functions with MPI-specific behavior (via dispatch on `::Parallel`):
-  _wallBC_L!  — zero L at physical walls only (skip MPI-internal) + halo on L
+  _pressureBC!  — zero L at physical walls only (skip MPI-internal) + halo on L
   _exitBC!    — global reductions for inflow/outflow mass flux
   _divisible  — same coarsening threshold as serial (N>4)
 
@@ -281,9 +281,9 @@ function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
     _do_velocity_halo!(u)
 end
 
-# ── MPI-aware wallBC_L! ──────────────────────────────────────────────────────
+# ── MPI-aware pressureBC! ────────────────────────────────────────────────────
 
-function WaterLily._wallBC_L!(L, perdir, ::Parallel)
+function WaterLily._pressureBC!(L, perdir, ::Parallel)
     g  = ImplicitGlobalGrid.global_grid()
     N, n = WaterLily.size_u(L)
     for j in 1:n

@@ -26,7 +26,7 @@ end
 """
     restrictL(I, i, b)
 
-Restrict the Poisson conductivity `b` in dimension `i` from the fine grid
+Restrict the Poisson lower diagonal `b` in dimension `i` from the fine grid
 to coarse cell `I`, averaging the two fine-grid face values.
 """
 @fastmath @inline function restrictL(I::CartesianIndex,i,b)
@@ -41,7 +41,7 @@ end
     restrictML(b::Poisson)
 
 Build a new coarse-level `Poisson` from fine-level `b` by restricting the
-conductivity `L` and allocating matching solution/residual arrays.
+lower diagonal `L` and allocating matching solution/residual arrays.
 """
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
@@ -54,8 +54,8 @@ end
 """
     restrictL!(a, b; perdir=())
 
-Restrict the fine-grid conductivity `b` into coarse-grid `a`, then apply
-boundary conditions (`BC!` and `wallBC_L!`) on the coarse level.
+Restrict the fine-grid lower diagonal `b` into coarse-grid `a`, then apply
+boundary conditions (`BC!` and `pressureBC!`) on the coarse level.
 """
 function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
     Na,n = size_u(a)
@@ -63,7 +63,7 @@ function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
         @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->3:n-2,Na))
     end
     BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries
-    wallBC_L!(a, perdir)
+    pressureBC!(a, perdir)
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
