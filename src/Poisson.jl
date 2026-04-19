@@ -227,8 +227,8 @@ inside the body (multigrid prolongation otherwise leaks coarse-level
 solutions into fine body cells via `increment!`).
 """
 function pin_pressure!(p::Poisson)
-    fill!(p.z, 0)                                   # clear ghost junk (σ is shared scratch)
-    @inside p.z[I] = p.x[I] * (p.iD[I] != 0)        # fluid-only mask of p
-    s = global_sum(p.z) / global_allreduce(count(!=(0), p.iD))
-    @inside p.x[I] = (p.x[I] - s) * (p.iD[I] != 0)  # shift fluid, zero body
+    R = inside(p.x)
+    @inside p.z[I] = p.x[I] * (p.iD[I] != 0)
+    s = global_allreduce(sum(@view p.z[R])) / global_allreduce(count(!=(0), @view p.iD[R]))
+    @inside p.x[I] = (p.x[I] - s) * (p.iD[I] != 0)
 end
