@@ -31,9 +31,13 @@ using StaticArrays
 
 struct Parallel <: WaterLily.AbstractParMode
     comm::MPI.Comm
+    rank::Int
 end
 
 _comm() = (WaterLily.par_mode[]::Parallel).comm
+
+WaterLily._mpi_rank(p::Parallel) = p.rank
+WaterLily._mpi_comm(p::Parallel) = p.comm
 
 # ── Global coordinate offset ──────────────────────────────────────────────────
 
@@ -93,7 +97,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
         init_MPI = false,
     )
 
-    WaterLily.par_mode[] = Parallel(comm)
+    WaterLily.par_mode[] = Parallel(comm, Int(me))
     _init_has_neighbors!()
 
     if me == 0

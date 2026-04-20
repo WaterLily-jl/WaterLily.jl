@@ -34,7 +34,7 @@ Initialize MPI domain decomposition for WaterLily.  Implemented by `WaterLilyMPI
 """
 function init_waterlily_mpi end
 
-export global_offset, init_waterlily_mpi
+export global_offset, init_waterlily_mpi, mpi_rank, mpi_comm, @distributed
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!

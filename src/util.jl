@@ -292,6 +292,81 @@ struct Serial <: AbstractParMode end
 const par_mode = Ref{AbstractParMode}(Serial())
 
 """
+    mpi_rank() → Int
+    mpi_comm() → Union{Nothing,MPI.Comm}
+
+Rank accessors available in any mode: serial returns `0` / `nothing`; under MPI
+the extension returns the rank and communicator stored on `par_mode[]::Parallel`.
+Useful for rank-gated printing (`mpi_rank() == 0 && @info ...`) without having
+to thread `(me, comm)` through user scope.
+"""
+mpi_rank() = _mpi_rank(par_mode[])
+mpi_comm() = _mpi_comm(par_mode[])
+_mpi_rank(::Serial) = 0
+_mpi_comm(::Serial) = nothing
+
+"""
+    @distributed Simulation(dims, uBC, L; kwargs...)
+    @distributed sim = Simulation(dims, uBC, L; kwargs...)
+
+Boilerplate-free MPI initialization for a WaterLily `Simulation`.  The macro
+pulls the global `dims` and (optional) `perdir` kwarg from the `Simulation`
+call, invokes `init_waterlily_mpi(dims; perdir=perdir)`, and substitutes the
+returned rank-local dimensions back into the `Simulation` call.  Requires
+`using MPI, ImplicitGlobalGrid` so the extension is loaded; otherwise the
+generated `init_waterlily_mpi` call throws `MethodError`.  The user is still
+responsible for `finalize_global_grid()` at script end.
+
+Example:
+
+    using WaterLily, MPI, ImplicitGlobalGrid
+    sim = @distributed Simulation((192, 128), (U, 0), L;
+                                  ν=ν, body=body, perdir=(1,2))
+    mpi_rank() == 0 && @info "decomposed and ready"
+    # ... time stepping ...
+    finalize_global_grid()
+"""
+macro distributed(ex)
+    if ex isa Expr && ex.head === :(=)
+        lhs, rhs = ex.args[1], ex.args[2]
+        return esc(Expr(:(=), lhs, _rewrite_distributed_call(rhs)))
+    else
+        return esc(_rewrite_distributed_call(ex))
+    end
+end
+
+function _rewrite_distributed_call(ex)
+    (ex isa Expr && ex.head === :call && ex.args[1] === :Simulation) ||
+        error("@distributed expects a `Simulation(...)` call, got $(ex)")
+
+    has_params = length(ex.args) >= 2 && ex.args[2] isa Expr && ex.args[2].head === :parameters
+    dims_idx   = has_params ? 3 : 2
+    length(ex.args) >= dims_idx ||
+        error("@distributed: `Simulation` call missing positional `dims` argument")
+    global_dims = ex.args[dims_idx]
+
+    perdir = :(())
+    if has_params
+        for kw in ex.args[2].args
+            if kw isa Expr && kw.head === :kw && kw.args[1] === :perdir
+                perdir = kw.args[2]
+                break
+            end
+        end
+    end
+
+    local_sym = gensym(:local_dims)
+    new_args = copy(ex.args)
+    new_args[dims_idx] = local_sym
+    sim_call = Expr(:call, new_args...)
+
+    quote
+        $(local_sym), _, _ = init_waterlily_mpi($(global_dims); perdir=$(perdir))
+        $(sim_call)
+    end
+end
+
+"""
     _loop_offset(::Type{T})
 
 Return the offset captured into `@loop` bodies so `loc(...)` calls inside the
