@@ -82,6 +82,26 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
     n = norm2(θ)
     n<=eps(n) ? 0. : θ'*ω(I,u) / n
 end
+"""
+    ψ(sim)
+
+Streamline function for 2D flows, solving Δψ = -ω. Allocates a new MultiLevelPoisson solver.
+"""
+function ψ(sim)
+    pois = MultiLevelPoisson(copy(sim.flow.σ), sim.flow.μ₀, copy(sim.flow.σ))
+    ψ!(pois, sim.flow.u)
+    return pois.x
+end
+"""
+    ψ!(pois, u)
+
+Streamline function for 2D flows, solving Δψ = -ω
+"""
+function ψ!(pois, u)
+    fill!(pois.x, 0)
+    @inside pois.z[I] = -WaterLily.curl(3,I,u)
+    solver!(pois)
+end
 
 """
     nds(body,x,t)
