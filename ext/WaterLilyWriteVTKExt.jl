@@ -24,13 +24,14 @@ struct VTKWriter
     collection    :: WriteVTK.CollectionFile
     output_attrib :: Dict{String,Function}
     count         :: Vector{Int}
+    body_mask     :: Bool
 end
-function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32)
+function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32,body_mask=false)
     mkpath(dir)  # race-safe: multiple MPI ranks may enter here at once
-    VTKWriter(fname,dir,pvd_collection(fname),attrib,[0])
+    VTKWriter(fname,dir,pvd_collection(fname),attrib,[0],body_mask)
 end
-function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k)
-    VTKWriter(fname,dir,collection,attrib,[k])
+function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k,body_mask::Bool=false)
+    VTKWriter(fname,dir,collection,attrib,[k],body_mask)
 end
 """
     default_attrib()
@@ -57,6 +58,45 @@ function _interior(data::AbstractArray, nd::Int, N_int::NTuple)
 end
 
 """
+    _body_mask(sim, nd, N_int) → Array{T}
+
+Build a cell-centred multiplicative mask from the BDIM μ₀-kernel evaluated at
+the cell-centre sdf: `mask = μ₀(sdf, ϵ)` ∈ `[0, 1]`. Zero deep inside the body
+(`sdf ≤ -ϵ`), one in the fluid (`sdf ≥ +ϵ`), and a smooth cosine blend across
+the band. Measured into a fresh buffer rather than read from `flow.σ` which
+is scratch-space clobbered by `mom_step!`. The smooth kernel keeps the mask
+numerically stable: FP differences in sdf between serial and parallel runs
+produce linear changes in weight rather than 0→1 flips at a threshold.
+"""
+function _body_mask(a::AbstractSimulation, nd::Int, N_int::NTuple)
+    σ = similar(a.flow.σ)
+    WaterLily.measure_sdf!(σ, a.body, sum(a.flow.Δt); fastd²=Inf)
+    σ_int = _interior(σ, nd, N_int)
+    ϵ = eltype(σ_int)(a.ϵ)
+    σ_int .= WaterLily.μ₀.(σ_int, ϵ)   # in-place; promotion is absorbed on assign
+    return σ_int
+end
+
+"""
+    _apply_mask!(data, mask, nd) → data
+
+Multiply `data` by `mask` elementwise, in place. `data` is either a scalar
+field (same shape as `mask`) or a vector field (`mask`'s shape plus a trailing
+component axis) — the mask is broadcast uniformly across components. `data`
+must be an owned buffer (not a view into simulation state).
+"""
+function _apply_mask!(data::AbstractArray, mask::AbstractArray, nd::Int)
+    if ndims(data) == nd               # scalar field
+        data .*= mask
+    else                                # vector field (spatial..., D)
+        for c in 1:size(data, ndims(data))
+            selectdim(data, ndims(data), c) .*= mask
+        end
+    end
+    return data
+end
+
+"""
     save!(w::VTKWriter, a::AbstractSimulation)
 
 Write the simulation data to VTK files.  Dispatches on `par_mode[]`:
@@ -76,8 +116,10 @@ function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.Serial)
     nd = ndims(a.flow.p)
     N_int = size(a.flow.p) .- 4
     vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n+1 for n in N_int]...)
+    mask = w.body_mask ? _body_mask(a, nd, N_int) : nothing
     for (name, func) in w.output_attrib
         data = _interior(func(a), nd, N_int)
+        isnothing(mask) || _apply_mask!(data, mask, nd)
         vtk[name, VTKCellData()] = ndims(data) > nd ? components_first(data) : data
     end
     vtk_save(vtk); w.count[1]=k+1
@@ -124,8 +166,10 @@ function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.AbstractParMode
                      part = me + 1, extents = extents)
 
     N_int = size(a.flow.p) .- 4
+    mask = w.body_mask ? _body_mask(a, nd, N_int) : nothing
     for (name, func) in w.output_attrib
         data = _interior(func(a), nd, N_int)
+        isnothing(mask) || _apply_mask!(data, mask, nd)
         if ndims(data) > nd          # vector field (spatial..., D)
             pvtk[name, VTKCellData()] = components_first(data)
         else                         # scalar field
