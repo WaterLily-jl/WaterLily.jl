@@ -83,7 +83,7 @@ function ω_θ(I::CartesianIndex{3},z,center,u,offset=zero(SVector{3,eltype(u)})
     T = eltype(u)
     θ = z × (loc(0,I,T)+offset-SVector{3}(center))
     n = norm2(θ)
-    n<=eps(n) ? zero(T) : θ'*ω(I,u) / n
+    n<=eps(n) ? 0 : θ'*ω(I,u) / n
 end
 
 """
