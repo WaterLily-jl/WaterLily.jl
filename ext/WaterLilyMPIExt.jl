@@ -70,12 +70,62 @@ Initialize MPI domain decomposition for WaterLily.
 
 Returns `(local_dims::NTuple{N,Int}, rank::Int, comm::MPI.Comm)`.
 """
+# Pick the MPI rank layout that minimises the halo-exchange surface seen by
+# one rank — sum over d of (product of local_dims[k] for k ≠ d) — subject to
+# prod(topo) == nprocs and topo[d] dividing global_dims[d]. Seed with
+# `MPI.Dims_create`'s balanced layout so it wins ties (preserves MPI's
+# default on isotropic grids). `Dims_create` is only suboptimal on strongly
+# asymmetric grids (e.g. 1024×64 / np=8 → (4,2) but (8,1) has 33% less
+# halo surface).
+function _shape_aware_topology(global_dims::NTuple{N,Int}, nprocs::Int) where N
+    best_topo = Tuple(Int.(MPI.Dims_create(nprocs, zeros(Int, N))))
+    best_score = if all(global_dims[d] % best_topo[d] == 0 for d in 1:N)
+        _halo_surface(global_dims, best_topo)
+    else
+        typemax(Int)
+    end
+    # enumerate all N-tuples of positive divisors whose product is nprocs
+    function visit(remaining::Int, partial::Tuple)
+        if length(partial) == N - 1
+            topo = (partial..., remaining)
+            all(global_dims[d] % topo[d] == 0 for d in 1:N) || return
+            s = _halo_surface(global_dims, topo)
+            if s < best_score                 # strict — `Dims_create` wins ties
+                best_score = s
+                best_topo  = topo
+            end
+            return
+        end
+        for d in 1:remaining
+            remaining % d == 0 && visit(remaining ÷ d, (partial..., d))
+        end
+    end
+    visit(nprocs, ())
+    best_score == typemax(Int) &&
+        error("No valid MPI topology for global_dims=$global_dims with nprocs=$nprocs")
+    return best_topo
+end
+@inline function _halo_surface(global_dims::NTuple{N,Int}, topo::NTuple{N,Int}) where N
+    s = 0
+    local_dims = ntuple(d -> global_dims[d] ÷ topo[d], N)
+    for d in 1:N
+        face = 1
+        for k in 1:N
+            k == d && continue
+            face *= local_dims[k]
+        end
+        s += face
+    end
+    return s
+end
+
 function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     MPI.Initialized() || MPI.Init()
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
 
-    # Optimal MPI topology for N active dimensions
-    mpi_dims = Tuple(Int.(MPI.Dims_create(nprocs, zeros(Int, N))))
+    # Shape-aware topology: minimize halo surface (vs `MPI.Dims_create` which
+    # only balances factor sizes — suboptimal on highly anisotropic grids).
+    mpi_dims = _shape_aware_topology(global_dims, nprocs)
 
     # Local interior dims
     local_dims = global_dims .÷ mpi_dims
