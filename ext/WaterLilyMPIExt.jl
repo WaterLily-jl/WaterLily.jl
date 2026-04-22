@@ -242,6 +242,7 @@ end
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
 WaterLily._global_allreduce(x, ::Parallel)        = MPI.Allreduce(x, MPI.SUM, _comm())
 WaterLily._global_min(a, b, ::Parallel)           = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
+WaterLily._global_max(x, ::Parallel)              = MPI.Allreduce(x, MPI.MAX, _comm())
 WaterLily._scalar_halo!(x, ::Parallel)            = _do_scalar_halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel)          = _do_velocity_halo!(u)
 
@@ -308,5 +309,11 @@ end
 # and tiny array sizes at the coarsest levels.
 
 WaterLily._divisible(N, ::Parallel) = mod(N,2)==0 && N>4
+
+# Coarsest solve: use PCG so global dot-products catch the null-space mode
+# that a local red-black smoother cannot reach (MPI loses one V-cycle level).
+# Combined with per-V-cycle `pin_pressure!` in `solver!` to keep `p.x`'s
+# mean bounded between iterations.
+WaterLily._coarsest_solve!(p, ω, ::Parallel) = WaterLily.pcg!(p; it=32)
 
 end # module WaterLilyMPIExt

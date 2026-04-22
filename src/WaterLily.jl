@@ -7,7 +7,7 @@ using DocStringExtensions
 
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend,
-       global_allreduce,global_dot,global_sum,global_length,global_min,
+       global_allreduce,global_dot,global_sum,global_length,global_min,global_max,
        scalar_halo!,velocity_halo!,
        comm!,velocity_comm!,pressureBC!,pin_pressure!,
        AbstractParMode,Serial,par_mode

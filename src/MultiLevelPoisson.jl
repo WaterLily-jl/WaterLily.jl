@@ -101,12 +101,31 @@ function update!(ml::MultiLevelPoisson)
     end
 end
 
+mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
+residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+
+smooth! = GaussSeidelRB!
+
+"""
+    coarsest_solve!(p::Poisson; ω=1)
+
+Solve the coarsest-level Poisson problem at the bottom of a V-cycle.  In
+serial this just calls `smooth!` (the coarsest level is already global and
+very small).  The MPI extension adds a `::Parallel` method that Allreduce-
+assembles the global coarsest problem, solves it redundantly on every rank,
+and writes the local slice back — compensating for the V-cycle depth
+deficit caused by MPI's `N>4` divisibility floor.
+"""
+coarsest_solve!(p::Poisson; ω=1) = _coarsest_solve!(p, ω, par_mode[])
+_coarsest_solve!(p, ω, ::Serial) = smooth!(p; ω)
+
 """
     Vcycle!(ml::MultiLevelPoisson; l=1, ω=1)
 
 Perform one multigrid V-cycle starting at level `l`: smooth on the fine grid,
 restrict the residual, solve (or recurse) on the coarse grid, then prolongate
-and correct the fine-grid solution.
+and correct the fine-grid solution.  At the bottom of the recursion the
+coarsest level is handed to `coarsest_solve!` (MPI-aware via dispatch).
 """
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
@@ -114,18 +133,17 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     Jacobi!(fine)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
-    # solve coarse (with recursion if possible)
-    l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
-    smooth!(coarse;ω)
+    # solve coarse (recurse if possible, otherwise bottom-solve)
+    if l+1 < length(ml.levels)
+        Vcycle!(ml, l=l+1; ω)
+        smooth!(coarse; ω)
+    else
+        coarsest_solve!(coarse; ω)
+    end
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
     increment!(fine; ω)
 end
-
-mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
-residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
-
-smooth! = GaussSeidelRB!
 
 """
     solver!(ml::MultiLevelPoisson; tol=1e-4, itmx=32)
@@ -134,13 +152,13 @@ Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until the
 `L₂`-norm residual drops below `tol`.  Ends with `pin_pressure!` + `comm!`
 to remove the null-space mode and synchronize halos.
 """
-function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
+function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32,itmn=8) where T
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω); 
+        smooth!(p; ω)
         rnew = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
         if     rnew ≥ r₂
@@ -149,7 +167,7 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
             ω = min(1.0, 1.02ω) |> T
         end
         r₂ = rnew
-        r₂<tol && break
+        nᵖ ≥ itmn && r₂<tol && break
     end
     pin_pressure!(p); comm!(p.x,p.perdir)
     push!(ml.n,nᵖ);

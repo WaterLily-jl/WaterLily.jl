@@ -61,8 +61,8 @@ end
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
-local_dot(a, b) = a⋅b
-local_sum(a) = sum(a)
+local_dot(a::AbstractArray, b::AbstractArray) = mapreduce(i -> Float64(a[i])*Float64(b[i]), +, eachindex(a, b); init=0.0)
+local_sum(a::AbstractArray) = mapreduce(Float64, +, a; init=0.0)
 
 """
     @inside <expr>
@@ -406,6 +406,15 @@ global_min(a, b) = _global_min(a, b, par_mode[])
 _global_min(a, b, ::Serial) = min(a, b)
 
 """
+    global_max(x)
+
+Global maximum of scalar `x` across ranks.  MPI-aware via dispatch on `par_mode[]`.
+"""
+global_max(x) = _global_max(x, par_mode[])
+
+_global_max(x, ::Serial) = x
+
+"""
     global_allreduce(x)
 
 Reduce a pre-computed value `x` (scalar or vector) across all MPI ranks
@@ -430,8 +439,8 @@ Dot product of `a` and `b` respecting periodic boundary conditions.
 When `perdir` is empty, uses the full arrays; otherwise restricts to interior cells.
 MPI-aware via dispatch on `par_mode[]`.
 """
-local_perdot(a,b,::Tuple{}) = a⋅b
-local_perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+local_perdot(a,b,::Tuple{}) = local_dot(a, b)
+local_perdot(a,b,perdir,R=inside(a)) = mapreduce(i -> Float64(a[i])*Float64(b[i]), +, R; init=0.0)
 global_perdot(a,b,tup::Tuple{}) = global_allreduce(local_perdot(a, b, tup))
 global_perdot(a,b,perdir,R=inside(a)) = global_allreduce(local_perdot(a, b, perdir, R))
 

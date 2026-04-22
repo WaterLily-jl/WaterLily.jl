@@ -50,9 +50,7 @@ using ForwardDiff: Dual,Tag
 Base.eps(::Type{D}) where D<:Dual{Tag{G,T}} where {G,T} = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
-    # Precision-independent threshold: in F64, 2eps(T)≈4e-16 is too tight and
-    # leaves tiny-D interface cells with huge iD that drift under multigrid.
-    @inside iD[I] = abs2(D[I])<2eps(Float32) ? 0 : inv(D[I])
+    @inside iD[I] = abs2(D[I])<2eps(Float32) ? zero(D[I]) : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
@@ -134,6 +132,7 @@ end
 @inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
     k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
     I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
+    iD[I]==0 && return # skip ghost/body cells; preserves MPI halo values at rank-internal boundaries
     x[I] = gauss(I,r,L,iD,x)
 end
 
@@ -150,8 +149,8 @@ Note: This performs best on GPU configurations and is the default smoother.
 """
 function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
-    comm!(p.ϵ,p.perdir)
     for i ∈ 1:it
+        comm!(p.ϵ,p.perdir) # sync MPI halo between RB sweeps (neighbor interiors update each iteration)
         @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
     increment!(p;ω) # increment solution and residual
@@ -187,7 +186,7 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
 end
 
 L₂(p::Poisson) = global_dot(p.r, p.r) # special method since outside(p.r)≡0
-L∞(p::Poisson) = maximum(abs,p.r)
+L∞(p::Poisson) = global_max(maximum(abs, @view p.r[inside(p.r)]))
 
 """
     solver!(A::Poisson; tol=1e-4, itmx=1e3)
@@ -221,14 +220,15 @@ end
 
 Remove the null-space (constant) mode by subtracting the mean pressure
 over fluid cells, and zero body cells (`iD==0`).  Body cells are dead
-to the Poisson solve and their values are physically meaningless, so
-forcing them to zero keeps serial and parallel runs bit-identical
-inside the body (multigrid prolongation otherwise leaks coarse-level
-solutions into fine body cells via `increment!`).
+to the Poisson operator, but multigrid prolongation leaks coarse-level
+values into them each V-cycle — zeroing keeps `max|p|` reporting sane
+and serial/parallel runs bit-identical inside the body.  Uses mapreduce
+rather than `p.z` as scratch so it's safe to call inside the V-cycle loop.
 """
-function pin_pressure!(p::Poisson)
+function pin_pressure!(p::Poisson{T}) where T
     R = inside(p.x)
-    @inside p.z[I] = p.x[I] * (p.iD[I] != 0)
-    s = global_allreduce(sum(@view p.z[R])) / global_allreduce(count(!=(0), @view p.iD[R]))
-    @inside p.x[I] = (p.x[I] - s) * (p.iD[I] != 0)
+    sum_x = global_allreduce(mapreduce(I -> p.iD[I]==0 ? zero(T) : p.x[I], +, R))
+    cnt   = global_allreduce(mapreduce(I -> p.iD[I]==0 ? 0 : 1, +, R))
+    s = sum_x / cnt
+    @inside p.x[I] = ifelse(p.iD[I]==0, zero(T), p.x[I] - s)
 end
