@@ -172,12 +172,13 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
         nright = g.neighbors[2, dim]
         (nleft < 0 && nright < 0) && continue
 
-        slab_shape = ntuple(i -> i == dim ? 2 : N[i], ndims(arr))
+        # halowidth=1: 1-cell-wide slabs
+        slab_shape = ntuple(i -> i == dim ? 1 : N[i], ndims(arr))
         send_left, recv_left, send_right, recv_right = _get_mpi_bufs(T, slab_shape, dim)
 
-        # Pack send buffers
-        copyto!(send_left,  _slab(arr, dim, 3:4))
-        copyto!(send_right, _slab(arr, dim, N[dim]-3:N[dim]-2))
+        # Pack send buffers: first/last interior cells (index 2 and N-1)
+        copyto!(send_left,  _slab(arr, dim, 2:2))
+        copyto!(send_right, _slab(arr, dim, N[dim]-1:N[dim]-1))
 
         # Post all non-blocking sends/recvs, then Waitall for max overlap
         nreqs = 0
@@ -191,12 +192,12 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
         end
         MPI.Waitall(MPI.RequestSet(_mpi_reqs[1:nreqs]))
 
-        # Unpack recv buffers
+        # Unpack recv buffers: into ghost cells (index 1 and N)
         if nleft >= 0
-            copyto!(_slab(arr, dim, 1:2), recv_left)
+            copyto!(_slab(arr, dim, 1:1), recv_left)
         end
         if nright >= 0
-            copyto!(_slab(arr, dim, N[dim]-1:N[dim]), recv_right)
+            copyto!(_slab(arr, dim, N[dim]:N[dim]), recv_right)
         end
     end
 end
@@ -291,6 +292,37 @@ end
 function WaterLily._pressureBC!(L, perdir, ::Parallel)
     # master-style layout: BC! on μ₀ already zeros L at wall faces; just sync halo
     _do_velocity_halo!(L)
+end
+
+# ── MPI-aware BC! ────────────────────────────────────────────────────────────
+# At rank-internal boundaries, skip Dirichlet writes so halo exchange can
+# provide neighbor's interior data.  Only write BC at physical walls.
+function WaterLily._BC!(a, uBC::Function, saveexit, perdir, t, ::Parallel)
+    g  = ImplicitGlobalGrid.global_grid()
+    N, n = WaterLily.size_u(a)
+    for i ∈ 1:n, j ∈ 1:n
+        j in perdir && continue
+        phys_left  = g.neighbors[1, j] < 0
+        phys_right = g.neighbors[2, j] < 0
+        if i==j # Normal direction, Dirichlet — only at physical walls
+            if phys_left
+                for s ∈ (1,2)
+                    @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t) over I ∈ WaterLily.slice(N,s,j)
+                end
+            end
+            if phys_right && (!saveexit || i>1)
+                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t) over I ∈ WaterLily.slice(N,N[j],j)
+            end
+        else    # Tangential Neumann mirror — only at physical walls (halo handles rank-internal)
+            if phys_left
+                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t)+a[I+WaterLily.δ(j,I),i]-uBC(i,WaterLily.loc(i,I+WaterLily.δ(j,I)),t) over I ∈ WaterLily.slice(N,1,j)
+            end
+            if phys_right
+                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t)+a[I-WaterLily.δ(j,I),i]-uBC(i,WaterLily.loc(i,I-WaterLily.δ(j,I)),t) over I ∈ WaterLily.slice(N,N[j],j)
+            end
+        end
+    end
+    WaterLily.velocity_comm!(a, perdir)
 end
 
 # ── MPI-aware divisible ───────────────────────────────────────────────────────

@@ -498,11 +498,12 @@ Periodic directions are handled by `velocity_comm!` (called at the end),
 separating domain BCs from communication BCs.
 """
 BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
+BC!(a,uBC::Function,saveexit=false,perdir=(),t=0) = _BC!(a, uBC, saveexit, perdir, t, par_mode[])
+function _BC!(a, uBC::Function, saveexit, perdir, t, ::Serial)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         j in perdir && continue  # periodic handled by velocity_comm!
-        if i==j # Normal direction, Dirichlet (master pattern: s in (1,2) then N[j])
+        if i==j # Normal direction, Dirichlet
             for s ∈ (1,2)
                 @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
             end
