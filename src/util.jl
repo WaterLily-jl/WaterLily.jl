@@ -486,9 +486,7 @@ function _BC!(a, uBC::Function, saveexit, perdir, t, ::Serial)
     for i ∈ 1:n, j ∈ 1:n
         j in perdir && continue  # periodic handled by velocity_comm!
         if i==j # Normal direction, Dirichlet
-            for s ∈ (1,2)
-                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
-            end
+            @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,1:2,j)
             (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j))
         else    # Tangential directions, Neumann: mirror
             @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)

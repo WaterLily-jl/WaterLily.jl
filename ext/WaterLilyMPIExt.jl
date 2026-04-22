@@ -299,9 +299,7 @@ function WaterLily._BC!(a, uBC::Function, saveexit, perdir, t, ::Parallel)
         phys_right = g.neighbors[2, j] < 0
         if i==j # Normal direction, Dirichlet — only at physical walls
             if phys_left
-                for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t) over I ∈ WaterLily.slice(N,s,j)
-                end
+                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t) over I ∈ WaterLily.slice(N,1:2,j)
             end
             if phys_right && (!saveexit || i>1)
                 @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t) over I ∈ WaterLily.slice(N,N[j],j)
