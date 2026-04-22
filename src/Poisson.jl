@@ -226,9 +226,6 @@ and serial/parallel runs bit-identical inside the body.  Uses mapreduce
 rather than `p.z` as scratch so it's safe to call inside the V-cycle loop.
 """
 function pin_pressure!(p::Poisson{T}) where T
-    R = inside(p.x)
-    sum_x = global_allreduce(mapreduce(I -> p.iD[I]==0 ? zero(T) : p.x[I], +, R))
-    cnt   = global_allreduce(mapreduce(I -> p.iD[I]==0 ? 0 : 1, +, R))
-    s = sum_x / cnt
-    @inside p.x[I] = ifelse(p.iD[I]==0, zero(T), p.x[I] - s)
+    s = T(global_sum(p.x) / p.inslen)
+    @inside p.x[I] = p.x[I] - s
 end
