@@ -69,6 +69,28 @@ restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
+
+"""
+    perturb_coarsest!(p::Poisson, perdir)
+
+Add a small perturbation to `L` at physical wall faces of the coarsest level
+to break the null-space singularity introduced by `pressureBC!`.  This makes
+the coarsest-level operator non-singular, enabling multigrid to effectively
+reduce the constant-mode residual. The fine-level operator retains `L = 0`
+at walls, preserving the exact Neumann velocity BC.  Dispatches on
+`par_mode[]` so that MPI rank-internal boundaries are left untouched.
+"""
+perturb_coarsest!(p::Poisson, perdir) = _perturb_coarsest!(p, perdir, par_mode[])
+function _perturb_coarsest!(p::Poisson{T}, perdir, ::Serial) where T
+    N, n = size_u(p.L)
+    ε = T(1e-4)
+    for j in 1:n
+        j in perdir && continue
+        @loop p.L[I,j] = ε over I ∈ slice(N, 3, j)
+        @loop p.L[I,j] = ε over I ∈ slice(N, N[j]-1, j)
+    end
+    update!(p)
+end
 """
     MultiLevelPoisson{T,S,V}
 
@@ -89,6 +111,8 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
+        # Perturb coarsest L to break null-space singularity from pressureBC-zeroed walls
+        perturb_coarsest!(levels[end], perdir)
         new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end

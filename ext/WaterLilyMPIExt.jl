@@ -303,6 +303,23 @@ function WaterLily._pressureBC!(L, perdir, ::Parallel)
     _do_velocity_halo!(L)
 end
 
+function WaterLily._perturb_coarsest!(p::WaterLily.Poisson{T}, perdir, ::Parallel) where T
+    g  = ImplicitGlobalGrid.global_grid()
+    N, n = WaterLily.size_u(p.L)
+    ε = T(1e-4)
+    for j in 1:n
+        j in perdir && continue
+        if g.neighbors[1, j] < 0
+            @loop p.L[I,j] = ε over I ∈ WaterLily.slice(N, 3, j)
+        end
+        if g.neighbors[2, j] < 0
+            @loop p.L[I,j] = ε over I ∈ WaterLily.slice(N, N[j]-1, j)
+        end
+    end
+    _do_velocity_halo!(p.L)
+    WaterLily.update!(p)
+end
+
 # ── MPI-aware divisible ───────────────────────────────────────────────────────
 # Same threshold as serial (N>4). Coarse-level comm cost is negligible thanks
 # to `_has_neighbors` short-circuiting (no exchange when no MPI neighbors exist)
