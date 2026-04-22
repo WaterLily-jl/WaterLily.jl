@@ -122,6 +122,7 @@ function _init_has_neighbors!()
     g = ImplicitGlobalGrid.global_grid()
     nd = _ndims_active()
     _has_neighbors[] = any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:nd)
+    _mpi_multireqs[] = MPI.MultiRequest(4)
 end
 
 # ── Scalar halo exchange (fine grid — via IGG) ───────────────────────────────
@@ -145,13 +146,18 @@ end
 # slabs in each active spatial dimension.
 
 # Pre-allocated MPI send/recv buffers keyed by (eltype, slab_shape, dim_tag).
+# Explicit `haskey`/`getindex` path avoids the `get!` closure allocation on
+# the cache-hit path (Julia's compiler doesn't reliably elide the `do ... end`
+# block).
 const _mpi_bufs = Dict{Tuple, NTuple{4,Array}}()
 
-function _get_mpi_bufs(::Type{T}, slab_shape::Tuple, dim::Int) where T
-    get!(_mpi_bufs, (T, slab_shape, dim)) do
-        (zeros(T, slab_shape), zeros(T, slab_shape),
-         zeros(T, slab_shape), zeros(T, slab_shape))
-    end
+@inline function _get_mpi_bufs(::Type{T}, slab_shape::Tuple, dim::Int) where T
+    key = (T, slab_shape, dim)
+    @inbounds haskey(_mpi_bufs, key) && return _mpi_bufs[key]::NTuple{4,Array{T}}
+    bufs = (zeros(T, slab_shape), zeros(T, slab_shape),
+            zeros(T, slab_shape), zeros(T, slab_shape))
+    _mpi_bufs[key] = bufs
+    return bufs
 end
 
 function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
@@ -159,14 +165,17 @@ function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
     @view arr[colons...]
 end
 
-# Pre-allocated request buffer (max 4 requests per dim exchange)
-const _mpi_reqs = MPI.Request[MPI.REQUEST_NULL for _ in 1:4]
+# Pre-allocated request collection — exactly 4 slots (2 Isend + 2 Irecv per dim).
+# Reused across dim iterations: after each `Waitall`, all slots are MPI_REQUEST_NULL
+# so we can safely overwrite them on the next dim's calls.
+const _mpi_multireqs = Ref{MPI.MultiRequest}()  # init in _init_has_neighbors!
 
 function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
     g    = ImplicitGlobalGrid.global_grid()
     nd   = _ndims_active()
     N    = size(arr)
     comm = _comm()
+    reqs = _mpi_multireqs[]
     for dim in 1:nd
         nleft  = g.neighbors[1, dim]
         nright = g.neighbors[2, dim]
@@ -180,25 +189,23 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
         copyto!(send_left,  _slab(arr, dim, 2:2))
         copyto!(send_right, _slab(arr, dim, N[dim]-1:N[dim]-1))
 
-        # Post all non-blocking sends/recvs, then Waitall for max overlap
-        nreqs = 0
+        # Post all non-blocking sends/recvs via pre-allocated MultiRequest slots
+        # (positional-args form — avoids kwargs NamedTuple allocations). Unused
+        # slots keep MPI_REQUEST_NULL from the previous Waitall; MPI_Waitall
+        # treats them as no-ops.
         if nright >= 0
-            nreqs += 1; _mpi_reqs[nreqs] = MPI.Isend(send_right, comm; dest=nright, tag=dim*10)
-            nreqs += 1; _mpi_reqs[nreqs] = MPI.Irecv!(recv_right, comm; source=nright, tag=dim*10+1)
+            MPI.Isend(send_right, nright, dim*10,   comm, reqs[1])
+            MPI.Irecv!(recv_right, nright, dim*10+1, comm, reqs[2])
         end
         if nleft >= 0
-            nreqs += 1; _mpi_reqs[nreqs] = MPI.Isend(send_left, comm; dest=nleft, tag=dim*10+1)
-            nreqs += 1; _mpi_reqs[nreqs] = MPI.Irecv!(recv_left, comm; source=nleft, tag=dim*10)
+            MPI.Isend(send_left, nleft, dim*10+1, comm, reqs[3])
+            MPI.Irecv!(recv_left, nleft, dim*10,   comm, reqs[4])
         end
-        MPI.Waitall(MPI.RequestSet(_mpi_reqs[1:nreqs]))
+        MPI.Waitall(reqs)  # resets all 4 slots to REQUEST_NULL
 
-        # Unpack recv buffers: into ghost cells (index 1 and N)
-        if nleft >= 0
-            copyto!(_slab(arr, dim, 1:1), recv_left)
-        end
-        if nright >= 0
-            copyto!(_slab(arr, dim, N[dim]:N[dim]), recv_right)
-        end
+        # Unpack recv buffers into ghost cells (index 1 and N)
+        nleft  >= 0 && copyto!(_slab(arr, dim, 1:1),            recv_left)
+        nright >= 0 && copyto!(_slab(arr, dim, N[dim]:N[dim]),  recv_right)
     end
 end
 
