@@ -262,25 +262,25 @@ function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
     is_exit    = g.neighbors[2, 1] < 0
 
     # All ranks participate in Allreduce for exit face area
-    local_exit_len = is_exit ? length(WaterLily.slice(N .- 2, N[1] - 1, 1, 3)) : 0
+    local_exit_len = is_exit ? length(WaterLily.slice(N .- 1, N[1], 1, 2)) : 0
     global_exit_len = MPI.Allreduce(local_exit_len, MPI.SUM, comm)
 
     # All ranks participate in Allreduce for mean inflow velocity
-    local_inflow_sum = is_inflow ? sum(@view(u[WaterLily.slice(N .- 2, 2, 1, 3), 1])) : zero(eltype(u))
+    local_inflow_sum = is_inflow ? sum(@view(u[WaterLily.slice(N .- 1, 2, 1, 2), 1])) : zero(eltype(u))
     U = MPI.Allreduce(local_inflow_sum, MPI.SUM, comm) / global_exit_len
 
     # Convective exit on rightmost-x ranks only
     if is_exit
-        exitR = WaterLily.slice(N .- 2, N[1] - 1, 1, 3)
+        exitR = WaterLily.slice(N .- 1, N[1], 1, 2)
         @loop u[I, 1] = u⁰[I, 1] - U * Δt * (u⁰[I, 1] - u⁰[I - WaterLily.δ(1, I), 1]) over I ∈ exitR
     end
 
     # All ranks participate in Allreduce for mass flux correction
-    local_exit_sum = is_exit ? sum(@view(u[WaterLily.slice(N .- 2, N[1] - 1, 1, 3), 1])) : zero(eltype(u))
+    local_exit_sum = is_exit ? sum(@view(u[WaterLily.slice(N .- 1, N[1], 1, 2), 1])) : zero(eltype(u))
     global_exit_sum = MPI.Allreduce(local_exit_sum, MPI.SUM, comm)
     ∮u = global_exit_sum / global_exit_len - U
     if is_exit
-        exitR = WaterLily.slice(N .- 2, N[1] - 1, 1, 3)
+        exitR = WaterLily.slice(N .- 1, N[1], 1, 2)
         @loop u[I, 1] -= ∮u over I ∈ exitR
     end
 
