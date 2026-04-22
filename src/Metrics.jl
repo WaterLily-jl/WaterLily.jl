@@ -180,7 +180,7 @@ struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
         new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
     end
     function MeanFlow(N::NTuple{D}; mem=Array, T=Float32, t_init=0, uu_stats=false) where {D}
-        Ng = N .+ 4
+        Ng = N .+ 2
         P = zeros(T, Ng) |> mem
         U = zeros(T, Ng..., D) |> mem
         UU = uu_stats ? zeros(T, Ng..., D, D) |> mem : nothing
