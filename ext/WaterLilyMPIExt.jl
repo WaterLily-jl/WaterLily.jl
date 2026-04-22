@@ -212,7 +212,11 @@ end
 
 function _do_scalar_halo!(arr::AbstractArray)
     _has_neighbors[] || return
-    _scalar_halo_mpi!(arr)  # custom halo only — IGG broken for halowidth=1 + periodic 2-rank wrap
+    if _is_fine(arr)
+        _scalar_halo_igg!(arr)   # pre-allocated IGG buffers — fast path
+    else
+        _scalar_halo_mpi!(arr)   # custom: coarse arrays don't match IGG's fine-grid buffers
+    end
 end
 
 # ── Vector (velocity-shaped) halo exchange ────────────────────────────────────
