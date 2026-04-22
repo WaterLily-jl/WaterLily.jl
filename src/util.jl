@@ -548,6 +548,19 @@ function _velocity_comm!(a, perdir, ::Serial)
 end
 
 """
+    effective_perdir(perdir)
+
+Return directions where periodic wrap can be handled via explicit `N[j]-2`
+indexing on the local array.  In serial this is the full `perdir`.  In MPI,
+directions decomposed across ranks are excluded — the halo (halowidth=1)
+cannot supply the 2-cells-back stencil required by `ϕuP`, so `conv_diff!`
+falls back to the non-periodic boundary scheme (`ϕuL`/`ϕuR`) that only
+needs 1 ghost cell (filled by halo from the periodic neighbor).
+"""
+effective_perdir(perdir) = _effective_perdir(perdir, par_mode[])
+_effective_perdir(perdir, ::Serial) = perdir
+
+"""
     interp(x::SVector, arr::AbstractArray, offset=zero(x))
 
 Linear interpolation from array `arr` at Cartesian-coordinate `x`.

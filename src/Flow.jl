@@ -45,6 +45,7 @@ accumulated into `r` (force per unit volume) and `Φ` is a working scalar.
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     r .= zero(eltype(r))
     N,n = size_u(u)
+    perdir = effective_perdir(perdir)  # MPI-decomposed periodic → non-periodic boundary
     for i ∈ 1:n, j ∈ 1:n
         tagper = (j in perdir)
         lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())

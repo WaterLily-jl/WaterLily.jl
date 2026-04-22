@@ -212,11 +212,7 @@ end
 
 function _do_scalar_halo!(arr::AbstractArray)
     _has_neighbors[] || return
-    if _is_fine(arr)
-        _scalar_halo_igg!(arr)
-    else
-        _scalar_halo_mpi!(arr)
-    end
+    _scalar_halo_mpi!(arr)  # custom halo only — IGG broken for halowidth=1 + periodic 2-rank wrap
 end
 
 # ── Vector (velocity-shaped) halo exchange ────────────────────────────────────
@@ -330,5 +326,20 @@ WaterLily._divisible(N, ::Parallel) = mod(N,2)==0 && N>4
 # Combined with per-V-cycle `pin_pressure!` in `solver!` to keep `p.x`'s
 # mean bounded between iterations.
 WaterLily._coarsest_solve!(p, ω, ::Parallel) = WaterLily.pcg!(p; it=32)
+
+# ── Effective perdir ──────────────────────────────────────────────────────────
+# conv_diff!'s periodic path uses `ϕuP(j, CIj(j,I,N[j]-2), …)` — an explicit
+# N-2 wrap on the local array. In an MPI-decomposed periodic direction, that
+# reads rank-local data instead of the remote periodic partner (which is on
+# another rank). Halowidth=1 only provides 1 ghost cell, not enough for the
+# 2-cell QUICK stencil. Exclude decomposed directions here so conv_diff!
+# falls back to the non-periodic Val{false} boundary (ϕuL/ϕuR), which only
+# needs 1 ghost cell — correctly filled by the halo from the periodic wrap.
+function WaterLily._effective_perdir(perdir, ::Parallel)
+    g  = ImplicitGlobalGrid.global_grid()
+    nd = _ndims_active()
+    decomposed = ntuple(d -> d <= nd && g.dims[d] > 1, 3)
+    Tuple(j for j in perdir if !decomposed[j])
+end
 
 end # module WaterLilyMPIExt
