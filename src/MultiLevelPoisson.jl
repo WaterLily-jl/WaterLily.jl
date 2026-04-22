@@ -4,13 +4,13 @@
 Return the fine-grid `CartesianIndices` range that maps to coarse cell `I`.
 When `a≠0`, the range is shifted by `-δ(a,I)` for staggered (face) restriction.
 """
-@inline up(I::CartesianIndex,a=0) = (2I-3oneunit(I)):(2I-2oneunit(I)-δ(a,I))
+@inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 """
     down(I)
 
 Map fine-grid index `I` to the corresponding coarse-grid index.
 """
-@inline down(I::CartesianIndex) = CI((I.I .- 1) .÷ 2 .+ 2)
+@inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
 """
     restrict(I, b)
 
@@ -45,7 +45,7 @@ lower diagonal `L` and allocating matching solution/residual arrays.
 """
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
-    Na = map(i->i÷2+2,N)
+    Na = map(i->1+i÷2,N)
     aL = similar(b.L,(Na...,n)); fill!(aL,0)
     ax = similar(b.x,Na); fill!(ax,0)
     restrictL!(aL,b.L,perdir=b.perdir)
@@ -60,37 +60,15 @@ boundary conditions (`BC!` and `pressureBC!`) on the coarse level.
 function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
-        @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->3:n-2,Na))
+        @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
-    BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries
-    pressureBC!(a, perdir)
+    BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries (master has no pressureBC at coarse)
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
 @inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
 
-"""
-    perturb_coarsest!(p::Poisson, perdir)
-
-Add a small perturbation to `L` at physical wall faces of the coarsest level
-to break the null-space singularity introduced by `pressureBC!`.  This makes
-the coarsest-level operator non-singular, enabling multigrid to effectively
-reduce the constant-mode residual. The fine-level operator retains `L = 0`
-at walls, preserving the exact Neumann velocity BC.  Dispatches on
-`par_mode[]` so that MPI rank-internal boundaries are left untouched.
-"""
-perturb_coarsest!(p::Poisson, perdir) = _perturb_coarsest!(p, perdir, par_mode[])
-function _perturb_coarsest!(p::Poisson{T}, perdir, ::Serial) where T
-    N, n = size_u(p.L)
-    ε = T(1e-4)
-    for j in 1:n
-        j in perdir && continue
-        @loop p.L[I,j] = ε over I ∈ slice(N, 3, j)
-        @loop p.L[I,j] = ε over I ∈ slice(N, N[j]-1, j)
-    end
-    update!(p)
-end
 """
     MultiLevelPoisson{T,S,V}
 
@@ -111,8 +89,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        # Perturb coarsest L to break null-space singularity from pressureBC-zeroed walls
-        perturb_coarsest!(levels[end], perdir)
+        # N>6 divisibility keeps coarsest interior ≥ 2x2 — no perturbation needed
         new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
@@ -176,7 +153,7 @@ Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until the
 `L₂`-norm residual drops below `tol`.  Ends with `pin_pressure!` + `comm!`
 to remove the null-space mode and synchronize halos.
 """
-function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32,itmn=8) where T
+function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32,itmn=1) where T
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"

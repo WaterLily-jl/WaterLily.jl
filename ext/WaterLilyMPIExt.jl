@@ -84,15 +84,15 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
               "$mpi_dims with $nprocs ranks")
 
     # Pad to 3D for IGG (which always expects 3 dimensions)
-    igg_local = ntuple(d -> d <= N ? local_dims[d] + 4 : 1, 3)
+    igg_local = ntuple(d -> d <= N ? local_dims[d] + 2 : 1, 3)
     igg_mpi   = ntuple(d -> d <= N ? mpi_dims[d] : 1, 3)
     igg_per   = ntuple(d -> d <= N && d in perdir ? 1 : 0, 3)
 
     me, dims, np, coords, comm = init_global_grid(
         igg_local...;
         dimx = igg_mpi[1], dimy = igg_mpi[2], dimz = igg_mpi[3],
-        overlaps = (4, 4, 4),
-        halowidths = (2, 2, 2),
+        overlaps = (2, 2, 2),
+        halowidths = (1, 1, 1),
         periodx = igg_per[1], periody = igg_per[2], periodz = igg_per[3],
         init_MPI = false,
     )
@@ -289,35 +289,8 @@ end
 # ── MPI-aware pressureBC! ────────────────────────────────────────────────────
 
 function WaterLily._pressureBC!(L, perdir, ::Parallel)
-    g  = ImplicitGlobalGrid.global_grid()
-    N, n = WaterLily.size_u(L)
-    for j in 1:n
-        j in perdir && continue
-        if g.neighbors[1, j] < 0  # physical left wall
-            @loop L[I,j] = zero(eltype(L)) over I ∈ WaterLily.slice(N, 3, j)
-        end
-        if g.neighbors[2, j] < 0  # physical right wall
-            @loop L[I,j] = zero(eltype(L)) over I ∈ WaterLily.slice(N, N[j]-1, j)
-        end
-    end
+    # master-style layout: BC! on μ₀ already zeros L at wall faces; just sync halo
     _do_velocity_halo!(L)
-end
-
-function WaterLily._perturb_coarsest!(p::WaterLily.Poisson{T}, perdir, ::Parallel) where T
-    g  = ImplicitGlobalGrid.global_grid()
-    N, n = WaterLily.size_u(p.L)
-    ε = T(1e-4)
-    for j in 1:n
-        j in perdir && continue
-        if g.neighbors[1, j] < 0
-            @loop p.L[I,j] = ε over I ∈ WaterLily.slice(N, 3, j)
-        end
-        if g.neighbors[2, j] < 0
-            @loop p.L[I,j] = ε over I ∈ WaterLily.slice(N, N[j]-1, j)
-        end
-    end
-    _do_velocity_halo!(p.L)
-    WaterLily.update!(p)
 end
 
 # ── MPI-aware divisible ───────────────────────────────────────────────────────

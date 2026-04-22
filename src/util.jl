@@ -45,7 +45,7 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 Return CartesianIndices range excluding `buff` layers of cells on all boundaries.
 Default `buff=2` matches the N+4 staggered grid layout (2 ghost/boundary cells per side).
 """
-@inline inside(a::AbstractArray;buff=2) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
+@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
 """
     inside_u(dims,j)
@@ -54,10 +54,10 @@ Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _vector_ array on face `j` with size `dims`.
 """
 function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
+    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]-1), N))
 end
-@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(3:i-2),dims)...,1:N))
-@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(3:i-2),size(u)[1:end-1]))
+@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
+@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(2:i-1),size(u)[1:end-1]))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
@@ -502,16 +502,14 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         j in perdir && continue  # periodic handled by velocity_comm!
-        if i==j # Normal direction, Dirichlet
-            @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,1:2,j)
-            if !saveexit || i>1
-                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j]-1:N[j],j)
-            else
-                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)
+        if i==j # Normal direction, Dirichlet (master pattern: s in (1,2) then N[j])
+            for s ∈ (1,2)
+                @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
             end
-        else    # Tangential directions, Neumann: mirror about wall face (between 2,3 and M-2,M-1)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,5-I[j]),i]-uBC(i,loc(i,CIj(j,I,5-I[j])),t) over I ∈ slice(N,1:2,j)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[CIj(j,I,2N[j]-3-I[j]),i]-uBC(i,loc(i,CIj(j,I,2N[j]-3-I[j])),t) over I ∈ slice(N,N[j]-1:N[j],j)
+            (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j))
+        else    # Tangential directions, Neumann: mirror
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
+            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
         end
     end
     velocity_comm!(a, perdir)
