@@ -47,13 +47,13 @@ default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 """
     _interior(data, nd, N_int)
 
-Return `data` with `buff=2` ghost layers stripped from the first `nd`
+Return `data` with `buff=1` ghost layers stripped from the first `nd`
 spatial dimensions. If `data` is already at interior size (matches
 `N_int`), pass through untouched.
 """
 function _interior(data::AbstractArray, nd::Int, N_int::NTuple)
     size(data)[1:nd] == N_int && return data
-    axs = ntuple(d -> d <= nd ? (3:size(data,d)-2) : Colon(), ndims(data))
+    axs = ntuple(d -> d <= nd ? (2:size(data,d)-1) : Colon(), ndims(data))
     return Array(@view data[axs...])
 end
 
@@ -103,7 +103,7 @@ Write the simulation data to VTK files.  Dispatches on `par_mode[]`:
   - Serial  → single `.vti` file
   - Parallel → per-rank `.vti` pieces + `.pvti` header (rank 0)
 
-Attribute functions may return full-sized arrays (with `buff=2` ghost
+Attribute functions may return full-sized arrays (with `buff=1` ghost
 cells) or already-stripped interior arrays; ghost layers are removed
 automatically so the output contains interior cells only.
 """
@@ -114,7 +114,7 @@ end
 function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.Serial)
     k = w.count[1]
     nd = ndims(a.flow.p)
-    N_int = size(a.flow.p) .- 4
+    N_int = size(a.flow.p) .- 2
     vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n+1 for n in N_int]...)
     mask = w.body_mask ? _body_mask(a, nd, N_int) : nothing
     for (name, func) in w.output_attrib
@@ -165,7 +165,7 @@ function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.AbstractParMode
                      ntuple(d -> extents[me+1][d], nd)...;
                      part = me + 1, extents = extents)
 
-    N_int = size(a.flow.p) .- 4
+    N_int = size(a.flow.p) .- 2
     mask = w.body_mask ? _body_mask(a, nd, N_int) : nothing
     for (name, func) in w.output_attrib
         data = _interior(func(a), nd, N_int)

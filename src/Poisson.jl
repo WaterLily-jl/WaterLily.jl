@@ -15,10 +15,11 @@ where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
 etc. can be easily implemented and optimized without external libraries.
 
-The lower diagonal `L` is initialized from `flow.μ₀` and modified by
-`pressureBC!` (zero at physical walls for Neumann BCs). Ghost-cell
-synchronization uses `comm!` (= `perBC!` + `scalar_halo!`) rather than
-bare `perBC!`, so that MPI rank-internal boundaries are handled correctly.
+The lower diagonal `L` is aliased to `flow.μ₀`; `BC!` on μ₀ already
+zeros normal-direction values at wall faces, giving `L[wall_face]=0` for
+an implicit Neumann BC.  Ghost-cell synchronization uses `comm!`
+(= `perBC!` + `scalar_halo!`) rather than bare `perBC!`, so that MPI
+rank-internal boundaries are handled correctly.
 
 To help iteratively solve the system, the structure holds helper arrays
 for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative solution

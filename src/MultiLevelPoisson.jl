@@ -55,14 +55,14 @@ end
     restrictL!(a, b; perdir=())
 
 Restrict the fine-grid lower diagonal `b` into coarse-grid `a`, then apply
-boundary conditions (`BC!` and `pressureBC!`) on the coarse level.
+`BC!` to zero the normal component at boundary faces.
 """
 function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
         @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
-    BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries (master has no pressureBC at coarse)
+    BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries
 end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]

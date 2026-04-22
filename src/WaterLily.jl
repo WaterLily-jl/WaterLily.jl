@@ -9,7 +9,7 @@ include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend,
        global_allreduce,global_dot,global_sum,global_length,global_min,global_max,
        scalar_halo!,velocity_halo!,
-       comm!,velocity_comm!,pressureBC!,pin_pressure!,
+       comm!,velocity_comm!,pin_pressure!,
        AbstractParMode,Serial,par_mode
 
 using Reexport
@@ -104,7 +104,6 @@ mutable struct Simulation <: AbstractSimulation
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
         flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
-        # master-style: alias μ₀ as L (no pressureBC needed — BC! on μ₀ already zeros wall face)
         new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
     end
 end

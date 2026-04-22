@@ -84,8 +84,8 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 
-All arrays use the N+4 staggered layout: `N` interior cells plus 2 ghost/boundary
-cells per side, giving total size `M = N + 4` per spatial dimension.
+All arrays use the N+2 staggered layout: `N` interior cells plus 1 ghost/boundary
+cell per side, giving total size `M = N + 2` per spatial dimension.
 """
 struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}}
     # Fluid fields
@@ -107,7 +107,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, uBC; f=Array, Δt=0.25, ν=0., g=nothing,
             uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
-        Ng = N .+ 2  # master-style single-ghost layout
+        Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(uλ) && (uλ = ic_function(uBC))
         u = Array{T}(undef, Nd...) |> f

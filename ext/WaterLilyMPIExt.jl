@@ -11,7 +11,7 @@ hooks through `par_mode[]` (defaults to `Serial()`).  This extension defines
 overwriting, so precompilation works normally.
 
 Functions with MPI-specific behavior (via dispatch on `::Parallel`):
-  _pressureBC!  — zero L at physical walls only (skip MPI-internal) + halo on L
+  _BC!        — skip Dirichlet writes at rank-internal boundaries
   _exitBC!    — global reductions for inflow/outflow mass flux
   _divisible  — same coarsening threshold as serial (N>4)
 
@@ -285,13 +285,6 @@ function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
     end
 
     _do_velocity_halo!(u)
-end
-
-# ── MPI-aware pressureBC! ────────────────────────────────────────────────────
-
-function WaterLily._pressureBC!(L, perdir, ::Parallel)
-    # master-style layout: BC! on μ₀ already zeros L at wall faces; just sync halo
-    _do_velocity_halo!(L)
 end
 
 # ── MPI-aware BC! ────────────────────────────────────────────────────────────

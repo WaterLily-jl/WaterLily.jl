@@ -40,10 +40,10 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
-    inside(a;buff=2)
+    inside(a;buff=1)
 
 Return CartesianIndices range excluding `buff` layers of cells on all boundaries.
-Default `buff=2` matches the N+4 staggered grid layout (2 ghost/boundary cells per side).
+Default `buff=1` matches the N+2 staggered grid layout (1 ghost cell per side).
 """
 @inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
 
@@ -464,24 +464,6 @@ _velocity_halo!(u, ::Serial) = nothing
 
 
 """
-    pressureBC!(L, perdir=())
-
-Apply the pressure wall BC by zeroing the Poisson lower diagonal `L` at
-physical (non-periodic) boundary faces. This decouples the boundary cell
-from the ghost cell, giving an implicit Neumann pressure BC (∂p/∂n = 0)
-at domain walls.
-"""
-pressureBC!(L, perdir=()) = _pressureBC!(L, perdir, par_mode[])
-function _pressureBC!(L, perdir, ::Serial)
-    N, n = size_u(L)
-    for j in 1:n
-        j in perdir && continue
-        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, 3, j)       # left wall
-        @loop L[I,j] = zero(eltype(L)) over I ∈ slice(N, N[j]-1, j)  # right wall
-    end
-end
-
-"""
     divisible(N)
 
 Check if array dimension `N` is divisible for multigrid coarsening.
@@ -537,8 +519,8 @@ Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,I[j]+N[j]-4)] over I ∈ slice(N,1:2,j)
-    @loop a[I] = a[CIj(j,I,I[j]-N[j]+4)] over I ∈ slice(N,N[j]-1:N[j],j)
+    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
+    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
 end
 
 """
