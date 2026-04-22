@@ -172,7 +172,6 @@ function _init_has_neighbors!()
     g = ImplicitGlobalGrid.global_grid()
     nd = _ndims_active()
     _has_neighbors[] = any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:nd)
-    _mpi_multireqs[] = MPI.MultiRequest(4)
 end
 
 # ── Scalar halo exchange (fine grid — via IGG) ───────────────────────────────
@@ -215,17 +214,11 @@ function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
     @view arr[colons...]
 end
 
-# Pre-allocated request collection — exactly 4 slots (2 Isend + 2 Irecv per dim).
-# Reused across dim iterations: after each `Waitall`, all slots are MPI_REQUEST_NULL
-# so we can safely overwrite them on the next dim's calls.
-const _mpi_multireqs = Ref{MPI.MultiRequest}()  # init in _init_has_neighbors!
-
 function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
     g    = ImplicitGlobalGrid.global_grid()
     nd   = _ndims_active()
     N    = size(arr)
     comm = _comm()
-    reqs = _mpi_multireqs[]
     for dim in 1:nd
         nleft  = g.neighbors[1, dim]
         nright = g.neighbors[2, dim]
@@ -239,19 +232,20 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
         copyto!(send_left,  _slab(arr, dim, 2:2))
         copyto!(send_right, _slab(arr, dim, N[dim]-1:N[dim]-1))
 
-        # Post all non-blocking sends/recvs via pre-allocated MultiRequest slots
-        # (positional-args form — avoids kwargs NamedTuple allocations). Unused
-        # slots keep MPI_REQUEST_NULL from the previous Waitall; MPI_Waitall
-        # treats them as no-ops.
-        if nright >= 0
-            MPI.Isend(send_right, nright, dim*10,   comm, reqs[1])
-            MPI.Irecv!(recv_right, nright, dim*10+1, comm, reqs[2])
-        end
-        if nleft >= 0
-            MPI.Isend(send_left, nleft, dim*10+1, comm, reqs[3])
-            MPI.Irecv!(recv_left, nleft, dim*10,   comm, reqs[4])
-        end
-        MPI.Waitall(reqs)  # resets all 4 slots to REQUEST_NULL
+        # Classical halo exchange "shift" pattern: two paired Sendrecv per dim.
+        #   Shift-right: every rank sends to its right neighbour and receives
+        #                from its left neighbour — fills our left ghost.
+        #   Shift-left:  sends to left, receives from right — fills right ghost.
+        # Using `nleft`/`nright` directly as `dest`/`source`; when a rank has
+        # no neighbor on a side, the value is already `MPI.PROC_NULL` (-2) and
+        # that slot becomes a no-op. Handles 2-rank self-wrap correctly without
+        # deadlock (unlike "both sides send to same neighbor" tag schemes).
+        MPI.Sendrecv!(send_right, nright, dim*10,
+                      recv_left,  nleft,  dim*10,
+                      comm, nothing)
+        MPI.Sendrecv!(send_left,  nleft,  dim*10+1,
+                      recv_right, nright, dim*10+1,
+                      comm, nothing)
 
         # Unpack recv buffers into ghost cells (index 1 and N)
         nleft  >= 0 && copyto!(_slab(arr, dim, 1:1),            recv_left)
