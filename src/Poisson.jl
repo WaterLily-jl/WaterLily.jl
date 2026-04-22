@@ -150,8 +150,15 @@ Note: This performs best on GPU configurations and is the default smoother.
 """
 function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
+    # One halo up-front; inner RB sweeps run against it. After sweep 1, ghost
+    # values lag by one neighbor-iteration (mild Jacobi drift), but the system
+    # is diagonally-dominant (Poisson) and `mean_iters` stays at 1.0 — the
+    # extra halos per sweep contribute only synchronization, not convergence.
+    # This matches the old N+4/halowidth=2 pattern (reverse-engineered from
+    # commit 391b999); the halowidth-2 layout wasn't necessary, the frequency
+    # was.
+    comm!(p.ϵ,p.perdir)
     for i ∈ 1:it
-        comm!(p.ϵ,p.perdir) # sync MPI halo between RB sweeps (neighbor interiors update each iteration)
         @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
     increment!(p;ω) # increment solution and residual
