@@ -52,12 +52,12 @@ function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     velocity_halo!(reshape(a.μ₁, size(a.σ)..., :)) # halo on μ₁ tensor (no-op in serial)
 end
 
-# Convolution kernel and its moments
-@fastmath kern(d) = (1+cospi(d))/2
-@fastmath kern₀(d::T) where T = (1+d+sinpi(d)/T(π))/2
-@fastmath kern₁(d::T) where T = (1-d^2)/4-(d*sinpi(d)+(1+cospi(d))/T(π))/2T(π)
+# Convolution kernel and its moments (master)
+@fastmath kern(d) = 0.5+0.5cos(π*d)
+@fastmath kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
+@fastmath kern₁(d) = 0.25*(1-d^2)-0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
 
-μ₀(d,ϵ) = d/ϵ<-1+√eps(d) ? zero(d) : kern₀(min(d/ϵ,1))
+μ₀(d,ϵ) = kern₀(clamp(d/ϵ,-1,1))
 μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))
 
 """

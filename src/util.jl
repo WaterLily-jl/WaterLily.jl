@@ -54,15 +54,15 @@ Return CartesianIndices range excluding the ghost-cells on the boundaries of
 a _vector_ array on face `j` with size `dims`.
 """
 function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]-1), N))
+    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
 end
 @inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
 @inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(2:i-1),size(u)[1:end-1]))
 splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
-local_dot(a::AbstractArray, b::AbstractArray) = mapreduce(i -> Float64(a[i])*Float64(b[i]), +, eachindex(a, b); init=0.0)
-local_sum(a::AbstractArray) = mapreduce(Float64, +, a; init=0.0)
+local_dot(a, b) = a⋅b
+local_sum(a) = sum(a)
 
 """
     @inside <expr>
@@ -439,8 +439,8 @@ Dot product of `a` and `b` respecting periodic boundary conditions.
 When `perdir` is empty, uses the full arrays; otherwise restricts to interior cells.
 MPI-aware via dispatch on `par_mode[]`.
 """
-local_perdot(a,b,::Tuple{}) = local_dot(a, b)
-local_perdot(a,b,perdir,R=inside(a)) = mapreduce(i -> Float64(a[i])*Float64(b[i]), +, R; init=0.0)
+local_perdot(a,b,::Tuple{}) = a⋅b
+local_perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
 global_perdot(a,b,tup::Tuple{}) = global_allreduce(local_perdot(a, b, tup))
 global_perdot(a,b,perdir,R=inside(a)) = global_allreduce(local_perdot(a, b, perdir, R))
 
