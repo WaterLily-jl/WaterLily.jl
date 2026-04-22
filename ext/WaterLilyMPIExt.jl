@@ -325,12 +325,6 @@ end
 
 WaterLily._divisible(N, ::Parallel) = mod(N,2)==0 && N>4
 
-# Coarsest solve: use PCG so global dot-products catch the null-space mode
-# that a local red-black smoother cannot reach (MPI loses one V-cycle level).
-# Combined with per-V-cycle `pin_pressure!` in `solver!` to keep `p.x`'s
-# mean bounded between iterations.
-WaterLily._coarsest_solve!(p, ω, ::Parallel) = WaterLily.pcg!(p; it=32)
-
 # ── Effective perdir ──────────────────────────────────────────────────────────
 # conv_diff!'s periodic path uses `ϕuP(j, CIj(j,I,N[j]-2), …)` — an explicit
 # N-2 wrap on the local array. In an MPI-decomposed periodic direction, that
