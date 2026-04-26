@@ -26,6 +26,7 @@ import WaterLily: @loop
 using ImplicitGlobalGrid
 using MPI
 using StaticArrays
+using ForwardDiff: Dual, Partials, value, partials
 
 # ── MPI parallel mode ────────────────────────────────────────────────────────
 
@@ -240,12 +241,12 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
         # no neighbor on a side, the value is already `MPI.PROC_NULL` (-2) and
         # that slot becomes a no-op. Handles 2-rank self-wrap correctly without
         # deadlock (unlike "both sides send to same neighbor" tag schemes).
-        MPI.Sendrecv!(send_right, nright, dim*10,
-                      recv_left,  nleft,  dim*10,
-                      comm, nothing)
-        MPI.Sendrecv!(send_left,  nleft,  dim*10+1,
-                      recv_right, nright, dim*10+1,
-                      comm, nothing)
+        # For Dual eltype, `_wire_view` aliases the buffer to its flat V storage
+        # so MPI sees a native datatype.
+        sR, rL = _wire_view(send_right), _wire_view(recv_left)
+        sL, rR = _wire_view(send_left),  _wire_view(recv_right)
+        MPI.Sendrecv!(sR, nright, dim*10,    rL, nleft,  dim*10,   comm, nothing)
+        MPI.Sendrecv!(sL, nleft,  dim*10+1,  rR, nright, dim*10+1, comm, nothing)
 
         # Unpack recv buffers into ghost cells (index 1 and N)
         nleft  >= 0 && copyto!(_slab(arr, dim, 1:1),            recv_left)
@@ -261,12 +262,20 @@ function _is_fine(arr::AbstractArray)
     size(arr)[1:nd] == Tuple(g.nxyz[1:nd])
 end
 
+@inline _wire_view(arr::Array) = arr
+@inline _wire_view(arr::Array{<:Dual}) = _dual_view(arr)
+
+# IGG's `update_halo!` requires a primitive eltype; route Dual arrays through
+# the manual MPI shift even at fine-grid sizes.
+@inline _native_eltype(::Type{<:Dual}) = false
+@inline _native_eltype(::Type) = true
+
 function _do_scalar_halo!(arr::AbstractArray)
     _has_neighbors[] || return
-    if _is_fine(arr)
+    if _native_eltype(eltype(arr)) && _is_fine(arr)
         _scalar_halo_igg!(arr)   # pre-allocated IGG buffers — fast path
     else
-        _scalar_halo_mpi!(arr)   # custom: coarse arrays don't match IGG's fine-grid buffers
+        _scalar_halo_mpi!(arr)   # custom: coarse / Dual arrays
     end
 end
 
@@ -291,10 +300,54 @@ function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
     end
 end
 
+# ── ForwardDiff.Dual support ─────────────────────────────────────────────────
+# `Dual{T,V,N}` is `isbits` with memory layout [value, partial₁, …, partialₙ]
+# of `V`. MPI doesn't know how to reduce/transmit Dual, so we reinterpret to
+# `V` for the wire and reconstruct on receive. SUM is element-wise on the flat
+# view (derivative is linear). MIN/MAX pick the rank holding the global
+# extremum value, then broadcast its full Dual.
+
+@inline _dual_flat(x::Dual{T,V,N}) where {T,V,N} = V[value(x); partials(x).values...]
+@inline _dual_unflat(::Type{Dual{T,V,N}}, f::AbstractVector{V}) where {T,V,N} =
+    Dual{T,V,N}(f[1], Partials{N,V}(NTuple{N,V}(@view f[2:end])))
+
+# Flat-V alias of a contiguous Dual array. Same storage; no copy.
+@inline function _dual_view(arr::Array{D}) where {Tg,V,N,D<:Dual{Tg,V,N}}
+    unsafe_wrap(Array, Ptr{V}(pointer(arr)), length(arr) * (N + 1))
+end
+
+# Scalar SUM (linear: reduce flat representation element-wise).
+_dual_sum(x::Dual{T,V,N}) where {T,V,N} =
+    (f = _dual_flat(x); MPI.Allreduce!(f, MPI.SUM, _comm()); _dual_unflat(Dual{T,V,N}, f))
+
+# Scalar MIN/MAX (non-linear): pick the rank holding the global extremum value
+# and broadcast its full Dual.
+function _dual_extremum(x::Dual{T,V,N}, op) where {T,V,N}
+    comm = _comm()
+    vals = MPI.Allgather(value(x), comm)
+    root = (op === MPI.MIN ? argmin(vals) : argmax(vals)) - 1
+    f = MPI.Comm_rank(comm) == root ? _dual_flat(x) : zeros(V, N + 1)
+    MPI.Bcast!(f, root, comm); _dual_unflat(Dual{T,V,N}, f)
+end
+
+# Array SUM. Aliasing flat-V buffer so the in-place Allreduce result lands back
+# in the original Dual array.
+function _dual_arr_sum(x::AbstractArray{<:Dual})
+    arr = x isa Array ? x : Array(x)
+    MPI.Allreduce!(_dual_view(arr), MPI.SUM, _comm()); arr
+end
+
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
-WaterLily._global_allreduce(x, ::Parallel)        = MPI.Allreduce(x, MPI.SUM, _comm())
-WaterLily._global_min(a, b, ::Parallel)           = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
-WaterLily._global_max(x, ::Parallel)              = MPI.Allreduce(x, MPI.MAX, _comm())
+# global_min/max take their inputs first; do the local reduction, then route to
+# native or Dual paths based on the result type. This handles mixed
+# Int/Dual inputs (CFL passes `Δt_max::Int` alongside a Dual ν term).
+WaterLily._global_allreduce(x,                        ::Parallel) = MPI.Allreduce(x, MPI.SUM, _comm())
+WaterLily._global_allreduce(x::Dual,                  ::Parallel) = _dual_sum(x)
+WaterLily._global_allreduce(x::AbstractArray{<:Dual}, ::Parallel) = _dual_arr_sum(x)
+WaterLily._global_min(a, b,  p::Parallel) = _allreduce_extremum(min(a, b), MPI.MIN, p)
+WaterLily._global_max(x,     p::Parallel) = _allreduce_extremum(x,         MPI.MAX, p)
+_allreduce_extremum(x,       op, ::Parallel) = MPI.Allreduce(x, op, _comm())
+_allreduce_extremum(x::Dual, op, ::Parallel) = _dual_extremum(x, op)
 WaterLily._scalar_halo!(x, ::Parallel)            = _do_scalar_halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel)          = _do_velocity_halo!(u)
 
@@ -314,11 +367,12 @@ function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
 
     # All ranks participate in Allreduce for exit face area
     local_exit_len = is_exit ? length(WaterLily.slice(N .- 1, N[1], 1, 2)) : 0
-    global_exit_len = MPI.Allreduce(local_exit_len, MPI.SUM, comm)
+    global_exit_len = WaterLily.global_allreduce(local_exit_len)
 
-    # All ranks participate in Allreduce for mean inflow velocity
+    # All ranks participate in Allreduce for mean inflow velocity (routed
+    # through `global_allreduce` so Dual eltypes go through the Dual override).
     local_inflow_sum = is_inflow ? sum(@view(u[WaterLily.slice(N .- 1, 2, 1, 2), 1])) : zero(eltype(u))
-    U = MPI.Allreduce(local_inflow_sum, MPI.SUM, comm) / global_exit_len
+    U = WaterLily.global_allreduce(local_inflow_sum) / global_exit_len
 
     # Convective exit on rightmost-x ranks only
     if is_exit
@@ -328,7 +382,7 @@ function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
 
     # All ranks participate in Allreduce for mass flux correction
     local_exit_sum = is_exit ? sum(@view(u[WaterLily.slice(N .- 1, N[1], 1, 2), 1])) : zero(eltype(u))
-    global_exit_sum = MPI.Allreduce(local_exit_sum, MPI.SUM, comm)
+    global_exit_sum = WaterLily.global_allreduce(local_exit_sum)
     ∮u = global_exit_sum / global_exit_len - U
     if is_exit
         exitR = WaterLily.slice(N .- 1, N[1], 1, 2)
