@@ -12,11 +12,17 @@ Wrapper for a `paraview_collection` that returns a pvd file header
 """
 pvd_collection(fname;append=false) = paraview_collection(fname;append=append)
 """
-    VTKWriter(fname;attrib,dir,T)
+    VTKWriter(fname; attrib, dir, T, body_mask=false, include_bc=false)
 
 Generates a `VTKWriter` that hold the collection name to which the `vtk` files are written.
 The default attributes that are saved are the `Velocity` and the `Pressure` fields.
 Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword.
+
+If `include_bc=true`, the boundary layer (index 1 / M with the layout's `buff=1`)
+is kept along every non-periodic dimension. Useful for visually debugging BC
+behaviour. Under MPI, the layer is kept only by the rank that owns the global
+physical boundary in that dimension; MPI-internal seams stay at the interior
+slice.
 """
 struct VTKWriter
     fname         :: String
@@ -25,13 +31,14 @@ struct VTKWriter
     output_attrib :: Dict{String,Function}
     count         :: Vector{Int}
     body_mask     :: Bool
+    include_bc    :: Bool
 end
-function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32,body_mask=false)
+function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32,body_mask=false,include_bc=false)
     mkpath(dir)  # race-safe: multiple MPI ranks may enter here at once
-    VTKWriter(fname,dir,pvd_collection(fname),attrib,[0],body_mask)
+    VTKWriter(fname,dir,pvd_collection(fname),attrib,[0],body_mask,include_bc)
 end
-function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k,body_mask::Bool=false)
-    VTKWriter(fname,dir,collection,attrib,[k],body_mask)
+function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k,body_mask::Bool=false,include_bc::Bool=false)
+    VTKWriter(fname,dir,collection,attrib,[k],body_mask,include_bc)
 end
 """
     default_attrib()
@@ -45,15 +52,17 @@ _pressure(a::AbstractSimulation) = a.flow.p
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 
 """
-    _interior(data, nd, N_int)
+    _interior(data, nd, N_int; lo, hi)
 
-Return `data` with `buff=1` ghost layers stripped from the first `nd`
-spatial dimensions. If `data` is already at interior size (matches
-`N_int`), pass through untouched.
+Strip the `buff=1` ghost layer along each of the first `nd` spatial dims.
+`lo[d]` / `hi[d]` ∈ {0,1} widen the slice by one to keep the BC layer on
+that side; defaults to 0 (strip). If `data` is already at interior size,
+pass through untouched (no widening possible).
 """
-function _interior(data::AbstractArray, nd::Int, N_int::NTuple)
+function _interior(data::AbstractArray, nd::Int, N_int::NTuple;
+                   lo::NTuple=ntuple(_->0, nd), hi::NTuple=ntuple(_->0, nd))
     size(data)[1:nd] == N_int && return data
-    axs = ntuple(d -> d <= nd ? (2:size(data,d)-1) : Colon(), ndims(data))
+    axs = ntuple(d -> d <= nd ? ((2-lo[d]):(size(data,d)-1+hi[d])) : Colon(), ndims(data))
     return Array(@view data[axs...])
 end
 
@@ -68,12 +77,11 @@ is scratch-space clobbered by `mom_step!`. The smooth kernel keeps the mask
 numerically stable: FP differences in sdf between serial and parallel runs
 produce linear changes in weight rather than 0→1 flips at a threshold.
 """
-function _body_mask(a::AbstractSimulation, nd::Int, N_int::NTuple)
+function _body_mask(a::AbstractSimulation, nd::Int, N_int::NTuple; kw...)
     σ = similar(a.flow.σ)
     WaterLily.measure_sdf!(σ, a.body, sum(a.flow.Δt); fastd²=Inf)
-    σ_int = _interior(σ, nd, N_int)
-    ϵ = eltype(σ_int)(a.ϵ)
-    σ_int .= WaterLily.μ₀.(σ_int, ϵ)   # in-place; promotion is absorbed on assign
+    σ_int = _interior(σ, nd, N_int; kw...)
+    σ_int .= WaterLily.μ₀.(σ_int, eltype(σ_int)(a.ϵ))
     return σ_int
 end
 
@@ -112,13 +120,12 @@ function save!(w::VTKWriter, a::AbstractSimulation)
 end
 
 function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.Serial)
-    k = w.count[1]
-    nd = ndims(a.flow.p)
-    N_int = size(a.flow.p) .- 2
-    vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n+1 for n in N_int]...)
-    mask = w.body_mask ? _body_mask(a, nd, N_int) : nothing
+    k = w.count[1]; nd = ndims(a.flow.p); N_int = size(a.flow.p) .- 2
+    pad = ntuple(d -> w.include_bc && !(d in a.flow.perdir) ? 1 : 0, nd)
+    vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n+1 for n in N_int .+ 2 .* pad]...)
+    mask = w.body_mask ? _body_mask(a, nd, N_int; lo=pad, hi=pad) : nothing
     for (name, func) in w.output_attrib
-        data = _interior(func(a), nd, N_int)
+        data = _interior(func(a), nd, N_int; lo=pad, hi=pad)
         isnothing(mask) || _apply_mask!(data, mask, nd)
         vtk[name, VTKCellData()] = ndims(data) > nd ? components_first(data) : data
     end
@@ -147,41 +154,36 @@ function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.AbstractParMode
     nx   = ntuple(d -> g.nxyz[d] - g.overlaps[d], nd)   # interior cells per rank
 
     # Gather every rank's coords so all ranks build the same extents array.
-    my_coords  = Int32[g.coords[d] for d in 1:nd]
-    all_coords = MPIMod.Allgather(my_coords, comm)
-    coords_mat = reshape(all_coords, nd, nprocs)
+    coords_mat = reshape(MPIMod.Allgather(Int32[g.coords[d] for d in 1:nd], comm), nd, nprocs)
+    dims_proc  = ntuple(d -> Int(maximum(@view coords_mat[d, :])) + 1, nd)
+    # BC layer per-dim (added only at non-periodic physical boundaries).
+    bc = ntuple(d -> w.include_bc && !(d in a.flow.perdir) ? 1 : 0, nd)
 
-    # Extents use VTK point indices (nx+1 points → nx cells).
-    # Adjacent ranks overlap by 1 point so ParaView sees contiguous pieces.
-    extents = [
-        ntuple(d -> (Int(coords_mat[d,r]) * nx[d] + 1):(Int(coords_mat[d,r]) * nx[d] + nx[d] + 1), nd)
-        for r in 1:nprocs
-    ]
+    # Per-rank VTK point extents: leftmost/rightmost rank owns the BC cell;
+    # middle ranks shift by `bc` to make room for it.
+    extents = [ntuple(d -> begin
+                 c = Int(coords_mat[d, r])
+                 lo = (c == 0)              ? bc[d] : 0
+                 hi = (c == dims_proc[d]-1) ? bc[d] : 0
+                 s  = c*nx[d] + (c > 0)*bc[d]
+                 (s+1):(s + nx[d] + lo + hi + 1)
+               end, nd) for r in 1:nprocs]
+
+    lo = ntuple(d -> Int(coords_mat[d,me+1])==0              ? bc[d] : 0, nd)
+    hi = ntuple(d -> Int(coords_mat[d,me+1])==dims_proc[d]-1 ? bc[d] : 0, nd)
 
     k     = w.count[1]
     fname = joinpath(w.dir_name, @sprintf("%s_%06i", w.fname, k))
-
-    pvtk = pvtk_grid(fname,
-                     ntuple(d -> extents[me+1][d], nd)...;
-                     part = me + 1, extents = extents)
+    pvtk  = pvtk_grid(fname, ntuple(d -> extents[me+1][d], nd)...; part=me+1, extents=extents)
 
     N_int = size(a.flow.p) .- 2
-    mask = w.body_mask ? _body_mask(a, nd, N_int) : nothing
+    mask  = w.body_mask ? _body_mask(a, nd, N_int; lo, hi) : nothing
     for (name, func) in w.output_attrib
-        data = _interior(func(a), nd, N_int)
+        data = _interior(func(a), nd, N_int; lo, hi)
         isnothing(mask) || _apply_mask!(data, mask, nd)
-        if ndims(data) > nd          # vector field (spatial..., D)
-            pvtk[name, VTKCellData()] = components_first(data)
-        else                         # scalar field
-            pvtk[name, VTKCellData()] = data
-        end
+        pvtk[name, VTKCellData()] = ndims(data) > nd ? components_first(data) : data
     end
-
-    if me == 0
-        w.collection[round(sim_time(a), digits=4)] = pvtk
-    else
-        vtk_save(pvtk)
-    end
+    me == 0 ? (w.collection[round(sim_time(a), digits=4)] = pvtk) : vtk_save(pvtk)
     w.count[1] = k + 1
 end
 

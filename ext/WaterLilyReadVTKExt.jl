@@ -22,23 +22,39 @@ Keyword arguments considered are `fname="WaterLily.pvd"` and `attrib=default_att
 function load!(a::AbstractSimulation, ::Val{:pvd}; kwargs...)
     fname = get(Dict(kwargs), :fname, "WaterLily.pvd")
     attrib = get(Dict(kwargs), :attrib, default_attrib())
-    vtk = VTKFile(PVDFile(fname).vtk_filenames[end])
-    extent = filter(!iszero,ReadVTK.get_whole_extent(vtk)[2:2:end]);
-    # VTK stores interior cells only (buff=1 ghost layers stripped on save).
-    Ni = collect(size(a.flow.p) .- 2)
-    text = "The dimensions of the simulation do not match the dimensions of the vtk file."
-    @assert extent == Ni text
-    # load into the interior region; ghosts are refreshed by BC!
+    last_vtk = PVDFile(fname).vtk_filenames[end]
+    # Parallel: the .pvd points at a .pvti; each rank reads its own piece
+    # (named <base>/<base>_<rank+1>.vti by `pvtk_grid` in the writer).
+    if endswith(last_vtk, ".pvti")
+        base = splitext(last_vtk)[1]
+        last_vtk = joinpath(base, basename(base) * "_$(WaterLily.mpi_rank()+1).vti")
+    end
+    vtk = VTKFile(last_vtk)
+    # Cell count and 0-indexed start per active dim. `start[d]==0` ⇒ this piece
+    # owns the lo BC cell (relevant only when saved with `include_bc=true`).
+    ext   = ReadVTK.get_whole_extent(vtk)
+    pairs = [(ext[2d-1], ext[2d] - ext[2d-1]) for d in 1:length(ext)÷2 if ext[2d] != ext[2d-1]]
+    start = first.(pairs); cells = last.(pairs)
+    Ni    = collect(size(a.flow.p) .- 2)
+    extra = cells .- Ni  # 0 = no BC layer; 1 = one side BC; 2 = both sides BC.
+    @assert all(0 .≤ extra .≤ 2) "Dimensions of the simulation do not match the vtk file."
+    # If the file carries BC layers (include_bc=true at save), strip them: BC!
+    # below restores the ghost layer identically. lo BC is present iff this
+    # piece starts at the global origin in that dim.
+    nd     = length(Ni)
+    lo_pad = ntuple(d -> (start[d] == 0 && extra[d] ≥ 1) ? 1 : 0, nd)
+    hi_pad = ntuple(d -> extra[d] - lo_pad[d], nd)
+    src    = ntuple(d -> (lo_pad[d]+1):(lo_pad[d]+Ni[d]), nd)
     cell_data = ReadVTK.get_cell_data(vtk)
     pressure = get(Dict(kwargs), :pressure, "Pressure")
     velocity = get(Dict(kwargs), :velocity, "Velocity")
     p_data = WaterLily.squeeze(Array(get_data_reshaped(cell_data[pressure], cell_data=true)))
     u_data = WaterLily.squeeze(components_last(Array(get_data_reshaped(cell_data[velocity], cell_data=true))))
-    nd = length(Ni)
-    p_int = ntuple(d -> 2:size(a.flow.p, d)-1, nd)
-    u_int = ntuple(d -> d <= nd ? (2:size(a.flow.u, d)-1) : Colon(), ndims(a.flow.u))
-    copyto!(view(a.flow.p, p_int...), p_data)
-    copyto!(view(a.flow.u, u_int...), u_data)
+    p_int  = ntuple(d -> 2:size(a.flow.p, d)-1, nd)
+    u_int  = ntuple(d -> d <= nd ? (2:size(a.flow.u, d)-1) : Colon(), ndims(a.flow.u))
+    u_src  = ntuple(d -> d <= nd ? src[d] : Colon(), ndims(u_data))
+    copyto!(view(a.flow.p, p_int...), view(p_data, src...))
+    copyto!(view(a.flow.u, u_int...), view(u_data, u_src...))
     WaterLily.BC!(a.flow.u, a.flow.uBC, a.flow.exitBC, a.flow.perdir)
     WaterLily.comm!(a.flow.p, a.flow.perdir)
     # reset time to work with the new time step
