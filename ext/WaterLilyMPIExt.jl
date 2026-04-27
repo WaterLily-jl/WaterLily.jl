@@ -11,9 +11,9 @@ hooks through `par_mode[]` (defaults to `Serial()`).  This extension defines
 overwriting, so precompilation works normally.
 
 Functions with MPI-specific behavior (via dispatch on `::Parallel`):
-  _BC!        — skip Dirichlet writes at rank-internal boundaries
-  _exitBC!    — global reductions for inflow/outflow mass flux
-  _divisible  — same coarsening threshold as serial (N>4)
+  _phys_left/right — mark rank-internal faces non-physical so `_BC!` skips them
+  _exitBC!         — global reductions for inflow/outflow mass flux
+  _divisible       — same coarsening threshold as serial (N>4)
 
 Halo exchange uses a cached `_has_neighbors` flag to skip all exchange
 when no MPI neighbors exist (e.g. np=1 non-periodic), eliminating the
@@ -389,34 +389,11 @@ function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
     _do_velocity_halo!(u)
 end
 
-# ── MPI-aware BC! ────────────────────────────────────────────────────────────
-# At rank-internal boundaries, skip Dirichlet writes so halo exchange can
-# provide neighbor's interior data.  Only write BC at physical walls.
-function WaterLily._BC!(a, uBC::Function, saveexit, perdir, t, ::Parallel)
-    g  = ImplicitGlobalGrid.global_grid()
-    N, n = WaterLily.size_u(a)
-    for i ∈ 1:n, j ∈ 1:n
-        j in perdir && continue
-        phys_left  = g.neighbors[1, j] < 0
-        phys_right = g.neighbors[2, j] < 0
-        if i==j # Normal direction, Dirichlet — only at physical walls
-            if phys_left
-                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t) over I ∈ WaterLily.slice(N,1:2,j)
-            end
-            if phys_right && (!saveexit || i>1)
-                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t) over I ∈ WaterLily.slice(N,N[j],j)
-            end
-        else    # Tangential Neumann mirror — only at physical walls (halo handles rank-internal)
-            if phys_left
-                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t)+a[I+WaterLily.δ(j,I),i]-uBC(i,WaterLily.loc(i,I+WaterLily.δ(j,I)),t) over I ∈ WaterLily.slice(N,1,j)
-            end
-            if phys_right
-                @loop a[I,i] = uBC(i,WaterLily.loc(i,I),t)+a[I-WaterLily.δ(j,I),i]-uBC(i,WaterLily.loc(i,I-WaterLily.δ(j,I)),t) over I ∈ WaterLily.slice(N,N[j],j)
-            end
-        end
-    end
-    WaterLily.velocity_comm!(a, perdir)
-end
+# ── Physical-boundary hooks ─────────────────────────────────────────────────
+# Rank-internal boundaries return `false`, so the unified `_BC!` skips the
+# Dirichlet/Neumann writes there and lets halo exchange supply neighbor data.
+WaterLily._phys_left(j,  ::Parallel) = ImplicitGlobalGrid.global_grid().neighbors[1, j] < 0
+WaterLily._phys_right(j, ::Parallel) = ImplicitGlobalGrid.global_grid().neighbors[2, j] < 0
 
 # ── MPI-aware divisible ───────────────────────────────────────────────────────
 # Same threshold as serial (N>4). Coarse-level comm cost is negligible thanks

@@ -472,6 +472,18 @@ divisible(N) = _divisible(N, par_mode[])
 _divisible(N, ::Serial) = mod(N,2)==0 && N>4
 
 """
+    phys_left(j), phys_right(j)
+
+Whether direction `j`'s left/right ghost lies on a physical domain wall.
+Always `true` in serial; in MPI, `false` at rank-internal boundaries (where
+halo exchange supplies neighbor data instead).
+"""
+phys_left(j)  = _phys_left(j, par_mode[])
+phys_right(j) = _phys_right(j, par_mode[])
+_phys_left(j, ::Serial)  = true
+_phys_right(j, ::Serial) = true
+
+"""
     BC!(a, uBC, saveexit=false, perdir=(), t=0)
 
 Apply domain boundary conditions to the ghost cells of a _vector_ field.
@@ -481,16 +493,19 @@ separating domain BCs from communication BCs.
 """
 BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
 BC!(a,uBC::Function,saveexit=false,perdir=(),t=0) = _BC!(a, uBC, saveexit, perdir, t, par_mode[])
-function _BC!(a, uBC::Function, saveexit, perdir, t, ::Serial)
+function _BC!(a, uBC::Function, saveexit, perdir, t, ::AbstractParMode)
     N,n = size_u(a)
-    for i ∈ 1:n, j ∈ 1:n
+    for j ∈ 1:n
         j in perdir && continue  # periodic handled by velocity_comm!
-        if i==j # Normal direction, Dirichlet
-            @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,1:2,j)
-            (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j))
-        else    # Tangential directions, Neumann: mirror
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-            @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
+        L, R = phys_left(j), phys_right(j)
+        for i ∈ 1:n
+            if i==j # Normal direction, Dirichlet
+                L && @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,1:2,j)
+                R && (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j))
+            else    # Tangential directions, Neumann: mirror
+                L && @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
+                R && @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
+            end
         end
     end
     velocity_comm!(a, perdir)
