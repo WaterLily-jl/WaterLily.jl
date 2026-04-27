@@ -194,7 +194,7 @@ Uses `global_min` for MPI-safe reduction across all ranks.
 """
 function CFL(a::Flow{D,T};Δt_max=T(10)) where {D,T}
     @inside a.σ[I] = flux_out(I,a.u)
-    global_min(Δt_max,inv(maximum(@view a.σ[inside(a.σ)])+5a.ν))
+    global_min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))
