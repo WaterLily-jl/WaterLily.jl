@@ -292,18 +292,22 @@ struct Serial <: AbstractParMode end
 const par_mode = Ref{AbstractParMode}(Serial())
 
 """
-    mpi_rank() → Int
-    mpi_comm() → Union{Nothing,MPI.Comm}
+    mpi_rank()   → Int
+    mpi_comm()   → Union{Nothing,MPI.Comm}
+    mpi_nprocs() → Int
 
-Rank accessors available in any mode: serial returns `0` / `nothing`; under MPI
-the extension returns the rank and communicator stored on `par_mode[]::Parallel`.
-Useful for rank-gated printing (`mpi_rank() == 0 && @info ...`) without having
-to thread `(me, comm)` through user scope.
+Rank accessors available in any mode: serial returns `0` / `nothing` / `1`;
+under MPI the extension returns the rank, communicator, and rank count stored
+on `par_mode[]::Parallel`. Useful for rank-gated printing
+(`mpi_rank() == 0 && @info ...`) and rank-count-aware iteration bounds without
+threading `(me, comm, np)` through user scope.
 """
-mpi_rank() = _mpi_rank(par_mode[])
-mpi_comm() = _mpi_comm(par_mode[])
-_mpi_rank(::Serial) = 0
-_mpi_comm(::Serial) = nothing
+mpi_rank()   = _mpi_rank(par_mode[])
+mpi_comm()   = _mpi_comm(par_mode[])
+mpi_nprocs() = _mpi_nprocs(par_mode[])
+_mpi_rank(::Serial)   = 0
+_mpi_comm(::Serial)   = nothing
+_mpi_nprocs(::Serial) = 1
 
 """
     @distributed Simulation(dims, uBC, L; kwargs...)

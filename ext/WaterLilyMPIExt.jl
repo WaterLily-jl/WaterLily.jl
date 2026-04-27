@@ -37,8 +37,9 @@ end
 
 _comm() = (WaterLily.par_mode[]::Parallel).comm
 
-WaterLily._mpi_rank(p::Parallel) = p.rank
-WaterLily._mpi_comm(p::Parallel) = p.comm
+WaterLily._mpi_rank(p::Parallel)   = p.rank
+WaterLily._mpi_comm(p::Parallel)   = p.comm
+WaterLily._mpi_nprocs(p::Parallel) = MPI.Comm_size(p.comm)
 
 # ── Global coordinate offset ──────────────────────────────────────────────────
 
