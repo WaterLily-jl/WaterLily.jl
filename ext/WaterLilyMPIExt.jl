@@ -13,7 +13,7 @@ overwriting, so precompilation works normally.
 Functions with MPI-specific behavior (via dispatch on `::Parallel`):
   _phys_left/right — mark rank-internal faces non-physical so `_BC!` and
                      `_exitBC!` skip writes there (halo handles them)
-  _divisible       — same coarsening threshold as serial (N>4)
+  _decomposed      — true for MPI-split dims; filters `effective_perdir`
 
 Halo exchange uses a cached `_has_neighbors` flag to skip all exchange
 when no MPI neighbors exist (e.g. np=1 non-periodic), eliminating the
@@ -358,26 +358,14 @@ WaterLily._velocity_comm!(a, perdir, ::Parallel) = _do_velocity_halo!(a)
 WaterLily._phys_left(j,  ::Parallel) = ImplicitGlobalGrid.global_grid().neighbors[1, j] < 0
 WaterLily._phys_right(j, ::Parallel) = ImplicitGlobalGrid.global_grid().neighbors[2, j] < 0
 
-# ── MPI-aware divisible ───────────────────────────────────────────────────────
-# Same threshold as serial (N>4). Coarse-level comm cost is negligible thanks
-# to `_has_neighbors` short-circuiting (no exchange when no MPI neighbors exist)
-# and tiny array sizes at the coarsest levels.
-
-WaterLily._divisible(N, ::Parallel) = mod(N,2)==0 && N>4
-
-# ── Effective perdir ──────────────────────────────────────────────────────────
-# conv_diff!'s periodic path uses `ϕuP(j, CIj(j,I,N[j]-2), …)` — an explicit
-# N-2 wrap on the local array. In an MPI-decomposed periodic direction, that
-# reads rank-local data instead of the remote periodic partner (which is on
-# another rank). Halowidth=1 only provides 1 ghost cell, not enough for the
-# 2-cell QUICK stencil. Exclude decomposed directions here so conv_diff!
-# falls back to the non-periodic Val{false} boundary (ϕuL/ϕuR), which only
-# needs 1 ghost cell — correctly filled by the halo from the periodic wrap.
-function WaterLily._effective_perdir(perdir, ::Parallel)
-    g  = ImplicitGlobalGrid.global_grid()
-    nd = _ndims_active()
-    decomposed = ntuple(d -> d <= nd && g.dims[d] > 1, 3)
-    Tuple(j for j in perdir if !decomposed[j])
-end
+# ── Decomposed-direction hook ─────────────────────────────────────────────────
+# Used by `effective_perdir` to filter out MPI-decomposed periodic dims:
+# conv_diff!'s `ϕuP(j, CIj(j,I,N[j]-2), …)` wraps within the local array,
+# which is wrong when the periodic partner lives on a remote rank and
+# halowidth=1 can't supply the 2-cell QUICK stencil. Filtered dirs route
+# through the `Val{false}` non-periodic stencil whose 1 ghost cell is
+# correctly filled by the halo's periodic wrap.
+WaterLily._decomposed(j, ::Parallel) =
+    j <= _ndims_active() && ImplicitGlobalGrid.global_grid().dims[j] > 1
 
 end # module WaterLilyMPIExt

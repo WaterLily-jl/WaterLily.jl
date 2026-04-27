@@ -468,8 +468,7 @@ _velocity_halo!(u, ::Serial) = nothing
 
 Check if array dimension `N` is divisible for multigrid coarsening.
 """
-divisible(N) = _divisible(N, par_mode[])
-_divisible(N, ::Serial) = mod(N,2)==0 && N>4
+divisible(N) = mod(N,2)==0 && N>4
 
 """
     phys_left(j), phys_right(j)
@@ -565,6 +564,15 @@ function _velocity_comm!(a, perdir, ::Serial)
 end
 
 """
+    decomposed(j)
+
+Whether direction `j` is split across MPI ranks (`true`) or owned in full
+by every rank (`false`).  Always `false` in serial.
+"""
+decomposed(j) = _decomposed(j, par_mode[])
+_decomposed(j, ::Serial) = false
+
+"""
     effective_perdir(perdir)
 
 Return directions where periodic wrap can be handled via explicit `N[j]-2`
@@ -574,8 +582,7 @@ cannot supply the 2-cells-back stencil required by `ϕuP`, so `conv_diff!`
 falls back to the non-periodic boundary scheme (`ϕuL`/`ϕuR`) that only
 needs 1 ghost cell (filled by halo from the periodic neighbor).
 """
-effective_perdir(perdir) = _effective_perdir(perdir, par_mode[])
-_effective_perdir(perdir, ::Serial) = perdir
+effective_perdir(perdir) = Tuple(j for j in perdir if !decomposed(j))
 
 """
     interp(x::SVector, arr::AbstractArray, offset=zero(x))
