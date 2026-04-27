@@ -6,10 +6,35 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
+export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend,
+       global_allreduce,global_dot,global_sum,global_length,global_min,global_max,
+       scalar_halo!,velocity_halo!,
+       comm!,velocity_comm!,pin_pressure!,
+       AbstractParMode,Serial,par_mode
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
+
+# ── MPI parallel interface (implemented by WaterLilyMPIExt) ───────────────────
+"""
+    global_offset(Val(N), T=Float32) → SVector{N,T}
+
+Return the global coordinate offset for this MPI rank.  Serial default returns
+zero.  The MPI extension adds a method for `Parallel` that returns the rank-local
+origin in global index space.
+"""
+global_offset(::Val{N}, ::Type{T}=Float32) where {N,T} = _global_offset(Val(N), T, par_mode[])
+global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
+_global_offset(::Val{N}, ::Type{T}, ::Serial) where {N,T} = zero(SVector{N,T})
+
+"""
+    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
+
+Initialize MPI domain decomposition for WaterLily.  Implemented by `WaterLilyMPIExt`.
+"""
+function init_waterlily_mpi end
+
+export global_offset, init_waterlily_mpi, mpi_rank, mpi_comm, @distributed
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
@@ -36,7 +61,7 @@ export RigidMap,setmap
 
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
-               U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
+               U=√sum(abs2,uBC), Δt=0.25, ν=0., ϵ=1, g=nothing,
                perdir=(), exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array)
@@ -74,6 +99,7 @@ mutable struct Simulation <: AbstractSimulation
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
+        check_mem(mem)
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
         flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
@@ -123,6 +149,7 @@ Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
 function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
     measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
+    sim.pois.levels[1].L .= sim.flow.μ₀
     update!(sim.pois)
 end
 
@@ -178,16 +205,32 @@ export viz!, get_body, plot_body_obs!
 
 Check the number of threads available for the Julia session that loads WaterLily.
 A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstractions enabled.
+Skipped during precompilation (which always runs single-threaded).
 """
 function check_nthreads()
+    ccall(:jl_generating_output, Cint, ()) != 0 && return  # skip during precompilation
     if backend == "KernelAbstractions" && Threads.nthreads() == 1
         @warn """
         Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
         Use JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU backends.
-        For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")
-        """
+        For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")"""
     end
 end
-check_nthreads()
+function __init__()
+    check_nthreads()
+end
+
+"""
+    check_mem(mem)
+
+Check that the memory type `mem` is compatible with the current backend.
+GPU array types (anything other than `Array`) require the KernelAbstractions backend.
+"""
+function check_mem(mem)
+    if backend == "SIMD" && mem !== Array
+        error("GPU memory (mem=$mem) requires the KernelAbstractions backend. " *
+              "Set it with: WaterLily.set_backend(\"KernelAbstractions\") then restart the Julia session.")
+    end
+end
 
 end # module

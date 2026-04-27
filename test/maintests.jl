@@ -99,9 +99,9 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         σ1 = rand(Ng...) |> f # scalar
         σ2 = rand(Ng...) |> f # another scalar 
         # use ≈ instead of == as summation in different order might result in slight difference in floating point expressions
-        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
-        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
-        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
+        @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
+        @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
+        @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
     end
 end
 
