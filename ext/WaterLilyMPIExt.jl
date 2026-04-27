@@ -338,19 +338,19 @@ function _dual_arr_sum(x::AbstractArray{<:Dual})
 end
 
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
-WaterLily._global_allreduce(x,                        ::Parallel) = MPI.Allreduce(x, MPI.SUM, _comm())
-WaterLily._global_allreduce(x::Dual,                  ::Parallel) = _dual_sum(x)
+WaterLily._global_allreduce(x, ::Parallel) = MPI.Allreduce(x, MPI.SUM, _comm())
+WaterLily._global_allreduce(x::Dual, ::Parallel) = _dual_sum(x)
 WaterLily._global_allreduce(x::AbstractArray{<:Dual}, ::Parallel) = _dual_arr_sum(x)
-WaterLily._global_min(a, b,            ::Parallel)        = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
-WaterLily._global_min(a::Dual, b::Dual, ::Parallel)       = _dual_extremum(min(a, b), MPI.MIN)
-WaterLily._global_max(x,                ::Parallel)       = MPI.Allreduce(x, MPI.MAX, _comm())
-WaterLily._global_max(x::Dual,          ::Parallel)       = _dual_extremum(x, MPI.MAX)
-WaterLily._scalar_halo!(x, ::Parallel)            = _do_scalar_halo!(x)
-WaterLily._velocity_halo!(u, ::Parallel)          = _do_velocity_halo!(u)
+WaterLily._global_min(a, b, ::Parallel) = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
+WaterLily._global_min(a::Dual, b::Dual, ::Parallel) = _dual_extremum(min(a, b), MPI.MIN)
+WaterLily._global_max(x, ::Parallel) = MPI.Allreduce(x, MPI.MAX, _comm())
+WaterLily._global_max(x::Dual, ::Parallel) = _dual_extremum(x, MPI.MAX)
+WaterLily._scalar_halo!(x, ::Parallel) = _do_scalar_halo!(x)
+WaterLily._velocity_halo!(u, ::Parallel) = _do_velocity_halo!(u)
 
 # Communication hooks: in parallel, MPI halo handles periodicity
-WaterLily._comm!(a, perdir, ::Parallel)            = _do_scalar_halo!(a)
-WaterLily._velocity_comm!(a, perdir, ::Parallel)   = _do_velocity_halo!(a)
+WaterLily._comm!(a, perdir, ::Parallel) = _do_scalar_halo!(a)
+WaterLily._velocity_comm!(a, perdir, ::Parallel) = _do_velocity_halo!(a)
 
 # ── MPI-aware exitBC! ────────────────────────────────────────────────────────
 
