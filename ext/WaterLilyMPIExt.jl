@@ -53,9 +53,14 @@ function WaterLily._global_offset(::Val{N}, ::Type{T}, ::Parallel) where {N,T}
     SVector{N,T}(ntuple(d -> T(g.coords[d] * (g.nxyz[d] - g.overlaps[d])), N))
 end
 
-# MPI-aware @loop auto-offset: returns SVector sized for the active spatial dims
+# MPI-aware @loop auto-offset: returns SVector sized for the active spatial dims.
+# Default path keeps T so Float32/Float64 and ForwardDiff.Dual offsets carry
+# correct precision / AD tags. Bool arrays (e.g. flood-fill scratch in
+# downstream packages) can't hold the integer rank offset — divert to Float32.
 WaterLily._loop_offset(::Type{T}, p::Parallel) where T =
     WaterLily._global_offset(Val(_ndims_active()), T, p)
+WaterLily._loop_offset(::Type{Bool}, p::Parallel) =
+    WaterLily._global_offset(Val(_ndims_active()), Float32, p)
 
 # ── MPI initialization ───────────────────────────────────────────────────────
 
@@ -265,9 +270,12 @@ end
 @inline _wire_view(arr::Array) = arr
 @inline _wire_view(arr::Array{<:Dual}) = _dual_view(arr)
 
-# IGG's `update_halo!` requires a primitive eltype; route Dual arrays through
-# the manual MPI shift even at fine-grid sizes.
+# IGG's pre-allocated buffers are typed for the simulation eltype (Float32 /
+# Float64), so any other eltype must take the manual MPI shift path even at
+# fine-grid sizes — this includes ForwardDiff.Dual (AD) and Bool (used by
+# downstream packages, e.g. WaterLilyMeshBodies's flood-fill scratch).
 @inline _native_eltype(::Type{<:Dual}) = false
+@inline _native_eltype(::Type{Bool})   = false
 @inline _native_eltype(::Type) = true
 
 function _do_scalar_halo!(arr::AbstractArray)
