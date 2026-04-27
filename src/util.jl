@@ -517,13 +517,17 @@ end
 Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
 exitBC!(u,u⁰,Δt) = _exitBC!(u,u⁰,Δt,par_mode[])
-function _exitBC!(u,u⁰,Δt,::Serial)
+function _exitBC!(u,u⁰,Δt,::AbstractParMode)
     N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts (right wall face)
-    U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux (left wall face)
-    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
+    inflowL = slice(N.-1,2,1,2)              # inflow face (left wall face)
+    exitR   = slice(N.-1,N[1],1,2)           # exit slice excluding ghosts (right wall face)
+    L, R = phys_left(1), phys_right(1)       # ranks owning the inflow / exit faces
+    glen = global_allreduce(R ? length(exitR) : 0)                          # global exit-face length
+    U = global_allreduce(L ? sum(@view u[inflowL,1]) : zero(eltype(u)))/glen # inflow mass flux
+    R && @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    ∮u = global_allreduce(R ? sum(@view u[exitR,1]) : zero(eltype(u)))/glen - U  # mass flux imbalance
+    R && @loop u[I,1] -= ∮u over I ∈ exitR   # correct flux
+    velocity_halo!(u)                        # no-op serial; MPI exchange parallel
 end
 """
     perBC!(a,perdir)

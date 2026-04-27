@@ -11,8 +11,8 @@ hooks through `par_mode[]` (defaults to `Serial()`).  This extension defines
 overwriting, so precompilation works normally.
 
 Functions with MPI-specific behavior (via dispatch on `::Parallel`):
-  _phys_left/right — mark rank-internal faces non-physical so `_BC!` skips them
-  _exitBC!         — global reductions for inflow/outflow mass flux
+  _phys_left/right — mark rank-internal faces non-physical so `_BC!` and
+                     `_exitBC!` skip writes there (halo handles them)
   _divisible       — same coarsening threshold as serial (N>4)
 
 Halo exchange uses a cached `_has_neighbors` flag to skip all exchange
@@ -351,43 +351,6 @@ WaterLily._velocity_halo!(u, ::Parallel) = _do_velocity_halo!(u)
 # Communication hooks: in parallel, MPI halo handles periodicity
 WaterLily._comm!(a, perdir, ::Parallel) = _do_scalar_halo!(a)
 WaterLily._velocity_comm!(a, perdir, ::Parallel) = _do_velocity_halo!(a)
-
-# ── MPI-aware exitBC! ────────────────────────────────────────────────────────
-
-function WaterLily._exitBC!(u, u⁰, Δt, ::Parallel)
-    g    = ImplicitGlobalGrid.global_grid()
-    comm = _comm()
-    N, _ = WaterLily.size_u(u)
-
-    is_inflow  = g.neighbors[1, 1] < 0
-    is_exit    = g.neighbors[2, 1] < 0
-
-    # All ranks participate in Allreduce for exit face area
-    local_exit_len = is_exit ? length(WaterLily.slice(N .- 1, N[1], 1, 2)) : 0
-    global_exit_len = WaterLily.global_allreduce(local_exit_len)
-
-    # All ranks participate in Allreduce for mean inflow velocity (routed
-    # through `global_allreduce` so Dual eltypes go through the Dual override).
-    local_inflow_sum = is_inflow ? sum(@view(u[WaterLily.slice(N .- 1, 2, 1, 2), 1])) : zero(eltype(u))
-    U = WaterLily.global_allreduce(local_inflow_sum) / global_exit_len
-
-    # Convective exit on rightmost-x ranks only
-    if is_exit
-        exitR = WaterLily.slice(N .- 1, N[1], 1, 2)
-        @loop u[I, 1] = u⁰[I, 1] - U * Δt * (u⁰[I, 1] - u⁰[I - WaterLily.δ(1, I), 1]) over I ∈ exitR
-    end
-
-    # All ranks participate in Allreduce for mass flux correction
-    local_exit_sum = is_exit ? sum(@view(u[WaterLily.slice(N .- 1, N[1], 1, 2), 1])) : zero(eltype(u))
-    global_exit_sum = WaterLily.global_allreduce(local_exit_sum)
-    ∮u = global_exit_sum / global_exit_len - U
-    if is_exit
-        exitR = WaterLily.slice(N .- 1, N[1], 1, 2)
-        @loop u[I, 1] -= ∮u over I ∈ exitR
-    end
-
-    _do_velocity_halo!(u)
-end
 
 # ── Physical-boundary hooks ─────────────────────────────────────────────────
 # Rank-internal boundaries return `false`, so the unified `_BC!` skips the
