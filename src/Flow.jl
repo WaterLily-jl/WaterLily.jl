@@ -192,7 +192,7 @@ scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 Compute the CFL-limited time step from the maximum outward flux at each cell.
 Uses `global_min` for MPI-safe reduction across all ranks.
 """
-function CFL(a::Flow;Δt_max=10)
+function CFL(a::Flow{D,T};Δt_max=T(10)) where {D,T}
     @inside a.σ[I] = flux_out(I,a.u)
     global_min(Δt_max,inv(maximum(@view a.σ[inside(a.σ)])+5a.ν))
 end

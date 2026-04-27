@@ -338,16 +338,13 @@ function _dual_arr_sum(x::AbstractArray{<:Dual})
 end
 
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
-# global_min/max take their inputs first; do the local reduction, then route to
-# native or Dual paths based on the result type. This handles mixed
-# Int/Dual inputs (CFL passes `Δt_max::Int` alongside a Dual ν term).
 WaterLily._global_allreduce(x,                        ::Parallel) = MPI.Allreduce(x, MPI.SUM, _comm())
 WaterLily._global_allreduce(x::Dual,                  ::Parallel) = _dual_sum(x)
 WaterLily._global_allreduce(x::AbstractArray{<:Dual}, ::Parallel) = _dual_arr_sum(x)
-WaterLily._global_min(a, b,  p::Parallel) = _allreduce_extremum(min(a, b), MPI.MIN, p)
-WaterLily._global_max(x,     p::Parallel) = _allreduce_extremum(x,         MPI.MAX, p)
-_allreduce_extremum(x,       op, ::Parallel) = MPI.Allreduce(x, op, _comm())
-_allreduce_extremum(x::Dual, op, ::Parallel) = _dual_extremum(x, op)
+WaterLily._global_min(a, b,            ::Parallel)        = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
+WaterLily._global_min(a::Dual, b::Dual, ::Parallel)       = _dual_extremum(min(a, b), MPI.MIN)
+WaterLily._global_max(x,                ::Parallel)       = MPI.Allreduce(x, MPI.MAX, _comm())
+WaterLily._global_max(x::Dual,          ::Parallel)       = _dual_extremum(x, MPI.MAX)
 WaterLily._scalar_halo!(x, ::Parallel)            = _do_scalar_halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel)          = _do_velocity_halo!(u)
 
