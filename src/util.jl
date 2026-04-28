@@ -132,20 +132,20 @@ Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this e
 macro loop(args...)
     ex,_,itr = args
     _,I,R = itr.args
-    sym = []
-    grab!(sym,ex)     # get arguments and replace composites in `ex`
-    setdiff!(sym,[I]) # don't want to pass I as an argument
-    symT = [gensym() for _ in 1:length(sym)] # generate a list of types for each symbol
-    symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
-    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
     @static if backend == "KernelAbstractions"
+        sym = []                # data symbols + bare-symbol call heads
+        grab!(sym,ex,true)      # KA needs call heads passed in (kernel is module-scoped)
+        setdiff!(sym,[I])
+        symT = [gensym() for _ in 1:length(sym)]
+        symWtypes = joinsymtype(rep.(sym),symT)
+        @gensym(kern_)
         # Define the @kernel at module scope (not inside the caller's function body):
         # when @kernel is generated inside another function, the resulting kernel
         # functor is a closure-typed object, and Enzyme cannot trace through
         # KernelAbstractions.construct's generic call to build it. Lifting to
         # module scope makes it a stable global functor that Enzyme handles.
         Core.eval(__module__, quote
-            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
+            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)}
                 $I = @index(Global,Cartesian)
                 $I += I0
                 @fastmath @inbounds $ex
@@ -155,6 +155,12 @@ macro loop(args...)
             $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
         end |> esc
     else # backend == "SIMD"
+        sym = []
+        grab!(sym,ex,false)     # SIMD doesn't need call heads; they resolve via lexical scope
+        setdiff!(sym,[I])
+        symT = [gensym() for _ in 1:length(sym)]
+        symWtypes = joinsymtype(rep.(sym),symT)
+        @gensym(kern)
         return quote
             function $kern($(symWtypes...)) where {$(symT...)}
                 @simd for $I ∈ $R
@@ -165,28 +171,27 @@ macro loop(args...)
         end |> esc
     end
 end
-function grab!(sym,ex::Expr)
+function grab!(sym,ex::Expr,grab_callheads::Bool=false)
     ex.head == :. && return union!(sym,[ex])      # grab composite name and return
-    start = ex.head==:(call) ? 2 : 1              # don't grab function names
-    foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
+    start = ex.head==:(call) ? 2 : 1              # don't grab function names yet
+    foreach(a->grab!(sym,a,grab_callheads),ex.args[start:end])
     ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
-    # After args, grab bare-symbol call heads (e.g. `f`, `fill!`) so they are passed
-    # in as kernel arguments rather than resolved by name in the kernel body.
-    # Required because the @kernel is lifted to module scope on the KernelAbstractions
-    # backend (so closure-captured callables would otherwise be invisible) and because
-    # callers may shadow Base names with local helpers (e.g. `fill!` in `measure!`).
-    # Operators (`+`, `*`, `==`, ...) cannot be parameter names, so we skip them and
-    # let them resolve as Base globals. Call heads are pushed *after* their args so
-    # `sym[1]` remains an array-like data symbol — `get_backend(sym[1])` depends on it.
-    if ex.head == :call
+    # When the kernel is lifted to module scope (KA backend), closure-captured
+    # callables and shadowed Base names (e.g. `f` in applyV!, `fill!` in measure!)
+    # must be passed in as arguments. Pushed after args so `sym[1]` stays a data
+    # symbol — `get_backend(sym[1])` depends on it. Operators are skipped (cannot
+    # be parameter names). The SIMD wrapper does NOT need this — the body resolves
+    # callables via the surrounding lexical scope, and adding them as args inflates
+    # the wrapper's arity and triggers a per-call allocation in tight loops.
+    if grab_callheads && ex.head == :call
         head = ex.args[1]
         if head isa Symbol && !Base.isoperator(head)
             union!(sym, [head])
         end
     end
 end
-grab!(sym,ex::Symbol) = union!(sym,[ex]) # grab symbol name
-grab!(sym,ex) = nothing
+grab!(sym,ex::Symbol,grab_callheads::Bool=false) = union!(sym,[ex])
+grab!(sym,ex,grab_callheads::Bool=false) = nothing
 rep(ex) = ex
 rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 joinsymtype(sym::Symbol,symT::Symbol) = Expr(:(::), sym, symT)
