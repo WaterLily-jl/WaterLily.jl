@@ -353,6 +353,23 @@ end
         @test ForwardDiff.partials(sum(WaterLily._jacobian(y -> rotmap(y, θd), x0)), 1) ≈ ref
     end
 
+    # Tight kernel-level reproducer of the original GPU bug: call AutoBody.measure
+    # inside a @kernel under outer Dual eltype. Without the fix, AutoBody.measure
+    # uses stock ForwardDiff.jacobian → extract_jacobian → valtype → DualMismatchError
+    # inside the kernel and crashes with KernelException. The body is a line segment
+    # (not rotationally symmetric), so the integrated normal genuinely depends on θ.
+    function measure_sum(θ, mem; L=16)
+        body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,
+                        (x, _) -> SA[cos(θ) -sin(θ); sin(θ) cos(θ)] * (x - SA[L, L]))
+        out = mem(zeros(typeof(θ), 2L, 2L))
+        WaterLily.@loop out[I] = WaterLily.measure(body, WaterLily.loc(0, I, typeof(θ)), zero(typeof(θ)))[2][1] over I ∈ CartesianIndices(out)
+        sum(out)
+    end
+    cpu_kd = derivative(t -> measure_sum(t, Array), 0.3)
+    for f ∈ arrays
+        @test derivative(t -> measure_sum(t, f), 0.3) ≈ cpu_kd rtol=1e-3
+    end
+
     # End-to-end: ∂/∂θ of sum(sim.flow.p) for a θ-rotated body, on each backend.
     # This can raise KernelException inside @kernel when `mem=CuArray` without tag reordering
     function rot_sim(θ, mem; L=32, U=1, Re=100)
