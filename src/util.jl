@@ -343,22 +343,24 @@ squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
 using ForwardDiff
 using ForwardDiff: Dual, partials, Tag
 
-# Inner-derivative tag for measure's gradient/jacobian/derivative on `body.sdf`
-# and `body.map`. Compile-time singleton: `≺` is overloaded so it always ranks
-# strictly newer than any outer `ForwardDiff.Tag`. This lets nested AD work on
-# the GPU
+# Inner-derivative tag for measure's gradient/jacobian/derivative. `≺` is
+# overloaded so it always ranks newer than any `ForwardDiff.Tag`, folding the
+# precedence comparison at compile time and sidestepping `tagcount` (order-
+# sensitive on GPU codegen, the original cause of nested-FD crashes in kernels).
 struct _InnerTag end
 @inline ForwardDiff.:≺(::Type{<:Tag}, ::Type{_InnerTag}) = true
 @inline ForwardDiff.:≺(::Type{_InnerTag}, ::Type{<:Tag}) = false
 @inline ForwardDiff.:≺(::Type{_InnerTag}, ::Type{_InnerTag}) = false
 
-# Tag-aware partial extractor: returns the i-th partial only if `y` carries an
-# `_InnerTag` dual
+# Tag-aware partial extractor. The fallback returns zero when `y` is not an
+# `_InnerTag` dual — `f` did not depend on the seeded input so the inner
+# derivative is exactly zero. Without it, an outer-tag `Dual` (from closure
+# capture) would silently leak its outer partial.
 @inline _ip(y::Dual{_InnerTag}, i::Int) = partials(y, i)
 @inline _ip(y, ::Int) = zero(y)
 
-# Tag-stable, GPU-safe gradient/jacobian/derivative on SVector inputs. They
-# extract `partials` directly so neither `extract_jacobian` nor `valtype` is hit.
+# GPU-safe gradient/jacobian/derivative on SVector inputs: seed `Dual{_InnerTag}`
+# and extract `partials` directly, bypassing `extract_jacobian`/`valtype`.
 @inline function _gradient(f::F, x::SVector{N,T}) where {F,N,T}
     seeds = ntuple(i -> Dual{_InnerTag}(x[i], ntuple(j -> ifelse(j==i, one(T), zero(T)), Val(N))), Val(N))
     y = f(SVector(seeds))
@@ -373,9 +375,9 @@ end
 end
 @inline _derivative(f::F, t::T) where {F,T} = map(yi -> _ip(yi, 1), f(Dual{_InnerTag}(t, one(T))))
 
-# Dispatch wrappers: the SVector path is GPU-safe, but `measure` may also be
-# called with plain `AbstractVector` inputs (e.g. user-facing tests). For non-
-# SVector inputs we fall back to stock ForwardDiff
+# Dispatch wrappers. Internal `measure` calls always pass SVector (from `loc`)
+# and take the GPU-safe path; user-facing callers may pass plain `AbstractVector`
+# (e.g. unit tests) and route to stock ForwardDiff — CPU-only, GPU bug N/A.
 @inline _grad(f, x::SVector) = _gradient(f, x)
 @inline _grad(f, x) = ForwardDiff.gradient(f, x)
 @inline _jac(f, x::SVector) = _jacobian(f, x)
