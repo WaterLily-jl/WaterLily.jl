@@ -97,7 +97,7 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
 
         # test on perdot
         σ1 = rand(Ng...) |> f # scalar
-        σ2 = rand(Ng...) |> f # another scalar 
+        σ2 = rand(Ng...) |> f # another scalar
         # use ≈ instead of == as summation in different order might result in slight difference in floating point expressions
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
@@ -332,6 +332,40 @@ end
     end
     h = 1e-6
     @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
+end
+
+@testset "AutoBody nested ForwardDiff (GPU-safe)" begin
+    using ForwardDiff
+    using ForwardDiff: derivative, Dual
+    # Bypass extract_jacobian/valtype in ForwardDiff.jl so nested FD
+    # works inside GPU kernels. Sanity-check that they match stock ForwardDiff,
+    # both with a plain Float input and with an outer-Dual eltype (the nested
+    # case that actually crashed extract_jacobian on GPU codegen).
+    sdfn(ξ) = √sum(abs2, ξ) - 1
+    rotmap(x, θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)] * x
+    x0 = SVector(0.5, 0.7); θ0 = 0.3
+    @test WaterLily._gradient(sdfn, x0) ≈ ForwardDiff.gradient(sdfn, x0)
+    @test WaterLily._jacobian(y -> rotmap(y, θ0), x0) ≈ ForwardDiff.jacobian(y -> rotmap(y, θ0), x0)
+    @test WaterLily._derivative(t -> rotmap(x0, t), θ0) ≈ ForwardDiff.derivative(t -> rotmap(x0, t), θ0)
+    let outer_tag = typeof(ForwardDiff.Tag(identity, Float64)),
+        θd = Dual{outer_tag}(θ0, 1.0),
+        ref = ForwardDiff.derivative(t -> sum(ForwardDiff.jacobian(y -> rotmap(y, t), x0)), θ0)
+        @test ForwardDiff.partials(sum(WaterLily._jacobian(y -> rotmap(y, θd), x0)), 1) ≈ ref
+    end
+
+    # End-to-end: ∂/∂θ of sum(sim.flow.p) for a θ-rotated body, on each backend.
+    # This can raise KernelException inside @kernel when `mem=CuArray` without tag reordering
+    function rot_sim(θ, mem; L=32, U=1, Re=100)
+        s, c = sincos(θ)
+        body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,
+                        (x, _) -> SA[c -s; s c] * (x - SA[L, L]))
+        Simulation((2L, 2L), (U, 0), L; ν=U*L/Re, body, T=typeof(θ), mem)
+    end
+    dsim(θ, mem) = (sim = rot_sim(θ, mem); sim_step!(sim); sum(sim.flow.p))
+    cpu_d = derivative(t -> dsim(t, Array), Float64(π/36))
+    for f ∈ arrays
+        @test derivative(t -> dsim(t, f), Float64(π/36)) ≈ cpu_d rtol=1e-3
+    end
 end
 
 function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
