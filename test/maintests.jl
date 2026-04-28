@@ -17,7 +17,10 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
     ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
     WaterLily.grab!(sym,ex)
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
-    @test sym == [:a, :I, :i, :(p.b), :q]
+    # `func` is grabbed as a bare-symbol call head (passed in as a kernel arg) so
+    # the @kernel can be lifted to module scope on the KA backend without losing
+    # closure-captured callables. `Math.add` (qualified) and operators are skipped.
+    @test sym == [:a, :I, :i, :(p.b), :q, :func]
     sym = [:a, :b, :c]
     @test WaterLily.joinsymtype(sym,[:A,:B,:C]) == Expr[:(a::A), :(b::B), :(c::C)]
 

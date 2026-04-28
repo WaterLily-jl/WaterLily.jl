@@ -139,16 +139,20 @@ macro loop(args...)
     symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
     @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
     @static if backend == "KernelAbstractions"
-        return quote
+        # Define the @kernel at module scope (not inside the caller's function body):
+        # when @kernel is generated inside another function, the resulting kernel
+        # functor is a closure-typed object, and Enzyme cannot trace through
+        # KernelAbstractions.construct's generic call to build it. Lifting to
+        # module scope makes it a stable global functor that Enzyme handles.
+        Core.eval(__module__, quote
             @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
                 $I = @index(Global,Cartesian)
                 $I += I0
                 @fastmath @inbounds $ex
             end
-            function $kern($(symWtypes...)) where {$(symT...)}
-                $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
-            end
-            $kern($(sym...))
+        end)
+        return quote
+            $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
         end |> esc
     else # backend == "SIMD"
         return quote
@@ -166,8 +170,22 @@ function grab!(sym,ex::Expr)
     start = ex.head==:(call) ? 2 : 1              # don't grab function names
     foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
     ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
+    # After args, grab bare-symbol call heads (e.g. `f`, `fill!`) so they are passed
+    # in as kernel arguments rather than resolved by name in the kernel body.
+    # Required because the @kernel is lifted to module scope on the KernelAbstractions
+    # backend (so closure-captured callables would otherwise be invisible) and because
+    # callers may shadow Base names with local helpers (e.g. `fill!` in `measure!`).
+    # Operators (`+`, `*`, `==`, ...) cannot be parameter names, so we skip them and
+    # let them resolve as Base globals. Call heads are pushed *after* their args so
+    # `sym[1]` remains an array-like data symbol — `get_backend(sym[1])` depends on it.
+    if ex.head == :call
+        head = ex.args[1]
+        if head isa Symbol && !Base.isoperator(head)
+            union!(sym, [head])
+        end
+    end
 end
-grab!(sym,ex::Symbol) = union!(sym,[ex])          # grab symbol name
+grab!(sym,ex::Symbol) = union!(sym,[ex]) # grab symbol name
 grab!(sym,ex) = nothing
 rep(ex) = ex
 rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
