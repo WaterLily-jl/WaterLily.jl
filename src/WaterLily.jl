@@ -181,7 +181,8 @@ function save! end
 function vtkWriter end
 function default_attrib end
 function pvd_collection end
-export load!, save!, vtkWriter, default_attrib
+function vtk_attribs end
+export load!, save!, vtkWriter, default_attrib, vtk_attribs
 
 # default Plots functions
 function flood end
