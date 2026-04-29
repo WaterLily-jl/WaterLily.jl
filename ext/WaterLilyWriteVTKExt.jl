@@ -158,6 +158,9 @@ function save!(w::VTKWriter, a::AbstractSimulation)
     # Refresh velocity ghosts so `include_bc=true` shows BC values, not stale data.
     w.include_bc && WaterLily.BC!(a.flow.u, a.flow.uBC, a.flow.exitBC, a.flow.perdir, sum(a.flow.Δt))
     _save!(w, a, WaterLily.par_mode[])
+    # Attribs (sdf/rank/body_mask) leak values into σ ghosts; CFL reads `maximum(a.σ)`
+    # over the full array, so leave σ zeroed for the next step.
+    fill!(a.flow.σ, zero(eltype(a.flow.σ)))
 end
 
 function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.Serial)
