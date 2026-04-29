@@ -65,6 +65,7 @@ julia = "1.10"
 AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 ImplicitGlobalGrid = "4d7a3746-15be-11ea-1130-334b0c4f5fa0"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
@@ -80,4 +81,4 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2", "MPI", "ImplicitGlobalGrid"]
+test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2", "MPI", "ImplicitGlobalGrid", "ForwardDiff"]
