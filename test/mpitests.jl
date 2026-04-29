@@ -34,19 +34,17 @@ const PROJECT = "--project=$(Base.active_project())"
 const OVERSUB_ENV = ("OMPI_MCA_rmaps_base_oversubscribe" => "1",
                      "PRTE_MCA_rmaps_default_mapping_policy" => ":oversubscribe")
 
-# Run the worker under `MPI.mpiexec()` (Trixi pattern — works with both
-# system MPI and MPI_jll).  Returns true on clean exit.
+# Run the worker under `MPI.mpiexec()` (returns the launcher Cmd directly —
+# the do-block form is deprecated since MPI.jl 0.20).  Pass `--depwarn=no` to
+# silence ImplicitGlobalGrid's internal deprecations (`Dims_create!`,
+# `Cart_create`, `Wait!`, `Waitall!`); not our code, not actionable here.
 function mpi_run(np::Int, role::AbstractString)
-    success = false
-    MPI.mpiexec() do mpiexec_cmd
-        cmd = addenv(
-            `$(mpiexec_cmd) -n $(np) $(JULIA) $(PROJECT) --startup-file=no
-             --threads=1 --check-bounds=yes --heap-size-hint=0.5G
-             $(WORKER) $(role) $(OUTDIR)`,
-            OVERSUB_ENV...)
-        success = Base.success(run(ignorestatus(cmd)))
-    end
-    return success
+    cmd = addenv(
+        `$(MPI.mpiexec()) -n $(np) $(JULIA) $(PROJECT) --startup-file=no
+         --threads=1 --check-bounds=yes --heap-size-hint=0.5G --depwarn=no
+         $(WORKER) $(role) $(OUTDIR)`,
+        OVERSUB_ENV...)
+    return Base.success(run(ignorestatus(cmd)))
 end
 
 function read_toml(path)
@@ -101,7 +99,7 @@ end
     # parallel runs each get their own subprocess.
     @testset "parity" begin
         @test true
-        cmd_s = `$(JULIA) $(PROJECT) --startup-file=no $(WORKER) parity_serial $(OUTDIR)`
+        cmd_s = `$(JULIA) $(PROJECT) --startup-file=no --depwarn=no $(WORKER) parity_serial $(OUTDIR)`
         @test success(run(ignorestatus(cmd_s)))
 
         for (case, key, np) in (("cyl", "cylinder", NP_2D),
