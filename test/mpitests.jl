@@ -31,7 +31,7 @@ const PROJECT = "--project=$(Base.active_project())"
 
 # CI runners may have fewer hardware cores than the rank count.  Both env vars
 # below tell OpenMPI / PRRTE to oversubscribe; MPICH ignores them.
-const OVERSUB_ENV = ("OMPI_MCA_rmaps_base_oversubscribe" => "1",
+const OVERSUB_ENV = ("OMPI_MCA_rmaps_base_oversubscribe"   => "1",
                      "PRTE_MCA_rmaps_default_mapping_policy" => ":oversubscribe")
 
 # Run the worker under `MPI.mpiexec()` (returns the launcher Cmd directly —

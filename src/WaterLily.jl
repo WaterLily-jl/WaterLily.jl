@@ -210,6 +210,7 @@ Skipped during precompilation (which always runs single-threaded).
 """
 function check_nthreads()
     ccall(:jl_generating_output, Cint, ()) != 0 && return  # skip during precompilation
+    is_mpi_launched() && return                            # 1 thread per rank is the design
     if backend == "KernelAbstractions" && Threads.nthreads() == 1
         @warn """
         Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
@@ -217,6 +218,16 @@ function check_nthreads()
         For a low-overhead single-threaded CPU only backend set: WaterLily.set_backend("SIMD")"""
     end
 end
+
+# True when the current process was launched by an MPI launcher (mpiexec /
+# mpirun / srun).  Detected via env vars the launcher sets on every rank,
+# regardless of when `using MPI` happens — so this works at WaterLily's
+# `__init__` time, before any extension is loaded.
+is_mpi_launched() = haskey(ENV, "OMPI_COMM_WORLD_SIZE") ||  # OpenMPI
+                    haskey(ENV, "PMI_SIZE")            ||  # MPICH
+                    haskey(ENV, "PMI_RANK")            ||  # MPICH / Intel MPI
+                    haskey(ENV, "PMIX_RANK")           ||  # PMIx (Slurm, OpenMPI 5+)
+                    haskey(ENV, "MPI_LOCALNRANKS")          # Hydra
 function __init__()
     check_nthreads()
 end
