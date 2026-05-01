@@ -20,32 +20,28 @@ on:
 jobs:
   test:
     if: github.event.pull_request.draft == false
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ matrix.nthreads }} - ${{ github.event_name }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.nthreads }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         version:
           - '1.11'
+          - '1.12'
         os:
           - ubuntu-latest
           - macOS-latest
           - windows-latest
-        arch:
-          - x64
         nthreads:
           - '1'
           - 'auto'
-        exclude:
-          - os: macOS-latest
-            arch: x86
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: actions/cache@v4
+          arch: 'default'
+      - uses: actions/cache@v5
         env:
           cache-name: cache-artifacts
         with:
@@ -68,7 +64,7 @@ jobs:
           fi
           julia --proj --color=yes -e "using Pkg; Pkg.instantiate(); Pkg.test(; coverage=true);"
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         with:
           file: lcov.info
   docs:
@@ -76,10 +72,11 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
+          arch: 'default'
       - run: |
           julia --project=docs -e '
             using Pkg

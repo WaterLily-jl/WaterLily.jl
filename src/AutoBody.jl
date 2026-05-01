@@ -1,28 +1,22 @@
 """
-    AutoBody(sdf,map=(x,t)->x; compose=true) <: AbstractBody
+    AutoBody(sdf,map=(x,t)->x) <: AbstractBody
 
   - `sdf(x::AbstractVector,t::Real)::Real`: signed distance function
   - `map(x::AbstractVector,t::Real)::AbstractVector`: coordinate mapping function
-  - `compose::Bool=true`: Flag for composing `sdf=sdf∘map`
 
 Implicitly define a geometry by its `sdf` and optional coordinate `map`. Note: the `map`
-is composed automatically if `compose=true`, i.e. `sdf(x,t) = sdf(map(x,t),t)`.
-Both parameters remain independent otherwise. It can be particularly heplful to set
-`compose=false` when adding mulitple bodies together to create a more complex one.
+is composed automatically i.e. `sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)`.
 """
 struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     sdf::F1
     map::F2
-    function AutoBody(sdf, map=(x,t)->x; compose=true)
-        comp(x,t) = compose ? sdf(map(x,t),t) : sdf(x,t)
-        new{typeof(comp),typeof(map)}(comp, map)
-    end
 end
+AutoBody(sdf, map=(x,t)->x) = AutoBody(sdf, map)
 
 """
-    d = sdf(body::AutoBody,x,t) = body.sdf(x,t)
+    d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)
 """
-sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(x,t)
+@inline sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(body.map(x,t),t)
 
 using ForwardDiff
 """
@@ -34,21 +28,13 @@ The velocity is determined _solely_ from the optional `map` function.
 Skips the `n,V` calculation when `d²>fastd²`.
 """
 function measure(body::AutoBody,x,t;fastd²=Inf)
-    # eval d=f(x,t), and n̂ = ∇f
-    d = body.sdf(x,t)
-    d^2>fastd² && return (d,zero(x),zero(x)) # skip n,V
-    n = ForwardDiff.gradient(x->body.sdf(x,t), x)
-    any(isnan.(n)) && return (d,zero(x),zero(x))
-
-    # correct general implicit fnc f(x₀)=0 to be a pseudo-sdf
-    #   f(x) = f(x₀)+d|∇f|+O(d²) ∴  d ≈ f(x)/|∇f|
-    m = √sum(abs2,n); d /= m; n /= m
-
-    # The velocity depends on the material change of ξ=m(x,t):
-    #   Dm/Dt=0 → ṁ + (dm/dx)ẋ = 0 ∴  ẋ =-(dm/dx)\ṁ
-    J = ForwardDiff.jacobian(x->body.map(x,t), x)
-    dot = ForwardDiff.derivative(t->body.map(x,t), t)
-    return (d,n,-J\dot)
+    d = sdf(body,x,t)
+    d^2>fastd² && return (d,zero(x),zero(x))
+    n = ForwardDiff.gradient(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
+    any(isnan, n) && return (d,zero(x),zero(x))               # handle non-diff'able points
+    J = ForwardDiff.jacobian(x->body.map(x,t), x)             # for mapping n,V to x-frame
+    n = J'n; m = √sum(abs2,n); d /= m; n /= m                 # chain rule then normalise
+    return (d, n, -J\ForwardDiff.derivative(t->body.map(x,t), t))
 end
 
 using LinearAlgebra: tr

@@ -12,7 +12,7 @@ Measure the body SDF and update the CPU buffer array.
 """
 function update_body!(a_cpu::Array, sim)
     WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
-    copyto!(a_cpu, ad_f(sim)(sim.flow.σ[inside(sim.flow.σ)]))
+    copyto!(a_cpu, ad_f(sim)(@view sim.flow.σ[inside(sim.flow.σ)]))
 end
 
 """
@@ -31,16 +31,15 @@ end
 """
 Default visualization function for 2D/3D simulations
 """
-
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
-    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
+    copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
 end
 function ω3D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(cpu_array, ad_f(sim)(a[inside(a)]))
+    copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
 end
 ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
@@ -118,6 +117,10 @@ Keyword arguments:
     - `CIs::CartesianIndices`: Range of Cartesian indices to render.
     - `cut::Tuple{Int, Int, Int}`: For 3D simulation and `d=2`, `cut` provides the plane to render, and defaults to (0,0,N[3]/2).
         It needs to be defined as a Tuple of 0s with a single non-zero entry on the cutting plane.
+    - `sym::Tuple`: Mirror the visualization data for simulations that only model a symmetric half (or quarter/octant) of the
+        full body. Defaults to `nothing` (no mirroring). Length must match the plot dimension `d`. A non-zero entry flags the
+        dimension to mirror: e.g. `d=2, sym=(0,1)` mirrors along the 2nd plot axis; `d=3, sym=(1,1,0)` mirrors along the 1st and
+        2nd plot axes. Both the scalar field and the body SDF are mirrored; the axis `limits` are doubled along mirrored dims.
     - `tidy_colormap::Bool`: Adjusts the colormap to have a fully transparent color near 0 values. Additional plotting options
         passed into `kwargs` (eg. colormap, levels) are preserved.
         Pass `threshhold::Number` to adjust the near-0 range`, `threshhold_color::RGBA` to set to a color different from white, and
@@ -135,21 +138,25 @@ Keyword arguments:
     - `theme::Attributes`: Makie theme, eg. `theme_light()` or `theme_latexfonts()`
     - `fig_size::Tuple{Int, Int}`: Figure size.
     - `fig_pad::Int`: Figure padding.
+    - `fig::Makie.Figure`: Figure object.
+    - `axis::Makie.Axis` or `axis::Makie.Axis`: Axis object.
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
     λ=quick, udf=nothing, udf_kwargs=nothing,
-    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
+    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
-    theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
+    theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
 
     function update_data()
         f(dat, sim)
-        σ[] = WaterLily.squeeze(dat[CIs])
+        mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym)
+        σ[] = σ_buf
         if body && remeasure
             update_body!(dat, sim)
-            σb_obs[] = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}())
+            mirror_sym!(σb_buf, WaterLily.squeeze(@view dat[CIs]), sym)
+            σb_obs[] = get_body(σb_buf, Val{body2mesh}())
         end
     end
     function step_sim_and_viz!(sim, tᵢ)
@@ -159,9 +166,10 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     d==2 && (@assert !(body2mesh) "body2mesh only allowed for 3D plots (d=3).")
-    body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing and GeometryBasics must be loaded.")
+    body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
+    !isnothing(sym) && @assert length(sym) == d "sym kwarg must have length equal to plot dimension d=$d, got $(length(sym))."
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     isnothing(f) && (f = ω_viz!(d))
@@ -175,21 +183,29 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         CIs = Tuple(i == cut_dim ? (cut[i]:cut[i]) : CIs.indices[i] for i in 1:D) |> CartesianIndices
     end
     limits = Tuple((1,n) for n in size(CIs) if n > 1)
+    !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (1, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
     if isnothing(fig_size)
         fig_size = (1200, 1200)
         d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))
     end
 
     f(dat, sim)
-    σ = WaterLily.squeeze(dat[CIs]) |> ad_f(sim) |> Observable
+    slice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
+    σ_buf = similar(dat, mirror_size(slice0, sym))
+    mirror_sym!(σ_buf, slice0, sym)
+    σ = Observable(σ_buf)
     if body
         update_body!(dat, sim)
-        σb_obs = get_body(WaterLily.squeeze(dat[CIs]), Val{body2mesh}()) |> ad_f(sim) |> Observable
+        bslice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
+        σb_buf = similar(dat, mirror_size(bslice0, sym))
+        mirror_sym!(σb_buf, bslice0, sym)
+        σb_obs = Observable(get_body(σb_buf, Val{body2mesh}()))
     end
 
     !isnothing(theme) && set_theme!(theme)
-    fig = Figure(size=fig_size, figure_padding=fig_pad)
-    ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation)
+    new_fig = isnothing(fig)
+    new_fig && (fig = Figure(size=fig_size, figure_padding=fig_pad))
+    isnothing(ax) && (ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation))
     if d == 2 && tidy_colormap
         clims = :clims in keys(kwargs) ? kwargs[:clims] : (-1,1)
         nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 10
@@ -200,10 +216,14 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         kwargs = remove_kwargs(:levels, :colormap, :clims, :threshhold, :threshhold_color, :extendlow, :extendhigh; kwargs...)
         kwargs = add_kwarg(:colormap=>tidy_colormap, :levels=>tidy_levels, :extendlow=>:auto, :extendhigh=>:auto; kwargs...)
     end
+    if d == 3
+        algorithm = :algorithm in keys(kwargs) ? kwargs[:algorithm] : :mip
+        algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
+    end
     plot_σ_obs!(ax, σ; kwargs...)
     body && plot_body_obs!(ax, σb_obs; color=body_color)
     hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
-    hidedecorations && d==2 && (hidedecorations!(ax))
+    hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
 
     if !isnothing(duration) # time loop for animation
         t₀ = round(WaterLily.sim_time(sim))
@@ -215,19 +235,19 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
                 end
             end
         else
-            display(Makie.current_backend().Screen(), fig)
+            new_fig && display(Makie.current_backend().Screen(), fig)
             for tᵢ in range(t₀,t₀+duration;step)
                 step_sim_and_viz!(sim,tᵢ)
             end
         end
         return fig, ax
     end
-    display(Makie.current_backend().Screen(), fig)
+    new_fig && display(Makie.current_backend().Screen(), fig)
     return fig, ax
 end
 function viz!(sim, a::AbstractArray; kwargs...)
     kwargs = remove_kwargs(:f, :duration; kwargs...) # do not allow co-visualization (is not a simulation)
-    @assert size(a) == size(sim.flow.σ) "Visualized array has different size than Simulation."
+    @assert size(a) == size(sim.flow.σ) "Visualized array needs to be a scalar and same size as Simulation."
     f(cpu_array, sim) = copyto!(cpu_array, Array(a[inside(a)]))
     viz!(sim; f, duration=nothing, kwargs...)
 end
@@ -236,5 +256,42 @@ end
 add_kwarg(args...; kwargs...) = (; kwargs..., (p.first => p.second for p in args)...) |> pairs
 remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(x.first, args))...) |> pairs
 ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
+
+"""
+    mirror_size(arr, sym)
+
+Size of the mirrored array: each dimension `i` with `sym[i] != 0` is doubled. Returns `size(arr)` if `sym === nothing`.
+"""
+mirror_size(arr::AbstractArray, ::Nothing) = size(arr)
+mirror_size(arr::AbstractArray{T,N}, sym) where {T,N} = ntuple(i -> sym[i] != 0 ? 2*size(arr,i) : size(arr,i), N)
+
+"""
+    mirror_sym(arr, sym)
+
+Allocating mirror: returns a new array with `arr` reflected along each dimension `i` where `sym[i] != 0`.
+`sym === nothing` returns `arr` unchanged. Use [`mirror_sym!`](@ref) to fill a pre-allocated buffer.
+"""
+mirror_sym(arr::AbstractArray, ::Nothing) = arr
+function mirror_sym(arr::AbstractArray{T,N}, sym) where {T,N}
+    buf = similar(arr, mirror_size(arr, sym))
+    mirror_sym!(buf, arr, sym)
+end
+
+"""
+    mirror_sym!(dst, src, sym)
+
+In-place mirror: fills `dst` from `src` reflected along each dimension `i` where `sym[i] != 0`.
+`dst` must have size `mirror_size(src, sym)`. `sym === nothing` does a plain `copyto!`.
+"""
+mirror_sym!(dst::AbstractArray, src::AbstractArray, ::Nothing) = copyto!(dst, src)
+function mirror_sym!(dst::AbstractArray{T,N}, src::AbstractArray{S,N}, sym) where {T,S,N}
+    Ns = size(src)
+    @inbounds for I in CartesianIndices(dst)
+        J = CartesianIndex(ntuple(i -> sym[i] != 0 ?
+            (I[i] <= Ns[i] ? Ns[i] + 1 - I[i] : I[i] - Ns[i]) : I[i], N))
+        dst[I] = src[J]
+    end
+    return dst
+end
 
 end # module

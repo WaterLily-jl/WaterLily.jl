@@ -20,12 +20,12 @@ function logger(fname::String="WaterLily")
     end;
     global_logger(logger);
     # put header in file
-    @log "p/c, iter, r∞, r₂\n"
+    @log "p/c, iter, r∞, r₂, ω\n"
 end
 
 @inline CI(a...) = CartesianIndex(a...)
 """
-    CIj(j,I,jj)
+    CIj(j,I,k)
 Replace jᵗʰ component of CartesianIndex with k
 """
 CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
@@ -40,7 +40,7 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
-    inside(a)
+    inside(a;buff=1)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.
 """
@@ -249,6 +249,7 @@ function exitBC!(u,u⁰,Δt)
 end
 """
     perBC!(a,perdir)
+
 Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
@@ -256,11 +257,20 @@ perBC!(a, perdir, N = size(a)) = for j ∈ perdir
     @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
     @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
 end
+using LinearAlgebra: ⋅
+"""
+    perdot(a,b,perdir)
+
+Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
+"""
+perdot(a,b,::Tuple{}) = a⋅b
+perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
 """
     interp(x::SVector, arr::AbstractArray)
 
-    Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-    Note: This routine works for any number of dimensions.
+Linear interpolation from array `arr` at Cartesian-coordinate `x`.
+
+Note: This routine works for any number of dimensions.
 """
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # check that we are inside the array to interpolate (cartesian coords)

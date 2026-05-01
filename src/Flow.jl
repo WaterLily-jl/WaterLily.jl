@@ -172,7 +172,7 @@ end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))
     for i in 1:d
-        s += @inbounds(max(0.,u[I+δ(i,I),i])+max(0.,-u[I,i]))
+        s += @inbounds(max(0,u[I+δ(i,I),i])+max(0,-u[I,i]))
     end
     return s
 end
