@@ -106,3 +106,13 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     perBC!(p.x,p.perdir)
     push!(ml.n,nᵖ);
 end
+
+"""
+    poisson_solve!(p::AbstractPoisson)
+
+No-kwargs, `nothing`-returning wrapper around `solver!`. Provides a stable
+extension point for AD backends to register a custom Poisson rule on (Enzyme
+dispatches kwargs through `Core.kwcall`, so a rule on `solver!` itself does
+not fire).
+"""
+poisson_solve!(p::AbstractPoisson) = (solver!(p); nothing)
