@@ -59,6 +59,7 @@ jobs:
       - name: WaterLily tests
         env:
           JULIA_NUM_THREADS: ${{ matrix.nthreads }}
+          WATERLILY_SKIP_MPI: ${{ runner.os == 'Windows' && '1' || '0' }}
         shell: bash
         run: |
           if [ "${{ matrix.nthreads }}" = "auto" ]

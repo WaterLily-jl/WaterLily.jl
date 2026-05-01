@@ -1,7 +1,7 @@
 abstract type AbstractPoisson{T,S,V} end
 
 """
-    Poisson{N,M}
+    Poisson{T, S, V}
 
 Composite type for conservative variable coefficient Poisson equations:
 
@@ -13,11 +13,19 @@ The resulting linear system is
 
 where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
-ect can be easily implemented and optimized without external libraries.
+etc. can be easily implemented and optimized without external libraries.
 
-To help iteratively solve the system above, the Poisson structure holds
-helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
-solution method then estimates the error `ϵ=̃A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
+The lower diagonal `L` is aliased to `flow.μ₀`; `BC!` on μ₀ already
+zeros normal-direction values at wall faces, giving `L[wall_face]=0` for
+an implicit Neumann BC.  Ghost-cell synchronization uses `comm!`
+(= `perBC!` + `scalar_halo!`) rather than bare `perBC!`, so that MPI
+rank-internal boundaries are handled correctly.
+
+To help iteratively solve the system, the structure holds helper arrays
+for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative solution
+method estimates the error `ϵ≈A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
+The solver ends with `pin_pressure!` + `comm!` to remove the null-space
+mode and synchronize halos.
 """
 struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     L :: V # Lower diagonal coefficients
@@ -29,12 +37,13 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     z :: S # source
     n :: Vector{Int16} # pressure solver iterations
     perdir :: NTuple # direction of periodic boundary condition
+    inslen :: Int # global number of inside cells (precomputed to avoid Allreduce)
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r = similar(x); fill!(r,0)
         ϵ,D,iD = copy(r),copy(r),copy(r)
         set_diag!(D,iD,L)
-        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
+        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir,global_length(inside(x)))
     end
 end
 
@@ -42,7 +51,7 @@ using ForwardDiff: Dual,Tag
 Base.eps(::Type{D}) where D<:Dual{Tag{G,T}} where {G,T} = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
-    @inside iD[I] = abs2(D[I])<2eps(eltype(D)) ? 0. : inv(D[I])
+    @inside iD[I] = abs2(D[I])<2eps(Float32) ? zero(D[I]) : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
@@ -58,11 +67,11 @@ end
     mult!(p::Poisson,x)
 
 Efficient function for Poisson matrix-vector multiplication.
-Fills `p.z = p.A x` with 0 in the ghost cells.
+Fills `p.z = Ax` with 0 in the ghost cells, where `A` is the Poisson matrix implied by `L` and `D`.
 """
 function mult!(p::Poisson,x)
     @assert axes(p.z)==axes(x)
-    perBC!(x,p.perdir)
+    comm!(x,p.perdir)
     fill!(p.z,0)
     @inside p.z[I] = mult(I,p.L,p.D,x)
     return p.z
@@ -90,15 +99,15 @@ Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
 function residual!(p::Poisson)
-    perBC!(p.x,p.perdir)
+    comm!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
-    s = sum(p.r)/length(inside(p.r))
+    s = global_sum(p.r)/p.inslen
     abs(s) <= 2eps(eltype(s)) && return
     @inside p.r[I] = p.r[I]-s
 end
 
 function increment!(p::Poisson{T};ω=1) where {T}
-    perBC!(p.ϵ,p.perdir)
+    comm!(p.ϵ,p.perdir)
     @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
 end
@@ -124,6 +133,7 @@ end
 @inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
     k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
     I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
+    iD[I]==0 && return # skip ghost/body cells; preserves MPI halo values at rank-internal boundaries
     x[I] = gauss(I,r,L,iD,x)
 end
 
@@ -135,41 +145,47 @@ end
     GaussSeidelRB!(p::Poisson;it=4, ω=1)
 
 Red-black Gauss-Seidel smoother. Runs `it` iterations; a complete red-black cycle requires `it` to be even.
-`ω` under-/over-relaxs the solution through scaling the deferred corrections in `increment!`.
+`ω` under-/over-relaxes the solution through scaling the deferred corrections in `increment!`.
 Note: This performs best on GPU configurations and is the default smoother.
 """
 function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
-    perBC!(p.ϵ,p.perdir)
+    # One halo up-front; inner RB sweeps run against it. After sweep 1, ghost
+    # values lag by one neighbor-iteration (mild Jacobi drift), but the system
+    # is diagonally-dominant (Poisson) and `mean_iters` stays at 1.0 — the
+    # extra halos per sweep contribute only synchronization, not convergence.
+    # This matches the old N+4/halowidth=2 pattern (reverse-engineered from
+    # commit 391b999); the halowidth-2 layout wasn't necessary, the frequency
+    # was.
+    comm!(p.ϵ,p.perdir)
     for i ∈ 1:it
         @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
     increment!(p;ω) # increment solution and residual
 end
 
-using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
+Conjugate-Gradient smoother with Jacobi preconditioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends.
 """
 function pcg!(p::Poisson{T};it=6,kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
-    rho = r⋅z
+    rho = global_dot(r,z)
     abs(rho)<10eps(T) && return
     for i in 1:it
-        perBC!(ϵ,p.perdir)
+        comm!(ϵ,p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/perdot(z,ϵ,p.perdir)
+        alpha = rho/global_perdot(z,ϵ,p.perdir)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
         i==it && return
         @inside z[I] = r[I]*p.iD[I]
-        rho2 = r⋅z
+        rho2 = global_dot(r,z)
         abs(rho2)<10eps(T) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
@@ -177,20 +193,23 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     end
 end
 
-L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
-L∞(p::Poisson) = maximum(abs,p.r)
+L₂(p::Poisson) = global_dot(p.r, p.r) # special method since outside(p.r)≡0
+L∞(p::Poisson) = global_max(maximum(abs, @view p.r[inside(p.r)]))
 
 """
-    solver!(A::Poisson;tol=1e-4,itmx=1e3)
+    solver!(A::Poisson; tol=1e-4, itmx=1e3)
 
-Approximate iterative solver for the Poisson matrix equation `Ax=b`.
+Iterative solver for the Poisson matrix equation `Ax=b` using
+preconditioned conjugate gradients (`pcg!`).
 
-  - `A`: Poisson matrix with working arrays.
-  - `A.x`: Solution vector. Can start with an initial guess.
-  - `A.z`: Right-Hand-Side vector. Will be overwritten!
-  - `A.n[end]`: stores the number of iterations performed.
+  - `A.x`: Solution vector (can start with an initial guess).
+  - `A.z`: Right-hand-side vector (overwritten).
+  - `A.n[end]`: Number of iterations performed.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
+
+Ends with `pin_pressure!` (remove null-space mean) and `comm!`
+(halo sync) so the solution is ready for use in `project!`.
 """
 function solver!(p::Poisson;tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)
@@ -200,6 +219,21 @@ function solver!(p::Poisson;tol=1e-4,itmx=1e3)
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end
-    perBC!(p.x,p.perdir)
+    pin_pressure!(p); comm!(p.x,p.perdir)
     push!(p.n,nᵖ)
+end
+
+"""
+    pin_pressure!(p::Poisson)
+
+Remove the null-space (constant) mode by subtracting the mean pressure
+over fluid cells, and zero body cells (`iD==0`).  Body cells are dead
+to the Poisson operator, but multigrid prolongation leaks coarse-level
+values into them each V-cycle — zeroing keeps `max|p|` reporting sane
+and serial/parallel runs bit-identical inside the body.  Uses mapreduce
+rather than `p.z` as scratch so it's safe to call inside the V-cycle loop.
+"""
+function pin_pressure!(p::Poisson{T}) where T
+    s = T(global_sum(p.x) / p.inslen)
+    @inside p.x[I] = p.x[I] - s
 end

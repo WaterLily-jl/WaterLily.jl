@@ -35,30 +35,34 @@ function median(a,b,c)
     return a
 end
 
+"""
+    conv_diff!(r, u, Φ, λ; ν=0.1, perdir=())
+
+Compute the convective and diffusive fluxes of velocity `u` using the
+convection scheme `λ(u,c,d)` and kinematic viscosity `ν`.  The result is
+accumulated into `r` (force per unit volume) and `Φ` is a working scalar.
+"""
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     r .= zero(eltype(r))
     N,n = size_u(u)
+    perdir = effective_perdir(perdir)  # MPI-decomposed periodic → non-periodic boundary
     for i ∈ 1:n, j ∈ 1:n
-        # if it is periodic direction
         tagper = (j in perdir)
-        # treatment for bottom boundary with BCs
         lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
-        # inner cells
         @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
                r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
-        # treatment for upper boundary with BCs
         upperBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
     end
 end
 
-# Neumann BC Building block
+# Neumann BC building blocks (master-style central diff at boundary)
 lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
 
-# Periodic BC Building block
+# Periodic BC building blocks
 lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
+    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
 """
@@ -72,7 +76,7 @@ accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
 """
-    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
+    Flow{D, T, Sf, Vf, Tf}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
@@ -80,6 +84,9 @@ Flow solves the unsteady incompressible [Navier-Stokes equations](https://en.wik
 Solid boundaries are modelled using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/).
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
+
+All arrays use the N+2 staggered layout: `N` interior cells plus 1 ghost/boundary
+cell per side, giving total size `M = N + 2` per spatial dimension.
 """
 struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}}
     # Fluid fields
@@ -96,7 +103,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    g :: Union{Function,Nothing} # acceleration field funciton
+    g :: Union{Function,Nothing} # acceleration field function
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, uBC; f=Array, Δt=0.25, ν=0., g=nothing,
@@ -122,12 +129,26 @@ Current flow time.
 """
 time(a::Flow) = sum(@view(a.Δt[1:end-1]))
 
+"""
+    BDIM!(a::Flow)
+
+Apply the Boundary Data Immersion Method to enforce the body velocity.
+Uses the zeroth and first kernel moments (`μ₀`, `μ₁`) to blend the
+body velocity `V` with the predicted fluid velocity.
+"""
 function BDIM!(a::Flow)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
     @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
 
+"""
+    project!(a::Flow, b::AbstractPoisson, w=1)
+
+Project the velocity field onto a divergence-free field by solving
+the pressure Poisson equation `∇⋅(L∇p) = ∇⋅u/Δt` and correcting
+the velocity: `u -= L∇p`.  The weight `w` scales `Δt` (0.5 for the corrector).
+"""
 function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
@@ -165,9 +186,15 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
-function CFL(a::Flow;Δt_max=10)
+"""
+    CFL(a::Flow; Δt_max=10)
+
+Compute the CFL-limited time step from the maximum outward flux at each cell.
+Uses `global_min` for MPI-safe reduction across all ranks.
+"""
+function CFL(a::Flow{D,T};Δt_max=T(10)) where {D,T}
     @inside a.σ[I] = flux_out(I,a.u)
-    min(Δt_max,inv(maximum(a.σ)+5a.ν))
+    global_min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))
