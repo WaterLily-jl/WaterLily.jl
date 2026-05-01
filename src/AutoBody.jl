@@ -12,6 +12,8 @@ struct AutoBody{F1<:Function,F2<:Function} <: AbstractBody
     map::F2
 end
 AutoBody(sdf, map=(x,t)->x) = AutoBody(sdf, map)
+_apply_offset(body::AutoBody, offset) =
+    AutoBody(body.sdf, let m=body.map, o=offset; (x,t)->m(x .+ o, t); end)
 
 """
     d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)

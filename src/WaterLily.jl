@@ -6,10 +6,43 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
+export L₂,@inside,inside,δ,apply!,loc,@log,set_backend,backend,
+       global_dot,global_sum,global_length,global_min,scalar_halo!,velocity_halo!,
+       AbstractParMode,Serial,par_mode
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
+
+include("BC.jl")
+export AbstractBC,BC,BC!
+
+# ── MPI parallel interface (implemented by WaterLilyMPIExt) ───────────────────
+"""
+    global_offset(Val(N), T=Float32) → SVector{N,T}
+
+Return the global coordinate offset for this MPI rank.  Serial default returns
+zero.  The MPI extension adds a method for `Parallel` that returns the rank-local
+origin in global index space.
+
+Note: this is only called from host code (e.g. `Simulation` constructor), never
+from inside GPU kernels.  `AutoBody` captures the offset at construction time
+so that GPU kernels receive a concrete `SVector` value.
+"""
+global_offset(::Val{N}, ::Type{T}=Float32) where {N,T} = _global_offset(Val(N), T, par_mode[])
+global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
+_global_offset(::Val{N}, ::Type{T}, ::Serial) where {N,T} = zero(SVector{N,T})
+
+"""
+    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
+
+Initialize MPI domain decomposition for WaterLily.  Determines the optimal MPI
+topology, computes local subdomain dimensions, initializes ImplicitGlobalGrid,
+and sets the communicator.  Returns the local interior dimensions, rank ID, and
+MPI communicator.  Implemented by `WaterLilyMPIExt`.
+"""
+function init_waterlily_mpi end
+
+export global_offset, init_waterlily_mpi
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
@@ -66,9 +99,10 @@ mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
-    flow :: Flow
+    flow :: AbstractFlow
     body :: AbstractBody
     pois :: AbstractPoisson
+    bc :: AbstractBC
     function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
@@ -76,9 +110,19 @@ mutable struct Simulation <: AbstractSimulation
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
-        measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
+        offset = global_offset(Val(N), T)
+        body = iszero(offset) ? body : _apply_offset(body, offset)
+        if !iszero(offset)
+            uBC isa Function && (uBC = let o=offset, f=uBC; (i,x,t)->f(i,x.+o,t); end)
+            g isa Function   && (g   = let o=offset, f=g;   (i,x,t)->f(i,x.+o,t); end)
+            uλ isa Function  && (uλ  = let o=offset, f=uλ;  (i,x)->f(i,x.+o);     end)
+        end
+        bc = BC(dims,uBC;perdir,exitBC,T,mem)
+        flow = Flow(dims,bc;uλ,Δt,ν,g,T,mem)
+        measure!(body,bc;ϵ)
+        Lp = copy(bc.μ₀)
+        wallBC_L!(Lp, perdir)
+        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,Lp,flow.σ;perdir),bc)
     end
 end
 
@@ -113,16 +157,18 @@ function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_ste
 end
 function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
+    mom_step!(sim.flow, sim.pois, sim.bc; λ, udf, kwargs...)
 end
 
 """
-    measure!(sim::Simulation,t=timeNext(sim))
+    measure!(sim::Simulation,t=sum(sim.flow.Δt))
 
-Measure a dynamic `body` to update the `flow` and `pois` coefficients.
+Measure a dynamic `body` to update the `bc` and `pois` coefficients.
 """
 function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
-    measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
+    measure!(sim.body,sim.bc;t,ϵ=sim.ϵ)
+    sim.pois.levels[1].L .= sim.bc.μ₀
+    wallBC_L!(sim.pois.levels[1].L, sim.pois.perdir)
     update!(sim.pois)
 end
 
@@ -151,10 +197,11 @@ function load!(sim::AbstractSimulation; kwargs...)
     load!(sim, Val{ext}(); kwargs...)
 end
 function save! end
+function save_parallel! end
 function vtkWriter end
 function default_attrib end
 function pvd_collection end
-export load!, save!, vtkWriter, default_attrib
+export load!, save!, save_parallel!, vtkWriter, default_attrib
 
 # default Plots functions
 function flood end
