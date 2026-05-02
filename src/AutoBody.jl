@@ -29,11 +29,11 @@ Skips the `n,V` calculation when `d²>fastd²`.
 function measure(body::AutoBody,x,t;fastd²=Inf)
     d = sdf(body,x,t)
     d^2>fastd² && return (d,zero(x),zero(x))
-    n = _grad(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
+    n = gradient(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
     any(isnan, n) && return (d,zero(x),zero(x)) # handle non-diff'able points
-    J = _jac(x->body.map(x,t), x)               # for mapping n,V to x-frame
-    n = J'n; m = √sum(abs2,n); d /= m; n /= m   # chain rule then normalise
-    return (d, n, -J\_derivative(t->body.map(x,t), t))
+    J = jacobian(x->body.map(x,t), x)             # for mapping n,V to x-frame
+    n = J'n; m = √sum(abs2,n); d /= m; n /= m     # chain rule then normalise
+    return (d, n, -J\derivative(t->body.map(x,t), t))
 end
 
 using LinearAlgebra: tr

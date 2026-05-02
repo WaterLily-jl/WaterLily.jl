@@ -373,12 +373,12 @@ end
 @inline function _stack_jac(ydual::SVector{M}, ::Val{N}) where {M,N}
     SMatrix{M,N}(ntuple(k -> _ip(ydual[((k-1) % M) + 1], ((k-1) ÷ M) + 1), Val(M*N)))
 end
-@inline _derivative(f::F, t::T) where {F,T} = map(yi -> _ip(yi, 1), f(Dual{_InnerTag}(t, one(T))))
+@inline derivative(f::F, t::T) where {F,T} = map(yi -> _ip(yi, 1), f(Dual{_InnerTag}(t, one(T))))
 
 # Dispatch wrappers. Internal `measure` calls always pass SVector (from `loc`)
 # and take the GPU-safe path; user-facing callers may pass plain `AbstractVector`
 # (e.g. unit tests) and route to stock ForwardDiff — CPU-only, GPU bug N/A.
-@inline _grad(f, x::SVector) = _gradient(f, x)
-@inline _grad(f, x) = ForwardDiff.gradient(f, x)
-@inline _jac(f, x::SVector) = _jacobian(f, x)
-@inline _jac(f, x) = ForwardDiff.jacobian(f, x)
+@inline gradient(f, x::SVector) = _gradient(f, x)
+@inline gradient(f, x) = ForwardDiff.gradient(f, x)
+@inline jacobian(f, x::SVector) = _jacobian(f, x)
+@inline jacobian(f, x) = ForwardDiff.jacobian(f, x)

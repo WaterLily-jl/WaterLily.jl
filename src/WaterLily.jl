@@ -6,7 +6,7 @@ module WaterLily
 using DocStringExtensions
 
 include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
+export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend,derivative,gradient,jacobian
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
