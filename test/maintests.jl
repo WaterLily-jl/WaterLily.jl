@@ -67,7 +67,7 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         u = rand(Ng..., D) |> f # vector
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @test GPUArrays.@allowscalar all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
-                           all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
+                            all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
         # test non-uniform BCs
         Ubc_1(i,x,t) = i==1 ? x[2] : x[1]
         v .= 0; BC!(v,Ubc_1)
@@ -83,21 +83,23 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
         @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
-       # test interpolation, test on two different array type
-       a = zeros(Float32,8,8,2) |> f; b = zeros(Float64,8,8) |> f
-       apply!((i,x)->x[i],a); apply!(x->x[1],b) # offset for start of grid
-       @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5f0,1.f0),a) .≈ [2.5f0,1.0f0])
-       @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5f0,3.f0),a) .≈ [3.5f0,3.0f0])
-       @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(2.5f0,1.f0),a))==Float32
-       @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.50,1.0),a)
-       @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
-       @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
-       @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(3.5,3),b))==Float64
-       @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
+        # test interpolation, test on two different array type
+        a = zeros(Float32,8,8,2) |> f; b = zeros(Float64,8,8) |> f
+        apply!((i,x)->x[i],a); apply!(x->x[1],b) # offset for start of grid
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5f0,1.f0),a) .≈ [2.5f0,1.0f0])
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5f0,3.f0),a) .≈ [3.5f0,3.0f0])
+        @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(2.5f0,1.f0),a))==Float32
+        @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.50,1.0),a)
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
+        @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(3.5,3),b))==Float64
+        @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(-1.f0,4.f0),a) .≈ 0)
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(10.,10.),b) .≈ 0)
 
         # test on perdot
         σ1 = rand(Ng...) |> f # scalar
-        σ2 = rand(Ng...) |> f # another scalar 
+        σ2 = rand(Ng...) |> f # another scalar
         # use ≈ instead of == as summation in different order might result in slight difference in floating point expressions
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
