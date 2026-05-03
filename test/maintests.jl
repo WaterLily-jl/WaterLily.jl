@@ -344,13 +344,13 @@ end
     sdfn(ξ) = √sum(abs2, ξ) - 1
     rotmap(x, θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)] * x
     x0 = SVector(0.5, 0.7); θ0 = 0.3
-    @test gradient(sdfn, x0) ≈ ForwardDiff.gradient(sdfn, x0)
-    @test jacobian(y -> rotmap(y, θ0), x0) ≈ ForwardDiff.jacobian(y -> rotmap(y, θ0), x0)
-    @test derivative(t -> rotmap(x0, t), θ0) ≈ ForwardDiff.derivative(t -> rotmap(x0, t), θ0)
+    @test WaterLily.gradient(sdfn, x0) ≈ ForwardDiff.gradient(sdfn, x0)
+    @test WaterLily.jacobian(y -> rotmap(y, θ0), x0) ≈ ForwardDiff.jacobian(y -> rotmap(y, θ0), x0)
+    @test WaterLily.derivative(t -> rotmap(x0, t), θ0) ≈ ForwardDiff.derivative(t -> rotmap(x0, t), θ0)
     let outer_tag = typeof(ForwardDiff.Tag(identity, Float64)),
         θd = Dual{outer_tag}(θ0, 1.0),
         ref = ForwardDiff.derivative(t -> sum(ForwardDiff.jacobian(y -> rotmap(y, t), x0)), θ0)
-        @test ForwardDiff.partials(sum(jacobian(y -> rotmap(y, θd), x0)), 1) ≈ ref
+        @test ForwardDiff.partials(sum(WaterLily.jacobian(y -> rotmap(y, θd), x0)), 1) ≈ ref
             end
 
     # Tight kernel-level reproducer of the original GPU bug: call AutoBody.measure
