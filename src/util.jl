@@ -359,14 +359,16 @@ struct _InnerTag end
 @inline _ip(y::Dual{_InnerTag}, i::Int) = partials(y, i)
 @inline _ip(y, ::Int) = zero(y)
 
-# GPU-safe gradient/jacobian/derivative on SVector inputs: seed `Dual{_InnerTag}`
-# and extract `partials` directly, bypassing `extract_jacobian`/`valtype`.
-@inline function _gradient(f::F, x::SVector{N,T}) where {F,N,T}
+# GPU-safe gradient/jacobian/derivative: seed `Dual{_InnerTag}` and extract
+# `partials` directly, bypassing `extract_jacobian`/`valtype`. SVector inputs
+# take the GPU-safe path; other inputs (plain `AbstractVector`, e.g. unit tests)
+# dispatch to ForwardDiff (CPU-only)
+@inline function gradient(f::F, x::SVector{N,T}) where {F,N,T}
     seeds = ntuple(i -> Dual{_InnerTag}(x[i], ntuple(j -> ifelse(j==i, one(T), zero(T)), Val(N))), Val(N))
     y = f(SVector(seeds))
     SVector(ntuple(j -> _ip(y, j), Val(N)))
 end
-@inline function _jacobian(f::F, x::SVector{N,T}) where {F,N,T}
+@inline function jacobian(f::F, x::SVector{N,T}) where {F,N,T}
     seeds = ntuple(i -> Dual{_InnerTag}(x[i], ntuple(j -> ifelse(j==i, one(T), zero(T)), Val(N))), Val(N))
     _stack_jac(f(SVector(seeds)), Val(N))
 end
@@ -374,11 +376,5 @@ end
     SMatrix{M,N}(ntuple(k -> _ip(ydual[((k-1) % M) + 1], ((k-1) ÷ M) + 1), Val(M*N)))
 end
 @inline derivative(f::F, t::T) where {F,T} = map(yi -> _ip(yi, 1), f(Dual{_InnerTag}(t, one(T))))
-
-# Dispatch wrappers. Internal `measure` calls always pass SVector (from `loc`)
-# and take the GPU-safe path; user-facing callers may pass plain `AbstractVector`
-# (e.g. unit tests) and route to stock ForwardDiff — CPU-only, GPU bug N/A.
-@inline gradient(f, x::SVector) = _gradient(f, x)
 @inline gradient(f, x) = ForwardDiff.gradient(f, x)
-@inline jacobian(f, x::SVector) = _jacobian(f, x)
 @inline jacobian(f, x) = ForwardDiff.jacobian(f, x)
