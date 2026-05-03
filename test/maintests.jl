@@ -94,8 +94,8 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
         @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(3.5,3),b))==Float64
         @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
-        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(-1.f0,4.f0),a) .≈ 0)
-        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(10.,10.),b) .≈ 0)
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(-1.f0,4.f0),a) .≈ Float32[-0.5, 4])
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(10.,10.),b) ≈ 6.0
 
         # test on perdot
         σ1 = rand(Ng...) |> f # scalar
