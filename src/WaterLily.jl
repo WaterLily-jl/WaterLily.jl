@@ -66,19 +66,21 @@ mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
-    flow :: Flow
+    flow :: AbstractFlow
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
+                        flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
+                        pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
+        flow = flow_ctor(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
+        new(U,L,ϵ,flow,body,pois_ctor(flow))
     end
 end
 
