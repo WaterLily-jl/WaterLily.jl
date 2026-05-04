@@ -337,6 +337,57 @@ end
     @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
 end
 
+@testset "AutoBody nested ForwardDiff (GPU-safe)" begin
+    using ForwardDiff
+    using ForwardDiff: derivative, Dual
+    # Bypass extract_jacobian/valtype in ForwardDiff.jl so nested FD
+    # works inside GPU kernels. Sanity-check that they match stock ForwardDiff,
+    # both with a plain Float input and with an outer-Dual eltype (the nested
+    # case that actually crashed extract_jacobian on GPU codegen).
+    sdfn(ξ) = √sum(abs2, ξ) - 1
+    rotmap(x, θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)] * x
+    x0 = SVector(0.5, 0.7); θ0 = 0.3
+    @test WaterLily.gradient(sdfn, x0) ≈ ForwardDiff.gradient(sdfn, x0)
+    @test WaterLily.jacobian(y -> rotmap(y, θ0), x0) ≈ ForwardDiff.jacobian(y -> rotmap(y, θ0), x0)
+    @test WaterLily.derivative(t -> rotmap(x0, t), θ0) ≈ ForwardDiff.derivative(t -> rotmap(x0, t), θ0)
+    let outer_tag = typeof(ForwardDiff.Tag(identity, Float64)),
+        θd = Dual{outer_tag}(θ0, 1.0),
+        ref = ForwardDiff.derivative(t -> sum(ForwardDiff.jacobian(y -> rotmap(y, t), x0)), θ0)
+        @test ForwardDiff.partials(sum(WaterLily.jacobian(y -> rotmap(y, θd), x0)), 1) ≈ ref
+            end
+
+    # Tight kernel-level reproducer of the original GPU bug: call AutoBody.measure
+    # inside a @kernel under outer Dual eltype. Without the fix, AutoBody.measure
+    # uses stock ForwardDiff.jacobian → extract_jacobian → valtype → DualMismatchError
+    # inside the kernel and crashes with KernelException. The body is a line segment
+    # (not rotationally symmetric), so the integrated normal genuinely depends on θ.
+    function measure_sum(θ, mem; L=16)
+        body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,
+                        (x, _) -> SA[cos(θ) -sin(θ); sin(θ) cos(θ)] * (x - SA[L, L]))
+        out = mem(zeros(typeof(θ), 2L, 2L))
+        WaterLily.@loop out[I] = WaterLily.measure(body, WaterLily.loc(0, I, typeof(θ)), zero(typeof(θ)))[2][1] over I ∈ CartesianIndices(out)
+        sum(out)
+    end
+    cpu_kd = derivative(t -> measure_sum(t, Array), 0.3)
+    for f ∈ arrays
+        @test derivative(t -> measure_sum(t, f), 0.3) ≈ cpu_kd rtol=1e-3
+    end
+
+    # End-to-end: ∂/∂θ of sum(sim.flow.p) for a θ-rotated body, on each backend.
+    # This can raise KernelException inside @kernel when `mem=CuArray` without tag reordering
+    function rot_sim(θ, mem; L=32, U=1, Re=100)
+        s, c = sincos(θ)
+        body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,
+                        (x, _) -> SA[c -s; s c] * (x - SA[L, L]))
+        Simulation((2L, 2L), (U, 0), L; ν=U*L/Re, body, T=typeof(θ), mem)
+    end
+    dsim(θ, mem) = (sim = rot_sim(θ, mem); sim_step!(sim); sum(sim.flow.p))
+    cpu_d = derivative(t -> dsim(t, Array), Float64(π/36))
+    for f ∈ arrays
+        @test derivative(t -> dsim(t, f), Float64(π/36)) ≈ cpu_d rtol=1e-3
+    end
+end
+
 function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
     # periodic in x, Neumann in y
     # assuming gravitational scale is 1 and Fr is 1, U scale is Fr*√gL
