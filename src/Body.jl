@@ -55,6 +55,7 @@ end
 @fastmath kern₀(d::T) where T = (1+d+sinpi(d)/T(π))/2
 @fastmath kern₁(d::T) where T = (1-d^2)/4-(d*sinpi(d)+(1+cospi(d))/T(π))/2T(π)
 
+# Kernel moments truncated at -1+√eps to bound 1/μ₀ in the fluid
 μ₀(d,ϵ) = d/ϵ<-1+√eps(d) ? zero(d) : kern₀(min(d/ϵ,1))
 μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))
 
