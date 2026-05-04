@@ -71,6 +71,8 @@ accelerate!(r,t,f::Function) = @loop r[Ii] += f(last(Ii),loc(Ii,eltype(r)),t) ov
 accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
+
+abstract type AbstractFlow end
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
@@ -81,7 +83,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractFlow
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -116,54 +118,85 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
 end
 
 """
+    mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+
+Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
+and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+"""
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+    # predictor u → u'
+    @log "p"
+    mom_predict!(a,t₀,t₁;λ,udf,kwargs...)
+    mom_project!(a,b,1,t₁)
+    # corrector u → u¹
+    @log "c"
+    mom_correct!(a,t₁;λ,udf,kwargs...)
+    mom_project!(a,b,0.5,t₁)
+    push!(a.Δt,CFL(a))
+end
+
+"""
     time(a::Flow)
 
 Current flow time.
 """
-time(a::Flow) = sum(@view(a.Δt[1:end-1]))
+time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
-function BDIM!(a::Flow)
+function BDIM!(a::AbstractFlow)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
     @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
 
-function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
-    dt = w*a.Δt[end]
-    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
-    solver!(b)
-    for i ∈ 1:n  # apply solution and unscale to recover pressure
-        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
-    end
-    b.x ./= dt
-end
-
 """
-    mom_step!(a::Flow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+    mom_predict!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
 
-Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
-and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+Predictor phase of `mom_step!`: advect under `u⁰`, apply BDIM, enforce BCs.
+On return `a.u` is BC-consistent and ready for pressure projection.
+`t` is the start-of-step time used for forcing terms; BCs are enforced at the
+end-of-step time `sum(a.Δt)`.
 """
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;λ=quick,udf=nothing,kwargs...) where N
-    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
-    # predictor u → u'
-    @log "p"
+function mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
     conv_diff!(a.f,a.u⁰,a.σ,λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,t₀; kwargs...)
     accelerate!(a.f,t₀,a.g,a.uBC)
     BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
-    # corrector u → u¹
-    @log "c"
+end
+
+"""
+    mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
+
+Corrector phase of `mom_step!`: advect under the projected `u`, apply BDIM,
+blend with the trapezoidal weight, enforce BCs.
+On return `a.u` is BC-consistent and ready for pressure projection.
+"""
+function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t₁; kwargs...)
-    accelerate!(a.f,t₁,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
-    project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
-    push!(a.Δt,CFL(a))
+    udf!(a,udf,t; kwargs...)
+    accelerate!(a.f,t,a.g,a.uBC)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
+
+"""
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+
+Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
+the velocity by `w·Δt·∇p`, and re-enforce BCs.
+On return `a.u` is divergence-free and BC-consistent.
+"""
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+    dt = w*a.Δt[end]
+    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
+    solver!(b)
+    for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
+        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
+    end
+    b.x ./= dt
+    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
+end
 
 function CFL(a::Flow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
