@@ -235,9 +235,10 @@ end
 end
 
 @testset "Body.jl" begin
-    @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
-    @test WaterLily.μ₀(0,1)==0.5
-    @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
+    @test WaterLily.μ₀(3.,6)==WaterLily.μ₀(0.5,1)
+    @test WaterLily.μ₀(0.,1)==0.5
+    @test WaterLily.μ₀(eps(1.)-1,1)==0
+    @test WaterLily.μ₁(0.,2)==2*(1/4-1/π^2)
 
     @test all(measure(WaterLily.NoBody(),[2,1],0) .== (Inf,zeros(2),zeros(2)))
     @test sdf(WaterLily.NoBody(),[2,1],0) == Inf
