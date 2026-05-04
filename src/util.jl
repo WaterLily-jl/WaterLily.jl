@@ -271,7 +271,7 @@ using EllipsisNotation
 """
     interp(x::SVector, arr::AbstractArray)
 
-Linear interpolation from array `arr` at Cartesian-coordinate `x`.
+Linear interpolation from array `arr` at Cartesian-coordinate `x`. Interpolation queries are clamped to the computational domain.
 Note: This routine works for any number of dimensions.
 
 To interpolate from an `arr<:GPUArray`, the call for `interp` should be broadcasted over the coordinates `x` as follows:
@@ -283,14 +283,17 @@ WaterLily.interp.(x, Ref(p)) # Broadcast
 WaterLily.interp.(x, Ref(u)) # Broadcast (x=[-0.5,2.5] is shifted to [0,2.5] because we are in a vector field)
 ```
 """
+@inline _interp_clamp(x::SVector{D,T}, sz::NTuple{D,Int}) where {D,T} =
+    SVector{D,T}(clamp(x[d], zero(T), T(sz[d] - 2)) for d in 1:D)
+
 function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
-    !(all(0 .≤ x) && all(x .≤ size(varr)[1:D].-2)) && return zero(x)
-    # Shift to align with each staggered grid component and interpolate
+    # Each component is stored on a staggered face, so shift query for that
+    # component and then clamp to the valid scalar interpolation domain.
     @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(_interp(x+shift(i),@view(varr[..,i])) for i in 1:D)
+    return SVector{D,T}(_interp(_interp_clamp(x + shift(i), size(varr)[1:D]), @view(varr[..,i])) for i in 1:D)
 end
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
-    !(all(0 .≤ x) && all(x .≤ size(arr).-2)) ? zero(T) : _interp(x, arr)
+    _interp(_interp_clamp(x, size(arr)), arr)
 end
 function _interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
