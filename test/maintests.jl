@@ -348,7 +348,7 @@ function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
     ),jerk
 end
-gravity!(flow::Flow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
+gravity!(flow::AbstractFlow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
     WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
 end
 @testset "Flow.jl with increasing body force" begin
@@ -395,7 +395,7 @@ end
         coriolis(i,x,t) = i==1 ? 2ω*velocity(2,x,t) : -2ω*velocity(1,x,t)
         centrifugal(i,x,t) = ω^2*(x-x₀)[i]
         g(i,x,t) = coriolis(i,x,t)+centrifugal(i,x,t)
-        udf(a::Flow,t) = WaterLily.@loop a.f[Ii] += g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
+        udf(a::AbstractFlow,t) = WaterLily.@loop a.f[Ii] += g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
         simg = Simulation((N,N),velocity,N; g, U=1, T, mem) # use g
         simg,Simulation((N,N),velocity,N; U=1, T, mem),udf
     end

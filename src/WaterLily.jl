@@ -108,7 +108,7 @@ sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `remeasure=true`, the body is remeasured at every time step. Can be set to `false` for static geometries to speed up simulation.
-A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` during the predictor and corrector steps.
+A user-defined function `udf` can be passed to arbitrarily modify the `::AbstractFlow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
 A `λ::Function` function can be passed as a custom convective scheme, following the interface of `λ(u,c,d)` (for upstream, central,
 downstream points).

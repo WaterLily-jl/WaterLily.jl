@@ -72,7 +72,7 @@ accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
 
-abstract type AbstractFlow end
+abstract type AbstractFlow{D,T} end
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
 
@@ -83,7 +83,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractFlow
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -137,7 +137,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 end
 
 """
-    time(a::Flow)
+    time(a::AbstractFlow)
 
 Current flow time.
 """
@@ -198,7 +198,7 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 
-function CFL(a::Flow;Δt_max=10)
+function CFL(a::AbstractFlow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
@@ -211,9 +211,9 @@ end
 end
 
 """
-    udf!(flow::Flow,udf::Function,t)
+    udf!(flow::AbstractFlow,udf::Function,t)
 
-User defined function using `udf::Function` to operate on `flow::Flow` during the predictor and corrector step, in sync with time `t`.
+User defined function using `udf::Function` to operate on `flow::AbstractFlow` during the predictor and corrector step, in sync with time `t`.
 Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
 """
 udf!(flow,::Nothing,t; kwargs...) = nothing
