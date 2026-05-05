@@ -18,7 +18,6 @@ AutoBody(sdf, map=(x,t)->x) = AutoBody(sdf, map)
 """
 @inline sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(body.map(x,t),t)
 
-using ForwardDiff
 """
     d,n,V = measure(body::AutoBody,x,t;fastd²=Inf)
 
@@ -30,11 +29,11 @@ Skips the `n,V` calculation when `d²>fastd²`.
 function measure(body::AutoBody,x,t;fastd²=Inf)
     d = sdf(body,x,t)
     d^2>fastd² && return (d,zero(x),zero(x))
-    n = ForwardDiff.gradient(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
-    any(isnan, n) && return (d,zero(x),zero(x))               # handle non-diff'able points
-    J = ForwardDiff.jacobian(x->body.map(x,t), x)             # for mapping n,V to x-frame
-    n = J'n; m = √sum(abs2,n); d /= m; n /= m                 # chain rule then normalise
-    return (d, n, -J\ForwardDiff.derivative(t->body.map(x,t), t))
+    n = gradient(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
+    any(isnan, n) && return (d,zero(x),zero(x)) # handle non-diff'able points
+    J = jacobian(x->body.map(x,t), x)             # for mapping n,V to x-frame
+    n = J'n; m = √sum(abs2,n); d /= m; n /= m     # chain rule then normalise
+    return (d, n, -J\derivative(t->body.map(x,t), t))
 end
 
 using LinearAlgebra: tr

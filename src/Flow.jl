@@ -69,8 +69,8 @@ Accounts for applied and reference-frame acceleration using `rᵢ += g(i,x,t)+dU
 accelerate!(r,t,::Nothing,::Union{Nothing,Tuple}) = nothing
 accelerate!(r,t,f::Function) = @loop r[Ii] += f(last(Ii),loc(Ii,eltype(r)),t) over Ii ∈ CartesianIndices(r)
 accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
-accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
-accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+derivative(τ->U(i,x,τ),t))
 
 abstract type AbstractFlow{D,T} end
 """
