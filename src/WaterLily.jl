@@ -39,7 +39,9 @@ export RigidMap,setmap
                U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
                perdir=(), exitBC=false,
                body::AbstractBody=NoBody(),
-               T=Float32, mem=Array)
+               T=Float32, mem=Array,
+               flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
+               pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
 
 Constructor for a WaterLily.jl simulation:
 
@@ -59,6 +61,12 @@ Constructor for a WaterLily.jl simulation:
   - `body`: Immersed geometry.
   - `T`: Array element type.
   - `mem`: memory location. `Array`, `CuArray`, `ROCm` to run on CPU, NVIDIA, or AMD devices, respectively.
+  - `flow_ctor`: Factory callable `(dims, uBC; kw...) -> AbstractFlow` to substitute a custom flow type.
+        The callable receives all standard keyword arguments forwarded from this constructor.
+        Used by downstream packages (e.g. LilyPad.jl) to inject a custom `AbstractFlow` subtype.
+  - `pois_ctor`: Factory callable `flow -> AbstractPoisson` to substitute a custom Poisson solver.
+        Called after `flow_ctor` with the constructed flow as argument.
+        Used by downstream packages (e.g. BiotSavartBCs.jl) to inject a custom `AbstractPoisson` subtype.
 
 See files in `examples` folder for examples.
 """
