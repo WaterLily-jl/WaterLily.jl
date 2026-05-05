@@ -228,8 +228,8 @@ end
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
-    for f ∈ arrays
-        a = Flow(N, U; f, T=Float32)
+    for mem ∈ arrays
+        a = Flow(N, U; mem, T=Float32)
         mom_step!(a, MultiLevelPoisson(a.p,a.μ₀,a.σ))
         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
         @test L₂(a.u[:,:,2].-U[2]) < 1e-5
@@ -544,6 +544,19 @@ end
         @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
         @test 1.2 > sim.flow.Δt[end] > 0.8
     end
+    # Test flow_ctor factory: explicit lambda wrapping Flow produces a working simulation
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
+                     flow_ctor=(d,u;kw...)->Flow(d,u;kw...))
+    @test sim.flow isa Flow
+    sim_step!(sim,0.5,remeasure=false)
+    @test all(isfinite, sim.flow.u)
+
+    # Test pois_ctor factory: explicit lambda wrapping MultiLevelPoisson produces a working simulation
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
+                     pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ))
+    @test sim.pois isa MultiLevelPoisson
+    sim_step!(sim,0.5,remeasure=false)
+    @test all(isfinite, sim.flow.u)
 end
 
 function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)

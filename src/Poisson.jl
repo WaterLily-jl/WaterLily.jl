@@ -1,5 +1,4 @@
 abstract type AbstractPoisson{T,S,V} end
-update!(::AbstractPoisson) = nothing
 
 """
     Poisson{N,M}

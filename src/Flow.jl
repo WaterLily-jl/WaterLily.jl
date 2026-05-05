@@ -101,17 +101,17 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     g :: Union{Function,Nothing} # acceleration field funciton
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
-    function Flow(N::NTuple{D}, uBC; f=Array, Δt=0.25, ν=0., g=nothing,
+    function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
             uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(uλ) && (uλ = ic_function(uBC))
-        u = Array{T}(undef, Nd...) |> f
+        u = Array{T}(undef, Nd...) |> mem
         isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
         BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
         u⁰ = copy(u)
-        fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
-        V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
+        fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
+        V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),false,perdir)
         new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir)
     end
@@ -150,11 +150,11 @@ function BDIM!(a::AbstractFlow)
 end
 
 """
-    mom_predict!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
+    mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
 
 Predictor phase of `mom_step!`: advect under `u⁰`, apply BDIM, enforce BCs.
 On return `a.u` is BC-consistent and ready for pressure projection.
-`t` is the start-of-step time used for forcing terms; BCs are enforced at the
+`t₀` and `t₁` are the start and end times of the step; BCs are enforced at the
 end-of-step time `sum(a.Δt)`.
 """
 function mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
@@ -169,7 +169,7 @@ end
     mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
 
 Corrector phase of `mom_step!`: advect under the projected `u`, apply BDIM,
-blend with the trapezoidal weight, enforce BCs.
+blend with the trapezoidal weight, enforce BCs at time-step end-time `t`.
 On return `a.u` is BC-consistent and ready for pressure projection.
 """
 function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)

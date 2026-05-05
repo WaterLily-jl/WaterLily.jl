@@ -86,7 +86,7 @@ mutable struct Simulation <: AbstractSimulation
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        flow = flow_ctor(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
+        flow = flow_ctor(dims,uBC;uλ,Δt,ν,g,T,mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,pois_ctor(flow))
     end
