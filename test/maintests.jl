@@ -15,9 +15,14 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
     @test loc(0,I) == SVector(I.I...) .- 1.5
 
     ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
-    WaterLily.grab!(sym,ex)
+    WaterLily.grab!(sym,ex)                            # default: SIMD-style (no call heads)
     @test ex == :(a[I, i] = Math.add(b[I], func(I, q)))
     @test sym == [:a, :I, :i, :(p.b), :q]
+    # KA-style grab: also collect bare-symbol call heads so the module-scoped
+    # @kernel can receive closure-captured callables / locally-shadowed Base names.
+    ex2,sym2 = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
+    WaterLily.grab!(sym2,ex2,true)
+    @test sym2 == [:a, :I, :i, :(p.b), :q, :func]
     sym = [:a, :b, :c]
     @test WaterLily.joinsymtype(sym,[:A,:B,:C]) == Expr[:(a::A), :(b::B), :(c::C)]
 
