@@ -368,14 +368,14 @@ end
         sim_step!(sim, 1; remeasure=false)
         WaterLily.total_force(sim)[2]/(ξ^2*sim.U^2*sim.L)
     end
-    # ∂/∂θ of sum(sim.flow.p) for a θ-rotated body
+    # ∂/∂θ of an L²-norm-like pressure scalar for a θ-rotated body
     function rotating(θ, mem; L=32, U=1, Re=100)
         s, c = sincos(θ)
         body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,
                         (x, _) -> SA[c -s; s c] * (x - SA[L, L]))
         Simulation((2L, 2L), (U, 0), L; ν=U*L/Re, body, T=typeof(θ), mem)
     end
-    rot_sim(θ, mem) = (sim = rotating(θ, mem); sim_step!(sim; max_steps=10); sum(sim.flow.p))
+    rot_sim(θ, mem) = (sim = rotating(θ, mem); sim_step!(sim; max_steps=10); sum(abs2, sim.flow.p))
 
     # Compare derivative between FD, AD_CPU and AD_GPU
     h = 1
