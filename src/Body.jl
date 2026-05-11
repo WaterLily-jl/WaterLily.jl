@@ -12,7 +12,7 @@ A fast-approximate method can return `≈d,zero(x),zero(x)` if `d^2>fastd²`.
 """
 abstract type AbstractBody end
 """
-    measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)
+    measure!(flow::AbstractFlow, body::AbstractBody; t=0, ϵ=1)
 
 Queries the body geometry to fill the arrays:
 
@@ -25,7 +25,7 @@ of size `2+ϵ` around the body. This function also fills `flow.σ` with the sign
 
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
-function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
+function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=T(2+ϵ)^2
     measure_sdf!(a.σ, body, t; fastd²=d²) # measure separately to allow specialization
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
@@ -80,7 +80,7 @@ Use for a simulation without a body.
 """
 struct NoBody <: AbstractBody end
 measure(::NoBody,x::AbstractVector,args...;kwargs...)=(Inf,zero(x),zero(x))
-function measure!(::Flow,::NoBody;kwargs...) end # skip measure! entirely
+function measure!(::AbstractFlow,::NoBody;kwargs...) end # skip measure! entirely
 
 """
     SetBody

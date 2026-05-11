@@ -18,7 +18,7 @@ include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
-export Flow,mom_step!,quick,cds
+export AbstractFlow,Flow,mom_step!,quick,cds
 
 include("Body.jl")
 export AbstractBody,measure_sdf!
@@ -39,7 +39,9 @@ export RigidMap,setmap
                U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
                perdir=(), exitBC=false,
                body::AbstractBody=NoBody(),
-               T=Float32, mem=Array)
+               T=Float32, mem=Array,
+               flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
+               pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
 
 Constructor for a WaterLily.jl simulation:
 
@@ -59,6 +61,12 @@ Constructor for a WaterLily.jl simulation:
   - `body`: Immersed geometry.
   - `T`: Array element type.
   - `mem`: memory location. `Array`, `CuArray`, `ROCm` to run on CPU, NVIDIA, or AMD devices, respectively.
+  - `flow_ctor`: Factory callable `(dims, uBC; kw...) -> AbstractFlow` to substitute a custom flow type.
+        The callable receives all standard keyword arguments forwarded from this constructor.
+        Used by downstream packages (e.g. LilyPad.jl) to inject a custom `AbstractFlow` subtype.
+  - `pois_ctor`: Factory callable `flow -> AbstractPoisson` to substitute a custom Poisson solver.
+        Called after `flow_ctor` with the constructed flow as argument.
+        Used by downstream packages (e.g. BiotSavartBCs.jl) to inject a custom `AbstractPoisson` subtype.
 
 See files in `examples` folder for examples.
 """
@@ -66,19 +74,21 @@ mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
     L :: Number # length scale
     ϵ :: Number # kernel width
-    flow :: Flow
+    flow :: AbstractFlow
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
+                        flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
+                        pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        flow = Flow(dims,uBC;uλ,Δt,ν,g,T,f=mem,perdir,exitBC)
+        flow = flow_ctor(dims,uBC;uλ,Δt,ν,g,T,mem,perdir,exitBC)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
+        new(U,L,ϵ,flow,body,pois_ctor(flow))
     end
 end
 
@@ -98,7 +108,7 @@ sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `remeasure=true`, the body is remeasured at every time step. Can be set to `false` for static geometries to speed up simulation.
-A user-defined function `udf` can be passed to arbitrarily modify the `::Flow` during the predictor and corrector steps.
+A user-defined function `udf` can be passed to arbitrarily modify the `::AbstractFlow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
 A `λ::Function` function can be passed as a custom convective scheme, following the interface of `λ(u,c,d)` (for upstream, central,
 downstream points).
