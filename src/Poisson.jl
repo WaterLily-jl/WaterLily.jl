@@ -51,7 +51,7 @@ using ForwardDiff: Dual,Tag
 Base.eps(::Type{D}) where D<:Dual{Tag{G,T}} where {G,T} = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
-    @inside iD[I] = abs2(D[I])<2eps(Float32) ? zero(D[I]) : inv(D[I])
+    @inside iD[I] = iszero(D[I]) ? D[I] : inv(D[I]) # alternatively: abs2(D[I])<2eps(Float32) ? zero(D[I]) : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 

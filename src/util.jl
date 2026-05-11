@@ -592,12 +592,30 @@ effective_perdir(perdir) = Tuple(j for j in perdir if !decomposed(j))
     interp(x::SVector, arr::AbstractArray, offset=zero(x))
 
 Linear interpolation from array `arr` at Cartesian-coordinate `x`.
-`offset` shifts `x` before indexing — used in MPI parallel to map
-global coordinates to rank-local array indices (pass `flow.offset`).
+`offset` shifts `x` before indexing — used in MPI parallel to map global
+coordinates to rank-local array indices (pass `flow.offset`).  The
+rank-local coordinate is then clamped to the local array bounds so
+out-of-domain queries snap to the edge rather than indexing past it
+(equivalent to master's PR 287 clamp in serial; in MPI any query past
+the rank's local extent is the neighbor's responsibility anyway).
 """
+@inline _interp_clamp(x::SVector{D,T}, sz::NTuple{D,Int}) where {D,T} =
+    SVector{D,T}(clamp(x[d], zero(T), T(sz[d] - 2)) for d in 1:D)
+
 function interp(x::SVector{D,T}, arr::AbstractArray{T,D}, offset=zero(x)) where {D,T}
+    _interp(_interp_clamp(x .- offset, size(arr)), arr)
+end
+
+using EllipsisNotation
+function interp(x::SVector{D,T}, varr::AbstractArray{T}, offset=zero(x)) where {D,T}
+    # Shift to align with each staggered grid component and interpolate
+    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
+    return SVector{D,T}(_interp(_interp_clamp(x .- offset .+ shift(i), size(varr)[1:D]), @view(varr[..,i])) for i in 1:D)
+end
+
+function _interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
-    x = x .- offset .+ 1.5f0; i = floor.(Int,x); y = x.-i
+    x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
 
     # CartesianIndices around x
     I = CartesianIndex(i...); R = I:I+oneunit(I)
@@ -609,12 +627,6 @@ function interp(x::SVector{D,T}, arr::AbstractArray{T,D}, offset=zero(x)) where 
         s += arr[J]*weight
     end
     return s
-end
-using EllipsisNotation
-function interp(x::SVector{D,T}, varr::AbstractArray{T}, offset=zero(x)) where {D,T}
-    # Shift to align with each staggered grid component and interpolate
-    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(interp(x+shift(i),@view(varr[..,i]),offset) for i in 1:D)
 end
 
 """
@@ -663,3 +675,41 @@ ic_function(uBC::Tuple) = (i,x)->uBC[i]
 
 squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
 
+using ForwardDiff
+using ForwardDiff: Dual, partials, Tag
+
+# Inner-derivative tag for measure's gradient/jacobian/derivative. `≺` is
+# overloaded so it always ranks newer than any `ForwardDiff.Tag`, folding the
+# precedence comparison at compile time and sidestepping `tagcount` (order-
+# sensitive on GPU codegen, the original cause of nested-FD crashes in kernels).
+struct _InnerTag end
+@inline ForwardDiff.:≺(::Type{<:Tag}, ::Type{_InnerTag}) = true
+@inline ForwardDiff.:≺(::Type{_InnerTag}, ::Type{<:Tag}) = false
+@inline ForwardDiff.:≺(::Type{_InnerTag}, ::Type{_InnerTag}) = false
+
+# Tag-aware partial extractor. The fallback returns zero when `y` is not an
+# `_InnerTag` dual — `f` did not depend on the seeded input so the inner
+# derivative is exactly zero. Without it, an outer-tag `Dual` (from closure
+# capture) would silently leak its outer partial.
+@inline _ip(y::Dual{_InnerTag}, i::Int) = partials(y, i)
+@inline _ip(y, ::Int) = zero(y)
+
+# GPU-safe gradient/jacobian/derivative: seed `Dual{_InnerTag}` and extract
+# `partials` directly, bypassing `extract_jacobian`/`valtype`. SVector inputs
+# take the GPU-safe path; other inputs (plain `AbstractVector`, e.g. unit tests)
+# dispatch to ForwardDiff (CPU-only)
+@inline function gradient(f::F, x::SVector{N,T}) where {F,N,T}
+    seeds = ntuple(i -> Dual{_InnerTag}(x[i], ntuple(j -> ifelse(j==i, one(T), zero(T)), Val(N))), Val(N))
+    y = f(SVector(seeds))
+    SVector(ntuple(j -> _ip(y, j), Val(N)))
+end
+@inline function jacobian(f::F, x::SVector{N,T}) where {F,N,T}
+    seeds = ntuple(i -> Dual{_InnerTag}(x[i], ntuple(j -> ifelse(j==i, one(T), zero(T)), Val(N))), Val(N))
+    _stack_jac(f(SVector(seeds)), Val(N))
+end
+@inline function _stack_jac(ydual::SVector{M}, ::Val{N}) where {M,N}
+    SMatrix{M,N}(ntuple(k -> _ip(ydual[((k-1) % M) + 1], ((k-1) ÷ M) + 1), Val(M*N)))
+end
+@inline derivative(f::F, t::T) where {F,T} = map(yi -> _ip(yi, 1), f(Dual{_InnerTag}(t, one(T))))
+@inline gradient(f, x) = ForwardDiff.gradient(f, x)
+@inline jacobian(f, x) = ForwardDiff.jacobian(f, x)

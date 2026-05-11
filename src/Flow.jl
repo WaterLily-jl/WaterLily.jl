@@ -56,7 +56,7 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     end
 end
 
-# Neumann BC building blocks (master-style central diff at boundary)
+# Neumann BC building blocks
 lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
 
@@ -73,8 +73,10 @@ Accounts for applied and reference-frame acceleration using `rᵢ += g(i,x,t)+dU
 accelerate!(r,t,::Nothing,::Union{Nothing,Tuple}) = nothing
 accelerate!(r,t,f::Function) = @loop r[Ii] += f(last(Ii),loc(Ii,eltype(r)),t) over Ii ∈ CartesianIndices(r)
 accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
-accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
-accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+derivative(τ->U(i,x,τ),t))
+
+abstract type AbstractFlow{D,T} end
 """
     Flow{D, T, Sf, Vf, Tf}
 
@@ -88,7 +90,7 @@ and the velocity vector field `u` (an array of dimension `D+1`).
 All arrays use the N+2 staggered layout: `N` interior cells plus 1 ghost/boundary
 cell per side, giving total size `M = N + 2` per spatial dimension.
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -106,28 +108,47 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     g :: Union{Function,Nothing} # acceleration field function
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
-    function Flow(N::NTuple{D}, uBC; f=Array, Δt=0.25, ν=0., g=nothing,
+    function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
             uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(uλ) && (uλ = ic_function(uBC))
-        u = Array{T}(undef, Nd...) |> f
+        u = Array{T}(undef, Nd...) |> mem
         isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
         BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
         u⁰ = copy(u)
-        fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
-        V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
+        fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
+        V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),false,perdir)
         new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir)
     end
 end
 
 """
-    time(a::Flow)
+    mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+
+Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
+and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+"""
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+    # predictor u → u'
+    @log "p"
+    mom_predict!(a,t₀,t₁;λ,udf,kwargs...)
+    mom_project!(a,b,1,t₁)
+    # corrector u → u¹
+    @log "c"
+    mom_correct!(a,t₁;λ,udf,kwargs...)
+    mom_project!(a,b,0.5,t₁)
+    push!(a.Δt,CFL(a))
+end
+
+"""
+    time(a::AbstractFlow)
 
 Current flow time.
 """
-time(a::Flow) = sum(@view(a.Δt[1:end-1]))
+time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
 """
     BDIM!(a::Flow)
@@ -136,63 +157,68 @@ Apply the Boundary Data Immersion Method to enforce the body velocity.
 Uses the zeroth and first kernel moments (`μ₀`, `μ₁`) to blend the
 body velocity `V` with the predicted fluid velocity.
 """
-function BDIM!(a::Flow)
+function BDIM!(a::AbstractFlow)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
     @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
 end
 
 """
-    project!(a::Flow, b::AbstractPoisson, w=1)
+    mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
 
-Project the velocity field onto a divergence-free field by solving
-the pressure Poisson equation `∇⋅(L∇p) = ∇⋅u/Δt` and correcting
-the velocity: `u -= L∇p`.  The weight `w` scales `Δt` (0.5 for the corrector).
+Predictor phase of `mom_step!`: advect under `u⁰`, apply BDIM, enforce BCs.
+On return `a.u` is BC-consistent and ready for pressure projection.
+`t₀` and `t₁` are the start and end times of the step; BCs are enforced at the
+end-of-step time `sum(a.Δt)`.
 """
-function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
-    dt = w*a.Δt[end]
-    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
-    solver!(b)
-    for i ∈ 1:n  # apply solution and unscale to recover pressure
-        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
-    end
-    b.x ./= dt
-end
-
-"""
-    mom_step!(a::Flow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
-
-Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
-and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
-"""
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;λ=quick,udf=nothing,kwargs...) where N
-    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
-    # predictor u → u'
-    @log "p"
+function mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
     conv_diff!(a.f,a.u⁰,a.σ,λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,t₀; kwargs...)
     accelerate!(a.f,t₀,a.g,a.uBC)
     BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
-    # corrector u → u¹
-    @log "c"
+end
+
+"""
+    mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
+
+Corrector phase of `mom_step!`: advect under the projected `u`, apply BDIM,
+blend with the trapezoidal weight, enforce BCs at time-step end-time `t`.
+On return `a.u` is BC-consistent and ready for pressure projection.
+"""
+function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t₁; kwargs...)
-    accelerate!(a.f,t₁,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
-    project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
-    push!(a.Δt,CFL(a))
+    udf!(a,udf,t; kwargs...)
+    accelerate!(a.f,t,a.g,a.uBC)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
 """
-    CFL(a::Flow; Δt_max=10)
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+
+Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
+the velocity by `w·Δt·∇p`, and re-enforce BCs.
+On return `a.u` is divergence-free and BC-consistent.
+"""
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+    dt = w*a.Δt[end]
+    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
+    solver!(b)
+    for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
+        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
+    end
+    b.x ./= dt
+    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
+end
+
+"""
+    CFL(a::AbstractFlow{D,T};Δt_max=T(10))
 
 Compute the CFL-limited time step from the maximum outward flux at each cell.
 Uses `global_min` for MPI-safe reduction across all ranks.
 """
-function CFL(a::Flow{D,T};Δt_max=T(10)) where {D,T}
+function CFL(a::AbstractFlow{D,T};Δt_max=T(10)) where {D,T}
     @inside a.σ[I] = flux_out(I,a.u)
     global_min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
@@ -205,9 +231,9 @@ end
 end
 
 """
-    udf!(flow::Flow,udf::Function,t)
+    udf!(flow::AbstractFlow,udf::Function,t)
 
-User defined function using `udf::Function` to operate on `flow::Flow` during the predictor and corrector step, in sync with time `t`.
+User defined function using `udf::Function` to operate on `flow::AbstractFlow` during the predictor and corrector step, in sync with time `t`.
 Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
 """
 udf!(flow,::Nothing,t; kwargs...) = nothing

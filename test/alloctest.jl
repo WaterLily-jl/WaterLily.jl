@@ -38,4 +38,18 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
     r = run(b)
     println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+
+    # Verify AbstractFlow type widening did not introduce allocations via dynamic dispatch
+    # flow_ctor produces a Flow <: AbstractFlow; mom_step! must still be fully compiled
+    let θ=Float32(π/36), L=32, U=1, Re=100
+        function map2(x,t); s,c=sincos(θ); SA[c -s;s c]*(x-SA[L,L]) end
+        function sdf2(ξ,t); p=ξ-SA[0,clamp(ξ[1],-L/2,L/2)]; √(p'*p)-2 end
+        sim2 = Simulation((20L,20L),(U,0),L;ν=U*L/Re,body=AutoBody(sdf2,map2),T=Float32,
+                          flow_ctor=(d,u;kw...)->Flow(d,u;kw...))
+        sim_step!(sim2)
+        b = @benchmarkable mom_step!($sim2.flow, $sim2.pois) samples=100; tune!(b)
+        r = run(b)
+        println("▶ Allocated (flow_ctor path) "*@sprintf("%.0f", r.memory/1e3)*" KiB")
+        @test r.memory < 50000 # AbstractFlow dispatch must not allocate more than concrete Flow
+    end
 end

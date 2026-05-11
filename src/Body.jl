@@ -12,7 +12,7 @@ A fast-approximate method can return `≈d,zero(x),zero(x)` if `d^2>fastd²`.
 """
 abstract type AbstractBody end
 """
-    measure!(flow::Flow, body::AbstractBody; t=0, ϵ=1)
+    measure!(flow::AbstractFlow, body::AbstractBody; t=0, ϵ=1)
 
 Queries the body geometry to fill the arrays:
 
@@ -25,7 +25,7 @@ of size `2+ϵ` around the body. This function also fills `flow.σ` with the sign
 
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
-function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
+function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=T(2+ϵ)^2
     measure_sdf!(a.σ, body, t; fastd²=d²) # measure separately to allow specialization
     offset = global_offset(Val(N), T) # rank-local → global coords (zero in serial)
@@ -52,12 +52,13 @@ function measure!(a::Flow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     velocity_halo!(reshape(a.μ₁, size(a.σ)..., :)) # halo on μ₁ tensor (no-op in serial)
 end
 
-# Convolution kernel and its moments (master)
-@fastmath kern(d) = 0.5+0.5cos(π*d)
-@fastmath kern₀(d) = 0.5+0.5d+0.5sin(π*d)/π
-@fastmath kern₁(d) = 0.25*(1-d^2)-0.5*(d*sin(π*d)+(1+cos(π*d))/π)/π
+# Convolution kernel and its moments
+@fastmath kern(d) = (1+cospi(d))/2
+@fastmath kern₀(d::T) where T = (1+d+sinpi(d)/T(π))/2
+@fastmath kern₁(d::T) where T = (1-d^2)/4-(d*sinpi(d)+(1+cospi(d))/T(π))/2T(π)
 
-μ₀(d,ϵ) = kern₀(clamp(d/ϵ,-1,1))
+# Kernel moments truncated at -1+√eps to bound 1/μ₀ in the fluid
+μ₀(d,ϵ) = d/ϵ<-1+√eps(d) ? zero(d) : kern₀(min(d/ϵ,1))
 μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))
 
 """
@@ -81,7 +82,7 @@ Use for a simulation without a body.
 """
 struct NoBody <: AbstractBody end
 measure(::NoBody,x::AbstractVector,args...;kwargs...)=(Inf,zero(x),zero(x))
-function measure!(::Flow,::NoBody;kwargs...) end # μ₀ already ones from Flow constructor
+function measure!(::AbstractFlow,::NoBody;kwargs...) end # skip measure! entirely
 
 """
     SetBody
@@ -103,7 +104,7 @@ Base.:-(a::AbstractBody) = SetBody(-,a,NoBody())
 Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
 
 # Measurements
-function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T 
+function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T
     body.op(measure(body.a,x,t;fastd²),measure(body.b,x,t;fastd²)) # can't mapreduce within GPU kernel
 end
 measure(body::SetBody{typeof(-)},x::AbstractVector{T},t;fastd²=T(Inf)) where T = ((d,n,V) = measure(body.a,x,t;fastd²); (-d,-n,V))

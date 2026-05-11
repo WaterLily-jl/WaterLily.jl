@@ -172,7 +172,7 @@ struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
     UU :: Mf # squared-velocity tensor, u⊗u
     t :: Vector{T} # time steps vector
     uu_stats :: Bool # flag to compute UU on-the-fly temporal averages
-    function MeanFlow(flow::Flow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
+    function MeanFlow(flow::AbstractFlow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
         mem = typeof(flow.u).name.wrapper
         P = zeros(T, size(flow.p)) |> mem
         U = zeros(T, size(flow.u)) |> mem
@@ -197,7 +197,7 @@ function reset!(meanflow::MeanFlow; t_init=0.0)
     push!(meanflow.t, t_init)
 end
 
-function update!(meanflow::MeanFlow, flow::Flow)
+function update!(meanflow::MeanFlow, flow::AbstractFlow)
     dt = time(flow) - meanflow.t[end]
     ε = dt / (dt + time(meanflow) + eps(eltype(flow.p)))
     length(meanflow.t) == 1 && (ε = 1) # if it's the first update, we just take the instantaneous flow field
@@ -220,7 +220,7 @@ function uu(a::MeanFlow)
     return τ
 end
 
-function copy!(a::Flow, b::MeanFlow)
+function copy!(a::AbstractFlow, b::MeanFlow)
     a.u .= b.U
     a.p .= b.P
 end

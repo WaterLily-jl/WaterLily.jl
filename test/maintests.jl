@@ -67,7 +67,7 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         u = rand(Ng..., D) |> f # vector
         BC!(u,U,true,(1,)) #saveexit has no effect here as x-periodic
         @test GPUArrays.@allowscalar all(u[1:2, :, 1] .== u[end-1:end, :, 1]) && all(u[1:2, :, 2] .== u[end-1:end, :, 2]) &&
-                           all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
+                            all(u[:, 1, 2] .== U[2]) && all(u[:, 2, 2] .== U[2]) && all(u[:, end, 2] .== U[2])
         # test non-uniform BCs
         Ubc_1(i,x,t) = i==1 ? x[2] : x[1]
         v .= 0; BC!(v,Ubc_1)
@@ -83,21 +83,23 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
         @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
-       # test interpolation, test on two different array type
-       a = zeros(Float32,8,8,2) |> f; b = zeros(Float64,8,8) |> f
-       apply!((i,x)->x[i],a); apply!(x->x[1],b) # offset for start of grid
-       @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5f0,1.f0),a) .≈ [2.5f0,1.0f0])
-       @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5f0,3.f0),a) .≈ [3.5f0,3.0f0])
-       @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(2.5f0,1.f0),a))==Float32
-       @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.50,1.0),a)
-       @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
-       @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
-       @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(3.5,3),b))==Float64
-       @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
+        # test interpolation, test on two different array type
+        a = zeros(Float32,8,8,2) |> f; b = zeros(Float64,8,8) |> f
+        apply!((i,x)->x[i],a); apply!(x->x[1],b) # offset for start of grid
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5f0,1.f0),a) .≈ [2.5f0,1.0f0])
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(3.5f0,3.f0),a) .≈ [3.5f0,3.0f0])
+        @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(2.5f0,1.f0),a))==Float32
+        @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.50,1.0),a)
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(2.5,1),b) ≈ 2.5
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(3.5,3),b) ≈ 3.5
+        @test GPUArrays.@allowscalar eltype(WaterLily.interp(SVector(3.5,3),b))==Float64
+        @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
+        @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(-1.f0,4.f0),a) .≈ Float32[-0.5, 4])
+        @test GPUArrays.@allowscalar WaterLily.interp(SVector(10.,10.),b) ≈ 6.0
 
         # test on perdot
         σ1 = rand(Ng...) |> f # scalar
-        σ2 = rand(Ng...) |> f # another scalar 
+        σ2 = rand(Ng...) |> f # another scalar
         # use ≈ instead of == as summation in different order might result in slight difference in floating point expressions
         @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
         @test GPUArrays.@allowscalar WaterLily.global_perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
@@ -226,8 +228,8 @@ end
     # Impulsive flow in a box
     U = (2/3, -1/3)
     N = (2^4, 2^4)
-    for f ∈ arrays
-        a = Flow(N, U; f, T=Float32)
+    for mem ∈ arrays
+        a = Flow(N, U; mem, T=Float32)
         mom_step!(a, MultiLevelPoisson(a.p,a.μ₀,a.σ))
         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
         @test L₂(a.u[:,:,2].-U[2]) < 1e-5
@@ -235,9 +237,10 @@ end
 end
 
 @testset "Body.jl" begin
-    @test WaterLily.μ₀(3,6)==WaterLily.μ₀(0.5,1)
-    @test WaterLily.μ₀(0,1)==0.5
-    @test WaterLily.μ₁(0,2)==2*(1/4-1/π^2)
+    @test WaterLily.μ₀(3.,6)==WaterLily.μ₀(0.5,1)
+    @test WaterLily.μ₀(0.,1)==0.5
+    @test WaterLily.μ₀(eps(1.)-1,1)==0
+    @test WaterLily.μ₁(0.,2)==2*(1/4-1/π^2)
 
     @test all(measure(WaterLily.NoBody(),[2,1],0) .== (Inf,zeros(2),zeros(2)))
     @test sdf(WaterLily.NoBody(),[2,1],0) == Inf
@@ -308,30 +311,85 @@ end
               WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4
     end
 end
-@testset "ForwardDiff" begin
-    function TGV_ke(Re)
-        sim,_ = TGVsim(Array;Re)
-        sim_step!(sim,π/100)
-        sum(I->WaterLily.ke(I,sim.flow.u),inside(sim.flow.p))
-    end
-    using ForwardDiff:derivative
-    @test derivative(TGV_ke,1e2) ≈ (TGV_ke(1e2+1)-TGV_ke(1e2-1))/2 rtol=1e-1
 
-    # Spinning cylinder lift generation
+@testset "ForwardDiff" begin
+    using ForwardDiff
+    # Bypass extract_jacobian/valtype in ForwardDiff.jl so nested FD
+    # works inside GPU kernels. Sanity-check that they match stock ForwardDiff,
+    # both with a plain Float input and with an outer-Dual eltype (the nested
+    # case that actually crashed extract_jacobian on GPU codegen).
+    sdfn(ξ) = √sum(abs2, ξ) - 1
+    rotmap(x, θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)] * x
+    x0 = SVector(0.5, 0.7); θ0 = 0.3
+    @test WaterLily.gradient(sdfn, x0) ≈ ForwardDiff.gradient(sdfn, x0)
+    @test WaterLily.jacobian(y -> rotmap(y, θ0), x0) ≈ ForwardDiff.jacobian(y -> rotmap(y, θ0), x0)
+    @test WaterLily.derivative(t -> rotmap(x0, t), θ0) ≈ ForwardDiff.derivative(t -> rotmap(x0, t), θ0)
+    let outer_tag = typeof(ForwardDiff.Tag(identity, Float64)),
+        θd = ForwardDiff.Dual{outer_tag}(θ0, 1.0),
+        ref = ForwardDiff.derivative(t -> sum(ForwardDiff.jacobian(y -> rotmap(y, t), x0)), θ0)
+        @test ForwardDiff.partials(sum(WaterLily.jacobian(y -> rotmap(y, θd), x0)), 1) ≈ ref
+            end
+
+    # Tight kernel-level reproducer of the original GPU bug: call AutoBody.measure
+    # inside a @kernel under outer Dual eltype. Without the fix, AutoBody.measure
+    # uses stock ForwardDiff.jacobian → extract_jacobian → valtype → DualMismatchError
+    # inside the kernel and crashes with KernelException. The body is a line segment
+    # (not rotationally symmetric), so the integrated normal genuinely depends on θ.
+    function measure_sum(θ, mem; L=16)
+        body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,
+                        (x, _) -> SA[cos(θ) -sin(θ); sin(θ) cos(θ)] * (x - SA[L, L]))
+        out = mem(zeros(typeof(θ), 2L, 2L))
+        WaterLily.@loop out[I] = WaterLily.measure(body, WaterLily.loc(0, I, typeof(θ)), zero(typeof(θ)))[2][1] over I ∈ CartesianIndices(out)
+        sum(out)
+    end
+    cpu_kd = ForwardDiff.derivative(t -> measure_sum(t, Array), 0.3)
+    for f ∈ arrays
+        @test ForwardDiff.derivative(t -> measure_sum(t, f), 0.3) ≈ cpu_kd rtol=1e-3
+    end
+
+    # End-to-end ForwardDiff AD
+    # ∂/∂Re of KE for TGV
+    function tgv_sim(Re, mem)
+        sim,_ = TGVsim(mem; Re)
+        sim_step!(sim,π/100)
+        WaterLily.@loop sim.flow.σ[I] = WaterLily.ke(I, sim.flow.u) over I ∈ inside(sim.flow.p)
+        sum(@view sim.flow.σ[inside(sim.flow.p)])
+    end
+    # ∂/∂Lift of spinning cylinder lift generation
     rot(θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)]  # rotation matrix
-    function spinning(ξ;D=16,Re=500)
+    function spinning(ξ, mem; D=16, Re=500)
         C,R,U = SA[D,D],D÷2,1
         body = AutoBody((x,t)->√(x'*x)-R,          # circle sdf
                         (x,t)->rot(ξ*U*t/R)*(x-C)) # center & spin!
-        Simulation((2D,2D),(U,0),D;ν=U*D/Re,body,T=typeof(ξ))
+        Simulation((2D,2D), (U,0), D; ν=U*D/Re, body, mem, T=typeof(ξ))
     end
-    function lift(ξ,t_end=1)
-        sim = spinning(ξ)
-        sim_step!(sim,t_end;remeasure=false)
+    function spin_sim(ξ, mem)
+        sim = spinning(ξ, mem)
+        sim_step!(sim, 1; remeasure=false)
         WaterLily.total_force(sim)[2]/(ξ^2*sim.U^2*sim.L)
     end
+    # ∂/∂θ of sum(sim.flow.p) for a θ-rotated body
+    function rotating(θ, mem; L=32, U=1, Re=100)
+        s, c = sincos(θ)
+        body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,
+                        (x, _) -> SA[c -s; s c] * (x - SA[L, L]))
+        Simulation((2L, 2L), (U, 0), L; ν=U*L/Re, body, T=typeof(θ), mem)
+    end
+    rot_sim(θ, mem) = (sim = rotating(θ, mem); sim_step!(sim; max_steps=10); sum(sim.flow.p))
+
+    # Compare derivative between FD, AD_CPU and AD_GPU
+    h = 1
+    dtgv_fd = (tgv_sim(1e2+h, Array) - tgv_sim(1e2-h, Array)) / 2h
     h = 1e-6
-    @test derivative(lift,2.0) ≈ (lift(2+h)-lift(2-h))/2h rtol=√h
+    dspin_fd = (spin_sim(2+h, Array) - spin_sim(2-h, Array)) / 2h
+    h = π/36/100
+    drot_fd = (rot_sim(π/36+h, Array) - rot_sim(π/36-h, Array)) / 2h
+
+    for f ∈ arrays
+        @test ForwardDiff.derivative(x -> tgv_sim(x, f), 1e2) ≈ dtgv_fd rtol=1e-1
+        @test ForwardDiff.derivative(x -> spin_sim(x, f), 2f0) ≈ dspin_fd rtol=√1e-6
+        @test ForwardDiff.derivative(x -> rot_sim(x, f), π/36) ≈ drot_fd rtol=1e-3
+    end
 end
 
 function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
@@ -345,7 +403,7 @@ function acceleratingFlow(N;use_g=false,T=Float64,perdir=(1,),jerk=4,mem=Array)
         (N,N), (UScale,0.), N; ν=0.001,g,Δt=0.001,perdir,T,mem
     ),jerk
 end
-gravity!(flow::Flow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
+gravity!(flow::AbstractFlow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
     WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
 end
 @testset "Flow.jl with increasing body force" begin
@@ -392,7 +450,7 @@ end
         coriolis(i,x,t) = i==1 ? 2ω*velocity(2,x,t) : -2ω*velocity(1,x,t)
         centrifugal(i,x,t) = ω^2*(x-x₀)[i]
         g(i,x,t) = coriolis(i,x,t)+centrifugal(i,x,t)
-        udf(a::Flow,t) = WaterLily.@loop a.f[Ii] += g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
+        udf(a::AbstractFlow,t) = WaterLily.@loop a.f[Ii] += g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
         simg = Simulation((N,N),velocity,N; g, U=1, T, mem) # use g
         simg,Simulation((N,N),velocity,N; U=1, T, mem),udf
     end
@@ -541,6 +599,19 @@ end
         @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
         @test 1.2 > sim.flow.Δt[end] > 0.8
     end
+    # Test flow_ctor factory: explicit lambda wrapping Flow produces a working simulation
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
+                     flow_ctor=(d,u;kw...)->Flow(d,u;kw...))
+    @test sim.flow isa Flow
+    sim_step!(sim,0.5,remeasure=false)
+    @test all(isfinite, sim.flow.u)
+
+    # Test pois_ctor factory: explicit lambda wrapping MultiLevelPoisson produces a working simulation
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
+                     pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ))
+    @test sim.pois isa MultiLevelPoisson
+    sim_step!(sim,0.5,remeasure=false)
+    @test all(isfinite, sim.flow.u)
 end
 
 function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)
