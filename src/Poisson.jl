@@ -1,3 +1,5 @@
+abstract type AbstractPoisson{T,S,V} end
+
 """
     Poisson{N,M}
 
@@ -9,7 +11,7 @@ The resulting linear system is
 
     Ax = [L+D+L']x = z
 
-where A is symmetric, block-tridiagonal and extremely sparse. Moreover, 
+where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
 ect can be easily implemented and optimized without external libraries.
 
@@ -17,7 +19,6 @@ To help iteratively solve the system above, the Poisson structure holds
 helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
 solution method then estimates the error `ϵ=̃A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
 """
-abstract type AbstractPoisson{T,S,V} end
 struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     L :: V # Lower diagonal coefficients
     D :: S # Diagonal coefficients
@@ -41,7 +42,7 @@ using ForwardDiff: Dual,Tag
 Base.eps(::Type{D}) where D<:Dual{Tag{G,T}} where {G,T} = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
-    @inside iD[I] = abs2(D[I])<2eps(eltype(D)) ? 0. : inv(D[I])
+    @inside iD[I] = iszero(D[I]) ? D[I] : inv(D[I])
 end
 update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 
@@ -56,7 +57,7 @@ end
 """
     mult!(p::Poisson,x)
 
-Efficient function for Poisson matrix-vector multiplication. 
+Efficient function for Poisson matrix-vector multiplication.
 Fills `p.z = p.A x` with 0 in the ghost cells.
 """
 function mult!(p::Poisson,x)
@@ -77,18 +78,18 @@ end
 """
     residual!(p::Poisson)
 
-Computes the resiual `r = z-Ax` and corrects it such that
+Computes the residual `r = z-Ax` and corrects it such that
 `r = 0` if `iD==0` which ensures local satisfiability
-    and 
+    and
 `sum(r) = 0` which ensures global satisfiability.
 
-The global correction is done by adjusting all points uniformly, 
+The global correction is done by adjusting all points uniformly,
 minimizing the local effect. Other approaches are possible.
 
 Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
-function residual!(p::Poisson) 
+function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
     s = sum(p.r)/length(inside(p.r))
@@ -96,31 +97,65 @@ function residual!(p::Poisson)
     @inside p.r[I] = p.r[I]-s
 end
 
-function increment!(p::Poisson) 
+function increment!(p::Poisson{T};ω=1) where {T}
     perBC!(p.ϵ,p.perdir)
-    @loop (p.r[I] = p.r[I]-mult(I,p.L,p.D,p.ϵ);
-           p.x[I] = p.x[I]+p.ϵ[I]) over I ∈ inside(p.x)
+    @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
+           p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
 end
 """
     Jacobi!(p::Poisson; it=1)
 
-Jacobi smoother run `it` times. 
-Note: This runs for general backends, but is _very_ slow to converge.
+Jacobi smoother. Runs `it` iterations with relaxation parameter `ω` scaling the deferred corrections in `increment!`.
+Note: This runs for general backends but converges _very_ slowly.
 """
-@fastmath Jacobi!(p;it=1) = for _ ∈ 1:it
+@fastmath Jacobi!(p;it=1,ω=1) = for _ ∈ 1:it
     @inside p.ϵ[I] = p.r[I]*p.iD[I]
-    increment!(p)
+    increment!(p;ω)
+end
+
+@fastmath @inline function gauss(I::CartesianIndex{d},r,L,iD,x) where {d}
+    s = @inbounds(r[I])
+    for i in 1:d
+        s -= @inbounds(x[I-δ(i,I)]*L[I,i] + x[I+δ(i,I)]*L[I+δ(i,I),i])
+    end
+    return s*@inbounds(iD[I])
+end
+
+@inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
+    k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
+    I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
+    x[I] = gauss(I,r,L,iD,x)
+end
+
+@inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
+    return CartesianIndices(ntuple( i-> i==N ? (2:size(x,i)÷2) : (2:size(x,i)-1), N))
+end
+
+"""
+    GaussSeidelRB!(p::Poisson;it=4, ω=1)
+
+Red-black Gauss-Seidel smoother. Runs `it` iterations; a complete red-black cycle requires `it` to be even.
+`ω` under-/over-relaxs the solution through scaling the deferred corrections in `increment!`.
+Note: This performs best on GPU configurations and is the default smoother.
+"""
+function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
+    @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
+    perBC!(p.ϵ,p.perdir)
+    for i ∈ 1:it
+        @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
+    end
+    increment!(p;ω) # increment solution and residual
 end
 
 using LinearAlgebra: ⋅
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi preditioning. Runs at most `it` iterations, 
+Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
-Note: This runs for general backends and is the default smoother.
+Note: This runs for general backends.
 """
-function pcg!(p::Poisson{T};it=6) where T
+function pcg!(p::Poisson{T};it=6,kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
     rho = r⋅z
@@ -128,7 +163,7 @@ function pcg!(p::Poisson{T};it=6) where T
     for i in 1:it
         perBC!(ϵ,p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/(z⋅ϵ)
+        alpha = rho/perdot(z,ϵ,p.perdir)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
@@ -141,13 +176,12 @@ function pcg!(p::Poisson{T};it=6) where T
         rho = rho2
     end
 end
-smooth!(p) = pcg!(p)
 
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
 """
-    solver!(A::Poisson;log,tol,itmx)
+    solver!(A::Poisson;tol=1e-4,itmx=1e3)
 
 Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 
@@ -155,7 +189,6 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `A.x`: Solution vector. Can start with an initial guess.
   - `A.z`: Right-Hand-Side vector. Will be overwritten!
   - `A.n[end]`: stores the number of iterations performed.
-  - `log`: If `true`, this function returns a vector holding the `L₂`-norm of the residual at each iteration.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
 """
@@ -163,7 +196,7 @@ function solver!(p::Poisson;tol=1e-4,itmx=1e3)
     residual!(p); r₂ = L₂(p)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
     while nᵖ<itmx
-        smooth!(p); r₂ = L₂(p); nᵖ+=1
+        pcg!(p); r₂ = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
         r₂<tol && break
     end
