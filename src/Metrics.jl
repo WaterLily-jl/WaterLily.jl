@@ -88,8 +88,8 @@ end
 
 BDIM-masked surface normal.
 """
-@inline function nds(body,x,t)
-    d,n,_ = measure(body,x,t,fastd²=1)
+@inline function nds(body,x::AbstractVector{T},t) where T
+    d,n,_ = measure(body,x,t,fastd²=one(T))
     n*WaterLily.kern(clamp(d,-1,1))
 end
 
@@ -114,8 +114,9 @@ Rate-of-strain tensor.
 """
 S(I::CartesianIndex{2},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:2, j ∈ 1:2]
 S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:3, j ∈ 1:3]
+
 """
-   viscous_force(sim::Simulation)
+    viscous_force(sim::Simulation)
 
 Compute the viscous force on an immersed body.
 """
@@ -129,7 +130,7 @@ function viscous_force(u,ν,df,body,t=0)
 end
 
 """
-   total_force(sim::Simulation)
+    total_force(sim::Simulation)
 
 Compute the total force on an immersed body.
 """
@@ -151,7 +152,7 @@ function pressure_moment(x₀,p,df,body,t=0)
 end
 
 """
-     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+    MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
 
 Holds temporal averages of pressure, velocity, and squared-velocity tensor.
 """
@@ -161,7 +162,7 @@ struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
     UU :: Mf # squared-velocity tensor, u⊗u
     t :: Vector{T} # time steps vector
     uu_stats :: Bool # flag to compute UU on-the-fly temporal averages
-    function MeanFlow(flow::Flow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
+    function MeanFlow(flow::AbstractFlow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
         mem = typeof(flow.u).name.wrapper
         P = zeros(T, size(flow.p)) |> mem
         U = zeros(T, size(flow.u)) |> mem
@@ -186,7 +187,7 @@ function reset!(meanflow::MeanFlow; t_init=0.0)
     push!(meanflow.t, t_init)
 end
 
-function update!(meanflow::MeanFlow, flow::Flow)
+function update!(meanflow::MeanFlow, flow::AbstractFlow)
     dt = time(flow) - meanflow.t[end]
     ε = dt / (dt + time(meanflow) + eps(eltype(flow.p)))
     length(meanflow.t) == 1 && (ε = 1) # if it's the first update, we just take the instantaneous flow field
@@ -209,7 +210,7 @@ function uu(a::MeanFlow)
     return τ
 end
 
-function copy!(a::Flow, b::MeanFlow)
+function copy!(a::AbstractFlow, b::MeanFlow)
     a.u .= b.U
     a.p .= b.P
 end
