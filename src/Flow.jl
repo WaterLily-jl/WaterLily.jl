@@ -128,11 +128,11 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;λ,udf,kwargs...)
-    mom_project!(a,b,1,t₁)
+    mom_project!(a,b,1,t₁;kwargs...)
     # corrector u → u¹
     @log "c"
     mom_correct!(a,t₁;λ,udf,kwargs...)
-    mom_project!(a,b,0.5,t₁)
+    mom_project!(a,b,0.5,t₁;kwargs...)
     push!(a.Δt,CFL(a))
 end
 
@@ -187,10 +187,10 @@ Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `w·Δt·∇p`, and re-enforce BCs.
 On return `a.u` is divergence-free and BC-consistent.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t; kwargs...)
     dt = w*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
-    solver!(b)
+    solver!(b; kwargs...)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
