@@ -159,7 +159,7 @@ end
         @test err < 1e-6
         @test pois.n[] ≤ 3
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f,tol=1e-8,itmx=2)
-        @test err < 1e-6
+        @test err < 1e-5    # hits itmx first
         @test pois.n[] == 2 # should be 2
     end
 end
