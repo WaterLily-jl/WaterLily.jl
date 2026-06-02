@@ -95,7 +95,7 @@ function helicity(I::CartesianIndex{3},u::AbstractArray{T},ω) where T
         dir1,dir2 = shiftDir.(d,3,1:2)
         umid = u[I,d]+u[I+δ(d,I),d]
         for id1∈0:1,id2∈0:1
-            s+=umid*ω[I+id1*δ(dir1,I)+id2*δ(dir2,I)]
+            s+=umid*ω[I+id1*δ(dir1,I)+id2*δ(dir2,I),d]
         end
     end
     s/8
