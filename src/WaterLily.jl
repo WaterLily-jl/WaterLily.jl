@@ -18,7 +18,7 @@ include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
-export AbstractFlow,Flow,mom_step!,quick,cds
+export AbstractFlow,Flow,mom_step!,quick,vanLeer,cds,transport!
 
 include("Body.jl")
 export AbstractBody,measure_sdf!
