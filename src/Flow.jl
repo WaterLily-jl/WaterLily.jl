@@ -74,11 +74,19 @@ in cell-centered form using the same QUICK/CDS/vanLeer machinery as
 `conv_diff!`. `r` and `φ` are `D`-dimensional cell-centered arrays (size
 matching `Flow.p`); `u` is the WaterLily staggered velocity array
 (`size(u) == (size(φ)..., D)`); `Φ` is a workspace buffer of the same
-shape as `φ` (e.g. `Flow.σ`). `D_diff` is the (scalar) diffusivity.
+shape as `φ` (e.g. `Flow.σ`). `D_diff` is the scalar diffusivity: a
+`Number` (uniform), a cell-centred `AbstractArray` matching `φ`, or a
+callable `D(I)` — all face-averaged.
 
 Intended as a building block for VoF α-advection, scalar RANS
 transport, or passive tracers.
 """
+# Face diffusivity for transport!: a Number is uniform, an array is read
+# per cell and averaged to the face, a callable is evaluated on the fly.
+@inline _Df(D::Number,j,I) = D
+@inline _Df(D::AbstractArray,j,I) = @inbounds (D[I] + D[I-δ(j,I)]) / 2
+@inline _Df(D,j,I) = @inbounds (D(I) + D(I-δ(j,I))) / 2
+
 function transport!(r::AbstractArray{T,Dim},
                     φ::AbstractArray{T,Dim},
                     u::AbstractArray{T},
@@ -90,7 +98,7 @@ function transport!(r::AbstractArray{T,Dim},
     for j in 1:Dim
         tagper = j in perdir
         scalar_lowerBoundary!(r, φ, u, Φ, D_diff, j, N, λ, Val{tagper}())
-        @loop (Φ[I] = ϕu(j,I,φ,u[CI(I,j)],λ) - D_diff*∂(j,I,φ);
+        @loop (Φ[I] = ϕu(j,I,φ,u[CI(I,j)],λ) - _Df(D_diff,j,I)*∂(j,I,φ);
                r[I] += Φ[I]) over I ∈ inside_scalar_j(N, j)
         @loop r[I-δ(j,I)] -= Φ[I] over I ∈ inside_scalar_j(N, j)
         scalar_upperBoundary!(r, φ, u, Φ, D_diff, j, N, λ, Val{tagper}())
@@ -113,12 +121,12 @@ end
 
 # Neumann (zero-gradient) scalar boundaries: drop the upstream stencil
 # point and use ϕuL/ϕuR.
-scalar_lowerBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{false}) = @loop r[I] += ϕuL(j,I,φ,u[CI(I,j)],λ) - D_diff*∂(j,I,φ) over I ∈ scalar_slice(N, 2, j)
-scalar_upperBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{false}) = @loop r[I-δ(j,I)] += -ϕuR(j,I,φ,u[CI(I,j)],λ) + D_diff*∂(j,I,φ) over I ∈ scalar_slice(N, N[j], j)
+scalar_lowerBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{false}) = @loop r[I] += ϕuL(j,I,φ,u[CI(I,j)],λ) - _Df(D_diff,j,I)*∂(j,I,φ) over I ∈ scalar_slice(N, 2, j)
+scalar_upperBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{false}) = @loop r[I-δ(j,I)] += -ϕuR(j,I,φ,u[CI(I,j)],λ) + _Df(D_diff,j,I)*∂(j,I,φ) over I ∈ scalar_slice(N, N[j], j)
 
 # Periodic scalar boundaries.
 scalar_lowerBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,I,N[j]-2),I,φ,u[CI(I,j)],λ) - D_diff*∂(j,I,φ); r[I] += Φ[I]) over I ∈ scalar_slice(N, 2, j)
+    Φ[I] = ϕuP(j,CIj(j,I,N[j]-2),I,φ,u[CI(I,j)],λ) - _Df(D_diff,j,I)*∂(j,I,φ); r[I] += Φ[I]) over I ∈ scalar_slice(N, 2, j)
 scalar_upperBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{true}) = @loop r[I-δ(j,I)] -= Φ[CIj(j,I,2)] over I ∈ scalar_slice(N, N[j], j)
 
 """

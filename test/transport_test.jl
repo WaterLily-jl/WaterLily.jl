@@ -88,4 +88,30 @@ using StaticArrays
         @test sum(@view φ_new[17:20, 8]) > sum(@view φ[17:20, 8])
     end
 
+    @testset "diffusivity field: array/closure match the scalar" begin
+        # D_diff may be a Number, a cell-centred array, or a callable; a
+        # constant array/closure must reproduce the scalar-D result, and a
+        # varying field must change it.
+        N = (16, 16); Ng = N .+ 2
+        φ = zeros(Float32, Ng)
+        for I in CartesianIndices(φ)
+            φ[I] = Float32((I.I[1] - 1.5)^2)
+        end
+        u = zeros(Float32, (Ng..., 2))
+        D = 0.1f0
+        rs = similar(φ); Φs = similar(φ)
+        ra = similar(φ); Φa = similar(φ)
+        rc = similar(φ); Φc = similar(φ)
+        Darr = fill(D, Ng)
+        WaterLily.transport!(rs, φ, u, Φs; D_diff=D)
+        WaterLily.transport!(ra, φ, u, Φa; D_diff=Darr)
+        WaterLily.transport!(rc, φ, u, Φc; D_diff=(I -> @inbounds Darr[I]))
+        @test maximum(abs.(rs .- ra)) ≤ 4 * eps(Float32) * maximum(abs.(rs))
+        @test maximum(abs.(rs .- rc)) ≤ 4 * eps(Float32) * maximum(abs.(rs))
+        Dvar = copy(Darr); Dvar[8:end, :] .= 0.5f0
+        rv = similar(φ); Φv = similar(φ)
+        WaterLily.transport!(rv, φ, u, Φv; D_diff=Dvar)
+        @test maximum(abs.(rv .- rs)) > 0
+    end
+
 end
