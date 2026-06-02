@@ -505,7 +505,7 @@ import WaterLily: ×
         I_h = CartesianIndex(3,3,3)
         T_h = eltype(u_h)
         umid = loc(0,I_h,T_h)[1]; ωmid=loc(0,I_h,T_h)[2]+1
-        @test GPUArrays.@allowscalar WaterLily.helicity(I_h,u_h,@view(ω_h[:,:,:,1])) == umid*ωmid
+        @test GPUArrays.@allowscalar WaterLily.helicity(I_h,u_h,ω_h) == umid*ωmid
 
         apply!((x)->1,p)
         @test WaterLily.L₂(p)≈prod(size(p).-2)
