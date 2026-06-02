@@ -40,6 +40,14 @@ Return a CartesianIndex of dimension `N` which is one at index `i` and zero else
 δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
 
 """
+    shiftDir(d,D,i)
+
+Shift the index of direction `d` to `i` steps away in dimension space of `D`.
+So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4` 
+"""
+shiftDir(d,D,i) = mod(d+i-1,D)+1
+
+"""
     inside(a;buff=1)
 
 Return CartesianIndices range excluding a single layer of cells on all boundaries.

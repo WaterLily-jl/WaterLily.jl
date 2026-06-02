@@ -84,6 +84,24 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
 end
 
 """
+    helicity(I,u,ω)
+
+Compute the helicity density at collocated cell `I` from dot product of velocity `u` and vorticity `ω`.
+`u` and `ω` should all be average to the collocated cell in each directional operation.
+"""
+function helicity(I::CartesianIndex{3},u::AbstractArray{T},ω) where T
+    s = zero(T)
+    for d∈1:3
+        dir1,dir2 = shiftDir.(d,3,1:2)
+        umid = u[I,d]+u[I+δ(d,I),d]
+        for id1∈0:1,id2∈0:1
+            s+=umid*ω[I+id1*δ(dir1,I)+id2*δ(dir2,I)]
+        end
+    end
+    s/8
+end
+
+"""
     nds(body,x,t)
 
 BDIM-masked surface normal.

@@ -10,6 +10,10 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
     @test WaterLily.CIj(3,I,5)==CartesianIndex(1,2,5,4)
     @test WaterLily.CIj(2,CartesianIndex(16,16,16,3),14)==CartesianIndex(16,14,16,3)
 
+    @test WaterLily.shiftDir(1,3,2) == 3
+    @test WaterLily.shiftDir(1,4,-1) == 4
+    @test WaterLily.shiftDir(4,4,1) == 1
+
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...) .- 1.5
@@ -494,6 +498,15 @@ import WaterLily: ×
         @test GPUArrays.@allowscalar p[J]==sqrt(sum(abs2,ω))
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test GPUArrays.@allowscalar p[J]≈ω[1]
+
+        # test helicity
+        u_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[1] : 0.0, u_h)
+        ω_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[2]-0.5 + 1 : 0.0, ω_h)
+        I_h = CartesianIndex(3,3,3)
+        T_h = eltype(u_h)
+        umid = loc(0,I_h,T_h)[1]; ωmid=loc(0,I_h,T_h)[2]+1
+        @test GPUArrays.@allowscalar WaterLily.helicity(I_h,u_h,@view(ω_h[:,:,:,1])) == umid*ωmid
+
         apply!((x)->1,p)
         @test WaterLily.L₂(p)≈prod(size(p).-2)
         # test force routines
