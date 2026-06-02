@@ -35,6 +35,36 @@ function median(a,b,c)
     return a
 end
 
+# Cell-centred and face-averaged effective-viscosity lookups. A scalar
+# ν dispatches to the original constant-ν kernel (zero overhead). A
+# callable `ν(I)` returns the cell-centred effective viscosity, computed
+# on the fly in the flux — no stored νₑ array. `_νf` linearly
+# interpolates the closure to the cell face so the diffusive flux stays
+# consistent for inhomogeneous ν. The closure may itself wrap a
+# downstream array (e.g. a VoF volume-fraction field) if a non-local
+# model ever needs one.
+@inline _ν(ν::Number,I) = ν
+@inline _ν(ν,I) = ν(I)
+@inline _νf(ν::Number,j,I) = ν
+@inline _νf(ν,j,I) = @inbounds (ν(I) + ν(I-δ(j,I))) / 2
+
+"""
+    conv_diff!(r, u, Φ, λ; ν=0.1, perdir=())
+
+Compute the convective + diffusive momentum residual
+
+```
+r[I, i] = -∂_j ( u_j u_i - ν_face · ∂_j u_i )
+```
+
+for the face-staggered velocity `u`. The high-order convective flux is
+limited by `λ` (e.g. `quick`, `vanLeer`); the diffusive flux uses the
+face-averaged effective viscosity (see `_νf`). `Φ` is a per-cell
+workspace array. `ν` may be a scalar (uniform Re) or a callable `ν(I)`
+returning the cell-centred effective viscosity (variable Re for VoF /
+LES), evaluated on the fly with no stored array. Directions listed in
+`perdir` are treated as periodic at both boundaries.
+"""
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     r .= zero(eltype(r))
     N,n = size_u(u)
@@ -44,7 +74,7 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
         # treatment for bottom boundary with BCs
         lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
         # inner cells
-        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - _νf(ν,j,I)*∂(j,CI(I,i),u);
                r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
         @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         # treatment for upper boundary with BCs
@@ -53,12 +83,12 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
 end
 
 # Neumann BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
+lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - _νf(ν,j,I)*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
+upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + _νf(ν,j,I)*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
 
 # Periodic BC Building block
 lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
+    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -_νf(ν,j,I)*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
 upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
 """
@@ -83,7 +113,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractFlow{D,T}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Nf} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -97,7 +127,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     # Non-fields
     uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
-    ν :: T # kinematic viscosity
+    ν :: Nf # kinematic viscosity: scalar `T` (default) or a cell-centred closure `ν(I)`
     g :: Union{Function,Nothing} # acceleration field funciton
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
@@ -113,7 +143,11 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
         V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir)
+        # A scalar ν is stored as `T`; a callable closure is stored by
+        # reference, so downstream code that mutates the closure's own
+        # state (e.g. a VoF field) stays in sync across `mom_step!`.
+        ν_store = isa(ν, Function) ? ν : T(ν)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(ν_store)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],ν_store,g,exitBC,perdir)
     end
 end
 
@@ -198,9 +232,20 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 
+# Maximum effective viscosity for the CFL viscous limit. A scalar
+# returns itself (zero overhead). A closure is evaluated into the
+# scratch buffer `σ` and reduced over the interior — called only after
+# the flux-out maximum has already been read out of `σ`.
+@inline _ν_max(ν::Number, σ) = ν
+function _ν_max(ν, σ)
+    @inside σ[I] = ν(I)
+    maximum(@view σ[inside(σ)])
+end
+
 function CFL(a::AbstractFlow;Δt_max=10)
     @inside a.σ[I] = flux_out(I,a.u)
-    min(Δt_max,inv(maximum(a.σ)+5a.ν))
+    fluxmax = maximum(a.σ)
+    min(Δt_max,inv(fluxmax+5*_ν_max(a.ν,a.σ)))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = zero(eltype(u))

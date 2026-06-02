@@ -125,7 +125,7 @@ viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0)
     Tu = eltype(u); To = promote_type(Float64,Tu)
     df .= zero(Tu)
-    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
+    @loop df[I,:] .= -2*_ν(ν,I)*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
     sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
