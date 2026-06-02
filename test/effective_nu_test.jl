@@ -96,4 +96,29 @@ using StaticArrays
         @test maximum(abs.(a.f .- f0)) > 0
     end
 
+    @testset "precomputed-array vs on-the-fly closure are bit-identical" begin
+        # Two ways to supply the same effective viscosity through a closure:
+        #  (a) wrap a PRECOMPUTED ν array, ν = I -> νₑ[I]
+        #  (b) compute ν ON THE FLY from a field, ν = I -> blend(φ[I])
+        # They are the same function of I, so conv_diff! must agree exactly.
+        # (The choice between them is a perf/memory tradeoff — see the
+        # effective-viscosity benchmark in WaterLily-Benchmarks — not a
+        # numerical one.)
+        U = (2/3, -1/3); N = (16, 16)
+        ρw, ρa, μw, μa = 1f3, 1f0, 1f-3, 1.8f-5
+        blend(α) = (α*μw + (1-α)*μa) / (α*ρw + (1-α)*ρa)
+        φ = rand(Float32, N .+ 2)                      # a "volume fraction" field
+        νₑ = blend.(φ)                                  # precomputed effective ν
+        a_arr = WaterLily.Flow(N, U; T=Float32, ν=(let v=νₑ; I->@inbounds v[I]; end))
+        a_fly = WaterLily.Flow(N, U; T=Float32, ν=(let p=φ; I->@inbounds blend(p[I]); end))
+        for I in CartesianIndices(a_arr.u)
+            v = sinpi((I.I[1]-1)/N[1]) + cospi((I.I[2]-1)/N[2])
+            a_arr.u[I] = a_fly.u[I] = Float32(v)
+        end
+        Φa, Φf = similar(a_arr.p), similar(a_fly.p)
+        WaterLily.conv_diff!(a_arr.f, a_arr.u, Φa, WaterLily.quick; ν=a_arr.ν)
+        WaterLily.conv_diff!(a_fly.f, a_fly.u, Φf, WaterLily.quick; ν=a_fly.ν)
+        @test a_arr.f == a_fly.f
+    end
+
 end
