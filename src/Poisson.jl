@@ -135,7 +135,7 @@ end
     GaussSeidelRB!(p::Poisson;it=4, ω=1)
 
 Red-black Gauss-Seidel smoother. Runs `it` iterations; a complete red-black cycle requires `it` to be even.
-`ω` under-/over-relaxs the solution through scaling the deferred corrections in `increment!`.
+`ω` under-/over-relaxes the solution through scaling the deferred corrections in `increment!`.
 Note: This performs best on GPU configurations and is the default smoother.
 """
 function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
@@ -192,12 +192,12 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `tol`: Convergence tolerance on the `L₂`-norm residual.
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;tol=1e-4,itmx=1e3)
+function solver!(p::Poisson;tol=1e-4,itmx=1e3, kwargs...)
     residual!(p); r₂ = L₂(p)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, 1\n"
     while nᵖ<itmx
         pcg!(p); r₂ = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $r₂\n"
+        @log ", $nᵖ, $(L∞(p)), $r₂, 1\n"
         r₂<tol && break
     end
     perBC!(p.x,p.perdir)
