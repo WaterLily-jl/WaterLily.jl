@@ -3,14 +3,14 @@
 @fastmath @inline function restrict(I::CartesianIndex,b)
     s = zero(eltype(b))
     for J ∈ up(I)
-     s += @inbounds(b[J])
+        s += @inbounds(b[J])
     end
     return s
 end
 @fastmath @inline function restrictL(I::CartesianIndex,i,b)
     s = zero(eltype(b))
     for J ∈ up(I,i)
-     s += @inbounds(b[J,i])
+        s += @inbounds(b[J,i])
     end
     return 0.5s
 end
@@ -92,7 +92,7 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32,kwargs...) where T
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω);
+        smooth!(p; ω)
         rnew = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
         if     rnew ≥ r₂
