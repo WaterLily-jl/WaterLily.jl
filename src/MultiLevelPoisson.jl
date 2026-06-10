@@ -12,7 +12,7 @@ end
     for J ∈ up(I,i)
      s += @inbounds(b[J,i])
     end
-    return 0.5s
+    return s/2
 end
 
 function restrictML(b::Poisson)
