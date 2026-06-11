@@ -17,6 +17,7 @@ using ImplicitGlobalGrid
 using MPI
 using StaticArrays
 using ForwardDiff: Dual, Partials, value, partials
+using EllipsisNotation
 
 # ── MPI parallel mode ────────────────────────────────────────────────────────
 
@@ -40,8 +41,14 @@ const _grid = ImplicitGlobalGrid.global_grid           # the active GlobalGrid
 
 _nd() = count(>(1), _grid().nxyz)                      # active spatial dims
 
-_has_neighbors() =                                     # false ⇒ halo is a no-op
-    (g = _grid(); any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:_nd()))
+# Halo exchange only covers dims split across ranks. Periodic dims owned in
+# full by every rank wrap locally via `perBC!` (exactly as in serial) — going
+# through MPI for the self-wrap costs the full per-call floor for nothing.
+_decomp_dims() = (g = _grid(); filter(d -> g.dims[d] > 1, ntuple(identity, _nd())))
+_any_decomposed() = (g = _grid(); any(g.dims[d] > 1 for d in 1:_nd()))
+
+# Periodic dims that are NOT decomposed — handled by a local `perBC!` copy
+_local_perdir(perdir) = (g = _grid(); filter(j -> g.dims[j] == 1, perdir))
 
 # ── Global coordinate offset ──────────────────────────────────────────────────
 
@@ -187,21 +194,19 @@ end
 end
 
 # Test / introspection API — the grid `update_halo!` resolves for `arr_size`.
-@inline _grid_for(arr_size::Tuple) =
-    _is_fine_size(arr_size, _nd()) ? _grid() : _coarse_grid(arr_size)
+@inline _grid_for(arr_size::Tuple) = _is_fine_size(arr_size, _nd()) ? _grid() : _coarse_grid(arr_size)
 
 # ── Scalar halo exchange (native eltypes — via IGG) ──────────────────────────
 # Fine-sized arrays skip the Dict lookup AND the `active_global_grid=` kwarg,
 # so IGG's activate/restore dance never fires on the most-called path.
 
 function _scalar_halo_igg!(arr::AbstractArray)
-    nd = _nd()
     arr3d = ndims(arr) < 3 ?
             reshape(arr, size(arr)..., ntuple(_ -> 1, 3 - ndims(arr))...) : arr
-    if _is_fine_size(size(arr), nd)
-        update_halo!(arr3d; dims=ntuple(identity, nd))
+    if _is_fine_size(size(arr), _nd())
+        update_halo!(arr3d; dims=_decomp_dims())
     else
-        update_halo!(arr3d; dims=ntuple(identity, nd),
+        update_halo!(arr3d; dims=_decomp_dims(),
                      active_global_grid=_coarse_grid(size(arr)))
     end
 end
@@ -229,7 +234,7 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
     g    = _grid()
     N    = size(arr)
     comm = _comm()
-    for dim in 1:_nd()
+    for dim in _decomp_dims()
         nleft  = g.neighbors[1, dim]
         nright = g.neighbors[2, dim]
         (nleft < 0 && nright < 0) && continue
@@ -266,7 +271,7 @@ end
 @inline _native_eltype(::Type)         = true
 
 function _do_scalar_halo!(arr::AbstractArray)
-    _has_neighbors() || return
+    _any_decomposed() || return
     _native_eltype(eltype(arr)) ? _scalar_halo_igg!(arr) : _scalar_halo_mpi!(arr)
 end
 
@@ -274,19 +279,37 @@ end
 
 const _halo_bufs = Dict{Tuple, Array}()
 
-function _get_halo_buf(::Type{T}, dims::NTuple{N,Int}) where {T,N}
-    get!(() -> Array{T}(undef, dims), _halo_bufs, (T, dims))
+_get_halo_buf(::Type{T}, dims::NTuple{N,Int}) where {T,N} = get!(() -> Array{T}(undef, dims), _halo_bufs, (T, dims))
+
+# All components in ONE `update_halo!` call, on zero-copy 3D aliases of the
+# contiguous component blocks: amortises IGG's per-call floor across the
+# components and skips the scratch-buffer round-trip copies entirely.
+# Coarse multigrid `L` arrays also land here (via `BC!` on `restrictL!`
+# output), so component size routes to the per-size side-table like scalars.
+function _velocity_halo_igg!(u::Array{T,N}) where {T,N}
+    csize = size(u)[1:N-1]
+    sz3   = ntuple(d -> d <= N-1 ? csize[d] : 1, 3)
+    len   = prod(csize)
+    comps = [unsafe_wrap(Array, pointer(u, (c-1)*len + 1), sz3) for c in 1:size(u, N)]
+    if _is_fine_size(csize, _nd())
+        GC.@preserve u update_halo!(comps...; dims=_decomp_dims())
+    else
+        GC.@preserve u update_halo!(comps...; dims=_decomp_dims(),
+                                    active_global_grid=_coarse_grid(csize))
+    end
 end
 
-# Exchange each velocity component (last dim) through a scratch scalar buffer.
 function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
-    _has_neighbors() || return
-    sp  = ntuple(_ -> :, N-1)
-    tmp = _get_halo_buf(T, size(u)[1:N-1])
-    for d in 1:size(u, N)
-        copyto!(tmp, @view u[sp..., d])
-        _do_scalar_halo!(tmp)
-        copyto!(@view(u[sp..., d]), tmp)
+    _any_decomposed() || return
+    if u isa Array && _native_eltype(T)
+        _velocity_halo_igg!(u)
+    else  # Dual / Bool / non-contiguous: per-component scratch-buffer path
+        tmp = _get_halo_buf(T, size(u)[1:N-1])
+        for d in 1:size(u, N)
+            copyto!(tmp, @view u[.., d])
+            _do_scalar_halo!(tmp)
+            copyto!(@view(u[.., d]), tmp)
+        end
     end
 end
 
@@ -336,9 +359,22 @@ WaterLily._global_max(x::Dual, ::Parallel) = _dual_extremum(x, MPI.MAX)
 WaterLily._scalar_halo!(x, ::Parallel) = _do_scalar_halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel) = _do_velocity_halo!(u)
 
-# In parallel the halo handles periodicity, so `comm!` needs no `perBC!`.
-WaterLily._comm!(a, perdir, ::Parallel) = _do_scalar_halo!(a)
-WaterLily._velocity_comm!(a, perdir, ::Parallel) = _do_velocity_halo!(a)
+# Decomposed periodic dims wrap through the halo (IGG periodic topology);
+# non-decomposed ones wrap locally via `perBC!`, exactly as in serial.
+# `perBC!` runs first so the halo slabs carry the wrapped corner values.
+function WaterLily._comm!(a, perdir, ::Parallel)
+    WaterLily.perBC!(a, _local_perdir(perdir))
+    _do_scalar_halo!(a)
+end
+function WaterLily._velocity_comm!(a, perdir, ::Parallel)
+    lp = _local_perdir(perdir)
+    if !isempty(lp)
+        for i in 1:size(a, ndims(a))
+            WaterLily.perBC!(@view(a[.., i]), lp)
+        end
+    end
+    _do_velocity_halo!(a)
+end
 
 # Rank-internal faces are non-physical: `_BC!`/`_exitBC!` skip writes there
 # and the halo supplies neighbor data.
@@ -356,10 +392,9 @@ WaterLily._decomposed(j, ::Parallel) = j <= _nd() && _grid().dims[j] > 1
 # np=1 (even with periodic self-wrap neighbors) keep serial full depth —
 # there are no halo savings to offset a larger coarsest sweep.
 function WaterLily._mg_maxlevels(_dims, ::Parallel)
-    g  = _grid()
-    nd = _nd()
-    any(g.dims[d] > 1 for d in 1:nd) || return 10
-    max(2, floor(Int, log2(minimum(g.nxyz_g[1:nd]) / 12)))
+    _any_decomposed() || return 10
+    g = _grid()
+    max(2, floor(Int, log2(minimum(g.nxyz_g[1:_nd()]) / 8))) # / 8 tested on multiple problems
 end
 
 end # module WaterLilyMPIExt

@@ -129,8 +129,9 @@ elseif ROLE == "unit"
             g = ImplicitGlobalGrid.global_grid()
             @test ext._grid() === g
             @test ext._nd() == sum(g.nxyz .> 1)
-            @test ext._has_neighbors() ==
-                  any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:ext._nd())
+            @test ext._any_decomposed() == any(g.dims[d] > 1 for d in 1:ext._nd())
+            @test ext._decomp_dims() ==
+                  filter(d -> g.dims[d] > 1, ntuple(identity, ext._nd()))
         end
 
         @testset "global reductions" begin
