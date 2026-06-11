@@ -1,23 +1,13 @@
 """
-WaterLilyMPIExt — Julia package extension
-==========================================
-Activated automatically when ImplicitGlobalGrid and MPI are loaded alongside
-WaterLily.  Provides MPI-aware overrides for global reductions, halo exchange,
-and boundary conditions at MPI-subdomain interfaces.
+WaterLilyMPIExt — activated when ImplicitGlobalGrid and MPI are loaded with
+WaterLily. Adds `Parallel <: AbstractParMode` methods for the `par_mode[]`
+dispatch hooks (reductions, halo exchange, BC gates) — new methods only, no
+overwriting, so precompilation works.
 
-Uses the `AbstractParMode` dispatch pattern: serial WaterLily dispatches all
-hooks through `par_mode[]` (defaults to `Serial()`).  This extension defines
-`Parallel <: AbstractParMode` and adds new dispatch methods — no method
-overwriting, so precompilation works normally.
-
-Functions with MPI-specific behavior (via dispatch on `::Parallel`):
-  _phys_left/right — mark rank-internal faces non-physical so `_BC!` and
-                     `_exitBC!` skip writes there (halo handles them)
-  _decomposed      — true for MPI-split dims; filters `effective_perdir`
-
-Halo exchange uses a cached `_has_neighbors` flag to skip all exchange
-when no MPI neighbors exist (e.g. np=1 non-periodic), eliminating the
-overhead of IGG's `update_halo!` and buffer copies in that case.
+Topology queries read IGG's `global_grid()` directly (single source of truth;
+costs a few ns, invisible under the ~50 ns `par_mode[]` dynamic dispatch).
+The only stored state is genuine caches: per-size coarse `GlobalGrid`s and
+pre-allocated MPI buffers.
 """
 module WaterLilyMPIExt
 
@@ -41,49 +31,39 @@ WaterLily._mpi_rank(p::Parallel)   = p.rank
 WaterLily._mpi_comm(p::Parallel)   = p.comm
 WaterLily._mpi_nprocs(p::Parallel) = MPI.Comm_size(p.comm)
 
+# ── Live-grid accessors ──────────────────────────────────────────────────────
+# `par_mode[] isa Parallel` implies `init_waterlily_mpi` ran, so the grid is
+# initialized; after `finalize_global_grid()` these fail loudly via IGG's
+# initialization check rather than serving stale topology.
+
+const _grid = ImplicitGlobalGrid.global_grid           # the active GlobalGrid
+
+_nd() = count(>(1), _grid().nxyz)                      # active spatial dims
+
+_has_neighbors() =                                     # false ⇒ halo is a no-op
+    (g = _grid(); any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:_nd()))
+
 # ── Global coordinate offset ──────────────────────────────────────────────────
 
-"""
-    _global_offset(Val(N), T, ::Parallel) → SVector{N,T}
-
-Rank-local origin in global WaterLily index space.
-  offset[d] = coords[d] * (nxyz[d] - overlaps[d])  =  coords[d] * nx_loc
-"""
+# Rank-local origin in global index space: offset[d] = coords[d] * nx_loc.
 function WaterLily._global_offset(::Val{N}, ::Type{T}, ::Parallel) where {N,T}
-    g = ImplicitGlobalGrid.global_grid()
+    g = _grid()
     SVector{N,T}(ntuple(d -> T(g.coords[d] * (g.nxyz[d] - g.overlaps[d])), N))
 end
 
-# MPI-aware @loop auto-offset: returns SVector sized for the active spatial dims.
-# Default path keeps T so Float32/Float64 and ForwardDiff.Dual offsets carry
-# correct precision / AD tags. Bool arrays (e.g. flood-fill scratch in
-# downstream packages) can't hold the integer rank offset — divert to Float32.
+# @loop auto-offset. Keeps T so Float32/Float64/Dual offsets carry correct
+# precision / AD tags; Bool arrays can't hold the offset — divert to Float32.
 WaterLily._loop_offset(::Type{T}, p::Parallel) where T =
-    WaterLily._global_offset(Val(_ndims_active()), T, p)
+    WaterLily._global_offset(Val(_nd()), T, p)
 WaterLily._loop_offset(::Type{Bool}, p::Parallel) =
-    WaterLily._global_offset(Val(_ndims_active()), Float32, p)
+    WaterLily._global_offset(Val(_nd()), Float32, p)
 
 # ── MPI initialization ───────────────────────────────────────────────────────
 
-"""
-    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
-
-Initialize MPI domain decomposition for WaterLily.
-
-1. Determines the optimal MPI topology via `MPI.Dims_create`
-2. Computes local subdomain dimensions (`global_dims .÷ topology`)
-3. Initializes ImplicitGlobalGrid with the correct overlaps and halowidths
-4. Sets `par_mode[] = Parallel(comm)` for dispatch-based MPI hooks
-
-Returns `(local_dims::NTuple{N,Int}, rank::Int, comm::MPI.Comm)`.
-"""
-# Pick the MPI rank layout that minimises the halo-exchange surface seen by
-# one rank — sum over d of (product of local_dims[k] for k ≠ d) — subject to
-# prod(topo) == nprocs and topo[d] dividing global_dims[d]. Seed with
-# `MPI.Dims_create`'s balanced layout so it wins ties (preserves MPI's
-# default on isotropic grids). `Dims_create` is only suboptimal on strongly
-# asymmetric grids (e.g. 1024×64 / np=8 → (4,2) but (8,1) has 33% less
-# halo surface).
+# Rank layout minimising the per-rank halo surface Σ_d ∏_{k≠d} local[k], with
+# topo[d] dividing global_dims[d]. Seeded by `MPI.Dims_create`, which wins
+# ties but is suboptimal on anisotropic grids (1024×64 np=8: (8,1) beats its
+# (4,2) by 33% less surface).
 function _shape_aware_topology(global_dims::NTuple{N,Int}, nprocs::Int) where N
     best_topo = Tuple(Int.(MPI.Dims_create(nprocs, zeros(Int, N))))
     best_score = if all(global_dims[d] % best_topo[d] == 0 for d in 1:N)
@@ -91,7 +71,7 @@ function _shape_aware_topology(global_dims::NTuple{N,Int}, nprocs::Int) where N
     else
         typemax(Int)
     end
-    # enumerate all N-tuples of positive divisors whose product is nprocs
+    # all N-tuples of divisors with product == nprocs
     function visit(remaining::Int, partial::Tuple)
         if length(partial) == N - 1
             topo = (partial..., remaining)
@@ -112,6 +92,7 @@ function _shape_aware_topology(global_dims::NTuple{N,Int}, nprocs::Int) where N
         error("No valid MPI topology for global_dims=$global_dims with nprocs=$nprocs")
     return best_topo
 end
+
 @inline function _halo_surface(global_dims::NTuple{N,Int}, topo::NTuple{N,Int}) where N
     s = 0
     local_dims = ntuple(d -> global_dims[d] ÷ topo[d], N)
@@ -126,21 +107,24 @@ end
     return s
 end
 
+"""
+    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
+
+Initialize MPI domain decomposition: picks the rank topology
+(`_shape_aware_topology`), initializes ImplicitGlobalGrid, and sets
+`par_mode[] = Parallel(comm, rank)`.
+"""
 function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     MPI.Initialized() || MPI.Init()
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
 
-    # Shape-aware topology: minimize halo surface (vs `MPI.Dims_create` which
-    # only balances factor sizes — suboptimal on highly anisotropic grids).
-    mpi_dims = _shape_aware_topology(global_dims, nprocs)
-
-    # Local interior dims
+    mpi_dims   = _shape_aware_topology(global_dims, nprocs)
     local_dims = global_dims .÷ mpi_dims
     all(global_dims .== local_dims .* mpi_dims) ||
         error("Global dims $global_dims not evenly divisible by MPI topology " *
               "$mpi_dims with $nprocs ranks")
 
-    # Pad to 3D for IGG (which always expects 3 dimensions)
+    # IGG always expects 3 dimensions — pad
     igg_local = ntuple(d -> d <= N ? local_dims[d] + 2 : 1, 3)
     igg_mpi   = ntuple(d -> d <= N ? mpi_dims[d] : 1, 3)
     igg_per   = ntuple(d -> d <= N && d in perdir ? 1 : 0, 3)
@@ -155,7 +139,8 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     )
 
     WaterLily.par_mode[] = Parallel(comm, Int(me))
-    _init_has_neighbors!()
+    # Drop per-size caches from any previous grid (re-init in the same session)
+    foreach(empty!, (_coarse_grids, _mpi_bufs, _halo_bufs))
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -168,52 +153,71 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     return local_dims, me, comm
 end
 
-# ── Dimension helpers ─────────────────────────────────────────────────────────
+# ── Per-size GlobalGrid side-table (coarse multigrid arrays) ─────────────────
+# IGG ≥ 0.17: `create_global_grid` builds a `GlobalGrid` without side effects;
+# `update_halo!(arr; active_global_grid=gg)` swaps to it for one call. One
+# grid per rank-local coarse size (same topology / periods / overlaps as the
+# fine grid), shared by all `MultiLevelPoisson`s in the process.
 
-# Number of active spatial dimensions (nxyz > 1) in the IGG grid.
-_ndims_active() = sum(ImplicitGlobalGrid.global_grid().nxyz .> 1)
+const _coarse_grids = Dict{Tuple, ImplicitGlobalGrid.GlobalGrid}()
 
-# True if any MPI neighbor exists in any active dimension (cached after init).
-const _has_neighbors = Ref(false)
-function _init_has_neighbors!()
-    g = ImplicitGlobalGrid.global_grid()
-    nd = _ndims_active()
-    _has_neighbors[] = any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:nd)
+function _create_coarse_grid(arr_size::Tuple)
+    g    = _grid()
+    nxyz = ntuple(d -> d <= _nd() ? arr_size[d] : 1, 3)
+    ImplicitGlobalGrid.create_global_grid(
+        nxyz...;
+        dimx       = g.dims[1],    dimy    = g.dims[2],    dimz    = g.dims[3],
+        periodx    = g.periods[1], periody = g.periods[2], periodz = g.periods[3],
+        overlaps   = Tuple(g.overlaps),
+        halowidths = Tuple(g.halowidths),
+        comm       = MPI.COMM_WORLD,   # IGG re-runs Cart_create internally
+        quiet      = true,
+    )
 end
 
-# ── Scalar halo exchange (fine grid — via IGG) ───────────────────────────────
+@inline _coarse_grid(arr_size::Tuple) =
+    get!(() -> _create_coarse_grid(arr_size), _coarse_grids, arr_size)
+
+@inline function _is_fine_size(sz::Tuple, nd::Int)
+    nxyz = _grid().nxyz
+    @inbounds for d in 1:nd
+        sz[d] != nxyz[d] && return false
+    end
+    return true
+end
+
+# Test / introspection API — the grid `update_halo!` resolves for `arr_size`.
+@inline _grid_for(arr_size::Tuple) =
+    _is_fine_size(arr_size, _nd()) ? _grid() : _coarse_grid(arr_size)
+
+# ── Scalar halo exchange (native eltypes — via IGG) ──────────────────────────
+# Fine-sized arrays skip the Dict lookup AND the `active_global_grid=` kwarg,
+# so IGG's activate/restore dance never fires on the most-called path.
 
 function _scalar_halo_igg!(arr::AbstractArray)
-    nd = _ndims_active()
-    if ndims(arr) < 3
-        arr3d = reshape(arr, size(arr)..., ntuple(_->1, 3-ndims(arr))...)
+    nd = _nd()
+    arr3d = ndims(arr) < 3 ?
+            reshape(arr, size(arr)..., ntuple(_ -> 1, 3 - ndims(arr))...) : arr
+    if _is_fine_size(size(arr), nd)
         update_halo!(arr3d; dims=ntuple(identity, nd))
     else
-        update_halo!(arr; dims=ntuple(identity, nd))
+        update_halo!(arr3d; dims=ntuple(identity, nd),
+                     active_global_grid=_coarse_grid(size(arr)))
     end
 end
 
-# ── Direct MPI halo exchange (any array size) ────────────────────────────────
-#
-# IGG pre-allocates MPI send/recv buffers sized for the registered fine grid.
-# Calling update_halo! on coarse multigrid arrays produces garbage.  This
-# function performs a direct MPI halo exchange using Isend/Irecv! with freshly
-# allocated buffers sized for the actual array.  It exchanges 2-cell-wide
-# slabs in each active spatial dimension.
+# ── Direct MPI halo exchange (Dual / Bool eltypes) ───────────────────────────
+# IGG's `update_halo!` rejects non-primitive eltypes (its `GGNumber` union),
+# so `ForwardDiff.Dual` and `Bool` arrays take this manual `Sendrecv!` shift:
+# 1-cell slabs per active dim, pre-allocated per-(eltype, shape, dim) buffers.
 
-# Pre-allocated MPI send/recv buffers keyed by (eltype, slab_shape, dim_tag).
-# Explicit `haskey`/`getindex` path avoids the `get!` closure allocation on
-# the cache-hit path (Julia's compiler doesn't reliably elide the `do ... end`
-# block).
 const _mpi_bufs = Dict{Tuple, NTuple{4,Array}}()
 
 @inline function _get_mpi_bufs(::Type{T}, slab_shape::Tuple, dim::Int) where T
-    key = (T, slab_shape, dim)
-    @inbounds haskey(_mpi_bufs, key) && return _mpi_bufs[key]::NTuple{4,Array{T}}
-    bufs = (zeros(T, slab_shape), zeros(T, slab_shape),
-            zeros(T, slab_shape), zeros(T, slab_shape))
-    _mpi_bufs[key] = bufs
-    return bufs
+    key  = (T, slab_shape, dim)
+    bufs = get(_mpi_bufs, key, nothing)   # single lookup; `get!` do-block allocates
+    bufs === nothing || return bufs::NTuple{4,Array{T}}
+    _mpi_bufs[key] = ntuple(_ -> zeros(T, slab_shape), 4)
 end
 
 function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
@@ -222,39 +226,31 @@ function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
 end
 
 function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
-    g    = ImplicitGlobalGrid.global_grid()
-    nd   = _ndims_active()
+    g    = _grid()
     N    = size(arr)
     comm = _comm()
-    for dim in 1:nd
+    for dim in 1:_nd()
         nleft  = g.neighbors[1, dim]
         nright = g.neighbors[2, dim]
         (nleft < 0 && nright < 0) && continue
 
-        # halowidth=1: 1-cell-wide slabs
         slab_shape = ntuple(i -> i == dim ? 1 : N[i], ndims(arr))
         send_left, recv_left, send_right, recv_right = _get_mpi_bufs(T, slab_shape, dim)
 
-        # Pack send buffers: first/last interior cells (index 2 and N-1)
+        # pack first/last interior cells (index 2 and N-1)
         copyto!(send_left,  _slab(arr, dim, 2:2))
         copyto!(send_right, _slab(arr, dim, N[dim]-1:N[dim]-1))
 
-        # Classical halo exchange "shift" pattern: two paired Sendrecv per dim.
-        #   Shift-right: every rank sends to its right neighbour and receives
-        #                from its left neighbour — fills our left ghost.
-        #   Shift-left:  sends to left, receives from right — fills right ghost.
-        # Using `nleft`/`nright` directly as `dest`/`source`; when a rank has
-        # no neighbor on a side, the value is already `MPI.PROC_NULL` (-2) and
-        # that slot becomes a no-op. Handles 2-rank self-wrap correctly without
-        # deadlock (unlike "both sides send to same neighbor" tag schemes).
-        # For Dual eltype, `_wire_view` aliases the buffer to its flat V storage
-        # so MPI sees a native datatype.
+        # Classical shift pattern: send right / recv left, then the reverse.
+        # Missing neighbors are already `MPI.PROC_NULL` (no-op slots), and the
+        # pairing handles 2-rank periodic self-wrap without deadlock. For Dual,
+        # `_wire_view` aliases buffers to flat V storage so MPI sees a native type.
         sR, rL = _wire_view(send_right), _wire_view(recv_left)
         sL, rR = _wire_view(send_left),  _wire_view(recv_right)
         MPI.Sendrecv!(sR, nright, dim*10,    rL, nleft,  dim*10,   comm, nothing)
         MPI.Sendrecv!(sL, nleft,  dim*10+1,  rR, nright, dim*10+1, comm, nothing)
 
-        # Unpack recv buffers into ghost cells (index 1 and N)
+        # unpack into ghost cells (index 1 and N)
         nleft  >= 0 && copyto!(_slab(arr, dim, 1:1),            recv_left)
         nright >= 0 && copyto!(_slab(arr, dim, N[dim]:N[dim]),  recv_right)
     end
@@ -262,30 +258,16 @@ end
 
 # ── Unified scalar halo exchange ─────────────────────────────────────────────
 
-function _is_fine(arr::AbstractArray)
-    g  = ImplicitGlobalGrid.global_grid()
-    nd = _ndims_active()
-    size(arr)[1:nd] == Tuple(g.nxyz[1:nd])
-end
-
 @inline _wire_view(arr::Array) = arr
 @inline _wire_view(arr::Array{<:Dual}) = _dual_view(arr)
 
-# IGG's pre-allocated buffers are typed for the simulation eltype (Float32 /
-# Float64), so any other eltype must take the manual MPI shift path even at
-# fine-grid sizes — this includes ForwardDiff.Dual (AD) and Bool (used by
-# downstream packages, e.g. WaterLilyMeshBodies's flood-fill scratch).
 @inline _native_eltype(::Type{<:Dual}) = false
 @inline _native_eltype(::Type{Bool})   = false
-@inline _native_eltype(::Type) = true
+@inline _native_eltype(::Type)         = true
 
 function _do_scalar_halo!(arr::AbstractArray)
-    _has_neighbors[] || return
-    if _native_eltype(eltype(arr)) && _is_fine(arr)
-        _scalar_halo_igg!(arr)   # pre-allocated IGG buffers — fast path
-    else
-        _scalar_halo_mpi!(arr)   # custom: coarse / Dual arrays
-    end
+    _has_neighbors() || return
+    _native_eltype(eltype(arr)) ? _scalar_halo_igg!(arr) : _scalar_halo_mpi!(arr)
 end
 
 # ── Vector (velocity-shaped) halo exchange ────────────────────────────────────
@@ -296,13 +278,12 @@ function _get_halo_buf(::Type{T}, dims::NTuple{N,Int}) where {T,N}
     get!(() -> Array{T}(undef, dims), _halo_bufs, (T, dims))
 end
 
+# Exchange each velocity component (last dim) through a scratch scalar buffer.
 function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
-    _has_neighbors[] || return
-    D   = size(u, N)                    # number of components (last dim)
-    sp  = ntuple(_ -> :, N-1)           # all spatial dims as Colons
-    sdims = size(u)[1:N-1]              # spatial dimensions
-    tmp = _get_halo_buf(T, sdims)       # single pre-allocated buffer
-    for d in 1:D
+    _has_neighbors() || return
+    sp  = ntuple(_ -> :, N-1)
+    tmp = _get_halo_buf(T, size(u)[1:N-1])
+    for d in 1:size(u, N)
         copyto!(tmp, @view u[sp..., d])
         _do_scalar_halo!(tmp)
         copyto!(@view(u[sp..., d]), tmp)
@@ -310,27 +291,26 @@ function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
 end
 
 # ── ForwardDiff.Dual support ─────────────────────────────────────────────────
-# `Dual{T,V,N}` is `isbits` with memory layout [value, partial₁, …, partialₙ]
-# of `V`. MPI doesn't know how to reduce/transmit Dual, so we reinterpret to
-# `V` for the wire and reconstruct on receive. SUM is element-wise on the flat
-# view (derivative is linear). MIN/MAX pick the rank holding the global
-# extremum value, then broadcast its full Dual.
+# `Dual{T,V,N}` is `isbits` with layout [value, partial₁, …, partialₙ] of `V`.
+# Reinterpret to flat `V` for the wire, reconstruct on receive. SUM is
+# element-wise on the flat view (derivative is linear); MIN/MAX are not —
+# the partials of the extremum aren't the extrema of the partials.
 
 @inline _dual_flat(x::Dual{T,V,N}) where {T,V,N} = V[value(x); partials(x).values...]
 @inline _dual_unflat(::Type{Dual{T,V,N}}, f::AbstractVector{V}) where {T,V,N} =
     Dual{T,V,N}(f[1], Partials{N,V}(NTuple{N,V}(@view f[2:end])))
 
-# Flat-V alias of a contiguous Dual array. Same storage; no copy.
+# Zero-copy flat-V alias of a contiguous Dual array. Callers must keep the
+# parent rooted (GC.@preserve) for the lifetime of the view.
 @inline function _dual_view(arr::Array{D}) where {Tg,V,N,D<:Dual{Tg,V,N}}
     unsafe_wrap(Array, Ptr{V}(pointer(arr)), length(arr) * (N + 1))
 end
 
-# Scalar SUM (linear: reduce flat representation element-wise).
 _dual_sum(x::Dual{T,V,N}) where {T,V,N} =
     (f = _dual_flat(x); MPI.Allreduce!(f, MPI.SUM, _comm()); _dual_unflat(Dual{T,V,N}, f))
 
-# Scalar MIN/MAX (non-linear): pick the rank holding the global extremum value
-# and broadcast its full Dual.
+# MIN/MAX: Allgather the values, find the rank holding the global extremum,
+# Bcast its full Dual (value + partials).
 function _dual_extremum(x::Dual{T,V,N}, op) where {T,V,N}
     comm = _comm()
     vals = MPI.Allgather(value(x), comm)
@@ -339,11 +319,10 @@ function _dual_extremum(x::Dual{T,V,N}, op) where {T,V,N}
     MPI.Bcast!(f, root, comm); _dual_unflat(Dual{T,V,N}, f)
 end
 
-# Array SUM. Aliasing flat-V buffer so the in-place Allreduce result lands back
-# in the original Dual array.
 function _dual_arr_sum(x::AbstractArray{<:Dual})
     arr = x isa Array ? x : Array(x)
-    MPI.Allreduce!(_dual_view(arr), MPI.SUM, _comm()); arr
+    GC.@preserve arr MPI.Allreduce!(_dual_view(arr), MPI.SUM, _comm())
+    return arr
 end
 
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
@@ -357,24 +336,30 @@ WaterLily._global_max(x::Dual, ::Parallel) = _dual_extremum(x, MPI.MAX)
 WaterLily._scalar_halo!(x, ::Parallel) = _do_scalar_halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel) = _do_velocity_halo!(u)
 
-# Communication hooks: in parallel, MPI halo handles periodicity
+# In parallel the halo handles periodicity, so `comm!` needs no `perBC!`.
 WaterLily._comm!(a, perdir, ::Parallel) = _do_scalar_halo!(a)
 WaterLily._velocity_comm!(a, perdir, ::Parallel) = _do_velocity_halo!(a)
 
-# ── Physical-boundary hooks ─────────────────────────────────────────────────
-# Rank-internal boundaries return `false`, so the unified `_BC!` skips the
-# Dirichlet/Neumann writes there and lets halo exchange supply neighbor data.
-WaterLily._phys_left(j,  ::Parallel) = ImplicitGlobalGrid.global_grid().neighbors[1, j] < 0
-WaterLily._phys_right(j, ::Parallel) = ImplicitGlobalGrid.global_grid().neighbors[2, j] < 0
+# Rank-internal faces are non-physical: `_BC!`/`_exitBC!` skip writes there
+# and the halo supplies neighbor data.
+WaterLily._phys_left(j,  ::Parallel) = _grid().neighbors[1, j] < 0
+WaterLily._phys_right(j, ::Parallel) = _grid().neighbors[2, j] < 0
 
-# ── Decomposed-direction hook ─────────────────────────────────────────────────
-# Used by `effective_perdir` to filter out MPI-decomposed periodic dims:
-# conv_diff!'s `ϕuP(j, CIj(j,I,N[j]-2), …)` wraps within the local array,
-# which is wrong when the periodic partner lives on a remote rank and
-# halowidth=1 can't supply the 2-cell QUICK stencil. Filtered dirs route
-# through the `Val{false}` non-periodic stencil whose 1 ghost cell is
-# correctly filled by the halo's periodic wrap.
-WaterLily._decomposed(j, ::Parallel) =
-    j <= _ndims_active() && ImplicitGlobalGrid.global_grid().dims[j] > 1
+# `effective_perdir` filter: conv_diff!'s periodic stencil `ϕuP` wraps within
+# the local array — wrong when the periodic partner is on a remote rank and
+# halowidth=1 can't supply its 2-cell stencil. Decomposed dims route to the
+# `Val{false}` stencil, whose 1 ghost cell the halo's periodic wrap fills.
+WaterLily._decomposed(j, ::Parallel) = j <= _nd() && _grid().dims[j] > 1
+
+# MG depth heuristic: when actually decomposed, cap coarsening where the
+# ~20 μs/call IGG halo floor stops being amortised by smoother work. At
+# np=1 (even with periodic self-wrap neighbors) keep serial full depth —
+# there are no halo savings to offset a larger coarsest sweep.
+function WaterLily._mg_maxlevels(_dims, ::Parallel)
+    g  = _grid()
+    nd = _nd()
+    any(g.dims[d] > 1 for d in 1:nd) || return 10
+    max(2, floor(Int, log2(minimum(g.nxyz_g[1:nd]) / 12)))
+end
 
 end # module WaterLilyMPIExt

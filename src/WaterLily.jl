@@ -34,7 +34,7 @@ Initialize MPI domain decomposition for WaterLily.  Implemented by `WaterLilyMPI
 """
 function init_waterlily_mpi end
 
-export global_offset, init_waterlily_mpi, mpi_rank, mpi_comm, mpi_nprocs, @distributed
+export global_offset, init_waterlily_mpi, mpi_rank, mpi_comm, mpi_nprocs, mg_maxlevels, @distributed
 
 include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
@@ -66,7 +66,8 @@ export RigidMap,setmap
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array,
                flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
-               pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
+               pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;
+                   maxlevels=mg_maxlevels(dims),perdir))
 
 Constructor for a WaterLily.jl simulation:
 
@@ -106,7 +107,8 @@ mutable struct Simulation <: AbstractSimulation
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
-                        pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
+                        pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;
+                            maxlevels=mg_maxlevels(dims),perdir),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         check_mem(mem)

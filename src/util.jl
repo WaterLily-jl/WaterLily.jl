@@ -310,6 +310,18 @@ _mpi_comm(::Serial)   = nothing
 _mpi_nprocs(::Serial) = 1
 
 """
+    mg_maxlevels(dims) → Int
+
+Default cap on the number of geometric-multigrid levels for a Poisson solver
+on a domain of size `dims`. Returns `10` (effectively unlimited) in serial —
+`divisible(::Poisson)` truncates as deep as it can — and a topology-aware cap
+under MPI, where each coarse level adds a halo-exchange call whose fixed
+~20 μs cost stops amortising on very small slabs.
+"""
+mg_maxlevels(dims)            = _mg_maxlevels(dims, par_mode[])
+_mg_maxlevels(dims, ::Serial) = 10
+
+"""
     @distributed Simulation(dims, uBC, L; kwargs...)
     @distributed sim = Simulation(dims, uBC, L; kwargs...)
 

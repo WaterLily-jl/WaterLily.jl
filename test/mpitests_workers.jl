@@ -125,6 +125,14 @@ elseif ROLE == "unit"
             @test mpi_comm() == comm
         end
 
+        @testset "live-grid accessors" begin
+            g = ImplicitGlobalGrid.global_grid()
+            @test ext._grid() === g
+            @test ext._nd() == sum(g.nxyz .> 1)
+            @test ext._has_neighbors() ==
+                  any(g.neighbors[s, d] >= 0 for s in 1:2, d in 1:ext._nd())
+        end
+
         @testset "global reductions" begin
             # Σ rank = np*(np-1)/2
             @test WaterLily.global_allreduce(me) == np*(np-1)÷2
@@ -159,6 +167,47 @@ elseif ROLE == "unit"
                     @test all(rslice .== T(-1))
                 end
             end
+        end
+
+        @testset "coarse halo: IGG side-table ≡ custom Sendrecv" begin
+            # Coarse-sized array (second multigrid restriction of the fine 64×32
+            # local: Na = 1 + (N+2)÷2 applied twice → (34,18) → (18,10)).
+            # IGG's per-size GlobalGrid cache must produce the same ghost values
+            # as the manual _scalar_halo_mpi! shift loop.
+            coarse_size = (18, 10)
+            seed(rank, lvl) = T(100 * (rank + 1) + lvl)
+            arr_igg = fill(T(-1), coarse_size)
+            arr_mpi = fill(T(-1), coarse_size)
+            arr_igg[2:end-1, 2:end-1] .= seed(me, 1)
+            arr_mpi[2:end-1, 2:end-1] .= seed(me, 1)
+
+            # IGG path (uses _grid_for to look up a coarse GlobalGrid)
+            WaterLily.scalar_halo!(arr_igg)
+            # Custom path
+            ext._scalar_halo_mpi!(arr_mpi)
+
+            @test arr_igg == arr_mpi
+        end
+
+        @testset "_grid_for: cache reuse + fine-grid shortcut" begin
+            g = ImplicitGlobalGrid.global_grid()
+            nd = ext._nd()
+            # Fine-size lookup returns the active grid (zero-copy, no cache entry).
+            fine_size = Tuple(g.nxyz[1:nd])
+            @test ext._grid_for(fine_size) === g
+
+            # Coarse size: cache hit on second call returns the same struct.
+            coarse_size = (18, 10)
+            gg1 = ext._grid_for(coarse_size)
+            gg2 = ext._grid_for(coarse_size)
+            @test gg1 === gg2
+            @test gg1 !== g
+            # Coarse grid inherits the fine grid's topology / periods / overlaps.
+            @test gg1.dims[1:nd]    == g.dims[1:nd]
+            @test gg1.periods[1:nd] == g.periods[1:nd]
+            @test Tuple(gg1.overlaps)   == Tuple(g.overlaps)
+            @test Tuple(gg1.halowidths) == Tuple(g.halowidths)
+            @test Tuple(gg1.nxyz[1:nd]) == coarse_size
         end
 
         @testset "global_offset + @loop coords" begin
