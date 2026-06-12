@@ -72,15 +72,18 @@ Compute ``∥𝛚∥`` at the center of cell `I`.
 """
 ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
 """
-    ω_θ(I::CartesianIndex{3},z,center,u)
+    ω_θ(I::CartesianIndex{3}, z, center, u, offset=zero(SVector{3,eltype(u)}))
 
 Compute ``𝛚⋅𝛉`` at the center of cell `I` where ``𝛉`` is the azimuth
-direction around vector `z` passing through `center`.
+direction around vector `z` passing through `center`.  Pass `offset` to
+map rank-local indices to global coordinates in MPI parallel.
+All arguments are GPU-capturable (arrays and value types).
 """
-function ω_θ(I::CartesianIndex{3},z,center,u)
-    θ = z × (loc(0,I,eltype(u))-SVector{3}(center))
+function ω_θ(I::CartesianIndex{3},z,center,u,offset=zero(SVector{3,eltype(u)}))
+    T = eltype(u)
+    θ = z × (loc(0,I,T)+offset-SVector{3}(center))
     n = norm2(θ)
-    n<=eps(n) ? 0. : θ'*ω(I,u) / n
+    n<=eps(n) ? 0 : θ'*ω(I,u) / n
 end
 
 """
@@ -97,6 +100,8 @@ end
     pressure_force(sim::Simulation)
 
 Compute the pressure force on an immersed body.
+MPI-aware: each rank computes its local contribution, then
+`global_allreduce` sums across ranks.
 """
 pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
@@ -104,7 +109,7 @@ function pressure_force(p,df,body,t=0)
     Tp = eltype(p); To = promote_type(Float64,Tp)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*nds(body,loc(0,I,Tp),t) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    global_allreduce(sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array)
 end
 
 """
@@ -119,6 +124,8 @@ S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 
     viscous_force(sim::Simulation)
 
 Compute the viscous force on an immersed body.
+MPI-aware: each rank computes its local contribution, then
+`global_allreduce` sums across ranks.
 """
 viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
@@ -126,7 +133,7 @@ function viscous_force(u,ν,df,body,t=0)
     Tu = eltype(u); To = promote_type(Float64,Tu)
     df .= zero(Tu)
     @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
-    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    global_allreduce(sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array)
 end
 
 """
@@ -138,17 +145,20 @@ total_force(sim) = pressure_force(sim) .+ viscous_force(sim)
 
 using LinearAlgebra: cross
 """
-    pressure_moment(x₀,sim::Simulation)
+    pressure_moment(x₀, sim::Simulation)
 
-Computes the pressure moment on an immersed body relative to point x₀.
+Compute the pressure moment on an immersed body relative to point `x₀`.
+MPI-aware: each rank computes its local contribution, then
+`global_allreduce` sums across ranks.  The `@loop` macro auto-injects the
+rank-local offset into `loc(...)` so coordinates are global.
 """
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
-pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
-function pressure_moment(x₀,p,df,body,t=0)
+pressure_moment(x₀,flow::Flow,body,t=time(flow)) = pressure_moment(x₀,flow.p,flow.f,body,t)
+function pressure_moment(x₀,p,df,body,t)
     Tp = eltype(p); To = promote_type(Float64,Tp)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    global_allreduce(sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array)
 end
 
 """

@@ -16,3 +16,9 @@ end
 
 arrays = setup_backends()
 Threads.nthreads() > 1 ? include("maintests.jl") : include("alloctest.jl")
+
+# MPI tests run as a separate testset that spawns child processes via mpiexec.
+# Skipped on Windows (no system MPI in CI matrix) and via WATERLILY_SKIP_MPI=1.
+if Sys.isunix() && get(ENV, "WATERLILY_SKIP_MPI", "0") != "1"
+    include("mpitests.jl")
+end

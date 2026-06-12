@@ -1,5 +1,21 @@
+"""
+    up(I, a=0)
+
+Return the fine-grid `CartesianIndices` range that maps to coarse cell `I`.
+When `a≠0`, the range is shifted by `-δ(a,I)` for staggered (face) restriction.
+"""
 @inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
+"""
+    down(I)
+
+Map fine-grid index `I` to the corresponding coarse-grid index.
+"""
 @inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
+"""
+    restrict(I, b)
+
+Sum the fine-grid scalar values in `b` that map to coarse cell `I`.
+"""
 @fastmath @inline function restrict(I::CartesianIndex,b)
     s = zero(eltype(b))
     for J ∈ up(I)
@@ -7,6 +23,12 @@
     end
     return s
 end
+"""
+    restrictL(I, i, b)
+
+Restrict the Poisson lower diagonal `b` in dimension `i` from the fine grid
+to coarse cell `I`, averaging the two fine-grid face values.
+"""
 @fastmath @inline function restrictL(I::CartesianIndex,i,b)
     s = zero(eltype(b))
     for J ∈ up(I,i)
@@ -15,6 +37,12 @@ end
     return 0.5s
 end
 
+"""
+    restrictML(b::Poisson)
+
+Build a new coarse-level `Poisson` from fine-level `b` by restricting the
+lower diagonal `L` and allocating matching solution/residual arrays.
+"""
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
     Na = map(i->1+i÷2,N)
@@ -23,6 +51,12 @@ function restrictML(b::Poisson)
     restrictL!(aL,b.L,perdir=b.perdir)
     Poisson(ax,aL,copy(ax);b.perdir)
 end
+"""
+    restrictL!(a, b; perdir=())
+
+Restrict the fine-grid lower diagonal `b` into coarse-grid `a`, then apply
+`BC!` to zero the normal component at boundary faces.
+"""
 function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
@@ -33,13 +67,13 @@ end
 restrict!(a,b) = @inside a[I] = restrict(I,b)
 prolongate!(a,b) = @inside a[I] = b[down(I)]
 
-@inline divisible(N) = mod(N,2)==0 && N>4
 @inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
+
 """
-    MultiLevelPoisson{N,M}
+    MultiLevelPoisson{T,S,V}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
-The only variable is `levels`, a vector of nested `Poisson` systems.
+The main field is `levels`, a vector of nested `Poisson` systems from fine to coarse.
 """
 struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     x::S
@@ -55,6 +89,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
+        # N>6 divisibility keeps coarsest interior ≥ 2x2 — no perturbation needed
         new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
@@ -66,6 +101,11 @@ function update!(ml::MultiLevelPoisson)
         update!(ml.levels[l])
     end
 end
+
+mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
+residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+
+smooth! = GaussSeidelRB!
 
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
@@ -81,18 +121,20 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     increment!(fine; ω)
 end
 
-mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
-residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+"""
+    solver!(ml::MultiLevelPoisson; tol=1e-4, itmx=32)
 
-smooth! = GaussSeidelRB!
-
+Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until the
+`L₂`-norm residual drops below `tol`.  Ends with `pin_pressure!` + `comm!`
+to remove the null-space mode and synchronize halos.
+"""
 function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω); 
+        smooth!(p; ω);
         rnew = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
         if     rnew ≥ r₂
@@ -103,6 +145,6 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
         r₂ = rnew
         r₂<tol && break
     end
-    perBC!(p.x,p.perdir)
+    pin_pressure!(p); comm!(p.x,p.perdir)
     push!(ml.n,nᵖ);
 end
