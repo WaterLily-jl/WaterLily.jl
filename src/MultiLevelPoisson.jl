@@ -130,6 +130,9 @@ to remove the null-space mode and synchronize halos.
 """
 function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     p = ml.levels[1]
+    # EXPERIMENT (tol-percell): per-cell mean-square criterion, anchored so a
+    # 64^3 interior (62^3 cells) reproduces the absolute tol=1e-4 default.
+    tol = T(tol*p.inslen/238328)
     residual!(p); r₂ = L₂(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx

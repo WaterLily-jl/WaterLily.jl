@@ -212,6 +212,7 @@ Ends with `pin_pressure!` (remove null-space mean) and `comm!`
 (halo sync) so the solution is ready for use in `project!`.
 """
 function solver!(p::Poisson;tol=1e-4,itmx=1e3)
+    tol = eltype(p.r)(tol*p.inslen/238328)  # EXPERIMENT (tol-percell): see MultiLevelPoisson.solver!
     residual!(p); r₂ = L₂(p)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
     while nᵖ<itmx
