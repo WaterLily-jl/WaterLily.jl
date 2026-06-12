@@ -147,7 +147,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
 
     WaterLily.par_mode[] = Parallel(comm, Int(me))
     # Drop per-size caches from any previous grid (re-init in the same session)
-    foreach(empty!, (_coarse_grids, _mpi_bufs, _halo_bufs))
+    foreach(empty!, (_coarse_grids, _mpi_bufs, _halo_bufs, _agg_cache))
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -387,14 +387,94 @@ WaterLily._phys_right(j, ::Parallel) = _grid().neighbors[2, j] < 0
 # `Val{false}` stencil, whose 1 ghost cell the halo's periodic wrap fills.
 WaterLily._decomposed(j, ::Parallel) = j <= _nd() && _grid().dims[j] > 1
 
-# MG depth heuristic: when actually decomposed, cap coarsening where the
-# ~20 μs/call IGG halo floor stops being amortised by smoother work. At
-# np=1 (even with periodic self-wrap neighbors) keep serial full depth —
-# there are no halo savings to offset a larger coarsest sweep.
+# MG depth: distributed levels stop when the coarsest per-rank block is
+# ~4–8 cells/dim — below that the ~20 μs/call IGG halo floor dominates the
+# level, and the gathered rank-0 problem is still tiny. Global convergence
+# past that point is owned by the agglomerated coarsest solve
+# (`_coarsest_smooth!` below), so unlike the earlier global-size formula
+# this needs no convergence safety margin. At np=1 (even with periodic
+# self-wrap neighbors) keep serial full depth.
 function WaterLily._mg_maxlevels(_dims, ::Parallel)
     _any_decomposed() || return 10
     g = _grid()
-    max(2, floor(Int, log2(minimum(g.nxyz_g[1:_nd()]) / 8))) # / 8 tested on multiple problems
+    max(2, floor(Int, log2(minimum(g.nxyz[d] - 2 for d in 1:_nd()) / 4)))
+end
+
+# ── Agglomerated coarsest-level solve ────────────────────────────────────────
+# The distributed partition cannot coarsen past the per-rank block, so the
+# coarsest reachable global grid GROWS with the rank count and domain-scale
+# error needs ever more V-cycles (weak scaling: mean_iters 1.5 → 2.5 from
+# np=8 to 512). Fix: gather the (tiny, ≤ a few MB) coarsest-level problem to
+# rank 0 and continue the hierarchy there with the SERIAL multigrid, then
+# broadcast the correction. `par_mode[]` is switched to `Serial()` on rank 0
+# for the local solve — the hooks must not fire collectively while the other
+# ranks wait at the broadcast.
+
+const _agg_cache = Dict{Tuple, Any}()
+
+# Run `f` with `par_mode[]` switched to `Serial` — rank-local solves must not
+# fire collective hooks while the other ranks wait at the broadcast.
+function _serially(f)
+    old = WaterLily.par_mode[]
+    WaterLily.par_mode[] = WaterLily.Serial()
+    try f() finally WaterLily.par_mode[] = old end
+end
+
+function _agg_setup(p::WaterLily.Poisson{T}, m::Parallel) where T
+    N, g    = ndims(p.r), _grid_for(size(p.r))
+    loc_int = size(p.r) .- 2
+    gl_int  = loc_int .* ntuple(d -> Int(g.dims[d]), N)
+    loc     = Array{T}(undef, loc_int)                         # interior staging
+    gint    = m.rank == 0 ? Array{T}(undef, gl_int) : nothing  # gather target
+    x_g     = zeros(T, gl_int .+ 2)                            # broadcast buffer
+    mlp     = m.rank != 0 ? nothing : _serially() do
+        L_g, z_g = zeros(T, (gl_int .+ 2)..., N), zeros(T, gl_int .+ 2)
+        try
+            MultiLevelPoisson(x_g, L_g, z_g; perdir=p.perdir)
+        catch  # gathered grid too small/odd for multigrid — plain Poisson
+            WaterLily.Poisson(x_g, L_g, z_g; perdir=p.perdir)
+        end
+    end
+    ofs   = ntuple(d -> Int(g.coords[d]) * loc_int[d], N)      # rank block in x_g
+    block = CartesianIndices(ntuple(d -> ofs[d]+2:ofs[d]+1+loc_int[d], N))
+    (; loc, gint, x_g, mlp, block, ins=WaterLily.inside(p.r))
+end
+
+# Gather the operator L to rank 0 and refresh the serial hierarchy there.
+# Called from `update!(ml)` and the `MultiLevelPoisson` constructor — once
+# per measurement, NOT per V-cycle (L is static between `measure!` calls).
+function WaterLily._coarsest_update!(p::WaterLily.Poisson{T}, m::Parallel) where T
+    _any_decomposed() && T <: Union{Float32, Float64} || return # Dual/AD: local path
+    c, N = get!(() -> _agg_setup(p, m), _agg_cache, (T, size(p.r))), ndims(p.r)
+    gin = WaterLily.inside(c.x_g)
+    for d in 1:N
+        copyto!(c.loc, @view p.L[c.ins, d])
+        ImplicitGlobalGrid.gather!(c.loc, c.gint, m.comm)
+        m.rank == 0 && (c.mlp.L[gin, d] .= c.gint)
+    end
+    if m.rank == 0
+        _serially() do
+            # periodic ghost wrap of the gathered L (zero is correct at walls only)
+            WaterLily.BC!(c.mlp.L, zero(SVector{N,T}), false, p.perdir)
+            WaterLily.update!(c.mlp)
+        end
+    end
+end
+
+function WaterLily._coarsest_smooth!(p::WaterLily.Poisson{T}, m::Parallel, ω) where T
+    _any_decomposed() && T <: Union{Float32, Float64} ||       # Dual/AD: local path
+        return WaterLily.smooth!(p; ω)
+    c = get!(() -> _agg_setup(p, m), _agg_cache, (T, size(p.r)))
+    copyto!(c.loc, @view p.r[c.ins])  # gather residual → rank-0 source
+    ImplicitGlobalGrid.gather!(c.loc, c.gint, m.comm)
+    if m.rank == 0  # serial solve of the global coarse problem: A ϵ = r
+        c.mlp.z[WaterLily.inside(c.x_g)] .= c.gint
+        fill!(c.mlp.x, zero(T)); empty!(c.mlp.n)
+        _serially(() -> WaterLily.solver!(c.mlp; itmx=8))
+    end
+    MPI.Bcast!(c.x_g, 0, m.comm)
+    @views p.ϵ[c.ins] .= c.x_g[c.block]
+    WaterLily.increment!(p; ω)
 end
 
 end # module WaterLilyMPIExt

@@ -90,6 +90,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
         # N>6 divisibility keeps coarsest interior ≥ 2x2 — no perturbation needed
+        coarsest_update!(levels[end])
         new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
@@ -100,12 +101,36 @@ function update!(ml::MultiLevelPoisson)
         restrictL!(ml.levels[l].L,ml.levels[l-1].L,perdir=ml.levels[l-1].perdir)
         update!(ml.levels[l])
     end
+    coarsest_update!(ml.levels[end])
 end
+
+"""
+    coarsest_update!(p::Poisson)
+
+Refresh the coarsest-level operator after `L` changes. Serial: no-op.
+Under MPI the extension gathers `L` to rank 0 and updates the serial
+hierarchy there — once per `update!`, not per V-cycle.
+"""
+coarsest_update!(p::Poisson) = _coarsest_update!(p, par_mode[])
+_coarsest_update!(p::Poisson, ::Serial) = nothing
 
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 smooth! = GaussSeidelRB!
+
+"""
+    coarsest_smooth!(p; ω=1)
+
+Smooth the coarsest multigrid level. In serial this is plain `smooth!`.
+Under MPI the extension gathers the (tiny) global coarsest problem to
+rank 0 and continues the hierarchy with the serial multigrid there —
+the distributed partition cannot coarsen past the per-rank block, which
+otherwise leaves domain-scale error under-resolved (`mean_iters` grows
+with the rank count).
+"""
+coarsest_smooth!(p::Poisson; ω=1) = _coarsest_smooth!(p, par_mode[], ω)
+_coarsest_smooth!(p::Poisson, ::Serial, ω) = smooth!(p; ω)
 
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
@@ -114,8 +139,12 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
-    l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
-    smooth!(coarse;ω)
+    if l+1<length(ml.levels)
+        Vcycle!(ml,l=l+1; ω)
+        smooth!(coarse;ω)
+    else
+        coarsest_smooth!(coarse;ω)
+    end
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
     increment!(fine; ω)
