@@ -128,7 +128,14 @@ Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until the
 `L₂`-norm residual drops below `tol`.  Ends with `pin_pressure!` + `comm!`
 to remove the null-space mode and synchronize halos.
 """
-function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
+# EXPERIMENT (fixed-vcycles-levels branch): freeze the V-cycle count for a
+# pure-comms weak-scaling probe. tol=0 ⇒ never early-exit; itmx from WL_ITMX
+# (default 2) ⇒ exactly K V-cycles every solve, so per-rank work is identical
+# at every np. Combine with bench.jl --maxlevels=3 to freeze MG depth too.
+# Set WL_ITMX in the environment to sweep K (e.g. 1 for the floor) without
+# recompiling. Do NOT merge to mpi-igg — this is a diagnostic, not a fix.
+_wl_itmx() = parse(Int, get(ENV, "WL_ITMX", "2"))
+function solver!(ml::MultiLevelPoisson{T};tol=zero(T),itmx=_wl_itmx()) where T
     p = ml.levels[1]
     residual!(p); r₂ = L₂(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
