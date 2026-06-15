@@ -369,10 +369,9 @@ src  = rand(20,10)
 WaterLily.spread!(src, dest; ϵ=0.01, dims=3)
 ```
 """
-function spread!(src::AbstractArray{T}, dest::AbstractArray{T}; dims=3, ϵ=zero(T)) where T
-    @assert(ndims(dest) == ndims(src)+1 && size(src) == ntuple(j -> j<dims ? size(dest,j) : size(dest,j+1), Val(ndims(dest)-1)),
-            "Cannot spread Array src of size $(size(src)) onto Array dest of size $(size(dest)) along dims $(dims)")
-    @loop dest[I] = src[dropindex(I,dims)]+ϵ*rand() over I in CartesianIndices(dest)
+spread!(src::AbstractArray{T,2}, dest::AbstractArray{T,3}; dims=3, ϵ=zero(T)) where T = (@loop dest[I] = src[dropindex(I,dims)]+ϵ*rand() over I in CartesianIndices(dest))
+spread!(src::AbstractArray{T,3}, dest::AbstractArray{T,4}; dims=3, ϵ=zero(T)) where T = for i in 1:2
+    @loop dest[I,i] = src[dropindex(I,dims),i]+ϵ*rand() over I in CartesianIndices(size(dest)[1:3])
 end
 @inline dropindex(I::CartesianIndex{N}, i::Int) where N = CartesianIndex(ntuple(j -> j<i ? I.I[j] : I.I[j+1], Val(N-1)))
 
