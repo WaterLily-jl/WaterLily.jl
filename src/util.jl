@@ -357,6 +357,25 @@ ic_function(uBC::Tuple) = (i,x)->uBC[i]
 
 squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
 
+"""
+    spread!(src:AbstractArray{T,N}, dest::AbstractArray{T,N+1}; ϵ=0, dims=3)
+
+Spreads a `N` dim field into a `N+1` field. The parameter `ϵ` sets the random noise added to the spread and
+`dims` specifies the dimension along which the spreading is done.
+
+```julia
+dest = zeros(20,10,5)
+src  = rand(20,10)
+WaterLily.spread!(src, dest; ϵ=0.01, dims=3)
+```
+"""
+function spread!(src::AbstractArray{T}, dest::AbstractArray{T}; dims=3, ϵ=zero(T)) where T
+    @assert(ndims(dest) == ndims(src)+1 && size(src) == ntuple(j -> j<dims ? size(dest,j) : size(dest,j+1), Val(ndims(dest)-1)),
+            "Cannot spread Array src of size $(size(src)) onto Array dest of size $(size(dest)) along dims $(dims)")
+    @loop dest[I] = src[dropindex(I,dims)]+ϵ*rand() over I in CartesianIndices(dest)
+end
+@inline dropindex(I::CartesianIndex{N}, i::Int) where N = CartesianIndex(ntuple(j -> j<i ? I.I[j] : I.I[j+1], Val(N-1)))
+
 using ForwardDiff
 using ForwardDiff: Dual, partials, Tag
 

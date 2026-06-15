@@ -104,6 +104,21 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
+
+        # test spread!, 2D scalar field into a 3D scalar
+        src2 = rand(2,3) |> f
+        dest3 = zeros(2,3,4) |> f
+        WaterLily.spread!(src2, dest3; dims=3)
+        @test all(dest3[:,:,1] .== dest3[:,:,2] .== dest3[:,:,3] .== dest3[:,:,4] .== src2)
+        # same for a vector field
+        src2 = rand(2,3,3) |> f
+        dest3 = zeros(2,3,4,3) |> f
+        WaterLily.spread!(src2, dest3; dims=3)
+        @test all(dest3[:,:,1,:] .== dest3[:,:,2,:] .== dest3[:,:,3,:] .== dest3[:,:,4,:] .== src2)
+        # errors when dimensions are incompatible
+        @test_throws AssertionError WaterLily.spread!(src2, src2; dims=3)           # same dims
+        @test_throws AssertionError WaterLily.spread!(src2, zeros(2, 2, 4); dims=3) # mismatched non-spread axis
+        @test_throws AssertionError WaterLily.spread!(dest3, src2; dims=1)          # wrong order of fields
     end
 end
 
