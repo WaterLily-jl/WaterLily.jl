@@ -178,7 +178,10 @@ function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
     accelerate!(a.f,t,a.g,a.uBC)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
-scale_u!(a::AbstractFlow{D,T}, scale) where {D,T} = @loop a.u[Ii] *= T(scale) over Ii ∈ inside_u(size(a.p))
+function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
+    s = T(scale)
+    @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p))
+end
 
 """
     mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
