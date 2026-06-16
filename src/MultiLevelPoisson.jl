@@ -72,7 +72,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     # set up coarse level
     Jacobi!(fine)
     restrict!(coarse.r,fine.r)
-    fill!(coarse.x,0.)
+    fill!(coarse.x,0)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
     smooth!(coarse;ω)
