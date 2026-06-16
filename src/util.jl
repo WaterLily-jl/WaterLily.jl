@@ -344,6 +344,129 @@ function sgs!(flow, t; νₜ, S, Cs, Δ)
     end
 end
 
+# ----------------------------------------------------------------------------
+# Implicit-LES parametrized dissipative numerical flux (energy-conserving cds
+# base + JST/Rusanov graded artificial dissipation), tuned by `β` via AD.
+#
+# For each momentum component `i` and transport direction `j`, the dissipative
+# face flux at the j-face `I` (between cells `I-δⱼ` and `I`) is
+#     fᵈ = -½ |U_face| Σₚ βₚ Δ^{2p}ⱼ uᵢ ,   U_face = ϕ(i,CI(I,j),u)  (= the
+# transporting velocity u_j interpolated to the i-face, exactly as in `ϕu`).
+# It is added with the SAME telescoping as the convective flux (`f[I,i]+=fᵈ`,
+# `f[I-δⱼ,i]-=fᵈ`), so it is momentum-conservative, and on periodic directions the
+# wrap-face is closed exactly as in `conv_diff!` (no seam dissipation deficit).
+# SIGN: with the all-plus Pascal stencil (as in the Burgers reference) the per-order
+# dissipative sign is sign(βₚ)=(-1)^(p+1): β₁,β₃>0 REMOVE energy (Δ²,Δ⁶), but β₂,β₄
+# remove energy only when NEGATIVE (Δ⁴,Δ⁸ INJECT energy for βₚ>0). So box-constrain
+# β₁,β₃≥0 and β₂,β₄≤0 (or leave even orders free). At P=1, β₁>0 is Rusanov/
+# Smagorinsky-like (Cs²↔β₁/2). Use with `λ=cds` (the energy-conserving base) and
+# `udf=dissipative_flux!`; do NOT combine with quick/vanLeer or `sgs!` (double-counts).
+#
+# Δ^{2p} are the central undivided even differences of Burgers' d2/d4/d6/d8
+# (Pascal coefficients), re-indexed onto the staggered j-line of uᵢ. Their
+# stencil reach is ±1 (P=1), {+1,-2} (P=2), {+2,-3} (P=3), {+3,-4} (P=4). The
+# array has only ONE ghost layer (Ng=N+2), so P≥3 is only correct via periodic
+# index wrapping (`_wrapⱼ`); a non-periodic direction with P≥3 errors (P=2 there
+# uses the BC-filled ghost as a crude closure for the two boundary faces).
+# NOTE (shared with `sgs!`): the udf reads `flow.u`, which `mom_step!` zeroes in
+# the predictor (conv_diff! uses `u⁰`), so fᵈ is effectively applied in the
+# corrector only — a fixed factor the β-optimization absorbs (β is scheme-specific).
+
+# periodic-wrapped j-index: interior is 2:Nⱼ-1 with period Nⱼ-2 (Nⱼ=Ng[j])
+@inline _wrapⱼ(q,perj,Nⱼ) = perj ? 2 + mod(q-2, Nⱼ-2) : q
+# uᵢ at j-offset `s` cells from the right cell of face `Ii=CI(I,i)`
+@inline _uᵢ(Ii,j,s,u,perj,Nⱼ) = @inbounds u[CIj(j,Ii,_wrapⱼ(Ii[j]+s,perj,Nⱼ))]
+# face advection speed |U_face| (smooth surrogate √(U²+ε²) when ε>0, |U| at ε=0)
+@inline _aface(i,j,I,u,ε) = sqrt(ϕ(i,CI(I,j),u)^2 + ε^2)
+
+# Σₚ βₚ Δ^{2p}ⱼ uᵢ at face Ii=CI(I,i), Val-dispatched on P for type stability
+@inline _dissip(Ii,j,u,β,::Val{1},perj,Nⱼ) = @inbounds β[1]*(_uᵢ(Ii,j,0,u,perj,Nⱼ)-_uᵢ(Ii,j,-1,u,perj,Nⱼ))
+@inline function _dissip(Ii,j,u,β,::Val{2},perj,Nⱼ)
+    @inbounds begin
+        um2=_uᵢ(Ii,j,-2,u,perj,Nⱼ); um1=_uᵢ(Ii,j,-1,u,perj,Nⱼ); u0=_uᵢ(Ii,j,0,u,perj,Nⱼ); up1=_uᵢ(Ii,j,1,u,perj,Nⱼ)
+        return β[1]*(u0-um1) + β[2]*(up1-3u0+3um1-um2)
+    end
+end
+@inline function _dissip(Ii,j,u,β,::Val{3},perj,Nⱼ)
+    @inbounds begin
+        um3=_uᵢ(Ii,j,-3,u,perj,Nⱼ); um2=_uᵢ(Ii,j,-2,u,perj,Nⱼ); um1=_uᵢ(Ii,j,-1,u,perj,Nⱼ)
+        u0=_uᵢ(Ii,j,0,u,perj,Nⱼ); up1=_uᵢ(Ii,j,1,u,perj,Nⱼ); up2=_uᵢ(Ii,j,2,u,perj,Nⱼ)
+        return β[1]*(u0-um1) + β[2]*(up1-3u0+3um1-um2) + β[3]*(up2-5up1+10u0-10um1+5um2-um3)
+    end
+end
+@inline function _dissip(Ii,j,u,β,::Val{4},perj,Nⱼ)
+    @inbounds begin
+        um4=_uᵢ(Ii,j,-4,u,perj,Nⱼ); um3=_uᵢ(Ii,j,-3,u,perj,Nⱼ); um2=_uᵢ(Ii,j,-2,u,perj,Nⱼ); um1=_uᵢ(Ii,j,-1,u,perj,Nⱼ)
+        u0=_uᵢ(Ii,j,0,u,perj,Nⱼ); up1=_uᵢ(Ii,j,1,u,perj,Nⱼ); up2=_uᵢ(Ii,j,2,u,perj,Nⱼ); up3=_uᵢ(Ii,j,3,u,perj,Nⱼ)
+        return β[1]*(u0-um1) + β[2]*(up1-3u0+3um1-um2) + β[3]*(up2-5up1+10u0-10um1+5um2-um3) +
+               β[4]*(up3-7up2+21up1-35u0+35um1-21um2+7um3-um4)
+    end
+end
+
+"""
+    dissipative_flux!(flow, t; β, ε=0)
+
+User-defined function (`udf`) adding the implicit-LES parametrized dissipative
+numerical flux `fᵈ = -½|U_face| Σₚ βₚ Δ^{2p}ⱼ uᵢ` to the momentum RHS, with the
+energy-conserving `cds` convection as the base. `β` is the vector of `P=length(β)`
+dissipation weights (P=1..4); `ε>0` selects a smooth `√(U²+ε²)` surrogate for the
+`|U_face|` advection speed (use for exact ForwardDiff gradient reproducibility).
+
+Per-order dissipative sign is `sign(βₚ)=(-1)^(p+1)` (see header): β₁,β₃>0 and
+β₂,β₄<0 remove energy. Pass with `λ=cds` into `sim_step!`:
+    `sim_step!(sim, ...; λ=cds, udf=dissipative_flux!, β=Float32[β₁,...])`.
+β rides the `sim_step!` keyword arguments. Do NOT combine with `quick`/`vanLeer`
+or `sgs!` (their dissipation double-counts and contaminates β); `λ` is not visible
+here, so this is a usage contract, not enforced.
+
+ForwardDiff w.r.t. β: the flow buffers must carry the `Dual` type, so reconstruct
+the `Flow`/`Simulation` with `T=eltype(β)` (as in the Burgers reference) before the
+gradient pass — seeding a `Dual` β into a `Float32`/`Float64` `Flow` errors when
+storing Duals into `flow.σ`/`flow.f`. (`ε>0` avoids the `√` kink at `U_face=0`.)
+"""
+function dissipative_flux!(flow, t; β, ε=zero(eltype(flow.u)), kwargs...)
+    _apply_dissipative_flux!(flow.f, flow.σ, flow.u, β, flow.perdir, ε)
+end
+# core kernel, separated so it can be driven on Dual-typed arrays directly (AD tests)
+function _apply_dissipative_flux!(f, σ, u, β, perdir, ε=zero(eltype(u)))
+    N,n = size_u(u); P = length(β); valP = Val(P)
+    βS = SVector(ntuple(p -> @inbounds(β[p]), valP)) # isbits ⇒ valid GPU kernel arg; preserves eltype (incl. Dual)
+    εT = eltype(u)(ε)                                # keep the kernel in the field eltype (no Float64 on GPU)
+    for i ∈ 1:n, j ∈ 1:n
+        perj = j in perdir
+        (P ≥ 3 && !perj) && error("dissipative_flux!: P=$P (Δ^$(2P)) needs ≥$P ghost layers; only supported on periodic directions (non-periodic j=$j). Use P≤2 or widen the halo.")
+        # interior j-faces (3:Nⱼ-1)
+        @loop (σ[I] = -_aface(i,j,I,u,εT)*_dissip(CI(I,i),j,u,βS,valP,perj,N[j])/2; # /2 keeps eltype
+               f[I,i] += σ[I]) over I ∈ inside_u(N,j)
+        @loop f[I-δ(j,I),i] -= σ[I] over I ∈ inside_u(N,j)
+        # periodic seam face (j-index 2): close the telescoping exactly as
+        # conv_diff!'s lower/upperBoundary! do, so cells 2 and Nⱼ-1 get fᵈ too.
+        if perj
+            @loop (σ[I] = -_aface(i,j,I,u,εT)*_dissip(CI(I,i),j,u,βS,valP,perj,N[j])/2;
+                   f[I,i] += σ[I]) over I ∈ slice(N,2,j,2)
+            @loop f[I-δ(j,I),i] -= σ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
+        end
+    end
+end
+
+"""
+    spatial_energy_rate(flow; λ=cds, ν=0, udf=nothing, kwargs...)
+
+Discrete kinetic-energy production rate `Σᵢ Σ_cells uᵢ·(duᵢ/dt)` of the SPATIAL
+operator only (convection `conv_diff!` plus optional `udf`), summed over one
+periodic interior. Diagnostic for the implicit-LES base/dissipation: with
+`λ=cds`, `ν=0` and a discretely div-free periodic field it returns ≈0 (the EC
+property); `λ=quick` returns a negative O(1) value (limiter dissipation); adding
+`udf=dissipative_flux!` returns `≈ -½ Σ_faces |U_face| β₁ (Δuᵢ)²  ≤ 0` (the added
+dissipation). Mutates `flow.f` and `flow.σ`.
+"""
+function spatial_energy_rate(flow; λ=cds, ν=zero(eltype(flow.u)), udf=nothing, kwargs...)
+    conv_diff!(flow.f, flow.u, flow.σ, λ; ν, perdir=flow.perdir)
+    isnothing(udf) || udf(flow, zero(eltype(flow.u)); kwargs...)
+    N,_ = size_u(flow.u)
+    sum(@inbounds(flow.u[Ii]*flow.f[Ii]) for Ii ∈ inside_u(N))
+end
+
 check_fn(f,N,T,nargs) = nothing
 function check_fn(f::Function,N,T,nargs)
     @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
