@@ -2,6 +2,8 @@ using WaterLily
 using Test
 using StaticArrays
 
+include("les_tests.jl")   # LES extensions (udf advecting velocity, dissipative flux) — CPU/Array, no GPU deps
+
 check_compiler(compiler,parse_str) = try occursin(parse_str, read(`$compiler --version`, String)) catch _ false end
 _cuda = check_compiler("nvcc","release")
 _rocm = check_compiler("hipcc","version")
