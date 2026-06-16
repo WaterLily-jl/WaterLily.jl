@@ -159,7 +159,7 @@ end-of-step time `sum(a.Δt)`.
 """
 function mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
     conv_diff!(a.f,a.u⁰,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t₀; kwargs...)
+    udf!(a,udf,a.u⁰,t₀; kwargs...) # advect-with field is u⁰ here (a.u is zeroed by scale_u!)
     accelerate!(a.f,t₀,a.g,a.uBC)
     BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
@@ -174,7 +174,7 @@ On return `a.u` is BC-consistent and ready for pressure projection.
 """
 function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t; kwargs...)
+    udf!(a,udf,a.u,t; kwargs...) # advect-with field is the projected a.u here
     accelerate!(a.f,t,a.g,a.uBC)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
@@ -211,10 +211,16 @@ end
 end
 
 """
-    udf!(flow::AbstractFlow,udf::Function,t)
+    udf!(flow::AbstractFlow,udf::Function,u,t)
 
-User defined function using `udf::Function` to operate on `flow::AbstractFlow` during the predictor and corrector step, in sync with time `t`.
-Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
+User defined function using `udf::Function` to operate on `flow::AbstractFlow` during the
+predictor and corrector step, in sync with time `t`. `u` is the velocity field the convective
+flux is evaluated on in that phase — `a.u⁰` in the predictor (because `mom_step!` has zeroed
+`a.u`) and the projected `a.u` in the corrector. A `udf` that needs the advecting velocity
+(e.g. an SGS/eddy-viscosity model) should take the signature `force!(flow,u,t; kwargs...)`;
+a force-only `udf` may keep `force!(flow,t; kwargs...)` and `u` is simply not passed to it.
+Keyword arguments must be passed to `sim_step!` for them to be carried over the actual call.
 """
-udf!(flow,::Nothing,t; kwargs...) = nothing
-udf!(flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)
+udf!(flow,::Nothing,u,t; kwargs...) = nothing
+udf!(flow,force!::Function,u,t; kwargs...) =
+    applicable(force!,flow,u,t) ? force!(flow,u,t; kwargs...) : force!(flow,t; kwargs...)
