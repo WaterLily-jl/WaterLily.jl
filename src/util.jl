@@ -404,11 +404,12 @@ end
 end
 
 """
-    dissipative_flux!(flow, t; β, ε=0)
+    dissipative_flux!(flow, u, t; β, ε=0)
 
 User-defined function (`udf`) adding the implicit-LES parametrized dissipative
 numerical flux `fᵈ = -½|U_face| Σₚ βₚ Δ^{2p}ⱼ uᵢ` to the momentum RHS, with the
-energy-conserving `cds` convection as the base. `β` is the vector of `P=length(β)`
+energy-conserving `cds` convection as the base. `u` is the advecting velocity field
+supplied by `udf!` (`u⁰` in the predictor, projected `u` in the corrector). `β` is the vector of `P=length(β)`
 dissipation weights (P=1..4); `ε>0` selects a smooth `√(U²+ε²)` surrogate for the
 `|U_face|` advection speed (use for exact ForwardDiff gradient reproducibility).
 
@@ -424,8 +425,8 @@ the `Flow`/`Simulation` with `T=eltype(β)` (as in the Burgers reference) before
 gradient pass — seeding a `Dual` β into a `Float32`/`Float64` `Flow` errors when
 storing Duals into `flow.σ`/`flow.f`. (`ε>0` avoids the `√` kink at `U_face=0`.)
 """
-function dissipative_flux!(flow, t; β, ε=zero(eltype(flow.u)), kwargs...)
-    _apply_dissipative_flux!(flow.f, flow.σ, flow.u, β, flow.perdir, ε)
+function dissipative_flux!(flow, u, t; β, ε=zero(eltype(u)), kwargs...)
+    _apply_dissipative_flux!(flow.f, flow.σ, u, β, flow.perdir, ε)
 end
 # core kernel, separated so it can be driven on Dual-typed arrays directly (AD tests)
 function _apply_dissipative_flux!(f, σ, u, β, perdir, ε=zero(eltype(u)))
@@ -462,7 +463,8 @@ dissipation). Mutates `flow.f` and `flow.σ`.
 """
 function spatial_energy_rate(flow; λ=cds, ν=zero(eltype(flow.u)), udf=nothing, kwargs...)
     conv_diff!(flow.f, flow.u, flow.σ, λ; ν, perdir=flow.perdir)
-    isnothing(udf) || udf(flow, zero(eltype(flow.u)); kwargs...)
+    # static diagnostic ⇒ advecting field is flow.u; udf takes the (flow,u,t) signature
+    isnothing(udf) || udf(flow, flow.u, zero(eltype(flow.u)); kwargs...)
     N,_ = size_u(flow.u)
     sum(@inbounds(flow.u[Ii]*flow.f[Ii]) for Ii ∈ inside_u(N))
 end

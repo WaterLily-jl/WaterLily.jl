@@ -176,7 +176,7 @@ println("="^64)
 function Lflow(βv)
     Tβ = eltype(βv)
     fl = (f = zeros(Tβ, size(u0)), σ = zeros(Tβ, size(u0)[1:end-1]), u = Tβ.(u0), perdir = (1,2,3))
-    dissipative_flux!(fl, zero(Tβ); β=βv, ε=Tβ(1e-3))
+    dissipative_flux!(fl, fl.u, zero(Tβ); β=βv, ε=Tβ(1e-3))   # (flow,u,t) signature
     sum(@inbounds(fl.u[Ii]*fl.f[Ii]) for Ii in inside_u(size_u(fl.u)[1]))
 end
 gfl_ad = ForwardDiff.derivative(b -> Lflow([b]), 0.13)
