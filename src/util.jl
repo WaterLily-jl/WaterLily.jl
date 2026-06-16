@@ -465,8 +465,8 @@ function spatial_energy_rate(flow; λ=cds, ν=zero(eltype(flow.u)), udf=nothing,
     conv_diff!(flow.f, flow.u, flow.σ, λ; ν, perdir=flow.perdir)
     # static diagnostic ⇒ advecting field is flow.u; udf takes the (flow,u,t) signature
     isnothing(udf) || udf(flow, flow.u, zero(eltype(flow.u)); kwargs...)
-    N,_ = size_u(flow.u)
-    sum(@inbounds(flow.u[Ii]*flow.f[Ii]) for Ii ∈ inside_u(N))
+    N,_ = size_u(flow.u); R = inside_u(N)
+    sum(@view(flow.u[R]) .* @view(flow.f[R]))   # broadcast+reduce (GPU-safe; no scalar indexing)
 end
 
 check_fn(f,N,T,nargs) = nothing
