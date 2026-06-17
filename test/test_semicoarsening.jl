@@ -81,3 +81,72 @@ end
     err,p = mlpois_setup((2^6+2,2^6+2,2^4+2))   # 66×66×18
     @test p.n[] ≤ 8 && err < 1e-6
 end
+
+# ---------------------------------------------------------------------------
+# Flow-based convergence demos for high aspect-ratio domains.
+#
+# Without semi-coarsening, the multigrid stops coarsening once the smallest
+# direction hits the floor, leaving the large directions severely under-corrected.
+# On an 8:1 domain the old code would hit the 32-iteration cap (itmx) without
+# reaching the convergence tolerance on most time steps.
+# With semi-coarsening the solver keeps building levels in the large directions
+# and converges in a handful of V-cycles even with a 50%-blockage body that
+# drives strong, non-trivial pressure gradients.
+#
+# Body placement: centred in the cross-section, at the longitudinal mid-point
+# of the domain.  Blockage = 50% of the smallest dimension (R = H/4 where H
+# is the number of interior cells in the short direction).
+
+@testset "semi-coarsening: 2D channel 8:1 with blocking circle" begin
+    # Domain dims=(128,16), flow.p=(130,18)  (128×16 interior, 8:1), circle R=4 → 50 % blockage.
+    # master (full coarsening, 2 levels): V-cycles = [32, 4, 32, 6, 15, 1, 2, 1], max=32 (hits cap)
+    # PR    (semi-coarsening, 7 levels): V-cycles = [5, 2, 6, 1, 2, 1, 1, 1],  max=6
+    H = 2^4; R = H÷4                          # H=16, R=4
+    N = (8H, H)                                # dims=(128,16); Flow adds 2 ghost cells → p=(130,18)
+    ctr = SA[4H, H÷2]                          # (64, 8) – centre of domain
+    body = AutoBody((x,t) -> √sum(abs2, x - ctr) - R)
+    sim  = Simulation(N, (1,0), R; ν=R/100, body, T=Float32)
+    foreach(_ -> sim_step!(sim; remeasure=false), 1:4)
+    n = maximum(sim.pois.n)
+    println("  2D 8:1  $N R=$R → max V-cycles = $n  (all: $(sim.pois.n))")
+    @test length(sim.pois.levels) ≥ 6          # semi-coarsening builds many levels
+    @test n ≤ 10                               # master hits 32 (cap); PR converges in ≤10
+    @test !any(isnan.(sim.pois.n))
+end
+
+@testset "semi-coarsening: 3D duct 8:1:1 with blocking sphere" begin
+    # Domain dims=(64,8,8), flow.p=(66,10,10)  (64×8×8 interior, 8:1:1), sphere R=2 → 50 % blockage.
+    # master (full coarsening, 3 levels): V-cycles = [32, 6, 32, 18, 11, 2, 2, 2], max=32 (hits cap)
+    # PR    (semi-coarsening, 6 levels): V-cycles = [7, 2, 9, 2, 2, 2, 2, 1],  max=9
+    H = 2^3; R = H÷4                          # H=8, R=2
+    N = (8H, H, H)                             # dims=(64,8,8); Flow adds 2 ghost cells → p=(66,10,10)
+    ctr = SA[4H, H÷2, H÷2]                    # (32, 4, 4) – centre of domain
+    body = AutoBody((x,t) -> √sum(abs2, x - ctr) - R)
+    sim  = Simulation(N, (1,0,0), R; ν=R/100, body, T=Float32)
+    foreach(_ -> sim_step!(sim; remeasure=false), 1:4)
+    n = maximum(sim.pois.n)
+    println("  3D 8:1:1 $N R=$R → max V-cycles = $n  (all: $(sim.pois.n))")
+    @test length(sim.pois.levels) ≥ 5          # semi-coarsening builds many levels
+    @test n ≤ 12                               # master hits 32 (cap); PR converges in ≤12
+    @test !any(isnan.(sim.pois.n))
+end
+
+@testset "semi-coarsening: 3D slab 8:8:1 with blocking sphere" begin
+    # Domain dims=(64,64,8), flow.p=(66,66,10)  (64×64×8 interior, 8:8:1), sphere R=2 → 50 % blockage in z.
+    # Full coarsening stops after one level in z, leaving a (33×33×5) coarsest grid
+    # that is far too large to capture low-frequency error.
+    # Semi-coarsening keeps coarsening x and y independently; solver converges normally.
+    # master (full coarsening): V-cycles = [22, 2, 30, 2, 21, 2, 2, 2], max=30
+    # PR    (semi-coarsening): V-cycles = [3, 2, 4, 2, 2, 1, 2, 1],  max=4
+    H = 2^3; R = H÷4                          # H=8, R=2
+    N = (8H, 8H, H)                            # dims=(64,64,8); Flow adds 2 ghost cells → p=(66,66,10)
+    ctr = SA[4H, 4H, H÷2]                     # (32, 32, 4) – centre of slab
+    body = AutoBody((x,t) -> √sum(abs2, x - ctr) - R)
+    sim  = Simulation(N, (1,0,0), R; ν=R/100, body, T=Float32)
+    foreach(_ -> sim_step!(sim; remeasure=false), 1:4)
+    n = maximum(sim.pois.n)
+    println("  3D 8:8:1 $N R=$R → max V-cycles = $n  (all: $(sim.pois.n))")
+    @test length(sim.pois.levels) ≥ 5          # semi-coarsening builds many levels
+    @test n ≤ 8                                # master reaches 30; PR converges in ≤8
+    @test !any(isnan.(sim.pois.n))
+end
