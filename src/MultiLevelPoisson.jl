@@ -22,7 +22,7 @@ end
     for J ∈ upL(I,i,c)
         s += @inbounds(b[J,i])
     end
-    return c[i] ? 0.5s : s  # halve only if the face-normal direction is coarsened
+    return c[i] ? s/2 : s  # halve only if the face-normal direction is coarsened
 end
 
 # coarsening mask: coarsen every direction that is still divisible
@@ -91,7 +91,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     # set up coarse level
     Jacobi!(fine)
     restrict!(coarse.r,fine.r,c)
-    fill!(coarse.x,0.)
+    fill!(coarse.x,0)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
     smooth!(coarse;ω)

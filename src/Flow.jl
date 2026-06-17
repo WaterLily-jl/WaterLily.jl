@@ -22,7 +22,7 @@ end
     for j ∈ 1:np1-1
         s+= @inbounds μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
     end
-    return 0.5s
+    return s/2
 end
 function median(a,b,c)
     if a>b
@@ -108,7 +108,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         isnothing(uλ) && (uλ = ic_function(uBC))
         u = Array{T}(undef, Nd...) |> mem
         isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
-        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
+        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
         V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
@@ -178,7 +178,10 @@ function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
     accelerate!(a.f,t,a.g,a.uBC)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
-scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
+function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
+    s = T(scale)
+    @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p))
+end
 
 """
     mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
@@ -187,8 +190,8 @@ Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `w·Δt·∇p`, and re-enforce BCs.
 On return `a.u` is divergence-free and BC-consistent.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
-    dt = w*a.Δt[end]
+function mom_project!(a::AbstractFlow{D,T}, b::AbstractPoisson, w, t) where {D,T}
+    dt = T(w)*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
@@ -203,9 +206,9 @@ function CFL(a::AbstractFlow;Δt_max=10)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
-    s = zero(eltype(u))
+    s = z = zero(eltype(u))
     for i in 1:d
-        s += @inbounds(max(0,u[I+δ(i,I),i])+max(0,-u[I,i]))
+        s += @inbounds(max(z,u[I+δ(i,I),i])+max(z,-u[I,i]))
     end
     return s
 end
