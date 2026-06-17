@@ -1,40 +1,57 @@
+# Full-coarsening (2× in every direction) maps between fine and coarse cells.
 @inline up(I::CartesianIndex,a=0) = (2I-2oneunit(I)):(2I-oneunit(I)-δ(a,I))
 @inline down(I::CartesianIndex) = CI((I+2oneunit(I)).I .÷2)
-@fastmath @inline function restrict(I::CartesianIndex,b)
+
+# Semi-coarsening up and down. `c[j]` flags which directions are coarsened (2×) between two levels
+@inline up(I::CartesianIndex{n},c::NTuple{n,Bool}) where n = CartesianIndices(ntuple(j-> c[j] ? (2I.I[j]-2:2I.I[j]-1) : (I.I[j]:I.I[j]), n))
+@inline down(I::CartesianIndex{n},c::NTuple{n,Bool}) where n = CI(ntuple(j-> c[j] ? (I.I[j]+2)÷2 : I.I[j], n))
+# Fine faces (normal i) composing a coarse face, given the coarsening mask `c`.
+@inline upL(I::CartesianIndex{n},i,c::NTuple{n,Bool}) where n =
+    CartesianIndices(ntuple(j-> j==i ? (c[i] ? (2I.I[i]-2:2I.I[i]-2) : (I.I[i]:I.I[i])) :
+                                       (c[j] ? (2I.I[j]-2:2I.I[j]-1) : (I.I[j]:I.I[j])), n))
+
+@fastmath @inline function restrict(I::CartesianIndex,b,c)
     s = zero(eltype(b))
-    for J ∈ up(I)
-     s += @inbounds(b[J])
+    for J ∈ up(I,c)
+        s += @inbounds(b[J])
     end
     return s
 end
-@fastmath @inline function restrictL(I::CartesianIndex,i,b)
+@fastmath @inline function restrictL(I::CartesianIndex,i,b,c)
     s = zero(eltype(b))
-    for J ∈ up(I,i)
-     s += @inbounds(b[J,i])
+    for J ∈ upL(I,i,c)
+        s += @inbounds(b[J,i])
     end
-    return 0.5s
+    return c[i] ? 0.5s : s  # halve only if the face-normal direction is coarsened
 end
+
+# coarsening mask: coarsen every direction that is still divisible
+@inline coarsen_mask(N::NTuple) = map(divisible,N)
+# mask used to build level `coarse` from `fine` (recovered from their sizes)
+@inline coarsen_mask(fine,coarse) = ntuple(j-> size(coarse,j)<size(fine,j), ndims(fine))
 
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
-    Na = map(i->1+i÷2,N)
+    c = coarsen_mask(N)
+    Na = ntuple(j-> c[j] ? 1+N[j]÷2 : N[j], n)
     aL = similar(b.L,(Na...,n)); fill!(aL,0)
     ax = similar(b.x,Na); fill!(ax,0)
-    restrictL!(aL,b.L,perdir=b.perdir)
+    restrictL!(aL,b.L,c,perdir=b.perdir)
     Poisson(ax,aL,copy(ax);b.perdir)
 end
-function restrictL!(a::AbstractArray{T,M},b;perdir=()) where {T,M}
+function restrictL!(a::AbstractArray{T,M},b,c;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
-        @loop a[I,i] = restrictL(I,i,b) over I ∈ CartesianIndices(map(n->2:n-1,Na))
+        @loop a[I,i] = restrictL(I,i,b,c) over I ∈ CartesianIndices(map(n->2:n-1,Na))
     end
     BC!(a,zero(SVector{M-1,T}),false,perdir)  # correct μ₀ @ boundaries
 end
-restrict!(a,b) = @inside a[I] = restrict(I,b)
-prolongate!(a,b) = @inside a[I] = b[down(I)]
+restrict!(a,b,c) = @inside a[I] = restrict(I,b,c)
+prolongate!(a,b,c) = @inside a[I] = b[down(I,c)]
 
-@inline divisible(N) = mod(N,2)==0 && N>4
-@inline divisible(l::Poisson) = all(size(l.x) .|> divisible)
+@inline divisible(N::Integer) = mod(N,2)==0 && N>4
+# keep coarsening while ANY direction is still divisible (semi-coarsening)
+@inline divisible(l::Poisson) = any(size(l.x) .|> divisible)
 """
     MultiLevelPoisson{N,M}
 
@@ -62,22 +79,24 @@ end
 function update!(ml::MultiLevelPoisson)
     update!(ml.levels[1])
     for l ∈ 2:length(ml.levels)
-        restrictL!(ml.levels[l].L,ml.levels[l-1].L,perdir=ml.levels[l-1].perdir)
+        c = coarsen_mask(ml.levels[l-1].x,ml.levels[l].x)
+        restrictL!(ml.levels[l].L,ml.levels[l-1].L,c,perdir=ml.levels[l-1].perdir)
         update!(ml.levels[l])
     end
 end
 
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
+    c = coarsen_mask(fine.x,coarse.x)
     # set up coarse level
     Jacobi!(fine)
-    restrict!(coarse.r,fine.r)
+    restrict!(coarse.r,fine.r,c)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
     smooth!(coarse;ω)
     # correct fine
-    prolongate!(fine.ϵ,coarse.x)
+    prolongate!(fine.ϵ,coarse.x,c)
     increment!(fine; ω)
 end
 
@@ -92,7 +111,7 @@ function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω); 
+        smooth!(p; ω);
         rnew = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
         if     rnew ≥ r₂
