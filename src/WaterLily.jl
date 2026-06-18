@@ -5,6 +5,8 @@ module WaterLily
 
 using DocStringExtensions
 
+abstract type AbstractSimulation end
+
 include("util.jl")
 export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
 
@@ -28,8 +30,6 @@ export AutoBody,Bodies,measure,sdf,+,-
 
 include("Metrics.jl")
 export MeanFlow,update!,uu!,uu
-
-abstract type AbstractSimulation end
 
 include("RigidMap.jl")
 export RigidMap,setmap
