@@ -287,6 +287,33 @@ end
     end
 end
 
+@testset "transport! does not pollute orthogonal ghost cells" begin
+    # scalar_*Boundary! used to iterate orthogonal indices `2:N[k]`
+    # (= slice with low=2) and write `r[I]` / `r[I-δ]` at I[k]=N[k] —
+    # the upper-k ghost row. The fixed range is `2:N[k]-1` and ghost
+    # rows stay zero.
+    N = (16, 16)
+    φ = zeros(Float32, N .+ 2 ...)
+    u = zeros(Float32, (N .+ 2)..., 2)
+    Φ = zeros(Float32, N .+ 2 ...)
+    r = zeros(Float32, N .+ 2 ...)
+    # Seed the field with arbitrary non-uniform values so the kernel
+    # produces non-trivial fluxes.
+    for I in CartesianIndices(φ)
+        φ[I] = sin(I[1] / 4) + cos(I[2] / 4)
+    end
+    u[:, :, 1] .= 1.0
+    WaterLily.transport!(r, φ, u, Φ)
+    # Ghost rows along the y-orthogonal direction (k=2) should be
+    # untouched, i.e. still zero (not written into).
+    @test all(iszero, r[:, 1])
+    @test all(iszero, r[:, end])
+    @test all(iszero, r[1, :])
+    @test all(iszero, r[end, :])
+end
+
+include("transport_test.jl")
+
 @testset "Body.jl" begin
     @test WaterLily.μ₀(3.,6)==WaterLily.μ₀(0.5,1)
     @test WaterLily.μ₀(0.,1)==0.5
