@@ -104,6 +104,34 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
+
+        # test spread!, 2D scalar field into a 3D scalar
+        src2 = rand(2,3) |> f
+        dest3 = zeros(2,3,4) |> f
+        WaterLily.spread!(dest3, src2; dim=3)
+        @test GPUArrays.@allowscalar all(dest3[:,:,1] .≈ dest3[:,:,2] .≈ dest3[:,:,3] .≈ dest3[:,:,4] .≈ src2)
+        # same for a vector field
+        src2 = rand(2,3,2) |> f
+        dest3 = zeros(2,3,4,3) |> f
+        WaterLily.spread!(dest3, src2; dim=3)
+        @test GPUArrays.@allowscalar all(dest3[:,:,1,1:2] .≈ dest3[:,:,2,1:2] .≈ dest3[:,:,3,1:2] .≈ dest3[:,:,4,1:2] .≈ src2)
+        # errors when dimensions are incompatible
+        @test_throws MethodError WaterLily.spread!(src2, src2; dim=3)           # same dims
+        @test_throws MethodError WaterLily.spread!(zeros(2, 2, 4), src2; dim=3) # mismatched non-spread axis
+        @test_throws MethodError WaterLily.spread!(src2, dest3; dim=1)          # wrong order of fields
+        # test on Simulations
+        body = AutoBody((x,t)->√sum(abs2,SA[x[1]-8,x[2]-8])-6)
+        sim2D = Simulation((32,16),(1.0,0.0),1.0;body,mem=f)
+        apply!(x->x[1],sim2D.flow.p); apply!((i,x)->x[i],sim2D.flow.u)
+        sim3D = Simulation((32,16,8),(1.0,0.0,0.0),1.0;body,perdir=(3,),mem=f)
+        WaterLily.spread!(sim3D, sim2D; dim=3, ϵ=0.0)
+        # check at a few location along dims
+        @test GPUArrays.@allowscalar all(sim3D.flow.u[:,:,1,1:2] .≈ sim3D.flow.u[:,:,3,1:2] .≈ sim3D.flow.u[:,:,6,1:2] .≈ sim3D.flow.u[:,:,8,1:2] .≈ sim2D.flow.u)
+        @test GPUArrays.@allowscalar all(sim3D.flow.p[:,:,1] .≈ sim3D.flow.p[:,:,3] .≈ sim3D.flow.p[:,:,6] .≈ sim3D.flow.p[:,:,8] .≈ sim2D.flow.p)
+        @test_throws AssertionError WaterLily.spread!(sim3D, sim2D; dim=1)
+        # body mis-match should throw an AssertionError
+        sim3D = Simulation((32,16,8),(1.0,0.0,0.0),1.0;body=AutoBody((x,t)->√sum(abs2,x.-8)-6),perdir=(3,),mem=f)
+        @test_throws AssertionError WaterLily.spread!(sim3D, sim2D; dim=3)
     end
 end
 

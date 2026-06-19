@@ -357,6 +357,56 @@ ic_function(uBC::Tuple) = (i,x)->uBC[i]
 
 squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
 
+"""
+    spread!(sim3D, sim2D; dim=3, ϵ=0)
+
+Spread a given 2D `Simulation` onto a 3D `Simulation` by extruding it along the dim `dim`.
+
+Default is to extrude along the `dim=3`, user can also pass in a given noise level `ϵ` that is
+applied to perturb the velocity field. The pressure field is left unchanged.
+Internally, the function test that that the 3D `Simulation` is exactly an extruded version of
+the 2D Simulation, i.e. the body must match through μ₀.
+
+Example:
+```julia
+# 2D or 3D cylinder
+body = AutoBody((x,t)->√sum(abs2,SA[x[1]-8,x[2]-8])-6)
+# the sims
+sim2D = Simulation((32,16)  ,(1.0,0.0)    ,1.0;body)
+sim3D = Simulation((32,16,8),(1.0,0.0,0.0),1.0;body,perdir=(3,))
+# spread after a few steps
+sim_step!(sim2D,100)
+WaterLily.spread!(sim3D, sim2D; dim=3, ϵ=0.0)
+```
+"""
+function spread!(sim3D::AbstractSimulation, sim2D::AbstractSimulation; dim=3, ϵ=0)
+    T,S = eltype(sim2D.flow.p), size(sim3D.flow.p)
+    size3D = ntuple(j->j<dim ? S[j] : S[j+1], 2)
+    @assert size(sim2D.flow.p)==size3D "Spread dimensions mismatch between sim2D $(size(sim2D.flow.p)) and sim3D $(size3D) for dim $(dim)"
+    Is = CartesianIndices(((ntuple(j->j==dim ? (1:1) : (1:S[j]), 3))..., 1:2))
+    @assert all(sim2D.flow.μ₀ .≈ squeeze(sim3D.flow.μ₀[Is])) "There seem to be a body mistmatch between the body in the sim2D and the sim3D along dim $(dim)"
+    spread!(sim3D.flow.p, sim2D.flow.p; dim=dim, ϵ=zero(T))
+    spread!(sim3D.flow.u, sim2D.flow.u; dim=dim, ϵ=T(ϵ))
+end
+
+"""
+    spread!(src:AbstractArray{T,N}, dest::AbstractArray{T,N+1}; ϵ=0, dims=3)
+
+Spreads a `N` dim field into a `N+1` field. The parameter `ϵ` sets the random noise added to the spread and
+`dims` specifies the dimension along which the spreading is done.
+
+```julia
+dest = zeros(20,10,5)
+src  = rand(20,10)
+WaterLily.spread!(src, dest; ϵ=0.01, dims=3)
+```
+"""
+spread!(dest::AbstractArray{T,3}, src::AbstractArray{T,2}; dim=3, ϵ=zero(T)) where T = (@loop dest[I] = src[dropindex(I,dim)]+ϵ*rand() over I in CartesianIndices(dest))
+spread!(dest::AbstractArray{T,4}, src::AbstractArray{T,3}; dim=3, ϵ=zero(T)) where T = for i in 1:2
+    @loop dest[I,i] = src[dropindex(I,dim),i]+ϵ*rand() over I in CartesianIndices(size(dest)[1:3])
+end
+@inline dropindex(I::CartesianIndex{N}, i::Int) where N = CartesianIndex(ntuple(j -> j<i ? I.I[j] : I.I[j+1], Val(N-1)))
+
 using ForwardDiff
 using ForwardDiff: Dual, partials, Tag
 
