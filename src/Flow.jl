@@ -72,6 +72,19 @@ accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+derivative(τ->U(i,x,τ),t))
 
+"""
+    apply!(f, c)
+
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or
+a function `f(x)` to the center of a uniform array `c`.
+"""
+apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
+applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ CartesianIndices(c)
+applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
+
+ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
+ic_function(uBC::Tuple) = (i,x)->uBC[i]
+
 abstract type AbstractFlow{D,T} end
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
