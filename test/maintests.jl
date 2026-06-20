@@ -287,6 +287,19 @@ end
     end
 end
 
+@testset "_νf face-averages a closure ν" begin
+    # A scalar ν is returned unchanged; a closure ν(I) is read per cell
+    # and arithmetically averaged to the cell face.
+    @test WaterLily._νf(0.5, 1, CartesianIndex(2, 2)) == 0.5
+    @test WaterLily._ν(0.5, CartesianIndex(2, 2)) == 0.5
+    νc = I -> Float32(I[1])          # ν grows with the x index
+    @test WaterLily._ν(νc, CartesianIndex(3, 2)) == 3.0f0
+    # Face j=1 at cell (3,2) lies between (2,2) and (3,2): mean = (3+2)/2
+    @test WaterLily._νf(νc, 1, CartesianIndex(3, 2)) == 2.5f0
+end
+
+include("effective_nu_test.jl")
+
 @testset "Body.jl" begin
     @test WaterLily.μ₀(3.,6)==WaterLily.μ₀(0.5,1)
     @test WaterLily.μ₀(0.,1)==0.5
@@ -571,6 +584,15 @@ import WaterLily: ×
         u₂ .= 0; u₃ .= 0
         @test all(WaterLily.viscous_force(u₂,1.0,df₂,body) .≈ 0)
         @test all(WaterLily.viscous_force(u₃,1.0,df₃,body) .≈ 0)
+        # viscous force with a closure ν(I)
+        @test all(WaterLily.viscous_force(u₂,I->one(eltype(u₂)),df₂,body) .≈ 0)
+        @test all(WaterLily.viscous_force(u₃,I->one(eltype(u₃)),df₃,body) .≈ 0)
+        # A closure ν is stored by reference on the Flow, so downstream
+        # code that mutates the closure's own backing state stays in sync.
+        νback = ones(eltype(u₂), N+2, N+2) |> f
+        clos = I -> νback[I]
+        flow_test = Flow((N, N), (1f0, 0f0); T=eltype(u₂), ν=clos, mem=f)
+        @test flow_test.ν === clos
         # pressure moment
         p₂ = zeros(N,N) |> f; apply!(x->x[2],p₂)
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
