@@ -1,0 +1,7 @@
+# https://github.com/google/yamlfmt/blob/main/docs/config-file.md
+formatter:
+  type: basic
+  retain_line_breaks_single: true
+  indent: 2
+line_ending: lf # matching other hooks settings
+exclude: ['.copier-answers.yml']

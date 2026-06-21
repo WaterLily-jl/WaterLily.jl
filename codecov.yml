@@ -1,0 +1,10 @@
+# See https://docs.codecov.com/docs/codecovyml-reference for details
+coverage:
+  status:
+    project:
+      default:
+        target: 90%
+    patch:
+      default:
+        target: 90%
+  range: "80...90" # Yellow within this range

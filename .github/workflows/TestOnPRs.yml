@@ -1,0 +1,29 @@
+name: Test on PRs
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "test/**"
+      - "*.toml"
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  # Skip intermediate builds: always.
+  # Cancel intermediate builds: only if it is a pull request build.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  test:
+    uses: ./.github/workflows/ReusableTest.yml
+    with:
+      os: ubuntu-latest
+      version: "1"
+      arch: x64
+      allow_failure: false
+      run_codecov: true
+    secrets:
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}

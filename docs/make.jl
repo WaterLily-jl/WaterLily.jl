@@ -1,46 +1,70 @@
-using Documenter, WaterLily
+using WaterLily
+using Documenter
 
-## find all image files in assets/ dir and copy in docs/src/assets/
+DocMeta.setdocmeta!(WaterLily, :DocTestSetup, :(using WaterLily); recursive = true)
 
-recursive_find(directory, pattern) =
-    mapreduce(vcat, walkdir(directory)) do (root, dirs, files)
-        joinpath.(root, filter(contains(pattern), files))
+# Add titles of sections and overrides page titles
+const titles = Dict(
+    # "10-tutorials" => "Tutorials", # example folder title
+    "91-developer.md" => "Developer docs",
+)
+
+function recursively_list_pages(folder; path_prefix="")
+    pages_list = Any[]
+    for file in readdir(folder)
+        if file == "index.md"
+            # We add index.md separately to make sure it is the first in the list
+            continue
+        end
+        # this is the relative path according to our prefix, not @__DIR__, i.e., relative to `src`
+        relpath = joinpath(path_prefix, file)
+        # full path of the file
+        fullpath = joinpath(folder, relpath)
+
+        if isdir(fullpath)
+            # If this is a folder, enter the recursion case
+            subsection = recursively_list_pages(fullpath; path_prefix=relpath)
+
+            # Ignore empty folders
+            if length(subsection) > 0
+                title = if haskey(titles, relpath)
+                titles[relpath]
+                else
+                @error "Bad usage: '$relpath' does not have a title set. Fix in 'docs/make.jl'"
+                relpath
+                end
+                push!(pages_list, title => subsection)
+            end
+
+            continue
+        end
+
+        if splitext(file)[2] != ".md" # non .md files are ignored
+            continue
+        elseif haskey(titles, relpath) # case 'title => path'
+            push!(pages_list, titles[relpath] => relpath)
+        else # case 'title'
+            push!(pages_list, relpath)
+        end
     end
 
-image_files = []
-
-for pattern in [r"\.gif", r"\.jpg", r"\.png"]
-    global image_files = vcat(image_files, recursive_find(joinpath(@__DIR__, "../assets/"), pattern))
-end
-@show image_files
-@show joinpath(@__DIR__, "src/assets/"*basename.(image_files[1]))
-for file in image_files
-    cp(file, joinpath(@__DIR__, "src/assets/"*basename.(file)), force=true)
+    return pages_list
 end
 
+function list_pages()
+    root_dir = joinpath(@__DIR__, "src")
+    pages_list = recursively_list_pages(root_dir)
 
-## now ready to make the docs
+    return ["index.md"; pages_list]
+end
 
-makedocs(
+makedocs(;
     modules = [WaterLily],
-    format=Documenter.HTML(;
-        prettyurls=get(ENV, "CI", nothing) == "true",
-        canonical="https://WaterLily-jl.github.io/WaterLily.jl/",
-        assets=String[],
-        mathengine = MathJax3()
-    ),
-    authors = "Gabriel Weymouth",
+    authors = "Gabriel Weymouth <gabriel.weymouth@gmail.com>",
+    repo = "https://github.com/WaterLily-jl/WaterLily.jl/blob/{commit}{path}#{line}",
     sitename = "WaterLily.jl",
-    pages = ["index.md"]
-    # strict = true,
-    # clean = true,
-    # checkdocs = :exports,
+    format = Documenter.HTML(; canonical = "https://WaterLily-jl.github.io/WaterLily.jl"),
+    pages = list_pages(),
 )
 
-deploydocs(
-    repo = "github.com/WaterLily-jl/WaterLily.jl.git",
-    target = "build",
-    branch = "gh-pages",
-    push_preview = true,
-    versions = ["stable" => "v^", "v#.#" ],
-)
+deploydocs(; repo = "github.com/WaterLily-jl/WaterLily.jl")

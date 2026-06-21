@@ -1,0 +1,63 @@
+name: Reusable test
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+        default: "1"
+      os:
+        required: false
+        type: string
+        default: ubuntu-latest
+      arch:
+        required: false
+        type: string
+        default: x64
+      allow_failure:
+        required: false
+        type: boolean
+        default: false
+      run_codecov:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      codecov_token:
+        required: true
+
+jobs:
+  test:
+    name: Julia ${{ inputs.version }} - ${{ inputs.os }} - ${{ inputs.arch }} - ${{ github.event_name }}
+    runs-on: ${{ inputs.os }}
+    continue-on-error: ${{ inputs.allow_failure }}
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ inputs.version }}
+          arch: ${{ inputs.arch }}
+      - name: Use Julia cache
+        uses: julia-actions/cache@v5
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: WaterLily tests
+        env:
+          JULIA_NUM_THREADS: ${{ matrix.nthreads }}
+        shell: bash
+        run: |
+          if [ "${{ matrix.nthreads }}" = "auto" ]
+          then
+            printf "[WaterLily]\nbackend = \"KernelAbstractions\"" > LocalPreferences.toml
+          else
+            printf "[WaterLily]\nbackend = \"SIMD\"" > LocalPreferences.toml
+          fi
+          julia --proj --color=yes -e "using Pkg; Pkg.instantiate(); Pkg.test(; coverage=true);"
+      - uses: julia-actions/julia-processcoverage@v1
+        if: ${{ inputs.run_codecov }}
+      - uses: codecov/codecov-action@v4
+        if: ${{ inputs.run_codecov }}
+        with:
+          file: lcov.info
+          token: ${{ secrets.codecov_token }}

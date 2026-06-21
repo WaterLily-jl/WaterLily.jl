@@ -1,20 +1,8 @@
-# WaterLily
-
-## Introduction and Quickstart
-
-```@docs
-WaterLily
-```
-
-## Types Methods and Functions
 ```@meta
 CurrentModule = WaterLily
 ```
 
-```@index
-```
+# WaterLily
 
-```@autodocs
-Modules = [WaterLily]
-Order   = [:constant, :type, :function, :macro]
-```
+Documentation for [WaterLily](https://github.com/WaterLily-jl/WaterLily.jl).
+
