@@ -3,7 +3,7 @@ using ReadVTK, WriteVTK, JLD2
 
 backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed to run main tests, use KernelAbstractions backend"))
 @info "Test backends: $(join(arrays,", "))"
-@testset "util.jl" begin
+@testset "core.jl" begin
     I = CartesianIndex(1,2,3,4)
     @test I+δ(3,I) == CartesianIndex(1,2,4,4)
     @test WaterLily.CI(I,5)==CartesianIndex(1,2,3,4,5)
@@ -22,16 +22,6 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
     @test WaterLily.joinsymtype(sym,[:A,:B,:C]) == Expr[:(a::A), :(b::B), :(c::C)]
 
     for f ∈ arrays
-        p = zeros(4,5) |> f
-        apply!(x->x[1]+x[2]+3,p) # add 2×1.5 to move edge to origin
-        @test inside(p) == CartesianIndices((2:3,2:4))
-        @test inside(p,buff=0) == CartesianIndices(p)
-        @test L₂(p) == 187
-
-        u = zeros(5,5,2) |> f
-        apply!((i,x)->x[i],u)
-        @test GPUArrays.@allowscalar [u[i,j,1].-(i-2) for i in 1:3, j in 1:3]==zeros(3,3)
-
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> f # vector
         σ = rand(Ng...) |> f # scalar
@@ -83,7 +73,11 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
         @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
 
-        # test interpolation, test on two different array type
+    end
+end
+
+@testset "util.jl" begin
+    for f ∈ arrays
         a = zeros(Float32,8,8,2) |> f; b = zeros(Float64,8,8) |> f
         apply!((i,x)->x[i],a); apply!(x->x[1],b) # offset for start of grid
         @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(2.5f0,1.f0),a) .≈ [2.5f0,1.0f0])
@@ -97,39 +91,25 @@ backend != "KernelAbstractions" && throw(ArgumentError("SIMD backend not allowed
         @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(-1.f0,4.f0),a) .≈ Float32[-0.5, 4])
         @test GPUArrays.@allowscalar WaterLily.interp(SVector(10.,10.),b) ≈ 6.0
 
-        # test on perdot
-        σ1 = rand(Ng...) |> f # scalar
-        σ2 = rand(Ng...) |> f # another scalar
-        # use ≈ instead of == as summation in different order might result in slight difference in floating point expressions
-        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
-        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
-        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
-
-        # test spread!, 2D scalar field into a 3D scalar
         src2 = rand(2,3) |> f
         dest3 = zeros(2,3,4) |> f
         WaterLily.spread!(dest3, src2; dim=3)
         @test GPUArrays.@allowscalar all(dest3[:,:,1] .≈ dest3[:,:,2] .≈ dest3[:,:,3] .≈ dest3[:,:,4] .≈ src2)
-        # same for a vector field
         src2 = rand(2,3,2) |> f
         dest3 = zeros(2,3,4,3) |> f
         WaterLily.spread!(dest3, src2; dim=3)
         @test GPUArrays.@allowscalar all(dest3[:,:,1,1:2] .≈ dest3[:,:,2,1:2] .≈ dest3[:,:,3,1:2] .≈ dest3[:,:,4,1:2] .≈ src2)
-        # errors when dimensions are incompatible
-        @test_throws MethodError WaterLily.spread!(src2, src2; dim=3)           # same dims
-        @test_throws MethodError WaterLily.spread!(zeros(2, 2, 4), src2; dim=3) # mismatched non-spread axis
-        @test_throws MethodError WaterLily.spread!(src2, dest3; dim=1)          # wrong order of fields
-        # test on Simulations
+        @test_throws MethodError WaterLily.spread!(src2, src2; dim=3)
+        @test_throws MethodError WaterLily.spread!(zeros(2, 2, 4), src2; dim=3)
+        @test_throws MethodError WaterLily.spread!(src2, dest3; dim=1)
         body = AutoBody((x,t)->√sum(abs2,SA[x[1]-8,x[2]-8])-6)
         sim2D = Simulation((32,16),(1.0,0.0),1.0;body,mem=f)
         apply!(x->x[1],sim2D.flow.p); apply!((i,x)->x[i],sim2D.flow.u)
         sim3D = Simulation((32,16,8),(1.0,0.0,0.0),1.0;body,perdir=(3,),mem=f)
         WaterLily.spread!(sim3D, sim2D; dim=3, ϵ=0.0)
-        # check at a few location along dims
         @test GPUArrays.@allowscalar all(sim3D.flow.u[:,:,1,1:2] .≈ sim3D.flow.u[:,:,3,1:2] .≈ sim3D.flow.u[:,:,6,1:2] .≈ sim3D.flow.u[:,:,8,1:2] .≈ sim2D.flow.u)
         @test GPUArrays.@allowscalar all(sim3D.flow.p[:,:,1] .≈ sim3D.flow.p[:,:,3] .≈ sim3D.flow.p[:,:,6] .≈ sim3D.flow.p[:,:,8] .≈ sim2D.flow.p)
         @test_throws AssertionError WaterLily.spread!(sim3D, sim2D; dim=1)
-        # body mis-match should throw an AssertionError
         sim3D = Simulation((32,16,8),(1.0,0.0,0.0),1.0;body=AutoBody((x,t)->√sum(abs2,x.-8)-6),perdir=(3,),mem=f)
         @test_throws AssertionError WaterLily.spread!(sim3D, sim2D; dim=3)
     end
@@ -160,6 +140,14 @@ end
         err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
         @test pois.n[] < 35
+    end
+    for f ∈ arrays
+        Ng = (8,8,8)
+        σ1 = rand(Ng...) |> f
+        σ2 = rand(Ng...) |> f
+        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,())    ≈ sum(σ1[I]*σ2[I] for I∈CartesianIndices(σ1))
+        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
+        @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
     end
 end
 
@@ -253,6 +241,14 @@ end
 
     # check applying acceleration
     for f ∈ arrays
+        p = zeros(4,5) |> f
+        apply!(x->x[1]+x[2]+3,p)
+        @test inside(p) == CartesianIndices((2:3,2:4))
+        @test inside(p,buff=0) == CartesianIndices(p)
+        @test L₂(p) == 187
+        u = zeros(5,5,2) |> f
+        apply!((i,x)->x[i],u)
+        @test GPUArrays.@allowscalar [u[i,j,1].-(i-2) for i in 1:3, j in 1:3]==zeros(3,3)
         N = 4; a = zeros(N,N,2) |> f
         WaterLily.accelerate!(a,1,nothing,())
         @test all(a .== 0)
