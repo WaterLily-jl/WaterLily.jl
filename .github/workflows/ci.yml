@@ -62,6 +62,7 @@ jobs:
           # KernelAbstractions main tests run multithreaded/GPU
           # SIMD alloc tests are serial
           JULIA_NUM_THREADS: ${{ matrix.backend == 'KernelAbstractions' && 'auto' || '1' }}
+          WATERLILY_BACKENDS: 'cpu'
         shell: bash
         run: |
           printf "[WaterLily]\nbackend = \"${{ matrix.backend }}\"" > LocalPreferences.toml

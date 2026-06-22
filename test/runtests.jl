@@ -1,17 +1,24 @@
 using WaterLily, Test, StaticArrays, GPUArrays
 
+# WATERLILY_BACKENDS selects array backends for tests: cpu|cuda|rocm|all
+# Defaults to "all". "cpu,cuda" combinations are allowed
+const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WATERLILY_BACKENDS", "all")), ',')))
+(isempty(WATERLILY_BACKENDS) || any(b -> b ∉ ("cpu","cuda","rocm","all"), WATERLILY_BACKENDS)) &&
+    throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|rocm|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
+
 check_compiler(compiler,parse_str) = try occursin(parse_str, read(`$compiler --version`, String)) catch _ false end
-_cuda = check_compiler("nvcc","release")
-_rocm = check_compiler("hipcc","version")
+_cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS) && check_compiler("nvcc","release")
+_rocm = any(b -> b in ("rocm","all"), WATERLILY_BACKENDS) && check_compiler("hipcc","version")
+_cpu =  any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
 _cuda && using CUDA
 _rocm && using AMDGPU
 function setup_backends()
-    arrays = [Array]
+    arrays = []
+    _cpu &&  push!(arrays, Array)
     _cuda && CUDA.functional() && push!(arrays, CUDA.CuArray)
     _rocm && AMDGPU.functional() && push!(arrays, AMDGPU.ROCArray)
     return arrays
 end
-
 arrays = setup_backends()
 
 #=
@@ -19,9 +26,10 @@ Test suite chosen by WaterLily `backend` preference (LocalPreferences.toml):
     Main sets (KernelAbstractions):
         core util poisson flow bodies forwarddiff metrics simulation ioext
     Allocations tests (SIMD): alloc
-Within a suite, select set(s) with the WATERLILY_TEST environment variable (defaults to "all")
+Within a suite, select set(s) with the WATERLILY_TEST environment variable (defaults to "all"),
+and limit the array backends with WATERLILY_BACKENDS (comma-separated cpu|cuda|rocm|all; see top)
 Run single sets locally with e.g.
-   WATERLILY_TEST=poisson,bodies julia --project -e 'using Pkg; Pkg.test()'
+   WATERLILY_TEST=poisson,bodies WATERLILY_BACKENDS=cpu julia --project -e 'using Pkg; Pkg.test()'
 =#
 const WATERLILY_TEST = get(ENV, "WATERLILY_TEST", "all")
 
