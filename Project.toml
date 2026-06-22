@@ -52,15 +52,14 @@ StaticArrays = "^1.1.0"
 julia = "1.10"
 
 [extras]
-AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73"
 PerformanceTestTools = "dc46b164-d16f-48ec-a853-60448fc869fe"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
@@ -68,4 +67,4 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [targets]
-test = ["Test", "BenchmarkTools", "CUDA", "AMDGPU", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2"]
+test = ["Test", "BenchmarkTools", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2", "Pkg"]
