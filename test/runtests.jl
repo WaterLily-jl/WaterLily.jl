@@ -8,14 +8,11 @@ const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WAT
     throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|amdgpu|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
 
 # A backend is requested via WATERLILY_BACKENDS, then confirmed at run time by
-# CUDA/AMDGPU.functional() (a usable device + driver). No compiler/PATH probing,
-# so this works the same on every OS; the GPU packages import fine without a device.
+# CUDA/AMDGPU.functional() (a usable device + driver)
+# A backend that cannot be installed / or not functional is skipped
 _cpu = any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
 _cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS)
 _amdgpu = any(b -> b in ("amdgpu","all"), WATERLILY_BACKENDS)
-
-# CUDA/AMDGPU are not test dependencies: install them on demand only when requested
-# A backend that cannot be installed / or not functional is skipped
 if _cuda
     try
         Pkg.add("CUDA")
