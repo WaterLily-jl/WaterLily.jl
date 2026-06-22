@@ -3,11 +3,12 @@ import Pkg, ParallelTestRunner
 
 #=
 Parallel test runner (ParallelTestRunner.jl): every test_*.jl in this directory runs in
-its own isolated module, in parallel across worker processes (1 thread each by default;
-set WATERLILY_NTHREADS to exercise the multithreaded KernelAbstractions CPU path).
+its own isolated module, in parallel across worker processes. Each worker gets
+WATERLILY_NTHREADS threads (default 4, to exercise the multithreaded KernelAbstractions
+CPU path); --jobs is auto-sized to ≈ Sys.CPU_THREADS / WATERLILY_NTHREADS unless given.
 
-Which suite runs is set by the WaterLily `backend` preference (LocalPreferences.toml):
-    "KernelAbstractions" -> main sets (every test_*.jl except test_alloc.jl)
+Test suite set by the WaterLily `backend` preference (LocalPreferences.toml):
+    "KernelAbstractions" -> main test sets (every test_*.jl except test_alloc.jl)
     "SIMD"               -> allocation tests (test_alloc.jl) only
 
 Array backends: WATERLILY_BACKENDS=cpu|cuda|amdgpu|all (comma-separated, default "cpu").
@@ -18,7 +19,6 @@ Run a subset by passing set name(s) (matched with startswith) and/or runner flag
     julia --project -e 'using Pkg; Pkg.test(test_args=["poisson","flow"])'
 =#
 
-# --- array backends: request via WATERLILY_BACKENDS, install requested GPUs on demand ---
 const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WATERLILY_BACKENDS", "cpu")), ',')))
 (isempty(WATERLILY_BACKENDS) || any(b -> b ∉ ("cpu","cuda","amdgpu","all"), WATERLILY_BACKENDS)) &&
     throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|amdgpu|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
@@ -61,8 +61,16 @@ const init_code = quote
 end
 
 # The KernelAbstractions CPU backend is multithreaded, but ParallelTestRunner pins each
-# worker to 1 thread. WATERLILY_NTHREADS (default 1) gives every worker that many threads
-# (overriding that pin); combine with --jobs so jobs × WATERLILY_NTHREADS ≈ your core count.
-const WATERLILY_NTHREADS = get(ENV, "WATERLILY_NTHREADS", "1")
-exeflags = WATERLILY_NTHREADS in ("", "1") ? nothing : ["--threads=$WATERLILY_NTHREADS"]
-ParallelTestRunner.runtests(WaterLily, ARGS; testsuite, init_code, exeflags)
+# worker to 1 thread. WATERLILY_NTHREADS (default 4) gives every worker that many threads,
+# overriding that pin, so the multithreaded path is exercised.
+const _nt = get(ENV, "WATERLILY_NTHREADS", "4")
+const WATERLILY_NTHREADS = isempty(_nt) ? 4 : parse(Int, _nt)
+exeflags = WATERLILY_NTHREADS == 1 ? nothing : ["--threads=$WATERLILY_NTHREADS"]
+
+# Auto-size --jobs so jobs × WATERLILY_NTHREADS ≈ the machine's thread count, unless the
+# caller passed --jobs explicitly (e.g. via Pkg.test(test_args=["--jobs=N"])).
+args = copy(ARGS)
+any(a -> startswith(a, "--jobs"), args) ||
+    push!(args, "--jobs=$(max(1, Sys.CPU_THREADS ÷ WATERLILY_NTHREADS))")
+
+ParallelTestRunner.runtests(WaterLily, args; testsuite, init_code, exeflags)

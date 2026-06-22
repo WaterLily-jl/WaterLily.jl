@@ -59,9 +59,9 @@ jobs:
             ${{ runner.os }}-
       - name: WaterLily tests
         env:
-          # KernelAbstractions main tests run multithreaded/GPU
-          # SIMD alloc tests are serial
-          JULIA_NUM_THREADS: ${{ matrix.backend == 'KernelAbstractions' && 'auto' || '1' }}
+          # KernelAbstractions main tests run multithreaded per worker; SIMD alloc tests are serial.
+          # (--jobs is auto-sized in runtests.jl from Sys.CPU_THREADS / WATERLILY_NTHREADS.)
+          WATERLILY_NTHREADS: ${{ matrix.backend == 'KernelAbstractions' && '4' || '1' }}
           WATERLILY_BACKENDS: 'cpu'
         shell: bash
         run: |
