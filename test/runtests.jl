@@ -1,83 +1,62 @@
-using WaterLily, Test, StaticArrays, GPUArrays
-import Pkg
+using WaterLily
+import Pkg, ParallelTestRunner
 
-# WATERLILY_BACKENDS selects array backends for tests: cpu|cuda|amdgpu|all
-# Defaults to "cpu" (GPU backends are opt-in). Combinations like "cpu,cuda" are allowed
+#=
+Parallel test runner (ParallelTestRunner.jl): every test_*.jl in this directory runs in
+its own isolated module, in parallel across (single-threaded) worker processes.
+
+Which suite runs is set by the WaterLily `backend` preference (LocalPreferences.toml):
+    "KernelAbstractions" -> main sets (every test_*.jl except test_alloc.jl)
+    "SIMD"               -> allocation tests (test_alloc.jl) only
+
+Array backends: WATERLILY_BACKENDS=cpu|cuda|amdgpu|all (comma-separated, default "cpu").
+GPU backends are opt-in and installed on demand (they are not test dependencies).
+
+Run a subset by passing set name(s) (matched with startswith) and/or runner flags
+(--jobs=N, --list, --verbose, --quickfail), e.g.
+    julia --project -e 'using Pkg; Pkg.test(test_args=["poisson","flow"])'
+=#
+
+# --- array backends: request via WATERLILY_BACKENDS, install requested GPUs on demand ---
 const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WATERLILY_BACKENDS", "cpu")), ',')))
 (isempty(WATERLILY_BACKENDS) || any(b -> b ∉ ("cpu","cuda","amdgpu","all"), WATERLILY_BACKENDS)) &&
     throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|amdgpu|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
-
-# A backend is requested via WATERLILY_BACKENDS, then confirmed at run time by
-# CUDA/AMDGPU.functional() (a usable device + driver)
-# A backend that cannot be installed / or not functional is skipped
-_cpu = any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
-_cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS)
+_cpu    = any(b -> b in ("cpu","all"),    WATERLILY_BACKENDS)
+_cuda   = any(b -> b in ("cuda","all"),   WATERLILY_BACKENDS)
 _amdgpu = any(b -> b in ("amdgpu","all"), WATERLILY_BACKENDS)
+
+# GPU packages are not test deps: install the requested ones once here in the main process
+# (workers share this project) so the sandboxes can `using` them; functional() is checked
+# per sandbox. A backend that cannot be installed is skipped.
 if _cuda
-    try
-        Pkg.add("CUDA")
-        using CUDA
-        global _cuda = CUDA.functional()
-    catch e
-        @warn "WATERLILY_BACKENDS requested cuda but CUDA could not be installed/loaded; skipping" exception=e
-        global _cuda = false
-    end
+    try Pkg.add("CUDA") catch e; @warn "requested cuda but CUDA could not be installed; skipping" exception=e; global _cuda = false end
 end
 if _amdgpu
-    try
-        Pkg.add("AMDGPU")
-        using AMDGPU
-        global _amdgpu = AMDGPU.functional()
-    catch e
-        @warn "WATERLILY_BACKENDS requested amdgpu but AMDGPU could not be installed/loaded; skipping" exception=e
-        global _amdgpu = false
-    end
+    try Pkg.add("AMDGPU") catch e; @warn "requested amdgpu but AMDGPU could not be installed; skipping" exception=e; global _amdgpu = false end
 end
-function setup_backends()
+
+# --- discover test sets: every test_*.jl, gated by the WaterLily `backend` preference ---
+const TESTDIR = @__DIR__
+is_test_file(f) = startswith(f, "test_") && endswith(f, ".jl")
+setname(f) = f[6:end-3]                                    # "test_core.jl" -> "core"
+wanted(name) = backend == "SIMD" ? name == "alloc" : name != "alloc"
+testsuite = Dict{String,Expr}()
+for (root, _dirs, files) in walkdir(TESTDIR), f in filter(is_test_file, files)
+    name = setname(f)
+    wanted(name) && (testsuite[name] = :(include($(joinpath(root, f)))))
+end
+
+# --- per-sandbox setup (runs in each isolated module): imports, the `arrays` list, helpers ---
+const init_code = quote
+    using WaterLily, Test, StaticArrays, GPUArrays
     arrays = []
-    _cpu && push!(arrays, Array)
-    _cuda && push!(arrays, CUDA.CuArray)
-    _amdgpu && push!(arrays, AMDGPU.ROCArray)
-    isempty(arrays) && throw(ArgumentError("No functional backend available"))
-    return arrays
-end
-arrays = setup_backends()
-
-#=
-Test suite chosen by WaterLily `backend` preference (LocalPreferences.toml):
-    Main sets (KernelAbstractions):
-        core util poisson flow bodies forwarddiff metrics simulation ioext
-    Allocations tests (SIMD): alloc
-Within a suite, select set(s) with the WATERLILY_TEST environment variable (defaults to "all"),
-and limit the array backends with WATERLILY_BACKENDS (comma-separated cpu|cuda|amdgpu|all; see top)
-Run single sets locally with e.g.
-   WATERLILY_TEST=poisson,bodies WATERLILY_BACKENDS=cpu julia --project -e 'using Pkg; Pkg.test()'
-=#
-const WATERLILY_TEST = get(ENV, "WATERLILY_TEST", "all")
-
-function run_set(file)
-    tests_name = split(file, '_')[2][1:end-3]
-    (WATERLILY_TEST == "all" || occursin(tests_name, WATERLILY_TEST)) || return
-    include(file)
+    $(_cpu)    && push!(arrays, Array)
+    $(_cuda)   && using CUDA
+    $(_amdgpu) && using AMDGPU
+    $(_cuda)   && CUDA.functional()   && push!(arrays, CUDA.CuArray)
+    $(_amdgpu) && AMDGPU.functional() && push!(arrays, AMDGPU.ROCArray)
+    isempty(arrays) && error("No functional backend available")
+    include($(joinpath(TESTDIR, "helper.jl")))
 end
 
-WaterLily.check_nthreads()
-if backend == "KernelAbstractions"
-    @testset verbose=true "WaterLily.jl" begin
-        @info "Main tests with backends: $(join(arrays,", "))"
-        include("helper.jl")
-        run_set("test_core.jl")
-        run_set("test_util.jl")
-        run_set("test_poisson.jl")
-        run_set("test_flow.jl")
-        run_set("test_bodies.jl")
-        run_set("test_forwarddiff.jl")
-        run_set("test_metrics.jl")
-        run_set("test_simulation.jl")
-        run_set("test_ioext.jl")
-    end
-else # backend == "SIMD"
-    @testset verbose=true "WaterLily.jl allocations" begin
-        run_set("test_alloc.jl")
-    end
-end
+ParallelTestRunner.runtests(WaterLily, ARGS; testsuite, init_code)
