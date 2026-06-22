@@ -45,7 +45,8 @@ end
 
 # Per-sandbox setup (runs in each isolated module): imports, the `arrays` list and helpers
 const init_code = quote
-    using WaterLily, Test, StaticArrays, GPUArrays
+    using WaterLily, Test, StaticArrays
+    import GPUArrays
     arrays = []
     $(_cpu)    && push!(arrays, Array)
     $(_cuda)   && using CUDA
