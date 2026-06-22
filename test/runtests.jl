@@ -6,17 +6,20 @@ const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WAT
 (isempty(WATERLILY_BACKENDS) || any(b -> b ∉ ("cpu","cuda","rocm","all"), WATERLILY_BACKENDS)) &&
     throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|rocm|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
 
-check_compiler(compiler,parse_str) = try occursin(parse_str, read(`$compiler --version`, String)) catch _ false end
-_cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS) && check_compiler("nvcc","release")
-_rocm = any(b -> b in ("rocm","all"), WATERLILY_BACKENDS) && check_compiler("hipcc","version")
-_cpu =  any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
+# A backend is requested via WATERLILY_BACKENDS, then confirmed at run time by
+# CUDA/AMDGPU.functional() (a usable device + driver). No compiler/PATH probing,
+# so this works the same on every OS; the GPU packages import fine without a device.
+_cpu = any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
+_cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS)
+_rocm = any(b -> b in ("rocm","all"), WATERLILY_BACKENDS)
 _cuda && using CUDA
 _rocm && using AMDGPU
 function setup_backends()
     arrays = []
-    _cpu &&  push!(arrays, Array)
+    _cpu && push!(arrays, Array)
     _cuda && CUDA.functional() && push!(arrays, CUDA.CuArray)
     _rocm && AMDGPU.functional() && push!(arrays, AMDGPU.ROCArray)
+    isempty(arrays) && throw(ArgumentError("No functional backend available"))
     return arrays
 end
 arrays = setup_backends()
