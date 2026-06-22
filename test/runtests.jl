@@ -3,7 +3,8 @@ import Pkg, ParallelTestRunner
 
 #=
 Parallel test runner (ParallelTestRunner.jl): every test_*.jl in this directory runs in
-its own isolated module, in parallel across (single-threaded) worker processes.
+its own isolated module, in parallel across worker processes (1 thread each by default;
+set WATERLILY_NTHREADS to exercise the multithreaded KernelAbstractions CPU path).
 
 Which suite runs is set by the WaterLily `backend` preference (LocalPreferences.toml):
     "KernelAbstractions" -> main sets (every test_*.jl except test_alloc.jl)
@@ -59,4 +60,9 @@ const init_code = quote
     include($(joinpath(TESTDIR, "helper.jl")))
 end
 
-ParallelTestRunner.runtests(WaterLily, ARGS; testsuite, init_code)
+# The KernelAbstractions CPU backend is multithreaded, but ParallelTestRunner pins each
+# worker to 1 thread. WATERLILY_NTHREADS (default 1) gives every worker that many threads
+# (overriding that pin); combine with --jobs so jobs × WATERLILY_NTHREADS ≈ your core count.
+const WATERLILY_NTHREADS = get(ENV, "WATERLILY_NTHREADS", "1")
+exeflags = WATERLILY_NTHREADS in ("", "1") ? nothing : ["--threads=$WATERLILY_NTHREADS"]
+ParallelTestRunner.runtests(WaterLily, ARGS; testsuite, init_code, exeflags)
