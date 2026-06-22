@@ -4,7 +4,7 @@ import Pkg, ParallelTestRunner
 #=
 Parallel test runner (ParallelTestRunner.jl): every test_*.jl in this directory runs in
 its own isolated module, in parallel across worker processes. Each worker gets
-WATERLILY_NTHREADS threads (default 4, to exercise the multithreaded KernelAbstractions
+WATERLILY_NTHREADS threads (default 2, to exercise the multithreaded KernelAbstractions
 CPU path); --jobs is auto-sized to ≈ Sys.CPU_THREADS / WATERLILY_NTHREADS unless given.
 
 Test suite set by the WaterLily `backend` preference (LocalPreferences.toml):
@@ -22,24 +22,20 @@ Run a subset by passing set name(s) (matched with startswith) and/or runner flag
 const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WATERLILY_BACKENDS", "cpu")), ',')))
 (isempty(WATERLILY_BACKENDS) || any(b -> b ∉ ("cpu","cuda","amdgpu","all"), WATERLILY_BACKENDS)) &&
     throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|amdgpu|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
-_cpu    = any(b -> b in ("cpu","all"),    WATERLILY_BACKENDS)
-_cuda   = any(b -> b in ("cuda","all"),   WATERLILY_BACKENDS)
+_cpu = any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
+_cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS)
 _amdgpu = any(b -> b in ("amdgpu","all"), WATERLILY_BACKENDS)
 
-# GPU packages are not test deps: install the requested ones once here in the main process
-# (workers share this project) so the sandboxes can `using` them; functional() is checked
-# per sandbox. A backend that cannot be installed is skipped.
-if _cuda
-    try Pkg.add("CUDA") catch e; @warn "requested cuda but CUDA could not be installed; skipping" exception=e; global _cuda = false end
-end
-if _amdgpu
-    try Pkg.add("AMDGPU") catch e; @warn "requested amdgpu but AMDGPU could not be installed; skipping" exception=e; global _amdgpu = false end
-end
+# GPU packages are not test deps: install the requested ones once here in the main process. A backend that cannot be installed is skipped
+_cuda &&
+    try Pkg.add("CUDA") catch e; @warn "Requested CUDA could not be installed; skipping" exception=e; global _cuda = false end
+_amdgpu &&
+    try Pkg.add("AMDGPU") catch e; @warn "Requested AMDGPU could not be installed; skipping" exception=e; global _amdgpu = false end
 
-# --- discover test sets: every test_*.jl, gated by the WaterLily `backend` preference ---
+# Discover test sets: every test_*.jl, gated by the WaterLily `backend` preference
 const TESTDIR = @__DIR__
 is_test_file(f) = startswith(f, "test_") && endswith(f, ".jl")
-setname(f) = f[6:end-3]                                    # "test_core.jl" -> "core"
+setname(f) = f[6:end-3] # "test_core.jl" -> "core"
 wanted(name) = backend == "SIMD" ? name == "alloc" : name != "alloc"
 testsuite = Dict{String,Expr}()
 for (root, _dirs, files) in walkdir(TESTDIR), f in filter(is_test_file, files)
@@ -47,7 +43,7 @@ for (root, _dirs, files) in walkdir(TESTDIR), f in filter(is_test_file, files)
     wanted(name) && (testsuite[name] = :(include($(joinpath(root, f)))))
 end
 
-# --- per-sandbox setup (runs in each isolated module): imports, the `arrays` list, helpers ---
+# Per-sandbox setup (runs in each isolated module): imports, the `arrays` list and helpers
 const init_code = quote
     using WaterLily, Test, StaticArrays, GPUArrays
     arrays = []
@@ -60,11 +56,11 @@ const init_code = quote
     include($(joinpath(TESTDIR, "helper.jl")))
 end
 
-# The KernelAbstractions CPU backend is multithreaded, but ParallelTestRunner pins each
-# worker to 1 thread. WATERLILY_NTHREADS (default 4) gives every worker that many threads,
-# overriding that pin, so the multithreaded path is exercised.
-const _nt = get(ENV, "WATERLILY_NTHREADS", "4")
-const WATERLILY_NTHREADS = isempty(_nt) ? 4 : parse(Int, _nt)
+# WATERLILY_NTHREADS (default 2) gives every worker that many threads,
+# overriding ParallelTestRunner pinning to single thread, so that tests
+# run with KA multi-threading.
+const _nt = get(ENV, "WATERLILY_NTHREADS", "2")
+const WATERLILY_NTHREADS = isempty(_nt) ? 2 : parse(Int, _nt)
 exeflags = WATERLILY_NTHREADS == 1 ? nothing : ["--threads=$WATERLILY_NTHREADS"]
 
 # Auto-size --jobs so jobs × WATERLILY_NTHREADS ≈ the machine's thread count, unless the

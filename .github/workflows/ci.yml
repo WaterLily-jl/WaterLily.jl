@@ -60,8 +60,8 @@ jobs:
       - name: WaterLily tests
         env:
           # KernelAbstractions main tests run multithreaded per worker; SIMD alloc tests are serial.
-          # (--jobs is auto-sized in runtests.jl from Sys.CPU_THREADS / WATERLILY_NTHREADS.)
-          WATERLILY_NTHREADS: ${{ matrix.backend == 'KernelAbstractions' && '4' || '1' }}
+          # (--jobs is auto-sized in runtests.jl from Sys.CPU_THREADS / WATERLILY_NTHREADS)
+          WATERLILY_NTHREADS: ${{ matrix.backend == 'KernelAbstractions' && '2' || '1' }}
           WATERLILY_BACKENDS: 'cpu'
         shell: bash
         run: |
