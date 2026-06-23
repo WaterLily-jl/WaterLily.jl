@@ -1,0 +1,55 @@
+@testset "WaterLily.jl" begin
+    radius = 8; ν=radius/250; T=Float32; nm = radius.*(4,4)
+    circle(x,t) = √sum(abs2,x .- 2radius) - radius
+    move(x,t) = x-SA[t,0]
+    accel(x,t) = x-SA[2t^2,0]
+    plate(x,t) = √sum(abs2,x - SA[clamp(x[1],-radius+2,radius-2),0])-2
+    function rotate(x,t)
+        s,c = sincos(t/radius+1); R = SA[c s ; -s c]
+        R * (x .- 2radius)
+    end
+    function bend(xy,t) # into ≈ circular arc
+        x,y = xy .- 2radius; κ = 2t/radius^2+0.2f0/radius
+        return SA[x+x^3*κ^2/6,y-x^2*κ/2]
+    end
+    # Test sim_time, and sim_step! stopping time
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)
+    @test sim_time(sim) == 0
+    sim_step!(sim,0.1,remeasure=false)
+    @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
+    for mem ∈ arrays, exitBC ∈ (true,false)
+        # Test that remeasure works perfectly when V = U = 1
+        sim = Simulation(nm,(1,0),radius; body=AutoBody(circle,move), ν, T, mem, exitBC)
+        sim_step!(sim)
+        @test all(sim.flow.u[:,radius,1].≈1)
+        # @test all(sim.pois.n .== 0)
+        # Test accelerating from U=0 to U=1
+        sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(circle,accel), ν, T, mem, exitBC)
+        sim_step!(sim)
+        @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
+        @test maximum(sim.flow.u) > maximum(sim.flow.V) > 0
+        # Test that non-uniform V doesn't break
+        sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,rotate), ν, T, mem, exitBC)
+        sim_step!(sim)
+        @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
+        @test 1 > sim.flow.Δt[end] > 0.5
+        # Test that divergent V doesn't break
+        sim = Simulation(nm,(0,0),radius; U=1, body=AutoBody(plate,bend), ν, T, mem, exitBC)
+        sim_step!(sim)
+        @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
+        @test 1.2 > sim.flow.Δt[end] > 0.8
+    end
+    # Test flow_ctor factory: explicit lambda wrapping Flow produces a working simulation
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
+                     flow_ctor=(d,u;kw...)->Flow(d,u;kw...))
+    @test sim.flow isa Flow
+    sim_step!(sim,0.5,remeasure=false)
+    @test all(isfinite, sim.flow.u)
+
+    # Test pois_ctor factory: explicit lambda wrapping MultiLevelPoisson produces a working simulation
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
+                     pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ))
+    @test sim.pois isa MultiLevelPoisson
+    sim_step!(sim,0.5,remeasure=false)
+    @test all(isfinite, sim.flow.u)
+end
