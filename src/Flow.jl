@@ -87,7 +87,7 @@ ic_function(uBC::Tuple) = (i,x)->uBC[i]
 
 abstract type AbstractFlow{D,T} end
 """
-    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
+    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, Lf}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
@@ -96,7 +96,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractFlow{D,T}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -114,8 +114,9 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     g :: Union{Function,Nothing} # acceleration field funciton
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
+    λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
-            uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
+            uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(uλ) && (uλ = ic_function(uBC))
@@ -126,25 +127,25 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
         V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end
 end
 
 """
-    mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+    mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
     a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
-    mom_predict!(a,t₀,t₁;λ,udf,kwargs...)
+    mom_predict!(a,t₀,t₁;udf,kwargs...)
     mom_project!(a,b,1,t₁)
     # corrector u → u¹
     @log "c"
-    mom_correct!(a,t₁;λ,udf,kwargs...)
+    mom_correct!(a,t₁;udf,kwargs...)
     mom_project!(a,b,0.5,t₁)
     push!(a.Δt,CFL(a))
 end
@@ -163,15 +164,15 @@ function BDIM!(a::AbstractFlow)
 end
 
 """
-    mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
+    mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
 
-Predictor phase of `mom_step!`: advect under `u⁰`, apply BDIM, enforce BCs.
-On return `a.u` is BC-consistent and ready for pressure projection.
+Predictor phase of `mom_step!`: advect under `u⁰` with the convective scheme `a.λ`, apply BDIM,
+enforce BCs. On return `a.u` is BC-consistent and ready for pressure projection.
 `t₀` and `t₁` are the start and end times of the step; BCs are enforced at the
 end-of-step time `sum(a.Δt)`.
 """
-function mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
-    conv_diff!(a.f,a.u⁰,a.σ,λ;ν=a.ν,perdir=a.perdir)
+function mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
+    conv_diff!(a.f,a.u⁰,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u⁰,t₀; kwargs...) # advect-with field is u⁰ here (a.u is zeroed by scale_u!)
     accelerate!(a.f,t₀,a.g,a.uBC)
     BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
@@ -179,14 +180,14 @@ function mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs
 end
 
 """
-    mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
+    mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
 
-Corrector phase of `mom_step!`: advect under the projected `u`, apply BDIM,
-blend with the trapezoidal weight, enforce BCs at time-step end-time `t`.
+Corrector phase of `mom_step!`: advect under the projected `u` with the convective scheme `a.λ`,
+apply BDIM, blend with the trapezoidal weight, enforce BCs at time-step end-time `t`.
 On return `a.u` is BC-consistent and ready for pressure projection.
 """
-function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
-    conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
+function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
+    conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u,t; kwargs...) # advect-with field is the projected a.u here
     accelerate!(a.f,t,a.g,a.uBC)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)

@@ -84,6 +84,19 @@
     end
 end
 
+@testset "Convection scheme selection" begin
+    # λ is chosen once at Simulation/Flow construction (stored as flow.λ)
+    nonuniform(i,x) = i==1 ? sinpi(x[1]/8) : 0*x[1]   # gradients so quick ≠ cds
+    sim(λ,mem) = Simulation((16,16),(1.,0.),16; U=1, T=Float64, mem, perdir=(1,2), uλ=nonuniform, λ)
+    for mem ∈ arrays
+        sim_q, sim_c = sim(quick,mem), sim(cds,mem)
+        @test sim_q.flow.λ === quick && sim_c.flow.λ === cds
+        # the stored scheme is actually used: quick (limited upwind) and cds diverge on a non-uniform field
+        sim_step!(sim_q); sim_step!(sim_c)
+        @test maximum(abs, Array(sim_q.flow.u) .- Array(sim_c.flow.u)) > 1e-6
+    end
+end
+
 @testset "Flow.jl periodic TGV" begin
     for f ∈ arrays
         sim,TGV = TGVsim(f,T=Float32); ue=copy(sim.flow.u) |> Array
