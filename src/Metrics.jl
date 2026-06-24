@@ -168,7 +168,7 @@ end
 """
     total_moment(x₀,sim::Simulation)
 
-Compute the total moment on an immersed body.
+Computes the total (pressure + viscous) moment on an immersed body relative to point x₀.
 """
 total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
 
