@@ -149,6 +149,14 @@ end
 
 using LinearAlgebra: ⋅
 """
+    perdot(a,b,perdir)
+
+Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
+"""
+perdot(a,b,::Tuple{}) = a⋅b
+perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+
+"""
     pcg!(p::Poisson; it=6)
 
 Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
@@ -177,6 +185,7 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     end
 end
 
+L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 

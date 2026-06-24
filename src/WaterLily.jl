@@ -5,20 +5,22 @@ module WaterLily
 
 using DocStringExtensions
 
-include("util.jl")
-export L₂,BC!,@inside,inside,δ,apply!,loc,@log,set_backend,backend
+abstract type AbstractSimulation end
+
+include("core.jl")
+export BC!,@inside,inside,δ,loc,@log,set_backend,backend
 
 using Reexport
 @reexport using KernelAbstractions: @kernel,@index,get_backend
 
 include("Poisson.jl")
-export AbstractPoisson,Poisson,solver!,mult!
+export AbstractPoisson,Poisson,solver!,mult!,L₂
 
 include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
-export AbstractFlow,Flow,mom_step!,quick,cds
+export AbstractFlow,Flow,mom_step!,quick,cds,apply!
 
 include("Body.jl")
 export AbstractBody,measure_sdf!
@@ -29,7 +31,7 @@ export AutoBody,Bodies,measure,sdf,+,-
 include("Metrics.jl")
 export MeanFlow,update!,uu!,uu
 
-abstract type AbstractSimulation end
+include("util.jl")
 
 include("RigidMap.jl")
 export RigidMap,setmap
@@ -70,6 +72,14 @@ Constructor for a WaterLily.jl simulation:
 
 See files in `examples` folder for examples.
 """
+check_fn(f,N,T,nargs) = nothing
+function check_fn(f::Function,N,T,nargs)
+    @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
+    @assert all(typeof.(ntuple(i->f(i,xtargs(Val{}(nargs),N,T)...),N)).==T) "$f is not type stable"
+end
+xtargs(::Val{2},N,T) = (zeros(SVector{N,T}),)
+xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
+
 mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
     L :: Number # length scale
