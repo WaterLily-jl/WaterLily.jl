@@ -85,6 +85,19 @@ applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
 ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
 ic_function(uBC::Tuple) = (i,x)->uBC[i]
 
+"""
+    ic_kwarg(u0, uλ)
+
+Resolve the initial-condition keyword argument. `uλ` is the deprecated name for `u0`:
+if it is supplied a deprecation warning is emitted and its value is used only when `u0`
+is not given. Returns the effective initial condition (possibly `nothing`).
+"""
+function ic_kwarg(u0, uλ)
+    isnothing(uλ) && return u0
+    @warn "The `uλ` keyword argument is deprecated and will be removed in a future release. Use `u0` instead." maxlog=1
+    isnothing(u0) ? uλ : u0
+end
+
 abstract type AbstractFlow{D,T} end
 """
     Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
@@ -115,12 +128,13 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
-            uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
+            u0=nothing, uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
+        u0 = ic_kwarg(u0, uλ)
         Ng = N .+ 2
         Nd = (Ng..., D)
-        isnothing(uλ) && (uλ = ic_function(uBC))
+        isnothing(u0) && (u0 = ic_function(uBC))
         u = Array{T}(undef, Nd...) |> mem
-        isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
+        isa(u0, Function) ? apply!(u0, u) : apply!((i,x)->u0[i], u)
         BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem

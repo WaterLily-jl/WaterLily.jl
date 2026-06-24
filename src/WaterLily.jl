@@ -38,8 +38,8 @@ export RigidMap,setmap
 
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
-               U=norm2(Uλ), Δt=0.25, ν=0., ϵ=1, g=nothing,
-               perdir=(), exitBC=false,
+               U=nothing, Δt=0.25, ν=0., ϵ=1, g=nothing,
+               u0=nothing, perdir=(), exitBC=false,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array,
                flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
@@ -51,14 +51,15 @@ Constructor for a WaterLily.jl simulation:
   - `uBC`: Velocity field applied to boundary and acceleration conditions.
         Define a `Tuple` for constant BCs, or a `Function` for space and time varying BCs `uBC(i,x,t)`.
   - `L`: Simulation length scale.
-  - `U`: Simulation velocity scale. Required if using `Uλ::Function`.
+  - `U`: Simulation velocity scale. Required if using `uBC::Function`.
   - `Δt`: Initial time step.
   - `ν`: Scaled viscosity (`Re=UL/ν`).
   - `g`: Domain acceleration, `g(i,x,t)=duᵢ/dt`
   - `ϵ`: BDIM kernel width.
   - `perdir`: Domain periodic boundary condition in the `(i,)` direction.
-  - `uλ`: Velocity field applied to the initial condition.
-        Define a Tuple for homogeneous (per direction) IC, or a `Function` for space varying IC `uλ(i,x)`.
+  - `u0`: Velocity field applied to the initial condition.
+        Define a Tuple for homogeneous (per direction) IC, or a `Function` for space varying IC `u0(i,x)`.
+        The deprecated `uλ` keyword is still accepted as an alias and will be removed in a future release.
   - `exitBC`: Convective exit boundary condition in the `i=1` direction.
   - `body`: Immersed geometry.
   - `T`: Array element type.
@@ -89,14 +90,15 @@ mutable struct Simulation <: AbstractSimulation
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
-                        uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
+                        u0=nothing, uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
                         flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
                         pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
-        check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(uλ,N,T,2)
-        flow = flow_ctor(dims,uBC;uλ,Δt,ν,g,T,mem,perdir,exitBC)
+        u0 = ic_kwarg(u0, uλ)
+        check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(u0,N,T,2)
+        flow = flow_ctor(dims,uBC;u0,Δt,ν,g,T,mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,pois_ctor(flow))
     end
