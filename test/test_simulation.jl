@@ -54,16 +54,14 @@
     @test all(isfinite, sim.flow.u)
 
     # Initial-condition keyword `u0` and its deprecated alias `uλ`
+    # Test to be removed in WL 2.0
     ic(i,x) = i==1 ? 2.0f0 : 0.0f0
     zeroic(i,x) = 0.0f0
     # `u0` sets the interior initial velocity
     simu0 = Simulation((16,16),(1,0),16; u0=ic, T=Float32)
     @test all(≈(2.0f0), simu0.flow.u[3:14,3:14,1])
     # `uλ` is a deprecated alias for `u0`: it warns once and gives the same field
-    local simuλ
-    @test_logs (:warn, r"uλ.*deprecated") match_mode=:any begin
-        simuλ = Simulation((16,16),(1,0),16; uλ=ic, T=Float32)
-    end
+    simuλ = @test_logs (:warn, r"uλ.*deprecated") match_mode=:any Simulation((16,16),(1,0),16; uλ=ic, T=Float32)
     @test simuλ.flow.u == simu0.flow.u
     # `u0` takes precedence over `uλ` when both are supplied
     simboth = Simulation((16,16),(1,0),16; u0=ic, uλ=zeroic, T=Float32)

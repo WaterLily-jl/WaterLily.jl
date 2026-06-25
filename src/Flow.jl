@@ -91,6 +91,8 @@ ic_function(uBC::Tuple) = (i,x)->uBC[i]
 Resolve the initial-condition keyword argument. `uλ` is the deprecated name for `u0`:
 if it is supplied a deprecation warning is emitted and its value is used only when `u0`
 is not given. Returns the effective initial condition (possibly `nothing`).
+
+Remove this function in WL 2.0
 """
 function ic_kwarg(u0, uλ)
     isnothing(uλ) && return u0
@@ -129,7 +131,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     perdir :: NTuple # tuple of periodic direction
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
             u0=nothing, uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
-        u0 = ic_kwarg(u0, uλ)
+        u0 = ic_kwarg(u0, uλ) # to be removed in v2.0
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(u0) && (u0 = ic_function(uBC))
