@@ -43,7 +43,7 @@ function _interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
 end
 
 """
-    sgs!(flow, t; νₜ, S, Cs, Δ)
+    sgs!(flow, u, t; νₜ, S, Cs, Δ)
 
 Implements a user-defined function `udf` to model subgrid-scale LES stresses based on the Boussinesq approximation
     τᵃᵢⱼ = τʳᵢⱼ - (1/3)τʳₖₖδᵢⱼ = -2νₜS̅ᵢⱼ
@@ -63,12 +63,12 @@ It can be implemented as
 and passed into `sim_step!` as a keyword argument together with the varibles than the function needs (`S`, `Cs`, and `Δ`):
     `sim_step!(sim, ...; udf=sgs, νₜ=smagorinsky, S, Cs, Δ)`
 """
-function sgs!(flow, t; νₜ, S, Cs, Δ)
-    N,n = size_u(flow.u)
-    @loop S[I,:,:] .= WaterLily.S(I,flow.u) over I ∈ inside(flow.σ)
+function sgs!(flow, u, t; νₜ, S, Cs, Δ)
+    N,n = size_u(u)
+    @loop S[I,:,:] .= WaterLily.S(I,u) over I ∈ inside(flow.σ)
     for i ∈ 1:n, j ∈ 1:n
         WaterLily.@loop (
-            flow.σ[I] = -νₜ(I;S,Cs,Δ)*∂(j,CI(I,i),flow.u);
+            flow.σ[I] = -νₜ(I;S,Cs,Δ)*∂(j,CI(I,i),u);
             flow.f[I,i] += flow.σ[I];
         ) over I ∈ inside_u(N,j)
         WaterLily.@loop flow.f[I-δ(j,I),i] -= flow.σ[I] over I ∈ WaterLily.inside_u(N,j)

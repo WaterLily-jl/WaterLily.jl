@@ -44,6 +44,10 @@ import WaterLily: ×
         u₂ .= 0; u₃ .= 0
         @test all(WaterLily.viscous_force(u₂,1.0,df₂,body) .≈ 0)
         @test all(WaterLily.viscous_force(u₃,1.0,df₃,body) .≈ 0)
+        # viscous moment
+        u₂ .= 0; u₃ .= 0
+        @test all(WaterLily.viscous_moment(SVector{2,Float64}(N/2,N/2),u₂,1.0,df₂,body) .≈ 0)
+        @test all(WaterLily.viscous_moment(SVector{3,Float64}(N/2,N/2,N/2),u₃,1.0,df₃,body) .≈ 0)
         # pressure moment
         p₂ = zeros(N,N) |> f; apply!(x->x[2],p₂)
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
