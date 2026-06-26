@@ -189,6 +189,11 @@ L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
+# Per-cell (RMS) stopping criterion: stop when √(Σr²/N) < tol, i.e. Σr² < tol²·N. Intensive, so
+# grid-independent (no reference grid). `tol` is per-cell; N is the global interior cell count.
+ncells(p::AbstractPoisson) = length(inside(p.r)) # global interior cells (parallel: p.inslen)
+rms_threshold(p::AbstractPoisson, tol) = Float64(tol)^2 * ncells(p)
+
 """
     solver!(A::Poisson;tol=1e-4,itmx=1e3)
 
@@ -198,16 +203,17 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `A.x`: Solution vector. Can start with an initial guess.
   - `A.z`: Right-Hand-Side vector. Will be overwritten!
   - `A.n[end]`: stores the number of iterations performed.
-  - `tol`: Convergence tolerance on the `L₂`-norm residual.
+  - `tol`: Per-cell RMS residual tolerance — stop when `√(Σr²/N) < tol` (grid-independent).
   - `itmx`: Maximum number of iterations.
 """
 function solver!(p::Poisson;tol=1e-4,itmx=1e3)
+    r₂tol = rms_threshold(p, tol) # √(Σr²/N) < tol
     residual!(p); r₂ = L₂(p)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
     while nᵖ<itmx
         pcg!(p); r₂ = L₂(p); nᵖ+=1
         @log ", $nᵖ, $(L∞(p)), $r₂\n"
-        r₂<tol && break
+        r₂<r₂tol && break
     end
     perBC!(p.x,p.perdir)
     push!(p.n,nᵖ)

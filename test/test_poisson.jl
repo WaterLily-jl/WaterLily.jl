@@ -19,10 +19,10 @@ end
         @test err < 1e-5
         err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
-        @test pois.n[] < 310
+        @test pois.n[] < 340   # per-cell RMS tol: CG ~328
         err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
-        @test pois.n[] < 35
+        @test pois.n[] < 40    # per-cell RMS tol: ~36
     end
     for f ∈ arrays
         Ng = (8,8,8)
@@ -61,7 +61,7 @@ end
     for f ∈ arrays
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
-        @test pois.n[] ≤ 3
+        @test pois.n[] ≤ 4   # per-cell RMS tol: MG 4 V-cycles (was 3)
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
         @test pois.n[] ≤ 3
