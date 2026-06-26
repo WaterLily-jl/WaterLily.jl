@@ -39,7 +39,7 @@ export RigidMap,setmap
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
                U=nothing, Δt=0.25, ν=0., ϵ=1, g=nothing,
-               u0=nothing, perdir=(), exitBC=false,
+               u0=nothing, perdir=(), exitBC=false, λ=quick,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array,
                flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
@@ -57,6 +57,8 @@ Constructor for a WaterLily.jl simulation:
   - `g`: Domain acceleration, `g(i,x,t)=duᵢ/dt`
   - `ϵ`: BDIM kernel width.
   - `perdir`: Domain periodic boundary condition in the `(i,)` direction.
+  - `λ`: Convective interpolation scheme `λ(u,c,d)` (upstream, central, downstream), e.g. `quick` (default),
+        `cds`, or `vanLeer`.
   - `u0`: Velocity field applied to the initial condition.
         Define a Tuple for homogeneous (per direction) IC, or a `Function` for space varying IC `u0(i,x)`.
         The deprecated `uλ` keyword is still accepted as an alias and will be removed in a future release.
@@ -90,7 +92,7 @@ mutable struct Simulation <: AbstractSimulation
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
-                        u0=nothing, uλ=nothing, exitBC=false, body::AbstractBody=NoBody(),
+                        u0=nothing, uλ=nothing, exitBC=false, λ=quick, body::AbstractBody=NoBody(),
                         flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
                         pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
                         T=Float32, mem=Array) where N
@@ -98,7 +100,7 @@ mutable struct Simulation <: AbstractSimulation
         isnothing(U) && (U = √sum(abs2,uBC))
         u0 = ic_kwarg(u0, uλ)
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(u0,N,T,2)
-        flow = flow_ctor(dims,uBC;u0,Δt,ν,g,T,mem,perdir,exitBC)
+        flow = flow_ctor(dims,uBC;u0,Δt,ν,g,λ,T,mem,perdir,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,pois_ctor(flow))
     end
@@ -115,27 +117,25 @@ scales.
 sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 """
-    sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
+    sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,
         udf=nothing,kwargs...)
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `remeasure=true`, the body is remeasured at every time step. Can be set to `false` for static geometries to speed up simulation.
 A user-defined function `udf` can be passed to arbitrarily modify the `::AbstractFlow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
-A `λ::Function` function can be passed as a custom convective scheme, following the interface of `λ(u,c,d)` (for upstream, central,
-downstream points).
 """
-function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,λ=quick,max_steps=typemax(Int),verbose=false,
+function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,
         udf=nothing,kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, λ, udf, kwargs...)
+        sim_step!(sim; remeasure, udf, kwargs...)
         verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,λ=quick,udf=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; λ, udf, kwargs...)
+    mom_step!(sim.flow, sim.pois; udf, kwargs...)
 end
 
 """
