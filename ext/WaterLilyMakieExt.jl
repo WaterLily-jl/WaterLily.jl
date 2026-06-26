@@ -129,15 +129,13 @@ Keyword arguments:
     - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a Makie.volume (faster).
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
-    - `video::String`: Save the simulation as a video to this path instead of rendering interactively. Parent directories are
-        created as needed and the saved path is printed. Defaults to `nothing` (not saving video).
+    - `video::String`: Save the simulation as a video to this path instead of rendering interactively. Defaults to `nothing` (not saving video).
     - `img`: Save rendered frame(s) as image file(s). Pass a filename `String` with a `.png` extension to save with the
         active backend, e.g. `img="frame.png"`. To save a `.svg` or `.pdf`, pass a `(name, backend)` tuple where `backend` is a
-        loaded Makie backend that supports vector output (CairoMakie), e.g. `img=("frame.svg", CairoMakie)`; passing a `.svg`/`.pdf`
-        name without a backend errors. If `name` contains a printf integer placeholder (e.g. `img="frame_%04d.png"` or
-        `img=("frame_%04d.svg", CairoMakie)`), one image is saved per simulation frame (like `video`, rendered offscreen with no
-        interactive window); otherwise only the last rendered frame is saved. Parent directories are created as needed, and the
-        saved path (single image) or parent directory (series) is printed. Can be combined with `video`. Defaults to `nothing`.
+        loaded Makie backend that supports vector output (CairoMakie) (eg. `img=("frame.svg", CairoMakie)`).
+        If `name` contains a printf integer placeholder (e.g. `img="frame_%04d.png"` or `img=("frame_%04d.svg", CairoMakie)`),
+        one image is saved per simulation frame (like `video`, rendered offscreen with no interactive window); otherwise only the last frame is saved.
+        Can be combined with `video`. Defaults to `nothing`.
     - `hidedecorations::Bool`: Figures without axis details.
     - `azimuth::Number`: Camera azimuth angle. Find a suitable angle interactively checking `ax.azimuth.val`
     - `elevation::Number`: Camera elevation angle. Find a suitable angle interactively checking `ax.elevation.val`.
@@ -315,13 +313,11 @@ end
     parse_img(img)
 
 Validate and unpack the `img` image-saving spec into `(name, backend, fmt)`. `img` is either a filename `String`
-(saved with the active backend, must be `.png`) or a `(name, backend)` tuple (the backend must support the requested
-extension, e.g. CairoMakie for `.svg`/`.pdf`). If `name` contains a printf integer placeholder (eg. `frame_%04d.png`),
-`fmt` is a `Printf.Format` and one image is saved per simulation frame; otherwise `fmt` is `nothing` (single last frame).
-Returns `(nothing, nothing, nothing)` when `img === nothing`.
+(must be `.png`) or a `(name, backend)` tuple (the backend must support the requested extension, e.g. CairoMakie for `.svg`/`.pdf`)
+If `name` contains a printf integer placeholder (eg. `frame_%04d.png`), `fmt` is a `Printf.Format` and one image is saved per simulation frame.
 """
+parse_img(img::Nothing) = (nothing, nothing, nothing)
 function parse_img(img)
-    isnothing(img) && return nothing, nothing, nothing
     explicit_backend = img isa Tuple
     name, backend = explicit_backend ? (img[1], img[2]) : (img, Makie.current_backend())
     ext = lowercase(splitext(name)[2])
@@ -337,8 +333,8 @@ end
 Save `fig` to `name` with `backend`, creating the parent directory if needed. Returns the absolute path,
 or `nothing` (no-op) when `name === nothing`.
 """
+save_img(name::Nothing, backend, fig) = nothing
 function save_img(name, backend, fig)
-    isnothing(name) && return nothing
     dir = dirname(name); isempty(dir) || mkpath(dir)
     Makie.save(name, fig; backend)
     return abspath(name)
@@ -350,9 +346,9 @@ end
 Print where image output landed: a single image (`fmt === nothing`) prints its absolute path; an image series
 prints its absolute parent directory. No-op when `name === nothing`.
 """
+report_img(name::Nothing, fmt::Nothing) = nothing
+report_img(name, fmt::Nothing) = println("Image saved to ", abspath(name))
 function report_img(name, fmt)
-    isnothing(name) && return
-    isnothing(fmt) && return println("Image saved to ", abspath(name))
     dir = dirname(name)
     println("Images saved to ", isempty(dir) ? pwd() : abspath(dir))
 end
