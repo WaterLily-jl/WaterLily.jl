@@ -54,3 +54,25 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
         @test r.memory < 50000 # AbstractFlow dispatch must not allocate more than concrete Flow
     end
 end
+
+@testset "semi-coarsening + remeasure allocations" begin
+    # Non-square (4:1) domain + moving body: exercises semi-coarsening and the per-step remeasure
+    # path through the multigrid V-cycle. Tight bound to catch per-V-cycle boxing (clean ≈ 0.45 KiB).
+    function SimAniso(θ; L=32, U=1, Re=100)
+        function map(x,t)
+            s,c = sincos(θ + t*U/L)
+            SA[c -s; s c]*(x-SA[2L,L])
+        end
+        function sdf(ξ,t)
+            p = ξ-SA[0,clamp(ξ[1],-L,L)]
+            √(p'*p)-2
+        end
+        Simulation((20L,5L),(U,0),L,ν=U*L/Re,body=AutoBody(sdf,map),T=Float32)
+    end
+    sim = SimAniso(Float32(π/36))
+    sim_step!(sim)
+    b = @benchmarkable sim_step!($sim; remeasure=true) samples=100; tune!(b) # full step incl. remeasure
+    r = run(b)
+    println("▶ Allocated (aniso sim_step! remeasure) "*@sprintf("%.2f", r.memory/1e3)*" KiB")
+    @test r.memory < 1000 # less than 1 KiB; ~0.45 KiB clean, ~2 KiB if a V-cycle call boxes
+end
