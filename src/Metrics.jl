@@ -112,8 +112,7 @@ end
 
 Rate-of-strain tensor.
 """
-S(I::CartesianIndex{2},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:2, j ∈ 1:2]
-S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:3, j ∈ 1:3]
+@inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
 
 """
     viscous_force(sim::Simulation)
