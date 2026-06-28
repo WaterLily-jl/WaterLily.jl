@@ -22,7 +22,7 @@ end
     for j ∈ 1:np1-1
         s+= @inbounds μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
     end
-    return 0.5s
+    return s/2
 end
 function median(a,b,c)
     if a>b
@@ -72,9 +72,37 @@ accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
 accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->derivative(τ->U(i,x,τ),t))
 accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+derivative(τ->U(i,x,τ),t))
 
+"""
+    apply!(f, c)
+
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or
+a function `f(x)` to the center of a uniform array `c`.
+"""
+apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
+applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ CartesianIndices(c)
+applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
+
+ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
+ic_function(uBC::Tuple) = (i,x)->uBC[i]
+
+"""
+    ic_kwarg(u0, uλ)
+
+Resolve the initial-condition keyword argument. `uλ` is the deprecated name for `u0`:
+if it is supplied a deprecation warning is emitted and its value is used only when `u0`
+is not given. Returns the effective initial condition (possibly `nothing`).
+
+Remove this function in WL 2.0
+"""
+function ic_kwarg(u0, uλ)
+    isnothing(uλ) && return u0
+    @warn "The `uλ` keyword argument is deprecated and will be removed in a future release. Use `u0` instead." maxlog=1
+    isnothing(u0) ? uλ : u0
+end
+
 abstract type AbstractFlow{D,T} end
 """
-    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}}
+    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, Lf}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
@@ -83,7 +111,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}} <: AbstractFlow{D,T}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -101,37 +129,39 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     g :: Union{Function,Nothing} # acceleration field funciton
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
+    λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
-            uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
+            u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
+        u0 = ic_kwarg(u0, uλ) # to be removed in v2.0
         Ng = N .+ 2
         Nd = (Ng..., D)
-        isnothing(uλ) && (uλ = ic_function(uBC))
+        isnothing(u0) && (u0 = ic_function(uBC))
         u = Array{T}(undef, Nd...) |> mem
-        isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
-        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
+        isa(u0, Function) ? apply!(u0, u) : apply!((i,x)->u0[i], u)
+        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
         V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end
 end
 
 """
-    mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+    mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
-@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
     a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
-    mom_predict!(a,t₀,t₁;λ,udf,kwargs...)
+    mom_predict!(a,t₀,t₁;udf,kwargs...)
     mom_project!(a,b,1,t₁)
     # corrector u → u¹
     @log "c"
-    mom_correct!(a,t₁;λ,udf,kwargs...)
+    mom_correct!(a,t₁;udf,kwargs...)
     mom_project!(a,b,0.5,t₁)
     push!(a.Δt,CFL(a))
 end
@@ -150,35 +180,38 @@ function BDIM!(a::AbstractFlow)
 end
 
 """
-    mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
+    mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
 
-Predictor phase of `mom_step!`: advect under `u⁰`, apply BDIM, enforce BCs.
-On return `a.u` is BC-consistent and ready for pressure projection.
+Predictor phase of `mom_step!`: advect under `u⁰` with the convective scheme `a.λ`, apply BDIM,
+enforce BCs. On return `a.u` is BC-consistent and ready for pressure projection.
 `t₀` and `t₁` are the start and end times of the step; BCs are enforced at the
 end-of-step time `sum(a.Δt)`.
 """
-function mom_predict!(a::AbstractFlow, t₀, t₁; λ=quick, udf=nothing, kwargs...)
-    conv_diff!(a.f,a.u⁰,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t₀; kwargs...)
+function mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
+    conv_diff!(a.f,a.u⁰,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
+    udf!(a,udf,a.u⁰,t₀; kwargs...) # advect with u⁰ (a.u is zeroed by scale_u!)
     accelerate!(a.f,t₀,a.g,a.uBC)
     BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
     a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
 end
 
 """
-    mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
+    mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
 
-Corrector phase of `mom_step!`: advect under the projected `u`, apply BDIM,
-blend with the trapezoidal weight, enforce BCs at time-step end-time `t`.
+Corrector phase of `mom_step!`: advect under the projected `u` with the convective scheme `a.λ`,
+apply BDIM, blend with the trapezoidal weight, enforce BCs at time-step end-time `t`.
 On return `a.u` is BC-consistent and ready for pressure projection.
 """
-function mom_correct!(a::AbstractFlow, t; λ=quick, udf=nothing, kwargs...)
-    conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t; kwargs...)
+function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
+    conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
+    udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
     accelerate!(a.f,t,a.g,a.uBC)
     BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
-scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
+function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
+    s = T(scale)
+    @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p))
+end
 
 """
     mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
@@ -187,8 +220,8 @@ Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `w·Δt·∇p`, and re-enforce BCs.
 On return `a.u` is divergence-free and BC-consistent.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
-    dt = w*a.Δt[end]
+function mom_project!(a::AbstractFlow{D,T}, b::AbstractPoisson, w, t) where {D,T}
+    dt = T(w)*a.Δt[end]
     @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
     solver!(b)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
@@ -203,18 +236,22 @@ function CFL(a::AbstractFlow;Δt_max=10)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
-    s = zero(eltype(u))
+    s = z = zero(eltype(u))
     for i in 1:d
-        s += @inbounds(max(0,u[I+δ(i,I),i])+max(0,-u[I,i]))
+        s += @inbounds(max(z,u[I+δ(i,I),i])+max(z,-u[I,i]))
     end
     return s
 end
 
 """
-    udf!(flow::AbstractFlow,udf::Function,t)
+    udf!(flow::AbstractFlow,udf::Function,u,t)
 
-User defined function using `udf::Function` to operate on `flow::AbstractFlow` during the predictor and corrector step, in sync with time `t`.
-Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
+User defined function using `udf::Function` to operate on `flow::AbstractFlow` during the
+predictor and corrector step, in sync with time `t`. `u` is the velocity field the convective
+flux is evaluated on in that phase (`a.u⁰` in the predictor, `a.u` in the corrector).
+A `udf` that needs the advecting velocity (eg. SGS) should use `force!(flow,u,t; kwargs...)`.
+Keyword arguments must be passed to `sim_step!` for them to be carried over the actual call.
 """
-udf!(flow,::Nothing,t; kwargs...) = nothing
-udf!(flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)
+udf!(flow,::Nothing,u,t; kwargs...) = nothing
+udf!(flow,force!::Function,u,t; kwargs...) =
+    applicable(force!,flow,u,t) ? force!(flow,u,t; kwargs...) : force!(flow,t; kwargs...)

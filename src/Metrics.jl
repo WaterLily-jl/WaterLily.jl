@@ -177,6 +177,28 @@ function pressure_moment(x₀,p,df,body,t=0)
 end
 
 """
+    viscous_moment(x₀,sim::Simulation)
+
+Computes the viscous moment on an immersed body relative to point x₀.
+"""
+viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
+viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
+function viscous_moment(x₀,u,ν,df,body,t=0)
+    Tu = eltype(u); To = promote_type(Float64,Tu)
+    df .= zero(Tu)
+    @loop df[I,:] .= -2ν*cross(loc(0,I,Tu)-x₀,S(I,u)*nds(body,loc(0,I,Tu),t)) over I ∈ inside_u(u)
+    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+end
+
+"""
+    total_moment(x₀,sim::Simulation)
+
+Computes the total (pressure + viscous) moment on an immersed body relative to point x₀.
+"""
+total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
+
+
+"""
     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
 
 Holds temporal averages of pressure, velocity, and squared-velocity tensor.

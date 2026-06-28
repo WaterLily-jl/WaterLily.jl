@@ -1,272 +1,3 @@
-using KernelAbstractions: get_backend, @index, @kernel
-using LoggingExtras
-
-# custom log macro
-_psolver = Logging.LogLevel(-123) # custom log level for pressure solver, needs the negative sign
-macro log(exs...)
-    quote
-        @logmsg _psolver $(map(x -> esc(x), exs)...)
-    end
-end
-"""
-    logger(fname="WaterLily")
-
-Set up a logger to write the pressure solver data to a logging file named `WaterLily.log`.
-"""
-function logger(fname::String="WaterLily")
-    ENV["JULIA_DEBUG"] = all
-    logger = FormatLogger(ifelse(fname[end-3:end]==".log",fname[1:end-4],fname)*".log"; append=false) do io, args
-        args.level == _psolver && print(io, args.message)
-    end;
-    global_logger(logger);
-    # put header in file
-    @log "p/c, iter, r∞, r₂, ω\n"
-end
-
-@inline CI(a...) = CartesianIndex(a...)
-"""
-    CIj(j,I,k)
-Replace jᵗʰ component of CartesianIndex with k
-"""
-CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
-
-"""
-    δ(i,N::Int)
-    δ(i,I::CartesianIndex{N}) where {N}
-
-Return a CartesianIndex of dimension `N` which is one at index `i` and zero elsewhere.
-"""
-δ(i,::Val{N}) where N = CI(ntuple(j -> j==i ? 1 : 0, N))
-δ(i,I::CartesianIndex{N}) where N = δ(i, Val{N}())
-
-"""
-    inside(a;buff=1)
-
-Return CartesianIndices range excluding a single layer of cells on all boundaries.
-"""
-@inline inside(a::AbstractArray;buff=1) = CartesianIndices(map(ax->first(ax)+buff:last(ax)-buff,axes(a)))
-
-"""
-    inside_u(dims,j)
-
-Return CartesianIndices range excluding the ghost-cells on the boundaries of
-a _vector_ array on face `j` with size `dims`.
-"""
-function inside_u(dims::NTuple{N},j) where {N}
-    CartesianIndices(ntuple( i-> i==j ? (3:dims[i]-1) : (2:dims[i]), N))
-end
-@inline inside_u(dims::NTuple{N}) where N = CartesianIndices((map(i->(2:i-1),dims)...,1:N))
-@inline inside_u(u::AbstractArray) = CartesianIndices(map(i->(2:i-1),size(u)[1:end-1]))
-splitn(n) = Base.front(n),last(n)
-size_u(u) = splitn(size(u))
-
-"""
-    L₂(a)
-
-L₂ norm of array `a` excluding ghosts.
-"""
-L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
-
-"""
-    @inside <expr>
-
-Simple macro to automate efficient loops over cells excluding ghosts. For example,
-
-    @inside p[I] = sum(loc(0,I))
-
-becomes
-
-    @loop p[I] = sum(loc(0,I)) over I ∈ inside(p)
-
-See [`@loop`](@ref).
-"""
-macro inside(ex)
-    # Make sure it's a single assignment
-    @assert ex.head == :(=) && ex.args[1].head == :(ref)
-    a,I = ex.args[1].args[1:2]
-    return quote # loop over the size of the reference
-        WaterLily.@loop $ex over $I ∈ inside($a)
-    end |> esc
-end
-
-# Could also use ScopedValues in Julia 1.11+
-using Preferences
-const backend = @load_preference("backend", "KernelAbstractions")
-function set_backend(new_backend::String)
-    if !(new_backend in ("SIMD", "KernelAbstractions"))
-        throw(ArgumentError("Invalid backend: \"$(new_backend)\""))
-    end
-
-    # Set it in our runtime values, as well as saving it to disk
-    @set_preferences!("backend" => new_backend)
-    @info("New backend set; restart your Julia session for this change to take effect!")
-end
-
-"""
-    @loop <expr> over <I ∈ R>
-
-Macro to automate fast loops using @simd when running in serial,
-or KernelAbstractions when running multi-threaded CPU or GPU.
-
-For example
-
-    @loop a[I,i] += sum(loc(i,I)) over I ∈ R
-
-becomes
-
-    @simd for I ∈ R
-        @fastmath @inbounds a[I,i] += sum(loc(i,I))
-    end
-
-on serial execution, or
-
-    @kernel function kern(a,i,@Const(I0))
-        I ∈ @index(Global,Cartesian)+I0
-        @fastmath @inbounds a[I,i] += sum(loc(i,I))
-    end
-    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
-
-when multi-threading on CPU or using CuArrays.
-Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
-"""
-macro loop(args...)
-    ex,_,itr = args
-    _,I,R = itr.args
-    sym = []
-    grab!(sym,ex)     # get arguments and replace composites in `ex`
-    setdiff!(sym,[I]) # don't want to pass I as an argument
-    symT = [gensym() for _ in 1:length(sym)] # generate a list of types for each symbol
-    symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
-    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
-    @static if backend == "KernelAbstractions"
-        return quote
-            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
-                $I = @index(Global,Cartesian)
-                $I += I0
-                @fastmath @inbounds $ex
-            end
-            function $kern($(symWtypes...)) where {$(symT...)}
-                $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
-            end
-            $kern($(sym...))
-        end |> esc
-    else # backend == "SIMD"
-        return quote
-            function $kern($(symWtypes...)) where {$(symT...)}
-                @simd for $I ∈ $R
-                    @fastmath @inbounds $ex
-                end
-            end
-            $kern($(sym...))
-        end |> esc
-    end
-end
-function grab!(sym,ex::Expr)
-    ex.head == :. && return union!(sym,[ex])      # grab composite name and return
-    start = ex.head==:(call) ? 2 : 1              # don't grab function names
-    foreach(a->grab!(sym,a),ex.args[start:end])   # recurse into args
-    ex.args[start:end] = rep.(ex.args[start:end]) # replace composites in args
-end
-grab!(sym,ex::Symbol) = union!(sym,[ex])          # grab symbol name
-grab!(sym,ex) = nothing
-rep(ex) = ex
-rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
-joinsymtype(sym::Symbol,symT::Symbol) = Expr(:(::), sym, symT)
-joinsymtype(sym,symT) = zip(sym,symT) .|> x->joinsymtype(x...)
-
-using StaticArrays
-"""
-    loc(i,I) = loc(Ii)
-
-Location in space of the cell at CartesianIndex `I` at face `i`.
-Using `i=0` returns the cell center s.t. `loc = I`.
-"""
-@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- 1.5 .- 0.5 .* δ(i,I).I)
-@inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
-Base.last(I::CartesianIndex) = last(I.I)
-Base.front(I::CartesianIndex) = CI(Base.front(I.I))
-"""
-    apply!(f, c)
-
-Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or
-a function `f(x)` to the center of a uniform array `c`.
-"""
-apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
-applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ CartesianIndices(c)
-applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
-"""
-    slice(dims,i,j,low=1)
-
-Return `CartesianIndices` range slicing through an array of size `dims` in
-dimension `j` at index `i`. `low` optionally sets the lower extent of the range
-in the other dimensions.
-"""
-function slice(dims::NTuple{N},i,j,low=1) where N
-    CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
-end
-
-"""
-    BC!(a,A)
-
-Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
-is applied to the tangential components.
-"""
-BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
-    N,n = size_u(a)
-    for i ∈ 1:n, j ∈ 1:n
-        if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
-        else
-            if i==j # Normal direction, Dirichlet
-                for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
-                end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
-            else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
-            end
-        end
-    end
-end
-
-"""
-    exitBC!(u,u⁰,U,Δt)
-
-Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
-"""
-function exitBC!(u,u⁰,Δt)
-    N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
-    U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux
-    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
-end
-"""
-    perBC!(a,perdir)
-
-Apply periodic conditions to the ghost cells of a _scalar_ field.
-"""
-perBC!(a,::Tuple{}) = nothing
-perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
-end
-
-using LinearAlgebra: ⋅
-"""
-    perdot(a,b,perdir)
-
-Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
-"""
-perdot(a,b,::Tuple{}) = a⋅b
-perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
-
 using EllipsisNotation
 """
     interp(x::SVector, arr::AbstractArray)
@@ -312,7 +43,7 @@ function _interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
 end
 
 """
-    sgs!(flow, t; νₜ, S, Cs, Δ)
+    sgs!(flow, u, t; νₜ, S, Cs, Δ)
 
 Implements a user-defined function `udf` to model subgrid-scale LES stresses based on the Boussinesq approximation
     τᵃᵢⱼ = τʳᵢⱼ - (1/3)τʳₖₖδᵢⱼ = -2νₜS̅ᵢⱼ
@@ -332,66 +63,66 @@ It can be implemented as
 and passed into `sim_step!` as a keyword argument together with the varibles than the function needs (`S`, `Cs`, and `Δ`):
     `sim_step!(sim, ...; udf=sgs, νₜ=smagorinsky, S, Cs, Δ)`
 """
-function sgs!(flow, t; νₜ, S, Cs, Δ)
-    N,n = size_u(flow.u)
-    @loop S[I,:,:] .= WaterLily.S(I,flow.u) over I ∈ inside(flow.σ)
+function sgs!(flow, u, t; νₜ, S, Cs, Δ)
+    N,n = size_u(u)
+    @loop S[I,:,:] .= WaterLily.S(I,u) over I ∈ inside(flow.σ)
     for i ∈ 1:n, j ∈ 1:n
         WaterLily.@loop (
-            flow.σ[I] = -νₜ(I;S,Cs,Δ)*∂(j,CI(I,i),flow.u);
+            flow.σ[I] = -νₜ(I;S,Cs,Δ)*∂(j,CI(I,i),u);
             flow.f[I,i] += flow.σ[I];
         ) over I ∈ inside_u(N,j)
         WaterLily.@loop flow.f[I-δ(j,I),i] -= flow.σ[I] over I ∈ WaterLily.inside_u(N,j)
     end
 end
 
-check_fn(f,N,T,nargs) = nothing
-function check_fn(f::Function,N,T,nargs)
-    @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
-    @assert all(typeof.(ntuple(i->f(i,xtargs(Val{}(nargs),N,T)...),N)).==T) "$f is not type stable"
-end
-xtargs(::Val{2},N,T) = (zeros(SVector{N,T}),)
-xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
-
-ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
-ic_function(uBC::Tuple) = (i,x)->uBC[i]
-
 squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
 
-using ForwardDiff
-using ForwardDiff: Dual, partials, Tag
+"""
+    spread!(sim3D, sim2D; dim=3, ϵ=0)
 
-# Inner-derivative tag for measure's gradient/jacobian/derivative. `≺` is
-# overloaded so it always ranks newer than any `ForwardDiff.Tag`, folding the
-# precedence comparison at compile time and sidestepping `tagcount` (order-
-# sensitive on GPU codegen, the original cause of nested-FD crashes in kernels).
-struct _InnerTag end
-@inline ForwardDiff.:≺(::Type{<:Tag}, ::Type{_InnerTag}) = true
-@inline ForwardDiff.:≺(::Type{_InnerTag}, ::Type{<:Tag}) = false
-@inline ForwardDiff.:≺(::Type{_InnerTag}, ::Type{_InnerTag}) = false
+Spread a given 2D `Simulation` onto a 3D `Simulation` by extruding it along the dim `dim`.
 
-# Tag-aware partial extractor. The fallback returns zero when `y` is not an
-# `_InnerTag` dual — `f` did not depend on the seeded input so the inner
-# derivative is exactly zero. Without it, an outer-tag `Dual` (from closure
-# capture) would silently leak its outer partial.
-@inline _ip(y::Dual{_InnerTag}, i::Int) = partials(y, i)
-@inline _ip(y, ::Int) = zero(y)
+Default is to extrude along the `dim=3`, user can also pass in a given noise level `ϵ` that is
+applied to perturb the velocity field. The pressure field is left unchanged.
+Internally, the function test that that the 3D `Simulation` is exactly an extruded version of
+the 2D Simulation, i.e. the body must match through μ₀.
 
-# GPU-safe gradient/jacobian/derivative: seed `Dual{_InnerTag}` and extract
-# `partials` directly, bypassing `extract_jacobian`/`valtype`. SVector inputs
-# take the GPU-safe path; other inputs (plain `AbstractVector`, e.g. unit tests)
-# dispatch to ForwardDiff (CPU-only)
-@inline function gradient(f::F, x::SVector{N,T}) where {F,N,T}
-    seeds = ntuple(i -> Dual{_InnerTag}(x[i], ntuple(j -> ifelse(j==i, one(T), zero(T)), Val(N))), Val(N))
-    y = f(SVector(seeds))
-    SVector(ntuple(j -> _ip(y, j), Val(N)))
+Example:
+```julia
+# 2D or 3D cylinder
+body = AutoBody((x,t)->√sum(abs2,SA[x[1]-8,x[2]-8])-6)
+# the sims
+sim2D = Simulation((32,16)  ,(1.0,0.0)    ,1.0;body)
+sim3D = Simulation((32,16,8),(1.0,0.0,0.0),1.0;body,perdir=(3,))
+# spread after a few steps
+sim_step!(sim2D,100)
+WaterLily.spread!(sim3D, sim2D; dim=3, ϵ=0.0)
+```
+"""
+function spread!(sim3D::AbstractSimulation, sim2D::AbstractSimulation; dim=3, ϵ=0)
+    T,S = eltype(sim2D.flow.p), size(sim3D.flow.p)
+    size3D = ntuple(j->j<dim ? S[j] : S[j+1], 2)
+    @assert size(sim2D.flow.p)==size3D "Spread dimensions mismatch between sim2D $(size(sim2D.flow.p)) and sim3D $(size3D) for dim $(dim)"
+    Is = CartesianIndices(((ntuple(j->j==dim ? (1:1) : (1:S[j]), 3))..., 1:2))
+    @assert all(sim2D.flow.μ₀ .≈ squeeze(sim3D.flow.μ₀[Is])) "There seem to be a body mistmatch between the body in the sim2D and the sim3D along dim $(dim)"
+    spread!(sim3D.flow.p, sim2D.flow.p; dim=dim, ϵ=zero(T))
+    spread!(sim3D.flow.u, sim2D.flow.u; dim=dim, ϵ=T(ϵ))
 end
-@inline function jacobian(f::F, x::SVector{N,T}) where {F,N,T}
-    seeds = ntuple(i -> Dual{_InnerTag}(x[i], ntuple(j -> ifelse(j==i, one(T), zero(T)), Val(N))), Val(N))
-    _stack_jac(f(SVector(seeds)), Val(N))
+
+"""
+    spread!(src:AbstractArray{T,N}, dest::AbstractArray{T,N+1}; ϵ=0, dims=3)
+
+Spreads a `N` dim field into a `N+1` field. The parameter `ϵ` sets the random noise added to the spread and
+`dims` specifies the dimension along which the spreading is done.
+
+```julia
+dest = zeros(20,10,5)
+src  = rand(20,10)
+WaterLily.spread!(src, dest; ϵ=0.01, dims=3)
+```
+"""
+spread!(dest::AbstractArray{T,3}, src::AbstractArray{T,2}; dim=3, ϵ=zero(T)) where T = (@loop dest[I] = src[dropindex(I,dim)]+ϵ*rand() over I in CartesianIndices(dest))
+spread!(dest::AbstractArray{T,4}, src::AbstractArray{T,3}; dim=3, ϵ=zero(T)) where T = for i in 1:2
+    @loop dest[I,i] = src[dropindex(I,dim),i]+ϵ*rand() over I in CartesianIndices(size(dest)[1:3])
 end
-@inline function _stack_jac(ydual::SVector{M}, ::Val{N}) where {M,N}
-    SMatrix{M,N}(ntuple(k -> _ip(ydual[((k-1) % M) + 1], ((k-1) ÷ M) + 1), Val(M*N)))
-end
-@inline derivative(f::F, t::T) where {F,T} = map(yi -> _ip(yi, 1), f(Dual{_InnerTag}(t, one(T))))
-@inline gradient(f, x) = ForwardDiff.gradient(f, x)
-@inline jacobian(f, x) = ForwardDiff.jacobian(f, x)
+@inline dropindex(I::CartesianIndex{N}, i::Int) where N = CartesianIndex(ntuple(j -> j<i ? I.I[j] : I.I[j+1], Val(N-1)))
