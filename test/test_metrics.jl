@@ -1,6 +1,9 @@
 import WaterLily: ×
 @testset "Metrics.jl" begin
     J = CartesianIndex(2,3,4); x = loc(0,J,Float64); px = prod(x)
+    @test WaterLily.shiftDir(1,3,2) == 3
+    @test WaterLily.shiftDir(1,4,-1) == 4
+    @test WaterLily.shiftDir(4,4,1) == 1
     for f ∈ arrays
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
@@ -18,6 +21,14 @@ import WaterLily: ×
         @test GPUArrays.@allowscalar p[J]==sqrt(sum(abs2,ω))
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test GPUArrays.@allowscalar p[J]≈ω[1]
+        # test helicity
+        u_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[1] : 0.0, u_h)
+        ω_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[2]-0.5 + 1 : 0.0, ω_h)
+        I_h = CartesianIndex(3,3,3)
+        T_h = eltype(u_h)
+        umid = loc(0,I_h,T_h)[1]; ωmid=loc(0,I_h,T_h)[2]+1
+        @test GPUArrays.@allowscalar WaterLily.helicity(I_h,u_h,ω_h) == umid*ωmid
+        
         apply!((x)->1,p)
         @test WaterLily.L₂(p)≈prod(size(p).-2)
         # test force routines

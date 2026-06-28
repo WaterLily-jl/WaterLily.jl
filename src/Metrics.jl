@@ -4,8 +4,15 @@ using StaticArrays
 Base.@propagate_inbounds @inline fSV(f,n) = SA[ntuple(f,n)...]
 Base.@propagate_inbounds @inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
+"""
+    shiftDir(d,D,i)
+
+Shift the index of direction `d` to `i` steps away in dimension space of `D`.
+So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4` 
+"""
+shiftDir(d,D,i) = mod(d+i-1,D)+1
 Base.@propagate_inbounds @fastmath function permute(f,i)
-    j,k = i%3+1,(i+1)%3+1
+    j,k = shiftDir(i,3,1), shiftDir(i,3,2)
     f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
@@ -81,6 +88,24 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
     θ = z × (loc(0,I,eltype(u))-SVector{3}(center))
     n = norm2(θ)
     n<=eps(n) ? 0. : θ'*ω(I,u) / n
+end
+
+"""
+    helicity(I,u,ω)
+
+Compute the helicity density at collocated cell `I` from dot product of velocity `u` and vorticity `ω`.
+`u` and `ω` should all be average to the collocated cell in each directional operation.
+"""
+function helicity(I::CartesianIndex{3},u::AbstractArray{T},ω) where T
+    s = zero(T)
+    for d∈1:3
+        dir1,dir2 = shiftDir.(d,3,1:2)
+        umid = u[I,d]+u[I+δ(d,I),d]
+        for id1∈0:1,id2∈0:1
+            s+=umid*ω[I+id1*δ(dir1,I)+id2*δ(dir2,I),d]
+        end
+    end
+    s/8
 end
 
 """
