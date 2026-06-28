@@ -4,8 +4,15 @@ using StaticArrays
 Base.@propagate_inbounds @inline fSV(f,n) = SA[ntuple(f,n)...]
 Base.@propagate_inbounds @inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
+"""
+    shiftDir(d,D,i)
+
+Shift the index of direction `d` to `i` steps away in dimension space of `D`.
+So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4` 
+"""
+shiftDir(d,D,i) = mod(d+i-1,D)+1
 Base.@propagate_inbounds @fastmath function permute(f,i)
-    j,k = i%3+1,(i+1)%3+1
+    j,k = shiftDir(i,3,1), shiftDir(i,3,2)
     f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
