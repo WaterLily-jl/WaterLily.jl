@@ -107,7 +107,7 @@ smooth! = GaussSeidelRB!
 
 function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
     p = ml.levels[1]
-    r₂tol = ms_threshold(p, tol); r∞tol = l∞_threshold(tol)
+    r₂tol = l2n_tol(p, tol); r∞tol = l∞_tol(tol)
     residual!(p); r₂ = L₂(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
     while nᵖ<itmx

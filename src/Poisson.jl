@@ -190,11 +190,8 @@ L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
 ncells(p::AbstractPoisson) = length(inside(p.r))
-# Grid-independent residual thresholds for the combined stopping criterion:
-#   mean-square  Σr²/N < tol²  ⟺  L₂(p)=Σr² < tol²·N   (bulk accuracy, independent of grid size)
-#   max-norm     max|r| < 10·tol                        (caps the worst cell the mean-square norm averages out)
-ms_threshold(p::AbstractPoisson, tol) = Float64(tol)^2 * ncells(p)
-l∞_threshold(tol) = 10*Float64(tol)
+l2n_tol(p::AbstractPoisson, tol) = Float64(tol)^2 * ncells(p)
+l∞_tol(tol) = 10*Float64(tol)
 
 """
     solver!(A::Poisson;tol=1e-4,itmx=1e3)
@@ -205,12 +202,12 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `A.x`: Solution vector. Can start with an initial guess.
   - `A.z`: Right-Hand-Side vector. Will be overwritten!
   - `A.n[end]`: stores the number of iterations performed.
-  - `tol`: Grid-independent residual tolerance. Convergence requires BOTH the per-cell
-    mean-square residual `Σr²/N < tol²` and the max-norm `max|r| < 10·tol`.
+  - `tol`: Grid-independent residual tolerance. Convergence requires both
+        Σr²/N < tol²` and the max-norm `max|r| < 10·tol`.
   - `itmx`: Maximum number of iterations.
 """
 function solver!(p::Poisson;tol=1e-4,itmx=1e3)
-    r₂tol = ms_threshold(p, tol); r∞tol = l∞_threshold(tol)
+    r₂tol = l2n_tol(p, tol); r∞tol = l∞_tol(tol)
     residual!(p); r₂ = L₂(p)
     nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
     while nᵖ<itmx

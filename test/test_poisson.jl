@@ -19,10 +19,10 @@ end
         @test err < 1e-5
         err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
-        @test pois.n[] < 340   # per-cell RMS tol: CG ~328
+        @test pois.n[] < 340
         err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
-        @test pois.n[] < 40    # per-cell RMS tol: ~36
+        @test pois.n[] < 40
     end
     for f ∈ arrays
         Ng = (8,8,8)
