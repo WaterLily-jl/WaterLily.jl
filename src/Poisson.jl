@@ -189,8 +189,11 @@ L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
+# mean-square  Σr²/N < (tol/10)²   ⟺   L₂(p)=Σr² < (tol/10)²·N
+l2n_tol(p::AbstractPoisson, tol) = (Float64(tol)/10)^2 * length(inside(p.r))
+
 """
-    solver!(A::Poisson;tol=1e-4,itmx=1e3)
+    solver!(A::Poisson;tol=2e-3,itmx=1e3)
 
 Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 
@@ -198,16 +201,18 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `A.x`: Solution vector. Can start with an initial guess.
   - `A.z`: Right-Hand-Side vector. Will be overwritten!
   - `A.n[end]`: stores the number of iterations performed.
-  - `tol`: Convergence tolerance on the `L₂`-norm residual.
+  - `tol`: Grid-independent max-norm residual tolerance `max|r| < tol`.
+        Convergence also requires the bulk mean-square `Σr²/N < (tol/10)²`.
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;tol=1e-4,itmx=1e3)
-    residual!(p); r₂ = L₂(p)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+function solver!(p::Poisson;tol=2e-3,itmx=1e3)
+    r₂tol = l2n_tol(p, tol); r∞tol = tol
+    residual!(p); r₂ = L₂(p); r∞ = L∞(p)
+    nᵖ=0; @log ", $nᵖ, $r∞, $r₂\n"
     while nᵖ<itmx
-        pcg!(p); r₂ = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $r₂\n"
-        r₂<tol && break
+        pcg!(p); r₂ = L₂(p); r∞ = L∞(p); nᵖ+=1
+        @log ", $nᵖ, $r∞, $r₂\n"
+        (r₂<r₂tol && r∞<r∞tol) && break
     end
     perBC!(p.x,p.perdir)
     push!(p.n,nᵖ)

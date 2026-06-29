@@ -18,11 +18,12 @@ end
         @test GPUArrays.@allowscalar parent(pois.iD)≈f(Float32[0 0 0 0 0; 0 -1/2 -1/3 -1/2 0; 0 -1/3 -1/4 -1/3 0;  0 -1/2 -1/3 -1/2 0; 0 0 0 0 0])
         @test err < 1e-5
         err,pois = Poisson_setup(Poisson,(2^6+2,2^6+2);f)
-        @test err < 1e-6
-        @test pois.n[] < 310
+        @test err < 5e-6          # looser solve at default tol=2e-3 (was <1e-6 at the old tighter default)
+        @test pois.n[] < 340
+        @test WaterLily.L∞(pois) < 2e-3   # max-norm (L∞) tolerance is met
         err,pois = Poisson_setup(Poisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
-        @test pois.n[] < 35
+        @test pois.n[] < 40
     end
     for f ∈ arrays
         Ng = (8,8,8)
@@ -61,7 +62,8 @@ end
     for f ∈ arrays
         err,pois = Poisson_setup(MultiLevelPoisson,(2^6+2,2^6+2);f)
         @test err < 1e-6
-        @test pois.n[] ≤ 3
+        @test pois.n[] ≤ 4
+        @test WaterLily.L∞(pois.levels[1]) < 2e-3   # max-norm (L∞) tolerance is met at default tol=2e-3
         err,pois = Poisson_setup(MultiLevelPoisson,(2^4+2,2^4+2,2^4+2);f)
         @test err < 1e-6
         @test pois.n[] ≤ 3
