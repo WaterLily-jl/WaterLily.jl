@@ -107,21 +107,21 @@ smooth! = GaussSeidelRB!
 
 function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     p = ml.levels[1]
-    r₂tol = l2n_tol(p, tol); r∞tol = l∞_tol(tol)
-    residual!(p); r₂ = L₂(p); ω = T(1)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
+    r₂tol = l2n_tol(p, tol); r∞tol = tol
+    residual!(p); r₂ = L₂(p); r∞ = L∞(p); ω = T(1)
+    nᵖ=0; @log ", $nᵖ, $r∞, $r₂, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
         smooth!(p; ω);
-        rnew = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
+        rnew = L₂(p); r∞ = L∞(p); nᵖ+=1
+        @log ", $nᵖ, $r∞, $rnew, $ω\n"
         if     rnew ≥ r₂
             ω = max(0.2, 0.9ω) |> T
         elseif rnew < r₂
             ω = min(1.0, 1.02ω) |> T
         end
         r₂ = rnew
-        (r₂<r₂tol && L∞(p)<r∞tol) && break
+        (r₂<r₂tol && r∞<r∞tol) && break
     end
     perBC!(p.x,p.perdir)
     push!(ml.n,nᵖ);
