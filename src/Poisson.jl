@@ -209,11 +209,16 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
 end
 
 L₂(a) = (R = inside(a); @view(a[R])⋅@view(a[R])) # interior-cell L₂; GPU-safe view dot
-L₂(p::Poisson) = global_dot(p.r, p.r) # special method since outside(p.r)≡0
+L₂(p::Poisson) = global_dot(p.r, p.r)               # Σr² across ranks (outside(p.r)≡0)
+L₁(p::Poisson) = global_allreduce(local_sumabs(p.r)) # Σ|r| across ranks (outside(p.r)≡0)
 L∞(p::Poisson) = global_max(maximum(abs, @view p.r[inside(p.r)]))
 
+# mean residual  Σ|r|/N < tol/10   ⟺   L₁(p)=Σ|r| < (tol/10)·N.
+# N = p.inslen: global interior-cell count (mode-aware, so serial≡parallel).
+l1n_tol(p::Poisson, tol) = (Float64(tol)/10) * p.inslen
+
 """
-    solver!(A::Poisson; tol=1e-4, itmx=1e3)
+    solver!(A::Poisson; tol=2e-3, itmx=1e3)
 
 Iterative solver for the Poisson matrix equation `Ax=b` using
 preconditioned conjugate gradients (`pcg!`).
@@ -221,19 +226,24 @@ preconditioned conjugate gradients (`pcg!`).
   - `A.x`: Solution vector (can start with an initial guess).
   - `A.z`: Right-hand-side vector (overwritten).
   - `A.n[end]`: Number of iterations performed.
-  - `tol`: Convergence tolerance on the `L₂`-norm residual.
+  - `tol`: Grid-independent max-norm (worst-cell) tolerance `max|r| < tol`. This is the
+        knob to tune: on refined grids the mean residual clears `tol/10` with margin, so
+        the max-norm is the binding constraint — lower `tol` for tighter divergence.
+        Convergence also requires the mean residual `Σ|r|/N < tol/10` (same units as the
+        max-norm, no hidden exponents: the bulk sits 10× below the cap).
   - `itmx`: Maximum number of iterations.
 
 Ends with `pin_pressure!` (remove null-space mean) and `comm!`
 (halo sync) so the solution is ready for use in `project!`.
 """
-function solver!(p::Poisson;tol=1e-4,itmx=1e3)
-    residual!(p); r₂ = L₂(p)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+function solver!(p::Poisson;tol=2e-3,itmx=1e3)
+    r₁tol = l1n_tol(p, tol); r∞tol = tol
+    residual!(p); r₁ = L₁(p); r∞ = L∞(p)
+    nᵖ=0; @log ", $nᵖ, $r∞, $r₁\n"
     while nᵖ<itmx
-        pcg!(p); r₂ = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $r₂\n"
-        r₂<tol && break
+        pcg!(p); r₁ = L₁(p); r∞ = L∞(p); nᵖ+=1
+        @log ", $nᵖ, $r∞, $r₁\n"
+        (r₁<r₁tol && r∞<r∞tol) && break
     end
     pin_pressure!(p); comm!(p.x,p.perdir)
     push!(p.n,nᵖ)

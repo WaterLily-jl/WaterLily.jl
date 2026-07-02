@@ -17,6 +17,7 @@ const par_mode = Ref{AbstractParMode}(Serial())
 # Rank-local reduction kernels the global reductions build on.
 local_dot(a, b) = a⋅b
 local_sum(a) = sum(a)
+local_sumabs(a) = sum(abs, a)  # Σ|aᵢ| — L₁ bulk term of the Poisson stopping criterion
 
 """
     mpi_rank()   → Int

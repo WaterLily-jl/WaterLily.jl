@@ -121,28 +121,30 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
 end
 
 """
-    solver!(ml::MultiLevelPoisson; tol=1e-4, itmx=32)
+    solver!(ml::MultiLevelPoisson; tol=2e-3, itmx=32)
 
-Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until the
-`L₂`-norm residual drops below `tol`.  Ends with `pin_pressure!` + `comm!`
-to remove the null-space mode and synchronize halos.
+Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until BOTH the
+grid-independent max-norm `max|r| < tol` and the mean residual `Σ|r|/N < tol/10`
+hold. Ends with `pin_pressure!` + `comm!` to remove the null-space mode and
+synchronize halos.
 """
-function solver!(ml::MultiLevelPoisson{T};tol=1e-4,itmx=32) where T
+function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     p = ml.levels[1]
-    residual!(p); r₂ = L₂(p); ω = T(1)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂, $ω\n"
+    r₁tol = l1n_tol(p, tol); r∞tol = tol
+    residual!(p); r₁ = L₁(p); r∞ = L∞(p); ω = T(1)
+    nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
         smooth!(p; ω);
-        rnew = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $rnew, $ω\n"
-        if     rnew ≥ r₂
+        rnew = L₁(p); r∞ = L∞(p); nᵖ+=1
+        @log ", $nᵖ, $r∞, $rnew, $ω\n"
+        if     rnew ≥ r₁
             ω = max(0.2, 0.9ω) |> T
-        elseif rnew < r₂
+        elseif rnew < r₁
             ω = min(1.0, 1.02ω) |> T
         end
-        r₂ = rnew
-        r₂<tol && break
+        r₁ = rnew
+        (r₁<r₁tol && r∞<r∞tol) && break
     end
     pin_pressure!(p); comm!(p.x,p.perdir)
     push!(ml.n,nᵖ);
