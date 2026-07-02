@@ -1,6 +1,6 @@
 module WaterLilyMakieExt
 
-using Makie, WaterLily, ForwardDiff
+using Makie, WaterLily, ForwardDiff, Printf
 using Makie.GeometryBasics, Makie.PlotUtils
 using ForwardDiff: Dual, value
 import WaterLily: viz!, get_body, plot_body_obs!
@@ -84,10 +84,10 @@ plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(
 
 """
     viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
-        λ=quick, udf=nothing, udf_kwargs=nothing,
+        udf=nothing, udf_kwargs=nothing,
         d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
         body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
-        video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
+        video=nothing, img=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
         theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
 
 General visualization routine to simulate and render the flow field using Makie.
@@ -108,7 +108,6 @@ Keyword arguments:
     - `duration::Number`: Simulation end time.
     - `remeasure::Bool`: Update the body position.
     - `verbose::Bool`: Print simulation information.
-    - `λ::Function`: Convective scheme function passed into `sim_step!`.
     - `udf::Function`: User-defined function passed into `sim_step!`.
     - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
         `Pair{Symbol,Any}` iterator.
@@ -129,7 +128,13 @@ Keyword arguments:
     - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a Makie.volume (faster).
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
     - `body_color`: Body color, can also containt alpha value, eg (:black, 0.9)
-    - `video::String`: Save the simulation as as video, instead of rendering. Defaults to `nothing` (not saving video).
+    - `video::String`: Save the simulation as a video to this path instead of rendering interactively. Defaults to `nothing` (not saving video).
+    - `img`: Save rendered frame(s) as image file(s). Pass a filename `String` with a `.png` extension to save with the
+        active backend, e.g. `img="frame.png"`. To save a `.svg` or `.pdf`, pass a `(name, backend)` tuple where `backend` is a
+        loaded Makie backend that supports vector output (CairoMakie) (eg. `img=("frame.svg", CairoMakie)`).
+        If `name` contains a printf integer placeholder (e.g. `img="frame_%04d.png"` or `img=("frame_%04d.svg", CairoMakie)`),
+        one image is saved per simulation frame (like `video`, rendered offscreen with no interactive window); otherwise only the last frame is saved.
+        Can be combined with `video`. Defaults to `nothing`.
     - `hidedecorations::Bool`: Figures without axis details.
     - `azimuth::Number`: Camera azimuth angle. Find a suitable angle interactively checking `ax.azimuth.val`
     - `elevation::Number`: Camera elevation angle. Find a suitable angle interactively checking `ax.elevation.val`.
@@ -143,10 +148,10 @@ Keyword arguments:
     - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
 """
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
-    λ=quick, udf=nothing, udf_kwargs=nothing,
+    udf=nothing, udf_kwargs=nothing,
     d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, tidy_colormap=true,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
-    video=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
+    video=nothing, img=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
     theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
 
     function update_data()
@@ -160,13 +165,14 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         end
     end
     function step_sim_and_viz!(sim, tᵢ)
-        sim_step!(sim, tᵢ; remeasure, λ, udf, udf_kwargs...)
+        sim_step!(sim, tᵢ; remeasure, udf, udf_kwargs...)
         verbose && sim_info(sim)
         update_data()
     end
 
     d==2 && (@assert !(body2mesh) "body2mesh only allowed for 3D plots (d=3).")
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
+    img_name, img_backend, img_fmt = parse_img(img) # validate and unpack the image spec; img_fmt set => save one image per frame
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
     !isnothing(sym) && @assert length(sym) == d "sym kwarg must have length equal to plot dimension d=$d, got $(length(sym))."
@@ -228,21 +234,29 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     if !isnothing(duration) # time loop for animation
         t₀ = round(WaterLily.sim_time(sim))
         if !isnothing(video)
+            vdir = dirname(video); isempty(vdir) || mkpath(vdir)
             Makie.record(fig, video; framerate, compression) do frame
-                for tᵢ in range(t₀,t₀+duration;step)
+                for (i,tᵢ) in enumerate(range(t₀,t₀+duration;step))
                     step_sim_and_viz!(sim,tᵢ)
                     recordframe!(frame)
+                    isnothing(img_fmt) || save_img(Printf.format(img_fmt,i), img_backend, fig)
                 end
             end
+            println("Video saved to $(abspath(video))")
         else
-            new_fig && display(Makie.current_backend().Screen(), fig)
-            for tᵢ in range(t₀,t₀+duration;step)
+            new_fig && isnothing(img_fmt) && display(Makie.current_backend().Screen(), fig) # an image series renders offscreen
+            for (i,tᵢ) in enumerate(range(t₀,t₀+duration;step))
                 step_sim_and_viz!(sim,tᵢ)
+                isnothing(img_fmt) || save_img(Printf.format(img_fmt,i), img_backend, fig)
             end
         end
+        isnothing(img_fmt) && save_img(img_name, img_backend, fig) # single image: save the last frame (a series is saved in the loop)
+        report_img(img_name, img_fmt)
         return fig, ax
     end
-    new_fig && display(Makie.current_backend().Screen(), fig)
+    new_fig && isnothing(img_fmt) && display(Makie.current_backend().Screen(), fig)
+    save_img(isnothing(img_fmt) ? img_name : Printf.format(img_fmt,1), img_backend, fig) # the single rendered frame
+    report_img(img_name, img_fmt)
     return fig, ax
 end
 function viz!(sim, a::AbstractArray; kwargs...)
@@ -292,6 +306,50 @@ function mirror_sym!(dst::AbstractArray{T,N}, src::AbstractArray{S,N}, sym) wher
         dst[I] = src[J]
     end
     return dst
+end
+
+"""
+    parse_img(img)
+
+Validate and unpack the `img` image-saving spec into `(name, backend, fmt)`. `img` is either a filename `String`
+(must be `.png`) or a `(name, backend)` tuple (the backend must support the requested extension, e.g. CairoMakie for `.svg`/`.pdf`)
+If `name` contains a printf integer placeholder (eg. `frame_%04d.png`), `fmt` is a `Printf.Format` and one image is saved per simulation frame.
+"""
+parse_img(img::Nothing) = (nothing, nothing, nothing)
+function parse_img(img)
+    explicit_backend = img isa Tuple
+    name, backend = explicit_backend ? (img[1], img[2]) : (img, Makie.current_backend())
+    ext = lowercase(splitext(name)[2])
+    @assert ext in (".png", ".svg", ".pdf") "img name must end in .png, .svg, or .pdf, got \"$name\"."
+    @assert explicit_backend || ext == ".png" "Saving a $ext image requires a Makie backend that supports it: pass it as a (name, backend) tuple, eg. img=(\"$name\", CairoMakie). Without a backend only .png is supported."
+    fmt = occursin('%', name) ? Printf.Format(name) : nothing # `frame_%04d.png` -> one image per frame
+    return name, backend, fmt
+end
+
+"""
+    save_img(name, backend, fig)
+
+Save `fig` to `name` with `backend`, creating the parent directory if needed. Returns the absolute path,
+or `nothing` (no-op) when `name === nothing`.
+"""
+save_img(name::Nothing, backend, fig) = nothing
+function save_img(name, backend, fig)
+    dir = dirname(name); isempty(dir) || mkpath(dir)
+    Makie.save(name, fig; backend)
+    return abspath(name)
+end
+
+"""
+    report_img(name, fmt)
+
+Print where image output landed: a single image (`fmt === nothing`) prints its absolute path; an image series
+prints its absolute parent directory. No-op when `name === nothing`.
+"""
+report_img(name::Nothing, fmt::Nothing) = nothing
+report_img(name, fmt::Nothing) = println("Image saved to ", abspath(name))
+function report_img(name, fmt)
+    dir = dirname(name)
+    println("Images saved to ", isempty(dir) ? pwd() : abspath(dir))
 end
 
 end # module

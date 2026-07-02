@@ -165,6 +165,21 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
 end
 
 """
+    perdot(a,b,perdir)
+
+Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
+"""
+perdot(a,b,::Tuple{}) = a⋅b
+perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+"""
+    global_perdot(a,b,perdir)
+
+MPI-global `perdot`: the rank-local dot product reduced across ranks.
+Equivalent to `perdot` in serial.
+"""
+global_perdot(a,b,perdir,R...) = global_allreduce(perdot(a,b,perdir,R...))
+
+"""
     pcg!(p::Poisson; it=6)
 
 Conjugate-Gradient smoother with Jacobi preconditioning. Runs at most `it` iterations,
@@ -193,6 +208,7 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     end
 end
 
+L₂(a) = (R = inside(a); @view(a[R])⋅@view(a[R])) # interior-cell L₂; GPU-safe view dot
 L₂(p::Poisson) = global_dot(p.r, p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = global_max(maximum(abs, @view p.r[inside(p.r)]))
 
