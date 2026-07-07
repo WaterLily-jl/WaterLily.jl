@@ -214,18 +214,19 @@ total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
 
 """
     flux_moment(x₀, sim::Simulation)
-
+    
 Compute the flux moments through the surface of a fictitious body.
 """
 flux_moment(x₀,sim) = flux_moment(x₀,sim.flow,sim.body)
 flux_moment(x₀,flow,body) = flux_moment(x₀,flow.u,flow.f,body,time(flow))
+@inline flux_moment_cross(I::CartesianIndex{m} where m, x₀, u) = @views ×(loc(0,I,eltype(u))-x₀,u[I,:])
 function flux_moment(x₀,u,df,body,t=0)
     Tu = eltype(u); To = promote_type(Float64,Tu)
     df .= zero(Tu)
     @loop df[I,:] .= nds(body,loc(0,I,Tu),t) over I ∈ inside_u(df)
     @loop df[I,:] .= flux_force_dot(I, u, df) over I ∈ inside_u(df)
     df .*= u
-    @loop df[I,:] .= cross(loc(0,I,Tu)-x₀,df[I,:]) over I ∈ inside_u(df)
+    @loop df[I,:] .= flux_moment_cross(I,x₀,df) over I ∈ inside_u(df)
     sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
