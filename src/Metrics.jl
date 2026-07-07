@@ -213,7 +213,8 @@ Computes the total (pressure + viscous) moment on an immersed body relative to p
 total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
 
 """
-    flux_moment(sim::Simulation)
+    flux_moment(x₀, sim::Simulation)
+
 Compute the flux moments through the surface of a fictitious body.
 """
 flux_moment(x₀,sim) = flux_moment(x₀,sim.flow,sim.body)
