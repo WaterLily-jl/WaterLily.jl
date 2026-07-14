@@ -50,7 +50,7 @@ import ForwardDiff
     # R2: cross-check P=1 vs Smagorinsky sgs! (same sign; magnitude is field-dependent)
     Nf = size_u(flow.u)[1]; S = zeros(Tt, Nf..., 3, 3)
     smag(I; S, Cs, Δ) = @views (Cs*Δ)^2*sqrt(2*dot(S[I,:,:], S[I,:,:]))
-    Cs = 0.17; Δ = sqrt(3.0)
+    Cs = 0.17; Δ = 1.0   # Δ=h (cube-root-volume convention); β₁=2Cs² bridge assumes this
     flow.u .= u0; r_smag = spatial_energy_rate(flow; λ=cds, ν=0.0, udf=sgs!, νₜ=smag, S=S, Cs=Cs, Δ=Δ) - r_cds
     flow.u .= u0; r_beta = spatial_energy_rate(flow; λ=cds, ν=0.0, udf=dissipative_flux!, β=Tt[2*Cs^2]) - r_cds
     @test r_smag < 0 && r_beta < 0
