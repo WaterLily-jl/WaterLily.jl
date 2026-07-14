@@ -4,8 +4,15 @@ using StaticArrays
 Base.@propagate_inbounds @inline fSV(f,n) = SA[ntuple(f,n)...]
 Base.@propagate_inbounds @inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
+"""
+    shiftDir(d,D,i)
+
+Shift the index of direction `d` to `i` steps away in dimension space of `D`.
+So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4` 
+"""
+shiftDir(d,D,i) = mod(d+i-1,D)+1
 Base.@propagate_inbounds @fastmath function permute(f,i)
-    j,k = i%3+1,(i+1)%3+1
+    j,k = shiftDir(i,3,1), shiftDir(i,3,2)
     f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
@@ -84,6 +91,24 @@ function ω_θ(I::CartesianIndex{3},z,center,u)
 end
 
 """
+    helicity(I,u,ω)
+
+Compute the helicity density at collocated cell `I` from dot product of velocity `u` and vorticity `ω`.
+`u` and `ω` should all be average to the collocated cell in each directional operation.
+"""
+function helicity(I::CartesianIndex{3},u::AbstractArray{T},ω) where T
+    s = zero(T)
+    for d∈1:3
+        dir1,dir2 = shiftDir.(d,3,1:2)
+        umid = u[I,d]+u[I+δ(d,I),d]
+        for id1∈0:1,id2∈0:1
+            s+=umid*ω[I+id1*δ(dir1,I)+id2*δ(dir2,I),d]
+        end
+    end
+    s/8
+end
+
+"""
     nds(body,x,t)
 
 BDIM-masked surface normal.
@@ -112,8 +137,7 @@ end
 
 Rate-of-strain tensor.
 """
-S(I::CartesianIndex{2},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:2, j ∈ 1:2]
-S(I::CartesianIndex{3},u) = @SMatrix [0.5*(∂(i,j,I,u)+∂(j,i,I,u)) for i ∈ 1:3, j ∈ 1:3]
+@inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
 
 """
     viscous_force(sim::Simulation)
@@ -150,6 +174,28 @@ function pressure_moment(x₀,p,df,body,t=0)
     @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
+
+"""
+    viscous_moment(x₀,sim::Simulation)
+
+Computes the viscous moment on an immersed body relative to point x₀.
+"""
+viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
+viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
+function viscous_moment(x₀,u,ν,df,body,t=0)
+    Tu = eltype(u); To = promote_type(Float64,Tu)
+    df .= zero(Tu)
+    @loop df[I,:] .= -2ν*cross(loc(0,I,Tu)-x₀,S(I,u)*nds(body,loc(0,I,Tu),t)) over I ∈ inside_u(u)
+    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+end
+
+"""
+    total_moment(x₀,sim::Simulation)
+
+Computes the total (pressure + viscous) moment on an immersed body relative to point x₀.
+"""
+total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
+
 
 """
     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}

@@ -22,7 +22,7 @@ end
 Plot the 3D body mesh `body_mesh::Observable{GeometryBasics.Mesh}` in a 3D axis.
 """
 plot_body_obs!(ax, body_mesh; color=(:grey, 0.9)) = Makie.mesh!(ax, body_mesh;
-    shading=MultiLightShading, color
+    shading=true, color
 )
 
 end # module

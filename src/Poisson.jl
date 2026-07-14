@@ -149,6 +149,14 @@ end
 
 using LinearAlgebra: ⋅
 """
+    perdot(a,b,perdir)
+
+Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
+"""
+perdot(a,b,::Tuple{}) = a⋅b
+perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+
+"""
     pcg!(p::Poisson; it=6)
 
 Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
@@ -177,11 +185,16 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     end
 end
 
+L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
+L₁(p::Poisson) = sum(abs,p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
 
+# mean residual  Σ|r|/N < tol/10   ⟺   L₁(p)=Σ|r| < (tol/10)·N
+l1n_tol(p::AbstractPoisson, tol) = (Float64(tol)/10) * length(inside(p.r))
+
 """
-    solver!(A::Poisson;tol=1e-4,itmx=1e3)
+    solver!(A::Poisson;tol=2e-3,itmx=1e3)
 
 Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 
@@ -189,16 +202,21 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
   - `A.x`: Solution vector. Can start with an initial guess.
   - `A.z`: Right-Hand-Side vector. Will be overwritten!
   - `A.n[end]`: stores the number of iterations performed.
-  - `tol`: Convergence tolerance on the `L₂`-norm residual.
+  - `tol`: Grid-independent max-norm (worst-cell) tolerance `max|r| < tol`. This is the
+        knob to tune: on refined grids the mean residual clears `tol/10` with margin, so
+        the max-norm is the binding constraint — lower `tol` for tighter divergence.
+        Convergence also requires the mean residual `Σ|r|/N < tol/10` (same units as the
+        max-norm, no hidden exponents: the bulk sits 10× below the cap).
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;tol=1e-4,itmx=1e3)
-    residual!(p); r₂ = L₂(p)
-    nᵖ=0; @log ", $nᵖ, $(L∞(p)), $r₂\n"
+function solver!(p::Poisson;tol=2e-3,itmx=1e3)
+    r₁tol = l1n_tol(p, tol); r∞tol = tol
+    residual!(p); r₁ = L₁(p); r∞ = L∞(p)
+    nᵖ=0; @log ", $nᵖ, $r∞, $r₁\n"
     while nᵖ<itmx
-        pcg!(p); r₂ = L₂(p); nᵖ+=1
-        @log ", $nᵖ, $(L∞(p)), $r₂\n"
-        r₂<tol && break
+        pcg!(p); r₁ = L₁(p); r∞ = L∞(p); nᵖ+=1
+        @log ", $nᵖ, $r∞, $r₁\n"
+        (r₁<r₁tol && r∞<r∞tol) && break
     end
     perBC!(p.x,p.perdir)
     push!(p.n,nᵖ)
