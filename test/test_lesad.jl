@@ -1,59 +1,19 @@
-# LES-extension tests for WaterLily. Self-contained (WaterLily + Test + StaticArrays +
-# Random + ForwardDiff) so it runs without the optional GPUArrays/CUDA test deps.
-# Included from runtests.jl and runnable standalone:  julia --project=. test/les_tests.jl
+# Implicit-LES dissipative-flux tests (les-ad branch). Self-contained (WaterLily + Test +
+# StaticArrays + Random + ForwardDiff) so it runs without the optional GPUArrays/CUDA test deps.
+# Auto-discovered by runtests.jl (test_*.jl); runnable standalone:  julia --project=. test/test_lesad.jl
+# The udf advecting-velocity regression lives upstream in test_les.jl; the general udf
+# machinery (body force, rotating frame) is covered in test_flow.jl.
 using WaterLily, Test, StaticArrays, Random
 using WaterLily: dissipative_flux!, _apply_dissipative_flux!, spatial_energy_rate, sgs!,
-                 size_u, inside_u, inside, loc, cds, quick, ϕ, CI, δ, dot, mom_project!
+                 size_u, inside_u, cds, quick, ϕ, CI, dot, mom_project!
 import WaterLily
 import ForwardDiff
 
-@testset "udf advecting velocity" begin
-    # udf! supplies the velocity the convective flux uses each phase (u⁰ in the predictor,
-    # projected u in the corrector). A 3-arg force!(flow,u,t) udf uses it; a 2-arg
-    # force!(flow,t) udf is unchanged (applicable() fallback) — backward compatible.
-    saw = Tuple{Float64,Float64}[]
-    rec!(flow, u, t; kw...) = (push!(saw, (maximum(abs, @view u[inside_u(u),:]),
-                                           maximum(abs, @view flow.u[inside_u(flow.u),:]))); nothing)
-    sim = Simulation((16,16),(1.0,0.0),16; U=1.0, T=Float64, mem=Array)
-    empty!(saw); sim_step!(sim; udf=rec!)
-    @test saw[1][1] > 1e-8       # predictor udf sees nonzero u⁰ (the fix)
-    @test saw[1][2] < 1e-8       # while flow.u interior is zeroed (the old bug source)
-    @test saw[end][1] > 1e-8     # corrector udf sees the nonzero projected field
-
-    # 2-arg force-only udf still runs unchanged
-    NG = Ref(0)
-    grav!(flow, t; g=0.5) = (WaterLily.@loop flow.f[Ii] += g over Ii in CartesianIndices(flow.f); NG[]+=1; nothing)
-    sim2 = Simulation((16,16),(1.0,0.0),16; U=1.0, T=Float64, mem=Array)
-    sim_step!(sim2; udf=grav!, g=0.5)
-    @test NG[] == 2 && all(isfinite, sim2.flow.u)
-
-    # the existing maintests udf testsets must still hold (replicated here on Array)
-    function acceleratingFlow(N; use_g=false, T=Float64, perdir=(1,), jerk=4, mem=Array)
-        UScale=√N; g(i,x,t)= i==1 ? t*jerk : 0.; !use_g && (g=nothing)
-        Simulation((N,N),(UScale,0.),N; ν=0.001, g, Δt=0.001, perdir, T, mem), jerk
-    end
-    gravity!(flow, t; jerk=4) = for i ∈ 1:last(size(flow.f))
-        WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
-    end
-    N=8; simg,jerk = acceleratingFlow(N; use_g=true); sim_step!(simg,1.0)
-    uF = simg.flow.uBC[1] + 0.5*jerk*WaterLily.time(simg)^2
-    simu,_ = acceleratingFlow(N); sim_step!(simu,1.0; udf=gravity!, jerk=jerk)
-    @test WaterLily.L₂(simu.flow.u[:,:,1].-uF)<1e-4 && WaterLily.L₂(simu.flow.u[:,:,2].-0)<1e-4
-    @test WaterLily.L₂(simg.flow.u[:,:,1].-uF)<1e-4
-
-    L=4; x₀=SA_F64[L,L]; ω=1/L
-    vel(i,x,t)= begin s,c=sincos(ω*t); y=ω*(x-x₀); i==1 ? s*y[1]+c*y[2] : -c*y[1]+s*y[2] end
-    cor(i,x,t)= i==1 ? 2ω*vel(2,x,t) : -2ω*vel(1,x,t); cen(i,x,t)=ω^2*(x-x₀)[i]; g(i,x,t)=cor(i,x,t)+cen(i,x,t)
-    rotudf(a,t)=WaterLily.@loop a.f[Ii]+=g(last(Ii),loc(Ii,eltype(a.f)),t) over Ii in CartesianIndices(a.f)
-    Nr=8; simgr=Simulation((Nr,Nr),vel,Nr; g, U=1, T=Float64); simr=Simulation((Nr,Nr),vel,Nr; U=1, T=Float64)
-    sim_step!(simgr); sim_step!(simr; udf=rotudf)
-    @test L₂(simgr.flow.p)==L₂(simr.flow.p)<3e-3
-end
-
 @testset "dissipative flux" begin
     Tt = Float64; Nn = 8
-    # N=8 triple-periodic inviscid box + a discretely div-free field
-    sim = Simulation((Nn,Nn,Nn),(0,0,0),1.0; U=1.0, ν=0.0, perdir=(1,2,3), T=Tt)
+    # N=8 triple-periodic inviscid box + a discretely div-free field (λ=cds at construction —
+    # post-#301 the convective scheme lives in flow.λ; sim_step! ignores a λ kwarg)
+    sim = Simulation((Nn,Nn,Nn),(0,0,0),1.0; U=1.0, ν=0.0, perdir=(1,2,3), T=Tt, λ=cds)
     flow = sim.flow
     Random.seed!(1234)
     flow.u .= randn(Tt, size(flow.u)); BC!(flow.u, flow.uBC, false, flow.perdir)
@@ -109,20 +69,23 @@ end
     @test abs(g_ad-g_fd) <= 1e-5*max(1,abs(g_fd))
     @test abs(g_ad-coeff) <= 1e-8*max(1,abs(coeff))
 
-    # R4: end-to-end sim_step! (β rides kwargs); β=0 ~preserves KE, β>0 decays it
+    # R4: end-to-end sim_step! (β rides kwargs; cds base set at construction).
+    # β=0 conserves KE up to the small temporal (RK) drift — this assertion catches a
+    # dissipative base scheme sneaking in (quick decays KE by ≫1e-3 over these steps).
     tgv(i,x) = i==1 ? sin(2π*x[1]/Nn)*cos(2π*x[2]/Nn) : i==2 ? -cos(2π*x[1]/Nn)*sin(2π*x[2]/Nn) : 0.0
     KE(fl) = 0.5*sum(abs2, @inbounds(fl.u[Ii]) for Ii in inside_u(size_u(fl.u)[1]))
     function run_steps(β1; nsteps=15)
-        s = Simulation((Nn,Nn,Nn),(0,0,0),1.0; U=1.0, ν=0.0, perdir=(1,2,3), T=Tt, uλ=tgv)
+        s = Simulation((Nn,Nn,Nn),(0,0,0),1.0; U=1.0, ν=0.0, perdir=(1,2,3), T=Tt, λ=cds, u0=tgv)
         mom_project!(s.flow, s.pois, 1.0, 0.0); ke0 = KE(s.flow); ok = true
         for _ in 1:nsteps
-            sim_step!(s; remeasure=false, λ=cds, udf=dissipative_flux!, β=Tt[β1])
+            sim_step!(s; remeasure=false, udf=dissipative_flux!, β=Tt[β1])
             ok &= all(isfinite, s.flow.u)
         end
         ke0, KE(s.flow), ok
     end
-    _, ke1_a, fin_a = run_steps(0.0); ke0_b, ke1_b, fin_b = run_steps(0.2)
+    ke0_a, ke1_a, fin_a = run_steps(0.0); ke0_b, ke1_b, fin_b = run_steps(0.2)
     @test fin_a && fin_b                            # stays finite
+    @test abs(ke1_a/ke0_a - 1) < 1e-3               # β=0 + cds ⇒ KE conserved (spatial EC)
     @test ke1_b < ke0_b                             # β>0 decays KE
     @test ke1_b < ke1_a                             # more dissipation than β=0
 

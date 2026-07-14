@@ -90,8 +90,10 @@ end
 # dissipative sign is sign(βₚ)=(-1)^(p+1): β₁,β₃>0 REMOVE energy (Δ²,Δ⁶), but β₂,β₄
 # remove energy only when NEGATIVE (Δ⁴,Δ⁸ INJECT energy for βₚ>0). So box-constrain
 # β₁,β₃≥0 and β₂,β₄≤0 (or leave even orders free). At P=1, β₁>0 is Rusanov/
-# Smagorinsky-like (Cs²↔β₁/2). Use with `λ=cds` (the energy-conserving base) and
-# `udf=dissipative_flux!`; do NOT combine with quick/vanLeer or `sgs!` (double-counts).
+# Smagorinsky-like (Cs²↔β₁/2). Use with the energy-conserving `cds` base — set
+# `λ=cds` at `Simulation`/`Flow` construction (the scheme lives in `flow.λ`; a `λ`
+# kwarg to `sim_step!` is silently ignored) — and `udf=dissipative_flux!`; do NOT
+# combine with quick/vanLeer or `sgs!` (double-counts).
 #
 # Δ^{2p} are the central undivided even differences of Burgers' d2/d4/d6/d8
 # (Pascal coefficients), re-indexed onto the staggered j-line of uᵢ. Their
@@ -99,9 +101,10 @@ end
 # array has only ONE ghost layer (Ng=N+2), so P≥3 is only correct via periodic
 # index wrapping (`_wrapⱼ`); a non-periodic direction with P≥3 errors (P=2 there
 # uses the BC-filled ghost as a crude closure for the two boundary faces).
-# NOTE (shared with `sgs!`): the udf reads `flow.u`, which `mom_step!` zeroes in
-# the predictor (conv_diff! uses `u⁰`), so fᵈ is effectively applied in the
-# corrector only — a fixed factor the β-optimization absorbs (β is scheme-specific).
+# NOTE (shared with `sgs!`): `udf!` passes the advecting velocity explicitly —
+# `u⁰` in the predictor (where `flow.u` is zeroed by `scale_u!`) and the projected
+# `u` in the corrector — so fᵈ acts in both RK phases on the same field the
+# convective flux uses (the udf-advecting-velocity fix, regression: test_les.jl).
 
 # periodic-wrapped j-index: interior is 2:Nⱼ-1 with period Nⱼ-2 (Nⱼ=Ng[j])
 @inline _wrapⱼ(q,perj,Nⱼ) = perj ? 2 + mod(q-2, Nⱼ-2) : q
@@ -145,11 +148,12 @@ dissipation weights (P=1..4); `ε>0` selects a smooth `√(U²+ε²)` surrogate 
 `|U_face|` advection speed (use for exact ForwardDiff gradient reproducibility).
 
 Per-order dissipative sign is `sign(βₚ)=(-1)^(p+1)` (see header): β₁,β₃>0 and
-β₂,β₄<0 remove energy. Pass with `λ=cds` into `sim_step!`:
-    `sim_step!(sim, ...; λ=cds, udf=dissipative_flux!, β=Float32[β₁,...])`.
+β₂,β₄<0 remove energy. Set the energy-conserving `cds` base at construction
+(a `λ` kwarg to `sim_step!` is silently ignored — the scheme lives in `flow.λ`):
+    `sim = Simulation(...; λ=cds, ...); sim_step!(sim; udf=dissipative_flux!, β=Float32[β₁,...])`.
 β rides the `sim_step!` keyword arguments. Do NOT combine with `quick`/`vanLeer`
-or `sgs!` (their dissipation double-counts and contaminates β); `λ` is not visible
-here, so this is a usage contract, not enforced.
+or `sgs!` (their dissipation double-counts and contaminates β); a one-time warning
+fires if `flow.λ !== cds`.
 
 ForwardDiff w.r.t. β: the flow buffers must carry the `Dual` type, so reconstruct
 the `Flow`/`Simulation` with `T=eltype(β)` (as in the Burgers reference) before the
@@ -157,6 +161,11 @@ gradient pass — seeding a `Dual` β into a `Float32`/`Float64` `Flow` errors w
 storing Duals into `flow.σ`/`flow.f`. (`ε>0` avoids the `√` kink at `U_face=0`.)
 """
 function dissipative_flux!(flow, u, t; β, ε=zero(eltype(u)), kwargs...)
+    # guard against the silent quick+β double-dissipation (post-#301 a `λ` kwarg to
+    # sim_step! is swallowed by the udf kwargs); hasproperty keeps duck-typed
+    # (NamedTuple) flows in the AD tests working
+    hasproperty(flow, :λ) && flow.λ !== cds &&
+        @warn "dissipative_flux! expects the energy-conserving `cds` base but flow.λ=$(flow.λ); build the Simulation/Flow with λ=cds or β also compensates the base scheme's own dissipation" maxlog=1
     _apply_dissipative_flux!(flow.f, flow.σ, u, β, flow.perdir, ε)
 end
 # core kernel, separated so it can be driven on Dual-typed arrays directly (AD tests)
@@ -199,17 +208,6 @@ function spatial_energy_rate(flow; λ=cds, ν=zero(eltype(flow.u)), udf=nothing,
     N,_ = size_u(flow.u); R = inside_u(N)
     sum(@view(flow.u[R]) .* @view(flow.f[R]))   # broadcast+reduce (GPU-safe; no scalar indexing)
 end
-
-check_fn(f,N,T,nargs) = nothing
-function check_fn(f::Function,N,T,nargs)
-    @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
-    @assert all(typeof.(ntuple(i->f(i,xtargs(Val{}(nargs),N,T)...),N)).==T) "$f is not type stable"
-end
-xtargs(::Val{2},N,T) = (zeros(SVector{N,T}),)
-xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
-
-ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
-ic_function(uBC::Tuple) = (i,x)->uBC[i]
 
 squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))
 
