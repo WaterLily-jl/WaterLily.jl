@@ -95,12 +95,12 @@ mutable struct Simulation <: AbstractSimulation
                         u0=nothing, uλ=nothing, exitBC=false, λ=quick, body::AbstractBody=NoBody(),
                         flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
                         pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
-                        T=Float32, mem=Array) where N
+                        T=Float32, mem=Array, kwargs...) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         isnothing(U) && (U = √sum(abs2,uBC))
         u0 = ic_kwarg(u0, uλ)
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(u0,N,T,2)
-        flow = flow_ctor(dims,uBC;u0,Δt,ν,g,λ,T,mem,perdir,exitBC)
+        flow = flow_ctor(dims,uBC;u0,Δt,ν,g,λ,T,mem,perdir,exitBC,kwargs...)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,pois_ctor(flow))
     end
