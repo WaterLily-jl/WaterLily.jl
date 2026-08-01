@@ -27,23 +27,29 @@ function body_plot!(sim;levels=[0],lines=:black,R=inside(sim.flow.p))
     contour!(sim.flow.σ[R]'|>Array;levels,lines)
 end
 
+vorticity(sim) = (@WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U; sim.flow.σ)
+
 """
     sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,kv...)
+                    remeasure=false,plotbody=false,field=vorticity,fname=nothing,fps=20,kv...)
 
-Make a gif of the simulation `sim` for `duration` seconds with `step` time steps. The keyword arguments are passed to `flood` and `body_plot!`.
+Make a gif of the simulation `sim` for `duration` seconds with `step` time steps.
+`field(sim)` returns the array flooded at each frame (defaults to the z-vorticity
+scaled by `L/U`); pass eg. `field=sim->sim.flow.p` to plot another field.
+If `fname` is given the gif is saved there, otherwise to a temporary file.
+The keyword arguments are passed to `flood` and `body_plot!`.
 """
 function sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,kv...)
+                    remeasure=false,plotbody=false,field=vorticity,fname=nothing,fps=20,kv...)
     t₀ = round(WaterLily.sim_time(sim))
-    @time @gif for tᵢ in range(t₀,t₀+duration;step)
+    anim = @time @animate for tᵢ in range(t₀,t₀+duration;step)
         WaterLily.sim_step!(sim,tᵢ;remeasure)
-        @WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-        flood(sim.flow.σ[R]; kv...)
+        flood(field(sim)[R]; kv...)
         plotbody && body_plot!(sim)
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
+    isnothing(fname) ? gif(anim;fps) : gif(anim,fname;fps)
 end
 
 
