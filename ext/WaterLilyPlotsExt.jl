@@ -1,6 +1,7 @@
 module WaterLilyPlotsExt
 
 using Plots, WaterLily
+using ForwardDiff: value
 import WaterLily: flood,addbody,body_plot!,sim_gif!,plot_logger
 gr()
 
@@ -22,34 +23,64 @@ function flood(f::AbstractArray;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,
 end
 
 addbody(x,y;c=:black) = Plots.plot!(Shape(x,y), c=c, legend=false)
-function body_plot!(sim;levels=[0],lines=:black,R=inside(sim.flow.p))
+function body_plot!(sim,dat,dat_plot;levels=[0],lines=:black,CIs=inside(sim.flow.p))
     WaterLily.measure_sdf!(sim.flow.σ,sim.body,WaterLily.time(sim))
-    contour!(sim.flow.σ[R]'|>Array;levels,lines)
+    copyto!(dat,sim.flow.σ)
+    restrict_plot!(dat_plot,dat,CIs)
+    contour!(dat_plot';levels,lines)
 end
 
-vorticity(sim) = (@WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U; sim.flow.σ)
+restrict_plot!(dat_plot,dat,CIs) = (dat_plot .= value.(@view dat[CIs]); dat_plot)
+
+function vorticity!(dat, sim)
+    a = sim.flow.σ
+    @WaterLily.inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+    copyto!(dat, a)
+end
 
 """
-    sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,field=vorticity,fname=nothing,fps=20,kv...)
+    sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
+                    remeasure=false,plotbody=false,f=vorticity!,fname=nothing,framerate=20,
+                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
 
-Make a gif of the simulation `sim` for `duration` seconds with `step` time steps.
-`field(sim)` returns the array flooded at each frame (defaults to the z-vorticity
-scaled by `L/U`); pass eg. `field=sim->sim.flow.p` to plot another field.
-If `fname` is given the gif is saved there, otherwise to a temporary file.
-The keyword arguments are passed to `flood` and `body_plot!`.
+Make a gif of the simulation `sim`, stepping the flow forward and plotting `f(sim)` with `flood` at each frame.
+
+Keyword arguments:
+    - `duration::Number`: Simulation duration (in convective time units) to animate.
+    - `step::Number`: Time step between animation frames.
+    - `verbose::Bool`: Print simulation information at each frame.
+    - `CIs::CartesianIndices`: Region to plot, and to outline the body within if `plotbody=true`. Defaults to `inside(sim.flow.p)`.
+    - `remeasure::Bool`: Update the body position at each step.
+    - `plotbody::Bool`: Overlay the body's zero level-set contour.
+    - `f::Function`: Visualization function with interface `f(dat, sim)`, transferring the plotted data
+        (device-to-host) into the preallocated buffer `dat` (allocated once, full domain
+        size, and reused every frame). Defaults to the z-vorticity scaled by `L/U`.
+    - `fname::String`: Path to save the gif. Defaults to a temporary file.
+    - `framerate::Int`: Gif framerate.
+    - `udf::Function`: User-defined function passed into `sim_step!`.
+    - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
+        `Pair{Symbol,Any}` iterator.
+    - `hidedecorations::Bool`: Hide the axis ticks, labels and grid.
+    - `kv...`: Additional keyword arguments passed to `flood`.
 """
-function sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,field=vorticity,fname=nothing,fps=20,kv...)
+function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
+                    remeasure=false,plotbody=false,f=vorticity!,fname=nothing,framerate=20,
+                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
+    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
+    isnothing(udf) && (udf_kwargs=[])
+    dat = Array(sim.flow.σ)
+    dat_plot = value.(dat[CIs])
     t₀ = round(WaterLily.sim_time(sim))
     anim = @time @animate for tᵢ in range(t₀,t₀+duration;step)
-        WaterLily.sim_step!(sim,tᵢ;remeasure)
-        flood(field(sim)[R]; kv...)
-        plotbody && body_plot!(sim)
+        WaterLily.sim_step!(sim,tᵢ;remeasure,udf,udf_kwargs...)
+        f(dat,sim); restrict_plot!(dat_plot,dat,CIs)
+        flood(dat_plot; kv...)
+        plotbody && body_plot!(sim,dat,dat_plot;CIs)
+        hidedecorations && Plots.plot!(showaxis=false,ticks=false,grid=false)
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
-    isnothing(fname) ? gif(anim;fps) : gif(anim,fname;fps)
+    isnothing(fname) ? gif(anim;fps=framerate) : gif(anim,fname;fps=framerate)
 end
 
 
