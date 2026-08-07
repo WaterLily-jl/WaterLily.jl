@@ -78,7 +78,8 @@ Keyword arguments:
     - `f::Function`: Visualization function with interface `f(dat, sim)`, transferring the plotted data
         (device-to-host) into the preallocated buffer `dat` (allocated once, full domain
         size, and reused every frame). Defaults to the z-vorticity scaled by `L/U`.
-    - `video::String`: Path to save the gif. Defaults to a temporary file.
+    - `video::String`: Path to save the animation. Saved as an mp4 if the path ends in `.mp4`, otherwise as a gif.
+        Defaults to a temporary gif file.
     - `framerate::Int`: Gif framerate.
     - `udf::Function`: User-defined function passed into `sim_step!`.
     - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
@@ -103,7 +104,13 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
-    isnothing(video) ? gif(anim;fps=framerate) : gif(anim,video;fps=framerate)
+    if isnothing(video)
+        gif(anim;fps=framerate)
+    elseif endswith(video,".mp4")
+        mp4(anim,video;fps=framerate)
+    else
+        gif(anim,video;fps=framerate)
+    end
 end
 
 
