@@ -16,19 +16,19 @@ Keyword arguments:
         cells. Defaults to `(-0.5,-0.5)` since `f` is assumed to live on cell edges (e.g. vorticity);
         pass `(0.,0.)` for cell-centered data (e.g. pressure).
     - `cfill`: Colormap passed to `Plots.contourf` as `color`.
-    - `clims::Tuple`: `(min,max)` values to clamp `f` to before plotting. Defaults to `f`'s own
-        range (i.e. no clamping).
+    - `clims::Tuple`: `(min,max)` values to clamp `f` to before plotting. Defaults to (-5,5).
     - `levels::Int`: Number of contour levels.
     - `xlim::Tuple`, `ylim::Tuple`: Axis limits, in the same shifted coordinates as `shift`. Default
         to the full extent of `f`.
     - `kv...`: Additional keyword arguments passed to `Plots.contourf`.
 """
-function flood(f::AbstractArray;shift=(-.5,-.5),cfill=:RdBu_11,clims=(),levels=10, xlim=(0,size(f)[1]), ylim=(0,size(f)[2]),kv...)
+function flood(f::AbstractArray;shift=(-.5,-.5),cfill=:seismic,clims=(-5,5),levels=10, xlim=(0,size(f)[1]), ylim=(0,size(f)[2]),kv...)
     if length(clims)==2
         @assert clims[1]<clims[2]
         @. f=min(clims[2],max(clims[1],f))
     else
-        clims = (minimum(f),maximum(f))
+        minf,maxf = minimum(f),maximum(f)
+        clims = ifelse(maxf-minf<0.001, (-1,1), (minf,maxf))
     end
     Plots.contourf(axes(f,1).-0.5.+shift[1],axes(f,2).-0.5.+shift[2],f'|>Array,
                    linewidth=0, levels=levels, color=cfill, clims = clims,
