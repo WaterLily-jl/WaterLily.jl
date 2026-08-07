@@ -36,11 +36,30 @@ function flood(f::AbstractArray;shift=(-.5,-.5),cfill=:seismic,clims=(-5,5),leve
 end
 
 addbody(x,y;c=:black) = Plots.plot!(Shape(x,y), c=c, legend=false)
+"""
+    body_plot!(sim,dat,dat_plot;levels=[0],lines=:black,CIs=inside(sim.flow.p))
+
+Non-allocating: overlay the body's zero level-set contour, reusing the `dat`/`dat_plot` buffers
+preallocated by the caller (e.g. `sim_gif!`).
+"""
 function body_plot!(sim,dat,dat_plot;levels=[0],lines=:black,CIs=inside(sim.flow.p))
     WaterLily.measure_sdf!(sim.flow.σ,sim.body,WaterLily.time(sim))
     copyto!(dat,sim.flow.σ)
     restrict_plot!(dat_plot,dat,CIs)
     contour!(axes(dat_plot,1).-0.5,axes(dat_plot,2).-0.5,dat_plot';levels,lines)
+end
+"""
+    body_plot!(sim;levels=[0],lines=:black,CIs=inside(sim.flow.p))
+
+Allocating convenience method: overlay the body's zero level-set contour on the current plot.
+Intended for one-off/manual plotting (see `flood`); allocates fresh buffers on every call,
+unlike the non-allocating `body_plot!(sim,dat,dat_plot;kv...)` used internally by `sim_gif!`.
+"""
+function body_plot!(sim;levels=[0],lines=:black,CIs=inside(sim.flow.p))
+    dat = Array(sim.flow.σ)
+    ndims(dat)==3 && @assert any(==(1), size(CIs)) "3D CIs must include a singleton dimension (e.g. a cut plane) to reduce the data to a 2D slice for plotting, got size $(size(CIs))."
+    dat_plot = dropdims(value.(dat[CIs]), dims=Tuple(findall(==(1), size(CIs))))
+    body_plot!(sim,dat,dat_plot;levels,lines,CIs)
 end
 
 restrict_plot!(dat_plot,dat,CIs) = (dat_plot .= value.(@view dat[CIs]); dat_plot)
