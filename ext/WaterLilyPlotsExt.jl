@@ -6,20 +6,32 @@ import WaterLily: flood,addbody,body_plot!,sim_gif!,plot_logger
 gr()
 
 """
-    flood(f)
+    flood(f;shift=(-.5,-.5),cfill=:RdBu_11,clims=(),levels=10,xlim=(0,size(f,1)),ylim=(0,size(f,2)),kv...)
 
-Plot a filled contour plot of the 2D array `f`. The keyword arguments are passed to `Plots.contourf`.
+Plot a filled contour plot of the 2D array `f`, which must be a CPU array (host memory).
+
+Keyword arguments:
+    - `shift::Tuple`: Offset of the plotted coordinates relative to the array indices, in units of
+        cells. Defaults to `(-0.5,-0.5)` since `f` is assumed to live on cell edges (e.g. vorticity);
+        pass `(0.,0.)` for cell-centered data (e.g. pressure).
+    - `cfill`: Colormap passed to `Plots.contourf` as `color`.
+    - `clims::Tuple`: `(min,max)` values to clamp `f` to before plotting. Defaults to `f`'s own
+        range (i.e. no clamping).
+    - `levels::Int`: Number of contour levels.
+    - `xlim::Tuple`, `ylim::Tuple`: Axis limits, in the same shifted coordinates as `shift`. Default
+        to the full extent of `f`.
+    - `kv...`: Additional keyword arguments passed to `Plots.contourf`.
 """
-function flood(f::AbstractArray;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,kv...)
+function flood(f::AbstractArray;shift=(-.5,-.5),cfill=:RdBu_11,clims=(),levels=10, xlim=(0,size(f)[1]), ylim=(0,size(f)[2]),kv...)
     if length(clims)==2
         @assert clims[1]<clims[2]
         @. f=min(clims[2],max(clims[1],f))
     else
         clims = (minimum(f),maximum(f))
     end
-    Plots.contourf(axes(f,1).+shift[1],axes(f,2).+shift[2],f'|>Array,
+    Plots.contourf(axes(f,1).-0.5.+shift[1],axes(f,2).-0.5.+shift[2],f'|>Array,
                    linewidth=0, levels=levels, color=cfill, clims = clims,
-                   aspect_ratio=:equal; kv...)
+                   aspect_ratio=:equal, xlim=xlim, ylim=ylim; kv...)
 end
 
 addbody(x,y;c=:black) = Plots.plot!(Shape(x,y), c=c, legend=false)
@@ -27,7 +39,7 @@ function body_plot!(sim,dat,dat_plot;levels=[0],lines=:black,CIs=inside(sim.flow
     WaterLily.measure_sdf!(sim.flow.σ,sim.body,WaterLily.time(sim))
     copyto!(dat,sim.flow.σ)
     restrict_plot!(dat_plot,dat,CIs)
-    contour!(dat_plot';levels,lines)
+    contour!(axes(dat_plot,1).-0.5,axes(dat_plot,2).-0.5,dat_plot';levels,lines)
 end
 
 restrict_plot!(dat_plot,dat,CIs) = (dat_plot .= value.(@view dat[CIs]); dat_plot)
