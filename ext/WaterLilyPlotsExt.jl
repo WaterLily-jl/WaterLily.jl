@@ -57,6 +57,15 @@ end
                     udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
 
 Make a gif of the simulation `sim`, stepping the flow forward and plotting `f(sim)` with `flood` at each frame.
+Users can pass a function `f` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
+The default visualization function returns the z-vorticity scaled by `L/U`:
+```julia
+function vorticity!(dat, sim)
+    a = sim.flow.σ
+    @WaterLily.inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+    copyto!(dat, a)
+end
+```
 
 Keyword arguments:
     - `duration::Number`: Simulation duration (in convective time units) to animate.
