@@ -2,6 +2,7 @@ module WaterLilyPlotsExt
 
 using Plots, WaterLily
 using ForwardDiff: value
+import Plots: mm
 import WaterLily: flood,addbody,body_plot!,sim_gif!,plot_logger
 gr()
 
@@ -72,7 +73,7 @@ Keyword arguments:
     - `udf::Function`: User-defined function passed into `sim_step!`.
     - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
         `Pair{Symbol,Any}` iterator.
-    - `hidedecorations::Bool`: Hide the axis ticks, labels, grid and colorbar.
+    - `hidedecorations::Bool`: Hide the axis ticks, labels, grid and colorbar, and shrink the plot margins to zero.
     - `kv...`: Additional keyword arguments passed to `flood`.
 """
 function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
@@ -88,7 +89,7 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
         f(dat,sim); restrict_plot!(dat_plot,dat,CIs)
         flood(dat_plot; kv...)
         plotbody && body_plot!(sim,dat,dat_plot;CIs)
-        hidedecorations && Plots.plot!(showaxis=false,ticks=false,grid=false,colorbar=false)
+        hidedecorations && Plots.plot!(showaxis=false,ticks=false,grid=false,colorbar=false,margin=0mm)
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
