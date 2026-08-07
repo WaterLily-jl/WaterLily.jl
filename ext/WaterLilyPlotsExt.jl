@@ -68,6 +68,7 @@ end
 ```
 
 Keyword arguments:
+
     - `duration::Number`: Simulation duration (in convective time units) to animate.
     - `step::Number`: Time step between animation frames.
     - `verbose::Bool`: Print simulation information at each frame.

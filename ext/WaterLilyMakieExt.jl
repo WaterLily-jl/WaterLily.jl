@@ -107,6 +107,7 @@ function f(arr, sim)
 end
 ```
 Keyword arguments:
+
     - `f::Function`: Visualization function with interface f(arr::Array, sim::AbstractSimulation), where `arr` is the plotted data.
     - `duration::Number`: Simulation end time.
     - `remeasure::Bool`: Update the body position.
