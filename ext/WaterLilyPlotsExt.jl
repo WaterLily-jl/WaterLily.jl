@@ -53,7 +53,7 @@ end
 
 """
     sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,f=vorticity!,fname=nothing,framerate=20,
+                    remeasure=false,plotbody=false,f=vorticity!,video=nothing,framerate=20,
                     udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
 
 Make a gif of the simulation `sim`, stepping the flow forward and plotting `f(sim)` with `flood` at each frame.
@@ -78,7 +78,7 @@ Keyword arguments:
     - `f::Function`: Visualization function with interface `f(dat, sim)`, transferring the plotted data
         (device-to-host) into the preallocated buffer `dat` (allocated once, full domain
         size, and reused every frame). Defaults to the z-vorticity scaled by `L/U`.
-    - `fname::String`: Path to save the gif. Defaults to a temporary file.
+    - `video::String`: Path to save the gif. Defaults to a temporary file.
     - `framerate::Int`: Gif framerate.
     - `udf::Function`: User-defined function passed into `sim_step!`.
     - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
@@ -87,7 +87,7 @@ Keyword arguments:
     - `kv...`: Additional keyword arguments passed to `flood`.
 """
 function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,f=vorticity!,fname=nothing,framerate=20,
+                    remeasure=false,plotbody=false,f=vorticity!,video=nothing,framerate=20,
                     udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
@@ -103,7 +103,7 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
-    isnothing(fname) ? gif(anim;fps=framerate) : gif(anim,fname;fps=framerate)
+    isnothing(video) ? gif(anim;fps=framerate) : gif(anim,video;fps=framerate)
 end
 
 
