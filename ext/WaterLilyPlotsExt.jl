@@ -93,7 +93,8 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     dat = Array(sim.flow.σ)
-    dat_plot = value.(dat[CIs])
+    ndims(dat)==3 && @assert any(==(1), size(CIs)) "3D CIs must include a singleton dimension (e.g. a cut plane) to reduce the data to a 2D slice for plotting, got size $(size(CIs))."
+    dat_plot = dropdims(value.(dat[CIs]), dims=Tuple(findall(==(1), size(CIs))))
     t₀ = round(WaterLily.sim_time(sim))
     anim = @time @animate for tᵢ in range(t₀,t₀+duration;step)
         WaterLily.sim_step!(sim,tᵢ;remeasure,udf,udf_kwargs...)
