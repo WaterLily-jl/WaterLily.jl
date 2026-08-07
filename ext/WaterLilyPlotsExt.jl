@@ -60,7 +60,7 @@ Keyword arguments:
     - `udf::Function`: User-defined function passed into `sim_step!`.
     - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
         `Pair{Symbol,Any}` iterator.
-    - `hidedecorations::Bool`: Hide the axis ticks, labels and grid.
+    - `hidedecorations::Bool`: Hide the axis ticks, labels, grid and colorbar.
     - `kv...`: Additional keyword arguments passed to `flood`.
 """
 function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
@@ -76,7 +76,7 @@ function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
         f(dat,sim); restrict_plot!(dat_plot,dat,CIs)
         flood(dat_plot; kv...)
         plotbody && body_plot!(sim,dat,dat_plot;CIs)
-        hidedecorations && Plots.plot!(showaxis=false,ticks=false,grid=false)
+        hidedecorations && Plots.plot!(showaxis=false,ticks=false,grid=false,colorbar=false)
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
     end
