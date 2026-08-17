@@ -19,7 +19,10 @@ function update_body!(a_cpu::Array, sim)
 end
 
 """
-    default_colormap_and_levels(minv, maxv, threshhold, levels)
+    default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap=:seismic, threshhold_color=RGB(1,1,1))
+
+Build a diverging colormap and contour levels spanning `clims=(min,max)`, with `nlevels`
+bands and a `threshhold_color` band straddling zero of half-width `threshhold`.
 """
 function default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap=:seismic, threshhold_color=RGB(1,1,1))
     @assert clims[2] > clims[1] "clims argument does not satisfy clims[2] > clims[1]"
@@ -31,9 +34,7 @@ function default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap
     colors, [lowerrange; upperrange]
 end
 
-"""
-Default visualization function for 2D/3D simulations
-"""
+
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
@@ -44,6 +45,9 @@ function ω3D_viz!(cpu_array, sim)
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
     copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
 end
+"""
+Default visualization function for 2D/3D simulations
+"""
 ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
 """

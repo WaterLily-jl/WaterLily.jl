@@ -110,15 +110,15 @@ function spread!(sim3D::AbstractSimulation, sim2D::AbstractSimulation; dim=3, ϵ
 end
 
 """
-    spread!(src:AbstractArray{T,N}, dest::AbstractArray{T,N+1}; ϵ=0, dims=3)
+    spread!(src:AbstractArray{T,N}, dest::AbstractArray{T,N+1}; ϵ=0, dim=3)
 
 Spreads a `N` dim field into a `N+1` field. The parameter `ϵ` sets the random noise added to the spread and
-`dims` specifies the dimension along which the spreading is done.
+`dim` specifies the dimension along which the spreading is done.
 
 ```julia
 dest = zeros(20,10,5)
 src  = rand(20,10)
-WaterLily.spread!(src, dest; ϵ=0.01, dims=3)
+WaterLily.spread!(src, dest; ϵ=0.01, dim=3)
 ```
 """
 spread!(dest::AbstractArray{T,3}, src::AbstractArray{T,2}; dim=3, ϵ=zero(T)) where T = (@loop dest[I] = src[dropindex(I,dim)]+ϵ*rand() over I in CartesianIndices(dest))

@@ -1,7 +1,7 @@
 abstract type AbstractPoisson{T,S,V} end
 
 """
-    Poisson{N,M}
+    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
 
 Composite type for conservative variable coefficient Poisson equations:
 
