@@ -87,7 +87,7 @@ Constructor for a WaterLily.jl simulation:
         Called after `flow_ctor` with the constructed flow as argument.
         Used by downstream packages (e.g. BiotSavartBCs.jl) to inject a custom `AbstractPoisson` subtype.
 
-See files in `examples` folder for examples.
+See the repository [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) for more examples.
 """
 mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
