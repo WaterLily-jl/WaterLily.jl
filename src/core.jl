@@ -31,7 +31,7 @@ Replace jᵗʰ component of CartesianIndex with k
 CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
 
 """
-    δ(i,N::Int)
+    δ(i,::Val{N})
     δ(i,I::CartesianIndex{N}) where {N}
 
 Return a CartesianIndex of dimension `N` which is one at index `i` and zero elsewhere.
@@ -169,10 +169,10 @@ joinsymtype(sym,symT) = zip(sym,symT) .|> x->joinsymtype(x...)
 
 using StaticArrays
 """
-    loc(i,I) = loc(Ii)
+    loc(i,I,T) = loc(Ii,T)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
-Using `i=0` returns the cell center s.t. `loc = I`.
+Using `i=0` returns the cell center s.t. `loc = I`. `T` sets the return number type.
 """
 @inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- T(1.5) .- δ(i,I).I ./T(2))
 @inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
@@ -190,12 +190,15 @@ function slice(dims::NTuple{N},i,j,low=1) where N
 end
 
 """
-    BC!(a,A)
+    BC!(a,U,saveexit=false,perdir=(),t=0)
 
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
-condition `a[I,i]=A[i]` is applied to the vector component _normal_ to the domain
+condition `a[I,i]=U[i]` is applied to the vector component _normal_ to the domain
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
-is applied to the tangential components.
+is applied to the tangential components. `saveexit` skips overwriting the
+exit-face normal component (except in the `x`-direction). `perdir` lists the
+dimensions using periodic BCs instead. `t` is passed to `U` when it is a
+function `(i,x,t)->...`.
 """
 BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
 function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
@@ -219,7 +222,7 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
 end
 
 """
-    exitBC!(u,u⁰,U,Δt)
+    exitBC!(u,u⁰,Δt)
 
 Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
