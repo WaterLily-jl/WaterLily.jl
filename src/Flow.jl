@@ -148,21 +148,23 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
 end
 
 """
-    mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
+    mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+`poisson_kwargs` (eg. `(;tol=1e-4,itmx=10)`) is forwarded to `solver!` and kept separate from
+`kwargs` so it is never forwarded to `udf`.
 """
-@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
     a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
-    mom_project!(a,b,1,t₁;kwargs...)
+    mom_project!(a,b,1,t₁;poisson_kwargs...)
     # corrector u → u¹
     @log "c"
     mom_correct!(a,t₁;udf,kwargs...)
-    mom_project!(a,b,0.5,t₁;kwargs...)
+    mom_project!(a,b,0.5,t₁;poisson_kwargs...)
     push!(a.Δt,CFL(a))
 end
 
@@ -214,11 +216,12 @@ function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
 end
 
 """
-    mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t; kwargs...)
 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `w·Δt·∇p`, and re-enforce BCs.
 On return `a.u` is divergence-free and BC-consistent.
+`kwargs` (eg. `tol`, `itmx`) are forwarded to `solver!`.
 """
 function mom_project!(a::AbstractFlow{D,T}, b::AbstractPoisson, w, t; kwargs...) where {D,T}
     dt = T(w)*a.Δt[end]

@@ -105,7 +105,7 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 const smooth! = GaussSeidelRB!
 
-function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,kwargs...) where T
+function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
     residual!(p); r₁ = L₁(p); r∞ = L∞(p); ω = T(1)

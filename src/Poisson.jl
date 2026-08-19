@@ -209,7 +209,7 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
         max-norm, no hidden exponents: the bulk sits 10× below the cap).
   - `itmx`: Maximum number of iterations.
 """
-function solver!(p::Poisson;tol=2e-3,itmx=1e3, kwargs...)
+function solver!(p::Poisson;tol=2e-3,itmx=1e3)
     r₁tol = l1n_tol(p, tol); r∞tol = tol
     residual!(p); r₁ = L₁(p); r∞ = L∞(p)
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁\n"
