@@ -75,7 +75,7 @@ end
                     remeasure=false,plotbody=false,f=vorticity!,video=nothing,framerate=20,
                     udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
 
-Make a gif of the simulation `sim`, stepping the flow forward and plotting `f(sim)` with `flood` at each frame.
+Make a gif of 2D field of the simulation `sim`, stepping the flow forward and plotting `f(sim)` with `flood` at each frame.
 Users can pass a function `f` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
 The default visualization function returns the z-vorticity scaled by `L/U`:
 ```julia
