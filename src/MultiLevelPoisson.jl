@@ -67,7 +67,7 @@ prolongate!(a,b,c) = @inside a[I] = b[down(I,c)]
 # keep coarsening while ANY direction is still divisible (semi-coarsening)
 @inline divisible(l::Poisson) = any(size(l.x) .|> divisible)
 """
-    MultiLevelPoisson{T,S,V}
+    MultiLevelPoisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
 The main field is `levels`, a vector of nested `Poisson` systems from fine to coarse.

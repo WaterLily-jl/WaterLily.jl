@@ -20,7 +20,7 @@ function logger(fname::String="WaterLily")
     end;
     global_logger(logger);
     # put header in file
-    @log "p/c, iter, r∞, r₂, ω\n"
+    @log "p/c, iter, r∞, r₁, ω\n"
 end
 
 @inline CI(a...) = CartesianIndex(a...)
@@ -31,7 +31,7 @@ Replace jᵗʰ component of CartesianIndex with k
 CIj(j,I::CartesianIndex{d},k) where d = CI(ntuple(i -> i==j ? k : I[i], d))
 
 """
-    δ(i,N::Int)
+    δ(i,::Val{N})
     δ(i,I::CartesianIndex{N}) where {N}
 
 Return a CartesianIndex of dimension `N` which is one at index `i` and zero elsewhere.
@@ -224,10 +224,10 @@ _binds_loc(_) = false
 
 using StaticArrays
 """
-    loc(i,I) = loc(Ii)
+    loc(i,I,T) = loc(Ii,T)
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
-Using `i=0` returns the cell center s.t. `loc = I`.
+Using `i=0` returns the cell center s.t. `loc = I`. `T` sets the return number type.
 
 Inside a `@loop` body the macro automatically appends the MPI rank-local
 offset so `loc(...)` returns *global* coordinates — user code is identical
@@ -263,10 +263,16 @@ function slice(dims::NTuple{N},i::AbstractUnitRange,j,low=1) where N
 end
 
 """
-    BC!(a, uBC, saveexit=false, perdir=(), t=0)
+    BC!(a,U,saveexit=false,perdir=(),t=0)
 
-Apply domain boundary conditions to the ghost cells of a _vector_ field.
-A Dirichlet condition is applied to the _normal_ component; zero Neumann to tangential.
+Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
+condition `a[I,i]=U[i]` is applied to the vector component _normal_ to the domain
+boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
+is applied to the tangential components. `saveexit` skips overwriting the
+exit-face normal component (except in the `x`-direction). `perdir` lists the
+dimensions using periodic BCs instead. `t` is passed to `U` when it is a
+function `(i,x,t)->...`.
+
 Periodic directions are handled by `velocity_comm!` (called at the end),
 separating domain BCs from communication BCs.  Under MPI the `phys_left`/
 `phys_right` gates skip physical writes at rank-internal faces (the halo
