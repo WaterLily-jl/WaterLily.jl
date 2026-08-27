@@ -53,13 +53,21 @@ _mg_maxlevels(dims, ::Serial) = 10
     @distributed Simulation(dims, uBC, L; kwargs...)
     @distributed sim = Simulation(dims, uBC, L; kwargs...)
 
-Boilerplate-free MPI initialization for a WaterLily `Simulation`.  The macro
-pulls the global `dims` and (optional) `perdir` kwarg from the `Simulation`
-call, invokes `init_waterlily_mpi(dims; perdir=perdir)`, and substitutes the
-returned rank-local dimensions back into the `Simulation` call.  Requires
-`using MPI, ImplicitGlobalGrid` so the extension is loaded; otherwise the
-generated `init_waterlily_mpi` call throws `MethodError`.  The user is still
-responsible for `finalize_global_grid()` at script end.
+Boilerplate-free MPI initialization for a WaterLily simulation.  The macro
+pulls the global `dims` (first positional argument) and the optional `perdir`
+keyword out of the constructor call, invokes `init_waterlily_mpi(dims; perdir)`,
+and substitutes the returned rank-local dimensions back into the call.
+Requires `using MPI, ImplicitGlobalGrid` so the extension is loaded; otherwise
+the generated `init_waterlily_mpi` call throws `MethodError`.  The user is
+still responsible for `finalize_global_grid()` at script end.
+
+Any constructor that follows `Simulation`'s calling convention is accepted, not
+only `Simulation` itself: the first positional argument must be the global
+`dims` tuple, and periodicity must be visible as a `perdir` keyword in the call
+(`f(dims, ...; perdir=(1,))`, the shorthand `f(dims, ...; perdir)`, or
+`f(dims, ..., perdir=(1,))`; a splatted `kwargs...` is not inspected).
+Downstream `AbstractSimulation` constructors such as
+`BiotSimulation(dims, uBC, L; ...)` therefore work unchanged.
 
 Example:
 
@@ -79,24 +87,29 @@ macro distributed(ex)
     end
 end
 
-function _rewrite_distributed_call(ex)
-    (ex isa Expr && ex.head === :call && ex.args[1] === :Simulation) ||
-        error("@distributed expects a `Simulation(...)` call, got $(ex)")
+_iskw(ex) = ex isa Expr && ex.head === :kw
 
+function _rewrite_distributed_call(ex)
+    (ex isa Expr && ex.head === :call) ||
+        error("@distributed expects a constructor call `f(dims, ...; perdir=...)` " *
+              "such as `Simulation(dims, uBC, L; kwargs...)`, got $(ex)")
+    f = ex.args[1]
+    # `f(dims, ...; kw...)` parses the `;` keywords into a leading :parameters
+    # block; `f(dims, ..., kw=...)` leaves them as trailing :kw arguments.
     has_params = length(ex.args) >= 2 && ex.args[2] isa Expr && ex.args[2].head === :parameters
     dims_idx   = has_params ? 3 : 2
-    length(ex.args) >= dims_idx ||
-        error("@distributed: `Simulation` call missing positional `dims` argument")
+    (length(ex.args) >= dims_idx && !_iskw(ex.args[dims_idx])) ||
+        error("@distributed: `$(f)(...)` has no positional `dims` argument (it must come first)")
     global_dims = ex.args[dims_idx]
 
+    # `perdir` may be `; perdir=(1,)`, the shorthand `; perdir`, or `, perdir=(1,)`
     perdir = :(())
-    if has_params
-        for kw in ex.args[2].args
-            if kw isa Expr && kw.head === :kw && kw.args[1] === :perdir
-                perdir = kw.args[2]
-                break
-            end
-        end
+    for kw in (has_params ? ex.args[2].args : ())
+        kw === :perdir && (perdir = :perdir; break)
+        _iskw(kw) && kw.args[1] === :perdir && (perdir = kw.args[2]; break)
+    end
+    for kw in ex.args[dims_idx+1:end]
+        _iskw(kw) && kw.args[1] === :perdir && (perdir = kw.args[2]; break)
     end
 
     local_sym = gensym(:local_dims)

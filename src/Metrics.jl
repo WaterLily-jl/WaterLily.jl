@@ -8,7 +8,7 @@ norm2(x) = √(x'*x)
     shiftDir(d,D,i)
 
 Shift the index of direction `d` to `i` steps away in dimension space of `D`.
-So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4` 
+So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4`
 """
 shiftDir(d,D,i) = mod(d+i-1,D)+1
 Base.@propagate_inbounds @fastmath function permute(f,i)
