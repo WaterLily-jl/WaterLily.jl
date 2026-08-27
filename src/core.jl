@@ -194,11 +194,12 @@ end
 
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
 condition `a[I,i]=U[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`. A zero Neumann condition
-is applied to the tangential components. `saveexit` skips overwriting the
-exit-face normal component (except in the `x`-direction). `perdir` lists the
-dimensions using periodic BCs instead. `t` is passed to `U` when it is a
-function `(i,x,t)->...`.
+boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`.
+A zero Neumann condition is applied to the tangential components.
+`saveexit=true` leaves the normal component on the `x` exit face (upper `x` boundary) untouched,
+so a convective outflow set by `exitBC!` is kept and every other face is always overwritten.
+`perdir` lists the dimensions using periodic BCs instead.
+`t` is passed to `U` when it is a function `(i,x,t)->...`.
 """
 BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
 function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
