@@ -24,16 +24,9 @@ end
     end
     return s/2
 end
-function median(a,b,c)
-    if a>b
-        b>=c && return b
-        a>c && return c
-    else
-        b<=c && return b
-        a<c && return c
-    end
-    return a
-end
+# Branch-free median: the if/else form compiled to conditional jumps whose mispredictions
+# made `conv_diff!` data-dependent (up to 2× slower on noise-like velocity fields).
+@fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     r .= zero(eltype(r))
