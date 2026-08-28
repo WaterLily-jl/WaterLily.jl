@@ -24,8 +24,6 @@ end
     end
     return s/2
 end
-# Branch-free median: the if/else form compiled to conditional jumps whose mispredictions
-# made `conv_diff!` data-dependent (up to 2× slower on noise-like velocity fields).
 @fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
