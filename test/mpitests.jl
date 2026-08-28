@@ -4,6 +4,7 @@
 #   - "parity_serial"        : plain Julia, serial reference
 #   - "parity_parallel_cyl"  : np=NP_2D, 2D moving cylinder
 #   - "parity_parallel_sph"  : np=NP_3D, 3D sphere
+#   - "parity_parallel_chan" : np=NP_2D, 2D anisotropic channel (multigrid depth guard)
 #   - "unit"                 : np=NP_2D, rank-aware unit tests
 #
 # Pattern follows Trixi.jl: launches go through `MPI.mpiexec() do cmd; ... end`
@@ -102,8 +103,9 @@ end
         cmd_s = `$(JULIA) $(PROJECT) --startup-file=no --depwarn=no $(WORKER) parity_serial $(OUTDIR)`
         @test success(run(ignorestatus(cmd_s)))
 
-        for (case, key, np) in (("cyl", "cylinder", NP_2D),
-                                ("sph", "sphere",   NP_3D))
+        for (case, key, np) in (("cyl",  "cylinder", NP_2D),
+                                ("sph",  "sphere",   NP_3D),
+                                ("chan", "channel",  NP_2D))
             @testset "$(key) np=$(np)" begin
                 # Remove any stale parallel result before launching: prevents a
                 # crashed worker from passing the `isfile` check on leftovers.

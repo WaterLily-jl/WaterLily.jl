@@ -41,6 +41,33 @@ function run_cylinder!(parallel::Bool; nsteps=20)
             t=Float64(sim_time(sim)))
 end
 
+# Anisotropic 2D channel (aspect 4, Neumann pressure on every wall), decomposed along the
+# long axis: guards the multigrid depth under MPI. With too shallow a hierarchy the lowest
+# Neumann mode of the long direction survives the residual-based stopping criterion and
+# the pressure (not the velocity) drifts from serial by tens of percent.
+function run_channel!(parallel::Bool; nsteps=20)
+    n, m   = 256, 64
+    U      = T(1)
+    radius = T(8)
+    Re     = T(100)
+    ν      = U * radius / Re
+    center = SA{T}[n/4, m/2]
+    body = AutoBody((x, t) -> √sum(abs2, x .- center) - radius)
+    sim = parallel ?
+        (@distributed Simulation((n, m), (U, zero(T)), radius; ν, body, T)) :
+        Simulation((n, m), (U, zero(T)), radius; ν, body, T)
+    sim_step!(sim; remeasure=false)
+    for _ in 1:nsteps
+        sim_step!(sim; remeasure=false)
+    end
+    pmax = WaterLily.global_max(maximum(abs, sim.flow.p))
+    umax = WaterLily.global_max(maximum(abs, sim.flow.u))
+    F    = WaterLily.total_force(sim)
+    return (pmax=Float64(pmax), umax=Float64(umax),
+            Fx=Float64(F[1]), Fy=Float64(F[2]),
+            t=Float64(sim_time(sim)))
+end
+
 # Low-resolution 3D sphere: tests 3D halo exchange + `exitBC` under MPI.
 function run_sphere!(parallel::Bool; nsteps=15)
     D = 8
@@ -86,8 +113,10 @@ if ROLE == "parity_serial"
     # IGG isn't initialised here — both cases run rank-locally back-to-back.
     cyl = run_cylinder!(false)
     sph = run_sphere!(false)
-    write_results(joinpath(OUTDIR, "serial_cyl.toml"), "cylinder", cyl)
-    write_results(joinpath(OUTDIR, "serial_sph.toml"), "sphere",   sph)
+    chan = run_channel!(false)
+    write_results(joinpath(OUTDIR, "serial_cyl.toml"),  "cylinder", cyl)
+    write_results(joinpath(OUTDIR, "serial_sph.toml"),  "sphere",   sph)
+    write_results(joinpath(OUTDIR, "serial_chan.toml"), "channel",  chan)
 
 elseif ROLE == "parity_parallel_cyl"
     using ImplicitGlobalGrid, MPI
@@ -101,6 +130,13 @@ elseif ROLE == "parity_parallel_sph"
     sph = run_sphere!(true)
     WaterLily.mpi_rank() == 0 &&
         write_results(joinpath(OUTDIR, "parallel_sph.toml"), "sphere", sph)
+    finalize_global_grid()
+
+elseif ROLE == "parity_parallel_chan"
+    using ImplicitGlobalGrid, MPI
+    chan = run_channel!(true)
+    WaterLily.mpi_rank() == 0 &&
+        write_results(joinpath(OUTDIR, "parallel_chan.toml"), "channel", chan)
     finalize_global_grid()
 
 elseif ROLE == "unit"

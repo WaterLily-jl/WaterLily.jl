@@ -14,7 +14,7 @@ include("parallel.jl")
 export global_allreduce,global_dot,global_sum,global_length,global_min,global_max,
        scalar_halo!,velocity_halo!,comm!,velocity_comm!,
        AbstractParMode,Serial,par_mode,
-       global_offset,init_waterlily_mpi,mpi_rank,mpi_comm,mpi_nprocs,mg_maxlevels,@distributed
+       global_offset,init_waterlily_mpi,mpi_rank,mpi_comm,mpi_nprocs,@distributed
 
 include("core.jl")
 export BC!,@inside,inside,δ,loc,@log,set_backend,backend
@@ -66,8 +66,7 @@ xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array,
                flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
-               pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;
-                   maxlevels=mg_maxlevels(dims),perdir))
+               pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir))
 
 Constructor for a WaterLily.jl simulation:
 
@@ -110,8 +109,7 @@ mutable struct Simulation <: AbstractSimulation
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         u0=nothing, uλ=nothing, exitBC=false, λ=quick, body::AbstractBody=NoBody(),
                         flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
-                        pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;
-                            maxlevels=mg_maxlevels(dims),perdir),
+                        pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
                         T=Float32, mem=Array) where N
         @assert !(isnothing(U) && isa(uBC,Function)) "`U` (velocity scale) must be specified if boundary conditions `uBC` is a `Function`"
         check_mem(mem)

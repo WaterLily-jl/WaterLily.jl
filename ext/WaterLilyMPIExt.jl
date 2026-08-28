@@ -387,14 +387,4 @@ WaterLily._phys_right(j, ::Parallel) = _grid().neighbors[2, j] < 0
 # `Val{false}` stencil, whose 1 ghost cell the halo's periodic wrap fills.
 WaterLily._decomposed(j, ::Parallel) = j <= _nd() && _grid().dims[j] > 1
 
-# MG depth heuristic: when actually decomposed, cap coarsening where the
-# ~20 μs/call IGG halo floor stops being amortised by smoother work. At
-# np=1 (even with periodic self-wrap neighbors) keep serial full depth —
-# there are no halo savings to offset a larger coarsest sweep.
-function WaterLily._mg_maxlevels(_dims, ::Parallel)
-    _any_decomposed() || return 10
-    g = _grid()
-    max(2, floor(Int, log2(minimum(g.nxyz_g[1:_nd()]) / 8))) # / 8 tested on multiple problems
-end
-
 end # module WaterLilyMPIExt

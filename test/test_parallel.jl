@@ -8,7 +8,6 @@
     @test WaterLily.phys_left(1) && WaterLily.phys_right(2)
     @test !WaterLily.decomposed(1) && WaterLily.effective_perdir((1,2)) == (1,2)
     @test global_offset(Val(2)) == zeros(SVector{2,Float32}) && WaterLily._loop_offset(Float64) === nothing
-    @test mg_maxlevels((64,64)) == 10
     @test scalar_halo!(zeros(4,4)) === nothing && velocity_halo!(zeros(4,4,2)) === nothing
 
     # @distributed rewrite: `(local,_,_) = init_waterlily_mpi(dims; perdir=…); f(local, …)` for ANY
