@@ -24,16 +24,7 @@ end
     end
     return s/2
 end
-function median(a,b,c)
-    if a>b
-        b>=c && return b
-        a>c && return c
-    else
-        b<=c && return b
-        a<c && return c
-    end
-    return a
-end
+@fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     r .= zero(eltype(r))

@@ -171,3 +171,9 @@ end
         @test !any(isnan.(sim.pois.n))
     end
 end
+
+@testset "median" begin
+    for (a,b,c) in ((1,2,3),(3,2,1),(2,3,1),(1,3,2),(2,1,3),(3,1,2),(1,1,2),(2,2,2),(-1.5f0,0.25f0,-0.5f0))
+        @test WaterLily.median(a,b,c) == sort([a,b,c])[2]
+    end
+end
