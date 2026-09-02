@@ -124,24 +124,26 @@ sim_time(sim::AbstractSimulation) = time(sim)*sim.U/sim.L
 
 """
     sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,
-        udf=nothing,kwargs...)
+        udf=nothing,poisson_kwargs=(;),kwargs...)
 
 Integrate the simulation `sim` up to dimensionless time `t_end`.
 If `remeasure=true`, the body is remeasured at every time step. Can be set to `false` for static geometries to speed up simulation.
 A user-defined function `udf` can be passed to arbitrarily modify the `::AbstractFlow` during the predictor and corrector steps.
 If the `udf` user keyword arguments, these needs to be included in the `sim_step!` call as well.
+`poisson_kwargs` (eg. `(;tol=1e-4,itmx=10)`) controls the pressure `solver!` and is kept
+separate from the `udf` keyword arguments, so it is never forwarded into `udf`.
 """
 function sim_step!(sim::AbstractSimulation,t_end;remeasure=true,max_steps=typemax(Int),verbose=false,
-        udf=nothing,kwargs...)
+        udf=nothing,poisson_kwargs=(;),kwargs...)
     steps₀ = length(sim.flow.Δt)
     while sim_time(sim) < t_end && length(sim.flow.Δt) - steps₀ < max_steps
-        sim_step!(sim; remeasure, udf, kwargs...)
+        sim_step!(sim; remeasure, udf, poisson_kwargs, kwargs...)
         verbose && sim_info(sim)
     end
 end
-function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,kwargs...)
+function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,poisson_kwargs=(;),kwargs...)
     remeasure && measure!(sim)
-    mom_step!(sim.flow, sim.pois; udf, kwargs...)
+    mom_step!(sim.flow, sim.pois; udf, poisson_kwargs, kwargs...)
 end
 
 """

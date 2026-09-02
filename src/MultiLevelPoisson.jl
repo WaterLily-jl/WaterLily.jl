@@ -112,7 +112,7 @@ function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω);
+        smooth!(p; ω)
         rnew = L₁(p); r∞ = L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $rnew, $ω\n"
         if     rnew ≥ r₁
