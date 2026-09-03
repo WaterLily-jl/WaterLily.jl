@@ -16,6 +16,7 @@ Base.@propagate_inbounds @fastmath function permute(f,i)
     f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
+×(a::SVector{2,T},b) where T = fSV(i->permute((j,k)->a[j]*b[k],3),1)
 @fastmath @inline function dot(a,b)
     init=zero(eltype(a))
     @inbounds for ij in eachindex(a)
@@ -160,6 +161,22 @@ Compute the total force on an immersed body.
 """
 total_force(sim) = pressure_force(sim) .+ viscous_force(sim)
 
+"""
+    flux_force(sim::Simulation)
+Compute the flux force through the surface of a fictitious body.
+"""
+flux_force(sim) = flux_force(sim.flow,sim.body)
+flux_force(flow,body) = flux_force(flow.u,flow.f,body,time(flow))
+@inline flux_force_dot(I::CartesianIndex{m} where m, u, n) = @views dot(u[I,:], n[I,:])
+function flux_force(u,df,body,t=0)
+    Tu = eltype(u); To = promote_type(Float64,Tu)
+    df .= zero(Tu)
+    @loop df[I,:] .= nds(body,loc(0,I,Tu),t) over I ∈ inside_u(df)
+    @loop df[I,:] .= flux_force_dot(I, u, df) over I ∈ inside_u(df)
+    df .*= u
+    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+end
+
 using LinearAlgebra: cross
 """
     pressure_moment(x₀,sim)
@@ -196,6 +213,23 @@ Computes the total (pressure + viscous) moment on an immersed body relative to p
 """
 total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
 
+"""
+    flux_moment(x₀, sim::Simulation)
+    
+Compute the flux moments through the surface of a fictitious body.
+"""
+flux_moment(x₀,sim) = flux_moment(x₀,sim.flow,sim.body)
+flux_moment(x₀,flow,body) = flux_moment(x₀,flow.u,flow.f,body,time(flow))
+@inline flux_moment_cross(I::CartesianIndex{m} where m, x₀, u) = @views ×(loc(0,I,eltype(u))-x₀,u[I,:])
+function flux_moment(x₀,u,df,body,t=0)
+    Tu = eltype(u); To = promote_type(Float64,Tu)
+    df .= zero(Tu)
+    @loop df[I,:] .= nds(body,loc(0,I,Tu),t) over I ∈ inside_u(df)
+    @loop df[I,:] .= flux_force_dot(I, u, df) over I ∈ inside_u(df)
+    df .*= u
+    @loop df[I,:] .= flux_moment_cross(I,x₀,df) over I ∈ inside_u(df)
+    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+end
 
 """
     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
