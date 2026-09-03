@@ -30,6 +30,13 @@ end
 # mask used to build level `coarse` from `fine` (recovered from their sizes)
 @inline coarsen_mask(fine,coarse) = ntuple(j-> size(coarse,j)<size(fine,j), ndims(fine))
 
+"""
+    restrictML(b::Poisson)
+
+Build a new coarse-level `Poisson` from fine-level `b` by restricting the
+lower diagonal `L` (in the still-divisible directions) and allocating
+matching solution/residual arrays.
+"""
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
     c = coarsen_mask(N)
@@ -39,6 +46,13 @@ function restrictML(b::Poisson)
     restrictL!(aL,b.L,c,perdir=b.perdir)
     Poisson(ax,aL,copy(ax);b.perdir)
 end
+"""
+    restrictL!(a, b, c; perdir=())
+
+Restrict the fine-grid lower diagonal `b` into coarse-grid `a` using
+coarsening mask `c`, then apply `BC!` to zero the normal component at
+boundary faces (halo-exchanged at MPI rank-internal faces).
+"""
 function restrictL!(a::AbstractArray{T,M},b,c;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
@@ -72,6 +86,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
+        # N>6 divisibility keeps coarsest interior ≥ 2x2 — no perturbation needed
         new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
     end
 end
@@ -84,6 +99,11 @@ function update!(ml::MultiLevelPoisson)
         update!(ml.levels[l])
     end
 end
+
+mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
+residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+
+const smooth! = GaussSeidelRB!
 
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
@@ -100,11 +120,14 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     increment!(fine; ω)
 end
 
-mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
-residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+"""
+    solver!(ml::MultiLevelPoisson; tol=2e-3, itmx=32)
 
-const smooth! = GaussSeidelRB!
-
+Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until BOTH the
+grid-independent max-norm `max|r| < tol` and the mean residual `Σ|r|/N < tol/10`
+hold. Ends with `pin_pressure!` + `comm!` to remove the null-space mode and
+synchronize halos.
+"""
 function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
@@ -123,6 +146,6 @@ function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
         r₁ = rnew
         (r₁<r₁tol && r∞<r∞tol) && break
     end
-    perBC!(p.x,p.perdir)
+    pin_pressure!(p); comm!(p.x,p.perdir)
     push!(ml.n,nᵖ);
 end

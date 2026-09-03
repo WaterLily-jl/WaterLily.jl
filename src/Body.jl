@@ -28,10 +28,11 @@ See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016
 function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=T(2+ϵ)^2
     measure_sdf!(a.σ, body, t; fastd²=d²) # measure separately to allow specialization
+    offset = global_offset(Val(N), T) # rank-local → global coords (zero in serial)
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         if d[I]^2<d²
             for i ∈ 1:N
-                dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T),t,fastd²=d²)
+                dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T)+offset,t,fastd²=d²)
                 dᵢ = abs(dᵢ) ≤ 0.5 ? dᵢ : copysign(dᵢ,d[I]) # enforce sign consistency
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
@@ -46,8 +47,9 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
         end
     end
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
-    BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
+    BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir)
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
+    velocity_halo!(reshape(a.μ₁, size(a.σ)..., :)) # halo on μ₁ tensor (no-op in serial)
 end
 
 # Convolution kernel and its moments
