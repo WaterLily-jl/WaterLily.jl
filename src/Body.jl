@@ -32,7 +32,7 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
         if d[I]^2<d²
             for i ∈ 1:N
                 dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T),t,fastd²=d²)
-                dᵢ = abs(dᵢ) ≤ 0.5 ? dᵢ : copysign(dᵢ,d[I]) # enforce sign consistency
+                dᵢ = abs(dᵢ) ≤ oftype(dᵢ,0.5) ? dᵢ : copysign(dᵢ,d[I]) # enforce sign consistency
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
                 for j ∈ 1:N

@@ -153,7 +153,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # corrector u → u¹
     @log "c"
     mom_correct!(a,t₁;udf,kwargs...)
-    mom_project!(a,b,0.5,t₁)
+    mom_project!(a,b,eltype(a.u)(0.5),t₁)
     push!(a.Δt,CFL(a))
 end
 
@@ -197,7 +197,7 @@ function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
     accelerate!(a.f,t,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
+    BDIM!(a); scale_u!(a,eltype(a.u)(0.5)); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
     s = T(scale)

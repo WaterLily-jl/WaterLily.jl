@@ -129,7 +129,7 @@ function pressure_force(p,df,body,t=0)
     Tp = eltype(p); To = promote_type(Float64,Tp)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*nds(body,loc(0,I,Tp),t) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    sum(To,Array(df),dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
 """
@@ -150,7 +150,7 @@ function viscous_force(u,ν,df,body,t=0)
     Tu = eltype(u); To = promote_type(Float64,Tu)
     df .= zero(Tu)
     @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
-    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    sum(To,Array(df),dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
 """
@@ -172,7 +172,7 @@ function pressure_moment(x₀,p,df,body,t=0)
     Tp = eltype(p); To = promote_type(Float64,Tp)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    sum(To,Array(df),dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
 """
@@ -186,7 +186,7 @@ function viscous_moment(x₀,u,ν,df,body,t=0)
     Tu = eltype(u); To = promote_type(Float64,Tu)
     df .= zero(Tu)
     @loop df[I,:] .= -2ν*cross(loc(0,I,Tu)-x₀,S(I,u)*nds(body,loc(0,I,Tu),t)) over I ∈ inside_u(u)
-    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    sum(To,Array(df),dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
 """
