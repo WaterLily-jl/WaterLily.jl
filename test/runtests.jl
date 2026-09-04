@@ -13,6 +13,7 @@ Test suite set by the WaterLily `backend` preference (LocalPreferences.toml):
 
 Array backends: WATERLILY_BACKENDS=cpu|cuda|amdgpu|metal|all (comma-separated, default "cpu").
 GPU backends are opt-in and installed on demand (they are not test dependencies).
+Metal has no Float64 support, so only Float32 test sets (e.g. "float32") can pass on it.
 
 Run a subset by passing set name(s) (matched with startswith) and/or runner flags
 (--jobs=N, --list, --verbose, --quickfail), e.g.
