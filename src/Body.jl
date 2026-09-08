@@ -48,14 +48,9 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
-    # A *deforming* body has div(V)≠0, and BDIM sets u=V in every cell closed on all faces,
-    # so demanding div(u)=0 there asks the solver to undo the prescribed deformation in rows
-    # the operator cannot touch. Store the body's dilatation, weighted by the solid fraction
-    # -diag(I,μ₀)/2N -- the operator's own diagonal, so it is exactly 1 where the row is null
-    # and 0 in open fluid -- for `mom_project!` to subtract from the source.
+    # div(V)≠0 cannot be corrected inside the body, we must remove it
     @inside a.σᵥ[I] = (1+diag(I,a.μ₀)/(2N))*div(I,a.V)
-    # Remove its mean: a source outside the range of the singular operator makes the pressure
-    # drift step on step until Float32 round-off in the residual swamps the solver tolerance.
+    # Remove the mean to avoid the pressure drifting
     s = sum(a.σᵥ)/length(inside(a.σᵥ)) # ghosts are never written, so the full sum is exact
     abs(s) > 2eps(T) && (@inside a.σᵥ[I] = a.σᵥ[I]-s)
 end
