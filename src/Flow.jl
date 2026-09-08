@@ -210,9 +210,6 @@ end
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `w·Δt·∇p`, and re-enforce BCs.
 On return `a.u` is divergence-free and BC-consistent.
-
-The source carries `flow.σᵥ`, the body's own dilatation, so that a *deforming* body is not
-asked to be divergence-free; see `measure!`. It is zero for a rigid body or no body.
 """
 function mom_project!(a::AbstractFlow{D,T}, b::AbstractPoisson, w, t) where {D,T}
     dt = T(w)*a.Δt[end]; a.σ .= zero(T)
