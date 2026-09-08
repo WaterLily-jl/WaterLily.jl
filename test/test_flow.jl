@@ -177,3 +177,33 @@ end
         @test WaterLily.median(a,b,c) == sort([a,b,c])[2]
     end
 end
+
+@testset "Deforming body dilatation" begin
+    # A body whose volume changes has div(V)≠0, and BDIM sets u=V in every cell closed on
+    # all faces, so div(u)=div(V) there, in rows whose Poisson diagonal is zero. We must`
+    # carry that dilatation out of the source
+    closed_cell(I::CartesianIndex{D},μ₀) where D = all(ntuple(i->(μ₀[I,i] ≤ 1f-6) & (μ₀[I+δ(i,I),i] ≤ 1f-6), Val(D)))
+    R,ε,Tc = 8f0,0.25f0,64f0
+    scale(t) = 1-ε*(1-cospi(2t/Tc))              # radius scale, ṡ(0)=0 for a smooth start
+    dscale(t) = -2ε*Float32(π)/Tc*sinpi(2t/Tc)
+    for f ∈ arrays
+        n = 64; c = SA_F32[n/2,n/2]
+        sim = Simulation((n,n),(0,0),2R;U=1,ν=2R/250,T=Float32,mem=f,
+                         body=AutoBody((x,t)->√(x'*x)-R,(x,t)->(x .- c)/scale(t)))
+        foreach(i->sim_step!(sim),1:8)
+        a = sim.flow
+        # the source must vanish where the operator is null, else the multigrid stalls
+        # this is what happens inside mom_project!
+        a.σ .= 0.f0; @inside a.σ[I] = (1+WaterLily.diag(I,a.μ₀)/4)*WaterLily.div(I,a.V)
+        s = sum(a.σ)/length(inside(a.σ))
+        @inside a.σ[I] = closed_cell(I,a.μ₀) ? abs(WaterLily.div(I,a.u)-a.σ[I]+s) : 0f0
+        @test maximum(a.σ) < 1f-2
+        # and the body must still displace its own volume: the flux through a contour
+        # enclosing it is dA/dt, less the uniform background a closed box forces on it
+        u = Array(a.u); t = sum(a.Δt); h = 12; k = n÷2
+        q = sum(u[k+h+1,j,1]-u[k-h,j,1] for j in k-h:k+h) +
+            sum(u[i,k+h+1,2]-u[i,k-h,2] for i in k-h:k+h)
+        dAdt = 2Float32(π)*R^2*scale(t)*dscale(t)*(1-(2h+1)^2/n^2)
+        @test 0.8 < q/dAdt < 1.3
+    end
+end
