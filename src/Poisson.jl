@@ -252,14 +252,15 @@ end
 """
     pin_pressure!(p::Poisson)
 
-Remove the null-space (constant) mode by subtracting the mean pressure
-over fluid cells, and zero body cells (`iD==0`).  Body cells are dead
-to the Poisson operator, but multigrid prolongation leaks coarse-level
-values into them each V-cycle — zeroing keeps `max|p|` reporting sane
-and serial/parallel runs bit-identical inside the body.  Uses mapreduce
-rather than `p.z` as scratch so it's safe to call inside the V-cycle loop.
+Remove the null-space (constant) mode by subtracting the global mean of
+the interior pressure from every cell. The uniform shift is in the
+operator's null space, so it leaves the residual invariant and keeps
+serial and parallel solves consistent. Only interior cells enter the
+mean: after `comm!` the ghost cells hold periodic-wrap or halo copies
+of neighbor interiors, and summing them would double count and bias
+the pin (interior mean not exactly zero).
 """
 function pin_pressure!(p::Poisson{T}) where T
-    s = T(global_sum(p.x) / p.inslen)
+    s = T(global_sum(@view p.x[inside(p.x)]) / p.inslen)
     @inside p.x[I] = p.x[I] - s
 end
