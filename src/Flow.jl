@@ -113,7 +113,6 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     V :: Vf # body velocity vector
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
-    σᵥ:: Sf # body dilatation source, div(V) masked by the solid fraction
     # Non-fields
     uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
@@ -134,9 +133,8 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
         V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
-        σᵥ = zeros(T, Ng) |> mem # stays zero outside the interior, so a full sum is exact
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,σᵥ,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end
 end
 
@@ -217,8 +215,12 @@ The source carries `flow.σᵥ`, the body's own dilatation, so that a *deforming
 asked to be divergence-free; see `measure!`. It is zero for a rigid body or no body.
 """
 function mom_project!(a::AbstractFlow{D,T}, b::AbstractPoisson, w, t) where {D,T}
-    dt = T(w)*a.Δt[end]
-    @inside b.z[I] = div(I,a.u)-a.σᵥ[I]; b.x .*= dt # set source term & solution IC
+    dt = T(w)*a.Δt[end]; a.σ .= zero(T)
+    # div(V)≠0 cannot be corrected inside the body, we must remove it
+    @inside a.σ[I] = (1+diag(I,a.μ₀)/(2D))*div(I,a.V)
+    # Remove the mean to avoid the pressure drifting
+    s = sum(a.σ)/length(inside(a.σ)) # ghosts are never written, so the full sum is exact
+    @inside b.z[I] = div(I,a.u)-a.σ[I]+s; b.x .*= dt # set source term & solution IC
     solver!(b)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)

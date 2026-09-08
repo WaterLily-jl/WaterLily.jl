@@ -48,11 +48,6 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
-    # div(V)≠0 cannot be corrected inside the body, we must remove it
-    @inside a.σᵥ[I] = (1+diag(I,a.μ₀)/(2N))*div(I,a.V)
-    # Remove the mean to avoid the pressure drifting
-    s = sum(a.σᵥ)/length(inside(a.σᵥ)) # ghosts are never written, so the full sum is exact
-    abs(s) > 2eps(T) && (@inside a.σᵥ[I] = a.σᵥ[I]-s)
 end
 
 # Convolution kernel and its moments

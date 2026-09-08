@@ -180,12 +180,9 @@ end
 
 @testset "Deforming body dilatation" begin
     # A body whose volume changes has div(V)≠0, and BDIM sets u=V in every cell closed on
-    # all faces, so div(u)=div(V) there -- in rows whose Poisson diagonal is zero. `flow.σᵥ`
-    # carries that dilatation out of the source. Both halves matter: drop σᵥ and an
-    # irreducible residual is left behind, but subtract the body's flux div((1-μ₀)V) instead
-    # and the source telescopes to zero net volume, so the body stops displacing fluid.
-    closed_cell(I::CartesianIndex{D},μ₀) where D =
-        all(ntuple(i->(μ₀[I,i] ≤ 1f-6) & (μ₀[I+δ(i,I),i] ≤ 1f-6), Val(D)))
+    # all faces, so div(u)=div(V) there, in rows whose Poisson diagonal is zero. We must`
+    # carry that dilatation out of the source
+    closed_cell(I::CartesianIndex{D},μ₀) where D = all(ntuple(i->(μ₀[I,i] ≤ 1f-6) & (μ₀[I+δ(i,I),i] ≤ 1f-6), Val(D)))
     R,ε,Tc = 8f0,0.25f0,64f0
     scale(t) = 1-ε*(1-cospi(2t/Tc))              # radius scale, ṡ(0)=0 for a smooth start
     dscale(t) = -2ε*Float32(π)/Tc*sinpi(2t/Tc)
@@ -196,7 +193,10 @@ end
         foreach(i->sim_step!(sim),1:8)
         a = sim.flow
         # the source must vanish where the operator is null, else the multigrid stalls
-        @inside a.σ[I] = closed_cell(I,a.μ₀) ? abs(WaterLily.div(I,a.u)-a.σᵥ[I]) : 0f0
+        # this is what happens inside mom_project!
+        a.σ .= 0.f0; @inside a.σ[I] = (1+WaterLily.diag(I,a.μ₀)/4)*WaterLily.div(I,a.V)
+        s = sum(a.σ)/length(inside(a.σ))
+        @inside a.σ[I] = closed_cell(I,a.μ₀) ? abs(WaterLily.div(I,a.u)-a.σ[I]+s) : 0f0
         @test maximum(a.σ) < 1f-2
         # and the body must still displace its own volume: the flux through a contour
         # enclosing it is dA/dt, less the uniform background a closed box forces on it
