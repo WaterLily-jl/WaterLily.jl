@@ -71,3 +71,11 @@ any(a -> startswith(a, "--jobs"), args) ||
     push!(args, "--jobs=$(max(1, Sys.CPU_THREADS ÷ WATERLILY_NTHREADS))")
 
 ParallelTestRunner.runtests(WaterLily, args; testsuite, init_code, exeflags)
+
+# MPI tests spawn child Julia processes via mpiexec, so they run as a separate
+# phase after the parallel runner (which throws on main-suite failure and
+# returns normally on success). Not a test_*.jl file → not runner-discovered.
+# Skipped on Windows (no system MPI in CI matrix) and via WATERLILY_SKIP_MPI=1.
+if Sys.isunix() && get(ENV, "WATERLILY_SKIP_MPI", "0") != "1" && "--list" ∉ args
+    include("mpitests.jl")
+end

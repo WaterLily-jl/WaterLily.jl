@@ -1,9 +1,16 @@
 using EllipsisNotation
 """
-    interp(x::SVector, arr::AbstractArray)
+    interp(x::SVector, arr::AbstractArray, offset=zero(x))
 
 Linear interpolation from array `arr` at Cartesian-coordinate `x`. Interpolation queries are clamped to the computational domain.
 Note: This routine works for any number of dimensions.
+
+`offset` shifts `x` before indexing — used in MPI parallel to map global
+coordinates to rank-local array indices (pass `flow.offset`).  The
+rank-local coordinate is then clamped to the local array bounds so
+out-of-domain queries snap to the edge rather than indexing past it
+(in MPI any query past the rank's local extent is the neighbor's
+responsibility anyway).
 
 To interpolate from an `arr<:GPUArray`, the call for `interp` should be broadcasted over the coordinates `x` as follows:
 ```julia
@@ -17,14 +24,14 @@ WaterLily.interp.(x, Ref(u)) # Broadcast (x=[-0.5,2.5] is shifted to [0,2.5] bec
 @inline _interp_clamp(x::SVector{D,T}, sz::NTuple{D,Int}) where {D,T} =
     SVector{D,T}(clamp(x[d], zero(T), T(sz[d] - 2)) for d in 1:D)
 
-function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
+function interp(x::SVector{D,T}, varr::AbstractArray{T}, offset=zero(x)) where {D,T}
     # Each component is stored on a staggered face, so shift query for that
     # component and then clamp to the valid scalar interpolation domain.
     @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(_interp(_interp_clamp(x + shift(i), size(varr)[1:D]), @view(varr[..,i])) for i in 1:D)
+    return SVector{D,T}(_interp(_interp_clamp(x .- offset .+ shift(i), size(varr)[1:D]), @view(varr[..,i])) for i in 1:D)
 end
-function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
-    _interp(_interp_clamp(x, size(arr)), arr)
+function interp(x::SVector{D,T}, arr::AbstractArray{T,D}, offset=zero(x)) where {D,T}
+    _interp(_interp_clamp(x .- offset, size(arr)), arr)
 end
 function _interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
     # Index below the interpolation coordinate and the difference
