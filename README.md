@@ -4,7 +4,7 @@
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
 [![CI](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
-[![DOI](https://zenodo.org/badge/DOI/10.1016/j.cpc.2025.109748.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
+[![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109748-blue.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
 
 ![Julia flow](assets/julia.gif)
 
