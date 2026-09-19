@@ -174,12 +174,13 @@ using LinearAlgebra: cross
     pressure_moment(x₀,sim)
 
 Computes the pressure moment on an immersed body relative to point x₀.
+`x₀` is converted to the element type of the pressure field.
 """
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
 function pressure_moment(x₀,p,df,body,t=0)
     Tp = eltype(p); To = sumtype(p)
-    df .= zero(Tp)
+    df .= zero(Tp); x₀ = Tp.(x₀)
     @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
@@ -188,12 +189,13 @@ end
     viscous_moment(x₀,sim)
 
 Computes the viscous moment on an immersed body relative to point x₀.
+`x₀` is converted to the element type of the velocity field.
 """
 viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
 viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_moment(x₀,u,ν,df,body,t=0)
     Tu = eltype(u); To = sumtype(u)
-    df .= zero(Tu)
+    df .= zero(Tu); x₀ = Tu.(x₀)
     @loop df[I,:] .= -2ν*cross(loc(0,I,Tu)-x₀,S(I,u)*nds(body,loc(0,I,Tu),t)) over I ∈ inside_u(u)
     sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end

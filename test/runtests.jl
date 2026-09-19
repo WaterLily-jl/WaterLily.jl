@@ -14,6 +14,7 @@ Test suite set by the WaterLily `backend` preference (LocalPreferences.toml):
 Array backends: WATERLILY_BACKENDS=cpu|cuda|amdgpu|metal|all (comma-separated, default "cpu").
 GPU backends are opt-in and installed on demand (they are not test dependencies).
 Metal has no Float64 support, so only Float32 test sets (e.g. "float32") can pass on it.
+So "all" does not include it: request "metal" explicitly (Apple only).
 
 Run a subset by passing set name(s) (matched with startswith) and/or runner flags
 (--jobs=N, --list, --verbose, --quickfail), e.g.
@@ -26,7 +27,7 @@ const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WAT
 _cpu = any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
 _cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS)
 _amdgpu = any(b -> b in ("amdgpu","all"), WATERLILY_BACKENDS)
-_metal = any(b -> b in ("metal","all"), WATERLILY_BACKENDS) && Sys.isapple()
+_metal = "metal" in WATERLILY_BACKENDS && Sys.isapple() # not part of "all" since most test sets are Float64
 
 # GPU packages are not test deps: install the requested ones once here in the main process. A backend that cannot be installed is skipped
 _cuda &&
