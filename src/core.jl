@@ -1,4 +1,4 @@
-using KernelAbstractions: get_backend, @index, @kernel
+using KernelAbstractions: get_backend, @index, @kernel, supports_float64
 using LoggingExtras
 
 # custom log macro
