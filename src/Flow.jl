@@ -74,7 +74,7 @@ applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ Cartesian
 applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
 
 ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
-ic_function(uBC::Tuple) = (i,x)->uBC[i]
+ic_function(u) = (i,x)->u[i]
 
 """
     ic_kwarg(u0, uλ)
@@ -124,11 +124,12 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
             u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
         u0 = ic_kwarg(u0, uλ) # to be removed in v2.0
+        uBC isa Tuple && (uBC = T.(uBC)) # same type for all components: `uBC[i]` must be type-stable in GPU kernels
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(u0) && (u0 = ic_function(uBC))
         u = Array{T}(undef, Nd...) |> mem
-        isa(u0, Function) ? apply!(u0, u) : apply!((i,x)->u0[i], u)
+        isa(u0, Function) ? apply!(u0, u) : apply!(ic_function(T.(u0)), u)
         BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
