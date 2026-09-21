@@ -74,7 +74,7 @@ applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ Cartesian
 applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
 
 ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
-ic_function(u) = (i,x)->u[i]
+ic_function(uBC) = (i,x)->uBC[i]
 
 """
     ic_kwarg(u0, uλ)
