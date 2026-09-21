@@ -4,6 +4,11 @@ import WaterLily: ×
     @test WaterLily.shiftDir(1,3,2) == 3
     @test WaterLily.shiftDir(1,4,-1) == 4
     @test WaterLily.shiftDir(4,4,1) == 1
+    # metrics keep the element type of the field
+    u32 = zeros(Float32,3,4,5,3); apply!((i,x)->x[i]+prod(x),u32)
+    @test (@inferred WaterLily.ke(J,u32)) isa Float32
+    @test (@inferred WaterLily.ω_θ(J,(0,0,1),x .+ (0,1,2),u32)) isa Float32 # Float64 `center` is converted
+    @test WaterLily.ω_θ(J,(0,0,1),x,u32) === 0f0 # on the axis
     for f ∈ arrays
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
@@ -31,6 +36,7 @@ import WaterLily: ×
         
         apply!((x)->1,p)
         @test WaterLily.L₂(p)≈prod(size(p).-2)
+        @test WaterLily.L₂(p,CartesianIndices((2:2,2:3,2:4)))≈6
         # test force routines
         N = 32
         p = zeros(N,N) |> f; df₂ = zeros(N,N,2) |> f; df₃ = zeros(N,N,N,3) |> f
