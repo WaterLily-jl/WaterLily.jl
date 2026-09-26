@@ -138,10 +138,10 @@ macro loop(args...)
                 $I += I0
                 @fastmath @inbounds $ex
             end
-            function $kern($(symWtypes...)) where {$(symT...)}
-                $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+            function $kern($kern_,$(symWtypes...)) where {$(symT...)} # kernel passed as argument: capturing it would box it
+                $kern_(get_backend($(rep(sym[1]))),64)($(rep.(sym)...),$R[1]-oneunit($R[1]),ndrange=size($R))
             end
-            $kern($(sym...))
+            $kern($kern_,$(sym...))
         end |> esc
     else # backend == "SIMD"
         return quote
@@ -211,12 +211,12 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
         else
             if i==j # Normal direction, Dirichlet
                 for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,s,j)
+                    @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ slice(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I),t) over I ∈ slice(N,N[j],j)) # overwrite exit
+                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ slice(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I)),t) over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I),eltype(a)),t) over I ∈ slice(N,1,j)
+                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I),eltype(a)),t) over I ∈ slice(N,N[j],j)
             end
         end
     end

@@ -67,5 +67,9 @@
         @test GPUArrays.@allowscalar all(u[1,:,:,1] .≈ cos(-1π/4))  && all(u[2,:,:,1] .≈ cos(0)) && all(u[end,:,:,1] .≈ cos(6π/4))
         @test GPUArrays.@allowscalar all(u[:,1,:,2] .≈ sin(-1π/4))  && all(u[:,2,:,2] .≈ sin(0)) && all(u[:,end,:,2] .≈ sin(6π/4))
         @test GPUArrays.@allowscalar all(u[:,:,1,3] .≈ tan(-1π/16)) && all(u[:,:,2,3] .≈ tan(0)) && all(u[:,:,end,3].-tan(6π/16).<1e-6)
+        # the BC function gets positions in the element type of the array
+        w = zeros(Float64, 6, 6, 2) |> f
+        BC!(w,(i,x,t)->eltype(x)==Float64 ? 1. : 0.)
+        @test all(w[1,:,1] .== 1)
     end
 end
