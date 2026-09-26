@@ -8,7 +8,7 @@ norm2(x) = √(x'*x)
     shiftDir(d,D,i)
 
 Shift the index of direction `d` to `i` steps away in dimension space of `D`.
-So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4` 
+So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4`
 """
 shiftDir(d,D,i) = mod(d+i-1,D)+1
 Base.@propagate_inbounds @fastmath function permute(f,i)
@@ -121,6 +121,15 @@ BDIM-masked surface normal.
 end
 
 """
+    sumtype(a)
+
+Accumulation type for global sums over `a`: at least `Float64` to limit round-off, unless
+the backend of `a` has no `Float64` support (e.g. Metal), in which case `eltype(a)` is used.
+"""
+sumtype(a::AbstractArray{T}) where T = sumtype(get_backend(a),T)
+sumtype(backend,T) = supports_float64(backend) ? promote_type(Float64,T) : T
+
+"""
     pressure_force(sim)
 
 Compute the pressure force on an immersed body.
@@ -128,9 +137,9 @@ Compute the pressure force on an immersed body.
 pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
 function pressure_force(p,df,body,t=0)
-    Tp = eltype(p); To = promote_type(Float64,Tp)
+    Tp = eltype(p); To = sumtype(p)
     df .= zero(Tp)
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,Tp),t) over I ∈ inside(p)
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
@@ -149,9 +158,9 @@ Compute the viscous force on an immersed body.
 viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0)
-    Tu = eltype(u); To = promote_type(Float64,Tu)
+    Tu = eltype(u); To = sumtype(u)
     df .= zero(Tu)
-    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
+    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,eltype(u)),t) over I ∈ inside_u(u)
     sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
@@ -167,13 +176,14 @@ using LinearAlgebra: cross
     pressure_moment(x₀,sim)
 
 Computes the pressure moment on an immersed body relative to point x₀.
+`x₀` is converted to the element type of the pressure field.
 """
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
 function pressure_moment(x₀,p,df,body,t=0)
-    Tp = eltype(p); To = promote_type(Float64,Tp)
-    df .= zero(Tp)
-    @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
+    Tp = eltype(p); To = sumtype(p)
+    df .= zero(Tp); x₀ = Tp.(x₀)
+    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
@@ -181,13 +191,14 @@ end
     viscous_moment(x₀,sim)
 
 Computes the viscous moment on an immersed body relative to point x₀.
+`x₀` is converted to the element type of the velocity field.
 """
 viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
 viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_moment(x₀,u,ν,df,body,t=0)
-    Tu = eltype(u); To = promote_type(Float64,Tu)
-    df .= zero(Tu)
-    @loop df[I,:] .= -2ν*cross(loc(0,I,Tu)-x₀,S(I,u)*nds(body,loc(0,I,Tu),t)) over I ∈ inside_u(u)
+    Tu = eltype(u); To = sumtype(u)
+    df .= zero(Tu); x₀ = Tu.(x₀)
+    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,S(I,u)*nds(body,loc(0,I,eltype(u)),t)) over I ∈ inside_u(u)
     sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
