@@ -185,7 +185,15 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     end
 end
 
-L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+using KernelAbstractions: GPU
+"""
+    L₂(a,R=inside(a))
+
+Squared L₂ norm of array `a` over `R`, which excludes the ghost cells by default.
+"""
+L₂(a,R::CartesianIndices=inside(a)) = L₂(get_backend(a),a,R)
+L₂(backend,a,R) = sum(abs2,@inbounds(a[I]) for I ∈ R)
+L₂(::GPU,a,R) = mapreduce(abs2,+,view(a,R.indices...)) # no scalar indexing on GPU arrays
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L₁(p::Poisson) = sum(abs,p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
