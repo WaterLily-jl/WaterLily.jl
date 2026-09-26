@@ -101,7 +101,7 @@ flood(ω,clims = (-10,10),border=:none)
 ```
 ![Vorticity field](assets/vort.png)
 
-Note that `flood` is a convience function within WaterLily to create 2D flood plots.
+Note that `flood` is a convenience function within WaterLily to create 2D flood plots.
 As you can see, WaterLily correctly predicts that the flow is unsteady, with an alternating vortex street wake, leading to an oscillating side force and drag force.
 
 ## Multi-threading and GPU backends
@@ -112,9 +112,9 @@ Note that multi-threading requires _starting_ Julia with the `--threads` argumen
 
 Running on a GPU requires initializing the `Simulation` memory on the GPU, and care needs to be taken to move the data back to the CPU for visualization. As an example, let's compare a **3D** GPU simulation of a sphere to the **2D** multi-threaded CPU circle defined above
 ```Julia
-using CUDA,WaterLily
-function sphere(n,m;Re=100,U=1,T=Float64,mem=Array)
-    radius, center = m/8, m/2-1
+using CUDA,WaterLily           # see below for AMD and Apple GPUs
+function sphere(n,m;Re=100,U=1,T=Float32,mem=Array)
+    radius, center = T(m/8), T(m/2-1)
     body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
     Simulation((n,m,m),(U,0,0), # 3D array size and BCs
                 2radius;ν=U*2radius/Re,body, # no change
@@ -122,19 +122,21 @@ function sphere(n,m;Re=100,U=1,T=Float64,mem=Array)
                 mem) # memory type
 end
 
-@assert CUDA.functional()      # is your CUDA GPU working??
+@assert CUDA.functional()      # is your GPU working?
 GPUsim = sphere(3*2^5,2^6;T=Float32,mem=CuArray); # 3D GPU sim!
-println(length(GPUsim.flow.u)) # 1.3M degrees-of freedom!
+println(length(GPUsim.flow.u)) # 1.3M degrees-of-freedom!
 sim_step!(GPUsim)              # compile GPU code & run one step
-@time sim_step!(GPUsim,50,remeasure=false) # 40s!!
+@time sim_step!(GPUsim,50,remeasure=false) # 40s!
 
 CPUsim = circle(3*2^5,2^6);    # 2D CPU sim
-println(length(CPUsim.flow.u)) # 0.013M degrees-of freedom!
-sim_step!(CPUsim)              # compile GPU code & run one step
+println(length(CPUsim.flow.u)) # 0.013M degrees-of-freedom!
+sim_step!(CPUsim)              # compile CPU code & run one step
 println(Threads.nthreads())    # I'm using 8 threads
-@time sim_step!(CPUsim,50,remeasure=false) # 28s!!
+@time sim_step!(CPUsim,50,remeasure=false) # 28s!
 ```
-As you can see, the 3D sphere set-up is almost identical to the 2D circle, but using 3D arrays means there are almost 1.3M degrees-of-freedom, 100x bigger than in 2D. Never the less, the simulation is quite fast on the GPU, only around 40% slower than the much smaller 2D simulation on a CPU with 8 threads. See the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
+As you can see, the 3D sphere set-up is almost identical to the 2D circle, but using 3D arrays means there are almost 1.3M degrees-of-freedom, 100x bigger than in 2D. Nevertheless, the simulation is quite fast on the GPU, only around 40% slower than the much smaller 2D simulation on a CPU with 8 threads. See the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
+
+To run on other GPUs, swap the package and the memory type: `using AMDGPU` with `mem=ROCArray`, or `using Metal` with `mem=MtlArray`. Note that Apple GPUs do not support Float64, so use `T=Float32` and make sure no Float64 value reaches the GPU kernels. This is why `sphere` casts its constants with `T(...)`, which is good practice on any GPU since it avoids mixed-precision arithmetic in the kernels. On backends without Float64, global sums such as the force and moment integrals are accumulated in Float32 instead of Float64.
 
 Finally, KernelAbstractions does incur some CPU allocations for every loop, but other than this `sim_step!` is completely non-allocating. This is one reason why the speed-up improves as the size of the simulation increases.
 
