@@ -198,6 +198,7 @@ function viz! end
 function viz_step! end
 function get_body end
 function plot_body_obs! end
+function isosurface_mesh end
 # hook set by WaterLilyPathlinesExt.__init__ when Pathlines is loaded
 const _pathlines_viz_hook = Ref{Union{Nothing,Function}}(nothing)
 # export
@@ -223,5 +224,5 @@ function check_nthreads()
 end
 
 __init__() = check_nthreads()
-    
+
 end # module
