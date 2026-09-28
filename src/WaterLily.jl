@@ -199,7 +199,7 @@ function viz_step! end
 function get_body end
 function plot_body_obs! end
 function isosurface_mesh end
-# hook set by WaterLilyPathlinesExt.__init__ when Pathlines is loaded
+# hook set by Pathlines.jl in its __init__, so viz! draws pathlines when Pathlines is loaded
 const _pathlines_viz_hook = Ref{Union{Nothing,Function}}(nothing)
 # export
 export viz!, viz_step!, get_body, plot_body_obs!
