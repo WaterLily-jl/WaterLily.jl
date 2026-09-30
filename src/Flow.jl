@@ -213,8 +213,8 @@ the velocity by `w·Δt·∇p`, and re-enforce BCs.
 On return `a.u` is divergence-free and BC-consistent.
 """
 function mom_project!(a::AbstractFlow{D,T}, b::AbstractPoisson, w, t) where {D,T}
-    dt = T(w)*a.Δt[end]
-    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
+    dt = T(w)*a.Δt[end]; b.x .*= dt # initial pressure solution
+    @inside b.z[I] = div(I,a.u)-δv(b,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
     solver!(b)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)

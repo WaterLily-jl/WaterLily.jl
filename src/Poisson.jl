@@ -53,6 +53,7 @@ update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
     end
     return s
 end
+@fastmath @inline δv(p::Poisson,I::CartesianIndex{d}) where {d} = 1+@inbounds(p.D[I])/2d
 
 """
     mult!(p::Poisson,x)
@@ -92,9 +93,9 @@ without the corrections, no solution exists.
 function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
-    s = sum(p.r)/length(inside(p.r))
+    s = sum(p.r)/count(!iszero,p.iD) # only solved rows absorb the imbalance
     abs(s) <= 2eps(eltype(s)) && return
-    @inside p.r[I] = p.r[I]-s
+    @inside p.r[I] = ifelse(p.iD[I]==0,0,p.r[I]-s)
 end
 
 function increment!(p::Poisson{T};ω=1) where {T}

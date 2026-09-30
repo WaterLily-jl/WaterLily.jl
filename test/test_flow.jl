@@ -177,3 +177,19 @@ end
         @test WaterLily.median(a,b,c) == sort([a,b,c])[2]
     end
 end
+
+@testset "Deforming body dilatation" begin
+    R,ε,Tc = 8f0,0.25f0,64f0; s(t) = 1-ε*(1-cospi(2t/Tc)); ṡ(t) = -2ε*Float32(π)/Tc*sinpi(2t/Tc)
+    circle(c,s) = AutoBody((x,t)->√(x'*x)-R,(x,t)->(x .- c)/s(t))
+    for f ∈ arrays
+        # single body: the net dilatation is absorbed by the solved rows only
+        sim = Simulation((64,64),(0,0),2R;ν=2R/250,T=Float32,mem=f,body=circle(SA_F32[32,32],s))
+        foreach(_->sim_step!(sim),1:8); p = sim.pois.levels[1]; WaterLily.residual!(p)
+        @test maximum(abs,p.r .* (p.iD .== 0)) == 0 && abs(sum(p.r)) < 1f-6sum(abs,p.r)
+        # anti-phase pair: no net dilatation, so the flux between them is exactly dA₁/dt
+        sim = Simulation((128,64),(0,0),2R;ν=2R/250,T=Float32,mem=f,
+                         body=circle(SA_F32[32,32],s)+circle(SA_F32[96,32],t->√(2-s(t)^2)))
+        foreach(_->sim_step!(sim),1:8); t = WaterLily.time(sim.flow)
+        @test sum(@view sim.flow.u[66,2:65,1]) ≈ 2Float32(π)*R^2*s(t)*ṡ(t) rtol=0.01
+    end
+end
