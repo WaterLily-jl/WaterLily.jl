@@ -103,6 +103,7 @@ end
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 δv(ml::MultiLevelPoisson,I) = δv(ml.levels[1],I)
+diag_array(ml::MultiLevelPoisson) = diag_array(ml.levels[1])
 
 const smooth! = GaussSeidelRB!
 
