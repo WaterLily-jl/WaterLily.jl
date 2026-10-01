@@ -154,7 +154,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
     # corrector u → u¹
     @log "c"
     mom_correct!(a,t₁;udf,kwargs...)
-    mom_project!(a,b,2,t₁)
+    mom_project!(a,b,0.5,t₁)
     push!(a.Δt,CFL(a))
 end
 
@@ -174,28 +174,31 @@ end
 """
     mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
 
-Predictor phase of `mom_step!`: advect under `u⁰` with the convective scheme `a.λ` and apply BDIM.
-`t₀` and `t₁` are the start and end times of the step; the domain BCs are enforced at `t₁`
-by `mom_project!`.
+Predictor phase of `mom_step!`: advect under `u⁰` with the convective scheme `a.λ`, apply BDIM,
+enforce BCs. On return `a.u` is BC-consistent and ready for pressure projection.
+`t₀` and `t₁` are the start and end times of the step; BCs are enforced at the
+end-of-step time `sum(a.Δt)`.
 """
 function mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u⁰,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u⁰,t₀; kwargs...) # advect with u⁰ (a.u is zeroed by scale_u!)
     accelerate!(a.f,t₀,a.g,a.uBC)
-    BDIM!(a)
+    BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
+    a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
 end
 
 """
     mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
 
 Corrector phase of `mom_step!`: advect under the projected `u` with the convective scheme `a.λ`,
-apply BDIM and blend with the trapezoidal weight.
+apply BDIM, blend with the trapezoidal weight, enforce BCs at time-step end-time `t`.
+On return `a.u` is BC-consistent and ready for pressure projection.
 """
 function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
     accelerate!(a.f,t,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5)
+    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
     s = T(scale)
@@ -205,15 +208,13 @@ end
 """
     mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
 
-Projection phase of `mom_step!`: solve the pressure Poisson equation, correct 
-the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
-in the corrector. On return `a.u` is divergence-free and BC-consistent.
+Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
+the velocity by `w·Δt·∇p`, and re-enforce BCs.
+On return `a.u` is divergence-free and BC-consistent.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
-    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
-    w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
-    dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
-    Dp = diagonal(b)                                # Poisson matrix diagonal
+function mom_project!(a::AbstractFlow{D,T}, b::AbstractPoisson, w, t) where {D,T}
+    dt = T(w)*a.Δt[end]; b.x .*= dt # initial pressure solution
+    Dp = diagonal(b) # pass the bitstype array, not the solver struct, into the kernel
     @inside b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
     solver!(b)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure

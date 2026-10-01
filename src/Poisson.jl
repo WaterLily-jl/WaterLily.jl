@@ -54,6 +54,7 @@ update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
     return s
 end
 @fastmath @inline δv(D,I::CartesianIndex{d}) where {d} = 1+@inbounds(D[I])/2d
+δv(p::Poisson,I::CartesianIndex) = δv(p.D,I)
 diagonal(p::Poisson) = p.D
 
 """
