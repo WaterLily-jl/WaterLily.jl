@@ -1,7 +1,10 @@
 using StaticArrays
 
 # utilities
-Base.@propagate_inbounds @inline fSV(f,n) = SA[ntuple(f,n)...]
+# Each f(i) gets a call-site @inline, which ntuple's internal calls cannot take
+Base.@propagate_inbounds @inline _tuple_inl(f,::Val{0}) = ()
+Base.@propagate_inbounds @inline _tuple_inl(f,::Val{N}) where N = (_tuple_inl(f,Val(N-1))...,@inline f(N))
+Base.@propagate_inbounds @inline fSV(f,n) = SVector(_tuple_inl(f,Val(n)))
 Base.@propagate_inbounds @inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
 """
@@ -71,13 +74,13 @@ curl(i,I,u) = permute((j,k)->∂(j,CI(I,k),u), i)
 
 Compute 3-vector ``𝛚=𝛁×𝐮`` at the center of cell `I`.
 """
-ω(I::CartesianIndex{3},u) = fSV(i->permute((j,k)->∂(k,j,I,u),i),3)
+@inline ω(I::CartesianIndex{3},u) = fSV(i->permute((j,k)->∂(k,j,I,u),i),3)
 """
     ω_mag(I::CartesianIndex{3},u)
 
 Compute ``∥𝛚∥`` at the center of cell `I`.
 """
-ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
+@inline ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
 """
     ω_θ(I::CartesianIndex{3},z,center,u)
 
@@ -85,7 +88,7 @@ Compute ``𝛚⋅𝛉`` at the center of cell `I` where ``𝛉`` is the azimuth
 direction around vector `z` passing through `center`.
 `z` and `center` are converted to the element type of `u`.
 """
-function ω_θ(I::CartesianIndex{3},z,center,u)
+@inline function ω_θ(I::CartesianIndex{3},z,center,u)
     T = eltype(u)
     θ = SVector{3,T}(z) × (loc(0,I,T)-SVector{3,T}(center))
     n = norm2(θ)
