@@ -193,3 +193,14 @@ end
         @test sum(@view sim.flow.u[66,2:65,1]) ≈ 2Float32(π)*R^2*s(t)*ṡ(t) rtol=0.01
     end
 end
+
+@testset "Update uBC with setproperties" begin
+    swap!(sim,uBC) = (sim.flow = WaterLily.setproperties(sim.flow; uBC); nothing)
+    for f ∈ arrays
+        sim = Simulation((64,64),(1,0),16;mem=f,T=Float32)
+        swap!(sim,(1f0,0f0)) # compile
+        @test @allocated(swap!(sim,(2f0,0f0))) < sizeof(sim.flow.p) # fields are not copied
+        sim_step!(sim)
+        @test all(Array(sim.flow.u)[2,2:end-1,1] .== 2) # BC! uses the new uBC
+    end
+end
