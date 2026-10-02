@@ -4,6 +4,16 @@
 # Draft pull requests skip them, unless selected by name in the last commit message:
 # `[only cuda]`, `[only amdgpu, metal]` or `[only tests]` for all of them. `[skip metal]`
 # or `[skip tests]` does the opposite.
+# As on GitHub Actions, they also only run when the source, tests or CI files change
+# (`if_changed`). Tag, manual and scheduled builds run them regardless (see hooks/pre-command).
+
+# Path groups for `if_changed`
+paths:
+  buildkite:     &buildkite_paths      ".buildkite/{pipeline.yml,hooks/**}"
+  code:          &code_paths           "{ext,src}/**"
+  project:       &project_paths        "Project.toml"
+  tests:         &test_paths           "test/**"
+
 steps:
 
   # CUDA
@@ -19,6 +29,7 @@ steps:
       - JuliaCI/julia-test#v1: ~
     agents:
       queue: "cuda"
+    if_changed: [*buildkite_paths, *code_paths, *project_paths, *test_paths]
     if: |
       build.message !~ /\[skip [^\]]*(tests|cuda)/ &&
       (build.message =~ /\[only [^\]]*(tests|cuda)/ ||
@@ -41,6 +52,7 @@ steps:
     agents:
       queue: "rocm"
       rocmgpu: "*"
+    if_changed: [*buildkite_paths, *code_paths, *project_paths, *test_paths]
     if: |
       build.message !~ /\[skip [^\]]*(tests|amdgpu)/ &&
       (build.message =~ /\[only [^\]]*(tests|amdgpu)/ ||
@@ -63,6 +75,7 @@ steps:
           test_args: "float32"
     agents:
       queue: "metal"
+    if_changed: [*buildkite_paths, *code_paths, *project_paths, *test_paths]
     if: |
       build.message !~ /\[skip [^\]]*(tests|metal)/ &&
       (build.message =~ /\[only [^\]]*(tests|metal)/ ||
