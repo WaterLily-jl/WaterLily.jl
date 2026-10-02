@@ -1,0 +1,72 @@
+# Tests on GPU back-ends. The CPU tests on GitHub Actions cover the rest. Each step selects its
+# array back-end with WATERLILY_BACKENDS (see test/runtests.jl), which installs the GPU package
+# on demand. Metal has no Float64 support, so only the "float32" test set runs on it.
+# Draft pull requests skip them, unless selected by name in the last commit message:
+# `[only cuda]`, `[only amdgpu, metal]` or `[only tests]` for all of them. `[skip metal]`
+# or `[skip tests]` does the opposite.
+steps:
+
+  # CUDA
+  - label: "CUDA - Julia {{matrix.version}}"
+    matrix:
+      setup:
+        version:
+          - "1.11"
+          - "1.13"
+    plugins:
+      - JuliaCI/julia#v1:
+          version: "{{matrix.version}}"
+      - JuliaCI/julia-test#v1: ~
+    agents:
+      queue: "cuda"
+    if: |
+      build.message !~ /\[skip [^\]]*(tests|cuda)/ &&
+      (build.message =~ /\[only [^\]]*(tests|cuda)/ ||
+       build.message !~ /\[only / && !build.pull_request.draft)
+    timeout_in_minutes: 60
+    env:
+      WATERLILY_BACKENDS: "cuda"
+
+  # AMDGPU
+  - label: "AMDGPU - Julia {{matrix.version}}"
+    matrix:
+      setup:
+        version:
+          - "1.11"
+          - "1.13"
+    plugins:
+      - JuliaCI/julia#v1:
+          version: "{{matrix.version}}"
+      - JuliaCI/julia-test#v1: ~
+    agents:
+      queue: "rocm"
+      rocmgpu: "*"
+    if: |
+      build.message !~ /\[skip [^\]]*(tests|amdgpu)/ &&
+      (build.message =~ /\[only [^\]]*(tests|amdgpu)/ ||
+       build.message !~ /\[only / && !build.pull_request.draft)
+    timeout_in_minutes: 60
+    env:
+      WATERLILY_BACKENDS: "amdgpu"
+
+  # Metal
+  - label: "Metal - Julia {{matrix.version}}"
+    matrix:
+      setup:
+        version:
+          - "1.11"
+          - "1.13"
+    plugins:
+      - JuliaCI/julia#v1:
+          version: "{{matrix.version}}"
+      - JuliaCI/julia-test#v1:
+          test_args: "float32"
+    agents:
+      queue: "metal"
+    if: |
+      build.message !~ /\[skip [^\]]*(tests|metal)/ &&
+      (build.message =~ /\[only [^\]]*(tests|metal)/ ||
+       build.message !~ /\[only / && !build.pull_request.draft)
+    timeout_in_minutes: 60
+    env:
+      WATERLILY_BACKENDS: "metal"
