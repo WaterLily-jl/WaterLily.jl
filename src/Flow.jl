@@ -203,13 +203,13 @@ function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
 end
 
 """
-    mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct 
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
 in the corrector. On return `a.u` is divergence-free and BC-consistent.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w, t)
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
     w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
