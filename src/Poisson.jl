@@ -55,13 +55,7 @@ update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
 end
 @fastmath @inline δv(D::AbstractArray,I::CartesianIndex{d}) where {d} = 1+@inbounds(D[I])/2d
 @fastmath @inline δv(p::Poisson,I::CartesianIndex) = δv(p.D,I)
-"""
-    diag_array(p::AbstractPoisson)
-
-The assembled diagonal, as the array itself. A kernel body can only close over arrays: a
-`Poisson` holds a `Vector` of levels and is not a bitstype, so `δv(p,I)` inside an `@inside`
-hands the whole solver to the GPU and fails to compile. Hoist this out of the loop instead.
-"""
+# The assembled diagonal, as the array itself
 diag_array(p::Poisson) = p.D
 
 """
