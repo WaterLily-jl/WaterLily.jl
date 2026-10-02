@@ -202,5 +202,7 @@ end
         @test @allocated(swap!(sim,(2f0,0f0))) < sizeof(sim.flow.p) # fields are not copied
         sim_step!(sim)
         @test all(Array(sim.flow.u)[2,2:end-1,1] .== 2) # BC! uses the new uBC
+        swap!(sim,(3,0)) # Int tuple must be converted to the flow's eltype
+        @test sim.flow.uBC === (3f0,0f0)
     end
 end

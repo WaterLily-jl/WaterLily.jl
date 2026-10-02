@@ -138,8 +138,10 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end
     # field-wise constructor: lets `setproperties(flow; uBC)` swap non-field values without reallocating the fields
-    Flow(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ) =
+    function Flow(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
+        uBC isa Tuple && (uBC = eltype(p).(uBC)) # same type-stability requirement as above
         new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
+    end
 end
 
 """
