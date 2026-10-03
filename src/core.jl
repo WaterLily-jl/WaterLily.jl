@@ -146,7 +146,7 @@ macro loop(args...)
     else # backend == "SIMD"
         return quote
             function $kern($(symWtypes...)) where {$(symT...)}
-                @inbounds @simd for $I ∈ $R # @inbounds on the loop also removes the index checks of @simd, which stop vectorization
+                @inbounds @simd for $I ∈ $R # @inbounds need for @simd vectorization
                     @fastmath @inbounds $ex
                 end
             end
