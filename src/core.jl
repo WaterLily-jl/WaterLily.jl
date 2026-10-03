@@ -107,20 +107,23 @@ For example
 
 becomes
 
-    @inbounds @simd for I ∈ R
+    @inbounds @simd for J ∈ CartesianIndices(R)
+        I = R[J]
         @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
 
 on serial execution, or
 
-    @kernel function kern(a,i,@Const(I0))
-        I ∈ @index(Global,Cartesian)+I0
+    @kernel function kern(a,i,R)
+        I = R[@index(Global,Cartesian)]
         @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
-    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
+    kern(get_backend(a),64)(a,i,R,ndrange=size(R))
 
 when multi-threading on CPU or using CuArrays.
 Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
+
+`R` is a `CartesianIndices` or a vector of indices.
 """
 macro loop(args...)
     ex,_,itr = args
@@ -130,23 +133,26 @@ macro loop(args...)
     setdiff!(sym,[I]) # don't want to pass I as an argument
     symT = [gensym() for _ in 1:length(sym)] # generate a list of types for each symbol
     symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
-    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
+    @gensym(kern, kern_, R_, J_) # generate unique kernel function names for serial and KA execution, and the range and launch index
     @static if backend == "KernelAbstractions"
         return quote
-            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
-                $I = @index(Global,Cartesian)
-                $I += I0
+            @kernel function $kern_($(symWtypes...),$R_) where {$(symT...)} # replace composite arguments
+                $J_ = @index(Global,Cartesian)
+                $I = @inbounds $R_[$J_] # the range gives the cell index
                 @fastmath @inbounds $ex
             end
             function $kern($kern_,$(symWtypes...)) where {$(symT...)} # kernel passed as argument: capturing it would box it
-                $kern_(get_backend($(rep(sym[1]))),64)($(rep.(sym)...),$R[1]-oneunit($R[1]),ndrange=size($R))
+                $R_ = $R
+                $kern_(get_backend($(rep(sym[1]))),64)($(rep.(sym)...),$R_,ndrange=size($R_))
             end
             $kern($kern_,$(sym...))
         end |> esc
     else # backend == "SIMD"
         return quote
             function $kern($(symWtypes...)) where {$(symT...)}
-                @inbounds @simd for $I ∈ $R # @inbounds need for @simd vectorization
+                $R_ = $R
+                @inbounds @simd for $J_ ∈ CartesianIndices($R_) # @inbounds need for @simd vectorization, CartesianIndices for nested loops over any range
+                    $I = $R_[$J_]
                     @fastmath @inbounds $ex
                 end
             end
