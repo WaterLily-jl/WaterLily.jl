@@ -134,7 +134,7 @@ sim_step!(CPUsim)              # compile CPU code & run one step
 println(Threads.nthreads())    # I'm using 8 threads
 @time sim_step!(CPUsim,50,remeasure=false) # 28s!
 ```
-As you can see, the 3D sphere set-up is almost identical to the 2D circle, but using 3D arrays means there are almost 1.3M degrees-of-freedom, 100x bigger than in 2D. Nevertheless, the simulation is quite fast on the GPU, only around 40% slower than the much smaller 2D simulation on a CPU with 8 threads. See the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
+As you can see, the 3D sphere set-up is almost identical to the 2D circle, but using 3D arrays means there are almost 1.3M degrees-of-freedom, 100x bigger than in 2D. Nevertheless, the simulation is quite fast on the GPU, only around 40% slower than the much smaller 2D simulation on a CPU with 8 threads. See the [2025 paper](https://doi.org/10.1016/j.cpc.2025.109748) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
 
 To run on other GPUs, swap the package and the memory type: `using AMDGPU` with `mem=ROCArray`, or `using Metal` with `mem=MtlArray`. Note that Apple GPUs do not support Float64, so use `T=Float32` and make sure no Float64 value reaches the GPU kernels. This is why `sphere` casts its constants with `T(...)`, which is good practice on any GPU since it avoids mixed-precision arithmetic in the kernels. On backends without Float64, global sums such as the force and moment integrals are accumulated in Float32 instead of Float64.
 
