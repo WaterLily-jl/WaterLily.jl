@@ -139,7 +139,12 @@ macro loop(args...)
                 @fastmath @inbounds $ex
             end
             function $kern($kern_,$(symWtypes...)) where {$(symT...)} # kernel passed as argument: capturing it would box it
-                $kern_(get_backend($(rep(sym[1]))),64)($(rep.(sym)...),$R[1]-oneunit($R[1]),ndrange=size($R))
+                backend = get_backend($(rep(sym[1])))
+                if size($R,1)==1 # dynamic workgroup, see `workgroup`
+                    $kern_(backend)($(rep.(sym)...),$R[1]-oneunit($R[1]),ndrange=size($R),workgroupsize=$(workgroup)(size($R)))
+                else
+                    $kern_(backend,64)($(rep.(sym)...),$R[1]-oneunit($R[1]),ndrange=size($R))
+                end
             end
             $kern($kern_,$(sym...))
         end |> esc
@@ -153,6 +158,14 @@ macro loop(args...)
             $kern($(sym...))
         end |> esc
     end
+end
+# Place the 64 workgroup threads along the first dimension of `ndrange` longer than one.
+# The static workgroup size 64 is padded to (64,1,...), so a range such as a slice normal
+# to direction 1 would otherwise leave 63 of 64 threads idle. Only used when size(R,1)==1,
+# since a static workgroup size keeps the common launch path type-stable and cheap.
+@inline function workgroup(ndrange::NTuple{N,Int}) where N
+    k = something(findfirst(>(1),ndrange),1)
+    ntuple(i -> i==k ? 64 : 1, N)
 end
 function grab!(sym,ex::Expr)
     ex.head == :. && return union!(sym,[ex])      # grab composite name and return
