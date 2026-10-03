@@ -107,7 +107,7 @@ For example
 
 becomes
 
-    @simd for I ∈ R
+    @inbounds @simd for I ∈ R
         @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
 
@@ -146,7 +146,7 @@ macro loop(args...)
     else # backend == "SIMD"
         return quote
             function $kern($(symWtypes...)) where {$(symT...)}
-                @simd for $I ∈ $R
+                @inbounds @simd for $I ∈ $R # @inbounds on the loop also removes the index checks of @simd, which stop vectorization
                     @fastmath @inbounds $ex
                 end
             end
