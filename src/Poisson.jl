@@ -150,13 +150,16 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
 end
 
 using LinearAlgebra: ⋅
+using KernelAbstractions: Backend, GPU
 """
     perdot(a,b,perdir)
 
 Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
 """
 perdot(a,b,::Tuple{}) = a⋅b
-perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
+perdot(::Backend,a,b,R) = @view(a[R])⋅@view(b[R])
+perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...)) # BLAS dot is not defined on views of GPU arrays
 
 """
     pcg!(p::Poisson; it=6)
@@ -187,7 +190,6 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     end
 end
 
-using KernelAbstractions: GPU
 """
     L₂(a,R=inside(a))
 
