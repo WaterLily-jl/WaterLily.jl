@@ -8,6 +8,10 @@
     @test loc(3,CartesianIndex(3,4,5)) == SVector(3,4,4.5) .- 1.5
     I = CartesianIndex(rand(2:10,3)...)
     @test loc(0,I) == SVector(I.I...) .- 1.5
+    @test loc(0,I) .+ WaterLily.stagger((:face,2),3) == loc(2,I)
+    @test WaterLily.stagger((:edge,3),2) == WaterLily.stagger(:corner,2) == (-0.5,-0.5)
+    @test WaterLily.stagger((:edge,1),3) == (0,-0.5,-0.5) && WaterLily.stagger(:center,2) == (0,0)
+    @test_throws ArgumentError WaterLily.stagger(:node,2)
 
     ex,sym = :(a[I,i] = Math.add(p.b[I],func(I,q))),[]
     WaterLily.grab!(sym,ex)

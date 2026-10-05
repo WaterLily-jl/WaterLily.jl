@@ -176,6 +176,15 @@ Using `i=0` returns the cell center s.t. `loc = I`. `T` sets the return number t
 """
 @inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- T(1.5) .- δ(i,I).I ./T(2))
 @inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
+"""
+    stagger(at,D)
+
+Offset in cells from the cell center to the location `at`: `:center` (eg. `p`, `ω`),
+`(:face,i)` (eg. `u[I,i]`), `(:edge,i)` (eg. `curl(i,I,u)`, the corner in 2D) or `:corner`.
+"""
+stagger(at,D) = ntuple(j->shifted(at,j) ? -0.5 : 0.,D)
+shifted(at::Symbol,j) = at==:corner ? true : at==:center ? false : throw(ArgumentError("unknown location $at"))
+shifted((at,i)::Tuple,j) = at==:face ? j==i : at==:edge ? j!=i : throw(ArgumentError("unknown location $at"))
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
