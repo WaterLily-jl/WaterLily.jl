@@ -76,6 +76,12 @@ Compute 3-vector ``𝛚=𝛁×𝐮`` at the center of cell `I`.
 """
 @inline ω(I::CartesianIndex{3},u) = fSV(i->permute((j,k)->∂(k,j,I,u),i),3)
 """
+    ω(I::CartesianIndex{2},u)
+
+Compute the scalar out-of-plane vorticity ``ω₃=∂u₂/∂x₁-∂u₁/∂x₂`` at the center of cell `I`.
+"""
+@inline ω(I::CartesianIndex{2},u) = permute((j,k)->∂(k,j,I,u),3)
+"""
     ω_mag(I::CartesianIndex{3},u)
 
 Compute ``∥𝛚∥`` at the center of cell `I`.
