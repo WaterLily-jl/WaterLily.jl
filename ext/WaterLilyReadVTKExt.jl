@@ -24,15 +24,16 @@ function load!(a::AbstractSimulation, ::Val{:pvd}; kwargs...)
     attrib = get(Dict(kwargs), :attrib, default_attrib())
     vtk = VTKFile(PVDFile(fname).vtk_filenames[end])
     extent = filter(!iszero,ReadVTK.get_whole_extent(vtk)[2:2:end]);
+    cell_data = !isempty(ReadVTK.piece(vtk)["CellData"]) # older versions wrote point data
     # check dimensions match
     text = "The dimensions of the simulation do not match the dimensions of the vtk file."
-    @assert extent.+1 == collect(size(a.flow.p)) text
+    @assert extent.+!cell_data == collect(size(a.flow.p)) text
     # fill the arrays for pressure and velocity
-    point_data = ReadVTK.get_point_data(vtk)
+    data = cell_data ? get_cell_data(vtk) : get_point_data(vtk)
     pressure = get(Dict(kwargs), :pressure, "Pressure")
     velocity = get(Dict(kwargs), :velocity, "Velocity")
-    copyto!(a.flow.p, WaterLily.squeeze(Array(get_data_reshaped(point_data[pressure]))));
-    copyto!(a.flow.u, WaterLily.squeeze(components_last(Array(get_data_reshaped(point_data[velocity])))));
+    copyto!(a.flow.p, WaterLily.squeeze(Array(get_data_reshaped(data[pressure]; cell_data))));
+    copyto!(a.flow.u, WaterLily.squeeze(components_last(Array(get_data_reshaped(data[velocity]; cell_data)))));
     # reset time to work with the new time step
     a.flow.Δt[end] = PVDFile(fname).timesteps[end]*a.L/a.U
     push!(a.flow.Δt,WaterLily.CFL(a.flow))
