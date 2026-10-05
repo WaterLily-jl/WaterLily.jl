@@ -158,8 +158,8 @@ Apply dot product to the inner cells of two _scalar_ fields, assuming zero value
 """
 perdot(a,b,::Tuple{}) = a⋅b
 perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
-perdot(::Backend,a,b,R) = @view(a[R])⋅@view(b[R])
-perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...)) # BLAS dot is not defined on views of GPU arrays
+perdot(::Backend,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
+perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...)) # no scalar indexing on GPU arrays
 
 """
     pcg!(p::Poisson; it=6)
