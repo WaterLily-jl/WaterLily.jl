@@ -123,7 +123,7 @@ on serial execution, or
 when multi-threading on CPU or using CuArrays.
 Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 
-`R` is a `CartesianIndices` or a vector of indices.
+`R` is any array of indices: a `CartesianIndices`, a vector or a [`face`](@ref).
 """
 macro loop(args...)
     ex,_,itr = args
@@ -195,6 +195,24 @@ function slice(dims::NTuple{N},i,j,low=1) where N
     CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
 end
 
+# `R` with `f` applied on indexing, as MappedArrays.mappedarray (renamed to not clash with it)
+struct MappedArr{T,N,F,C<:AbstractArray{<:Any,N}} <: AbstractArray{T,N}
+    f::F; R::C
+end
+MappedArr(f,R) = MappedArr{Base.promote_op(f,eltype(R)),ndims(R),typeof(f),typeof(R)}(f,R)
+Base.size(M::MappedArr) = size(M.R)
+Base.@propagate_inbounds Base.getindex(M::MappedArr{T,N},J::Vararg{Int,N}) where {T,N} = M.f(M.R[J...])
+insert(J::CartesianIndex{M},i,j) where M = CI(ntuple(k -> k<j ? J[k] : k==j ? i : J[k-1], M+1)) # put index i back in dimension j
+"""
+    face(R,j)
+    face(dims,i,j,low=1) = face(slice(dims,i,j,low),j)
+
+The cells of a range `R` one cell thick in dimension `j` (such as a `slice`), as a `MappedArr` over its
+other dimensions. `@loop` launches over those, so a face normal to `j=1` fills every 64-thread workgroup.
+"""
+face(R::CartesianIndices{N},j) where N = (i=first(R.indices[j]); MappedArr(J->insert(J,i,j),CartesianIndices(ntuple(k -> R.indices[k<j ? k : k+1], N-1))))
+face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
+
 """
     BC!(a,U,saveexit=false,perdir=(),t=0)
 
@@ -212,17 +230,17 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ face(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ face(N,N[j],j)
         else
             if i==j # Normal direction, Dirichlet
                 for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ slice(N,s,j)
+                    @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ face(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ slice(N,N[j],j)) # overwrite exit
+                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ face(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I),eltype(a)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I),eltype(a)),t) over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I),eltype(a)),t) over I ∈ face(N,1,j)
+                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I),eltype(a)),t) over I ∈ face(N,N[j],j)
             end
         end
     end
@@ -237,9 +255,9 @@ function exitBC!(u,u⁰,Δt)
     N,_ = size_u(u)
     exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
     U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux
-    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ face(exitR,1)
     ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
+    @loop u[I,1] -= ∮u over I ∈ face(exitR,1)     # correct flux
 end
 """
     perBC!(a,perdir)
@@ -248,8 +266,8 @@ Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ face(N,1,j)
+    @loop a[I] = a[CIj(j,I,2)] over I ∈ face(N,N[j],j)
 end
 
 using ForwardDiff
