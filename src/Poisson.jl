@@ -159,7 +159,7 @@ Apply dot product to the inner cells of two _scalar_ fields, assuming zero value
 perdot(a,b,::Tuple{}) = a⋅b
 perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
 perdot(::Backend,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
-perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...)) # no scalar indexing on GPU arrays
+perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...)) # no scalar indexing on GPU arrays, see also WaterLilyCUDAExt
 
 """
     pcg!(p::Poisson; it=6)
