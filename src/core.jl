@@ -123,7 +123,8 @@ on serial execution, or
 when multi-threading on CPU or using CuArrays.
 Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 
-`R` is any array of indices: a `CartesianIndices`, a vector or a [`face`](@ref).
+`R` is any array, such as a `CartesianIndices`, a [`face`](@ref) or a vector on the same device as `a`,
+and `I` takes its values.
 """
 macro loop(args...)
     ex,_,itr = args
@@ -208,9 +209,10 @@ insert(J::CartesianIndex{M},i,j) where M = CI(ntuple(k -> k<j ? J[k] : k==j ? i 
     face(dims,i,j,low=1) = face(slice(dims,i,j,low),j)
 
 The cells of a range `R` one cell thick in dimension `j` (such as a `slice`), as a `MappedArr` over its
-other dimensions. `@loop` launches over those, so a face normal to `j=1` fills every 64-thread workgroup.
+other dimensions. `@loop` launches over those, so the 64-thread workgroups lie along the face, also when
+it is normal to `j=1`.
 """
-face(R::CartesianIndices{N},j) where N = (i=first(R.indices[j]); MappedArr(J->insert(J,i,j),CartesianIndices(ntuple(k -> R.indices[k<j ? k : k+1], N-1))))
+face(R::CartesianIndices{N},j) where N = (i=only(R.indices[j]); MappedArr(J->insert(J,i,j),CartesianIndices(ntuple(k -> R.indices[k<j ? k : k+1], N-1))))
 face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
 
 """

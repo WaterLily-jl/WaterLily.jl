@@ -25,9 +25,10 @@
         D = length(dims); sl(i,low=1) = WaterLily.slice(dims,i,j,low)
         R = CartesianIndices(ntuple(k -> k==j ? (3:3) : (k+1:dims[k]-1), D)) # a different range in each dimension, as `slice_u` in BiotSavartBCs
         for S ∈ (R,(sl(i,low) for i ∈ (1,2,dims[j]) for low ∈ (1,2))...) # a face holds the cells of its slice, in order
-            F = WaterLily.face(S,j)
-            @test size(F)==size(S)[1:D .!= j] && vec(collect(F))==vec(S) && all(f->marked(dims,F,f)==marks(dims,S),arrays)
+            F = @inferred WaterLily.face(S,j)
+            @test size(F)==size(S)[1:D .!= j] && eltype(F)==CartesianIndex{D} && vec(collect(F))==vec(S) && all(f->marked(dims,F,f)==marks(dims,S),arrays)
         end
+        @test_throws ArgumentError WaterLily.face(CartesianIndices(dims),j) # not one cell thick in j
     end
 
     for f ∈ arrays
