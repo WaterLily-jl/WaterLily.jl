@@ -26,6 +26,17 @@ import WaterLily: ×
         @test GPUArrays.@allowscalar p[J]==sqrt(sum(abs2,ω))
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test GPUArrays.@allowscalar p[J]≈ω[1]
+        # ω at the cell centre for quadratic fields: catches sign, scale, component and location (edge) errors
+        u2 = zeros(8,8,2) |> f; apply!((i,x)-> i==1 ? -x[2]^2 : x[1]^2, u2) # ω = 2(x+y)
+        p2 = zeros(8,8) |> f; @inside p2[I] = WaterLily.ω(I,u2)
+        r2 = zeros(8,8) |> f; apply!(x->2(x[1]+x[2]), r2)
+        @test Array(p2)[2:7,2:7] ≈ Array(r2)[2:7,2:7]
+        u3 = zeros(8,8,8,3) |> f; apply!((i,x)->x[(i+1)%3+1]^2, u3) # u = (z²,x²,y²), ω = 2(y,z,x)
+        p3,r3 = zeros(8,8,8) |> f, zeros(8,8,8) |> f
+        @test all(1:3) do i
+            @inside p3[I] = WaterLily.ω(I,u3)[i]; apply!(x->2x[i%3+1], r3)
+            Array(p3)[2:7,2:7,2:7] ≈ Array(r3)[2:7,2:7,2:7]
+        end
         # test helicity
         u_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[1] : 0.0, u_h)
         ω_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[2]-0.5 + 1 : 0.0, ω_h)
