@@ -170,10 +170,10 @@ Current flow time.
 """
 time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
-function BDIM!(a::AbstractFlow)
-    dt = a.Δt[end]
+function BDIM!(a::AbstractFlow,s=1) # `s` scales the new velocity
+    dt = a.Δt[end]; s = eltype(a.u)(s)
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
-    @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
+    @loop a.u[Ii] = s*(a.u[Ii]+(μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii])) over Ii ∈ inside_u(size(a.p))
 end
 
 """
@@ -200,7 +200,7 @@ function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
     accelerate!(a.f,t,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5)
+    BDIM!(a,0.5)
 end
 function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
     s = T(scale)
