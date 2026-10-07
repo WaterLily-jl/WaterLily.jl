@@ -16,6 +16,21 @@
     sym = [:a, :b, :c]
     @test WaterLily.joinsymtype(sym,[:A,:B,:C]) == Expr[:(a::A), :(b::B), :(c::C)]
 
+    marked(dims,R,f) = (a = zeros(Float32,dims) |> f; S = R isa Vector ? f(R) : R; WaterLily.@loop a[X] += 1 over X ∈ S; Array(a)) # @loop on arrays f
+    marks(dims,R) = (a = zeros(Float32,dims); foreach(X->a[X]+=1,R); a) # reference on the CPU
+    for f ∈ arrays, R ∈ ([CartesianIndex(2,3),CartesianIndex(5,1)],CartesianIndices((1:2:7,2:3))) # a vector and a stepped range
+        @test marked((7,9),R,f)==marks((7,9),R)
+    end
+    for dims ∈ ((7,9),(5,6,8)), j ∈ 1:length(dims)
+        D = length(dims); sl(i,low=1) = WaterLily.slice(dims,i,j,low)
+        R = CartesianIndices(ntuple(k -> k==j ? (3:3) : (k+1:dims[k]-1), D)) # a different range in each dimension, as `slice_u` in BiotSavartBCs
+        for S ∈ (R,(sl(i,low) for i ∈ (1,2,dims[j]) for low ∈ (1,2))...) # a face holds the cells of its slice, in order
+            F = @inferred WaterLily.face(S,j)
+            @test size(F)==size(S)[1:D .!= j] && eltype(F)==CartesianIndex{D} && vec(collect(F))==vec(S) && all(f->marked(dims,F,f)==marks(dims,S),arrays)
+        end
+        @test_throws ArgumentError WaterLily.face(CartesianIndices(dims),j) # not one cell thick in j
+    end
+
     for f ∈ arrays
         Ng, D, U = (6, 6), 2, (1.0, 0.5)
         u = rand(Ng..., D) |> f # vector

@@ -107,20 +107,24 @@ For example
 
 becomes
 
-    @inbounds @simd for I ∈ R
+    @inbounds @simd for J ∈ CartesianIndices(R)
+        I = R[J]
         @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
 
 on serial execution, or
 
-    @kernel function kern(a,i,@Const(I0))
-        I ∈ @index(Global,Cartesian)+I0
+    @kernel function kern(a,i,R)
+        I = R[@index(Global,Cartesian)]
         @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
-    kern(get_backend(a),64)(a,i,R[1]-oneunit(R[1]),ndrange=size(R))
+    kern(get_backend(a),64)(a,i,R,ndrange=size(R))
 
 when multi-threading on CPU or using CuArrays.
 Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
+
+`R` is any array, such as a `CartesianIndices`, a [`face`](@ref) or a vector on the same device as `a`,
+and `I` takes its values.
 """
 macro loop(args...)
     ex,_,itr = args
@@ -130,23 +134,26 @@ macro loop(args...)
     setdiff!(sym,[I]) # don't want to pass I as an argument
     symT = [gensym() for _ in 1:length(sym)] # generate a list of types for each symbol
     symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
-    @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
+    @gensym(kern, kern_, R_, J_) # generate unique kernel function names for serial and KA execution, and the range and launch index
     @static if backend == "KernelAbstractions"
         return quote
-            @kernel function $kern_($(symWtypes...),@Const(I0)) where {$(symT...)} # replace composite arguments
-                $I = @index(Global,Cartesian)
-                $I += I0
+            @kernel function $kern_($(symWtypes...),$R_) where {$(symT...)} # replace composite arguments
+                $J_ = @index(Global,Cartesian)
+                $I = @inbounds $R_[$J_] # the range gives the cell index
                 @fastmath @inbounds $ex
             end
             function $kern($kern_,$(symWtypes...)) where {$(symT...)} # kernel passed as argument: capturing it would box it
-                $kern_(get_backend($(rep(sym[1]))),64)($(rep.(sym)...),$R[1]-oneunit($R[1]),ndrange=size($R))
+                $R_ = $R
+                $kern_(get_backend($(rep(sym[1]))),64)($(rep.(sym)...),$R_,ndrange=size($R_))
             end
             $kern($kern_,$(sym...))
         end |> esc
     else # backend == "SIMD"
         return quote
             function $kern($(symWtypes...)) where {$(symT...)}
-                @inbounds @simd for $I ∈ $R # @inbounds need for @simd vectorization
+                $R_ = $R
+                @inbounds @simd for $J_ ∈ CartesianIndices($R_) # @inbounds need for @simd vectorization, CartesianIndices for nested loops over any range
+                    $I = $R_[$J_]
                     @fastmath @inbounds $ex
                 end
             end
@@ -189,6 +196,25 @@ function slice(dims::NTuple{N},i,j,low=1) where N
     CartesianIndices(ntuple( k-> k==j ? (i:i) : (low:dims[k]), N))
 end
 
+# `R` with `f` applied on indexing, as MappedArrays.mappedarray (renamed to not clash with it)
+struct MappedArr{T,N,F,C<:AbstractArray{<:Any,N}} <: AbstractArray{T,N}
+    f::F; R::C
+end
+MappedArr(f,R) = MappedArr{Base.promote_op(f,eltype(R)),ndims(R),typeof(f),typeof(R)}(f,R)
+Base.size(M::MappedArr) = size(M.R)
+Base.@propagate_inbounds Base.getindex(M::MappedArr{T,N},J::Vararg{Int,N}) where {T,N} = M.f(M.R[J...])
+insert(J::CartesianIndex{M},i,j) where M = CI(ntuple(k -> k<j ? J[k] : k==j ? i : J[k-1], M+1)) # put index i back in dimension j
+"""
+    face(R,j)
+    face(dims,i,j,low=1) = face(slice(dims,i,j,low),j)
+
+The cells of a range `R` one cell thick in dimension `j` (such as a `slice`), as a `MappedArr` over its
+other dimensions. `@loop` launches over those, so the 64-thread workgroups lie along the face, also when
+it is normal to `j=1`.
+"""
+face(R::CartesianIndices{N},j) where N = (i=only(R.indices[j]); MappedArr(J->insert(J,i,j),CartesianIndices(ntuple(k -> R.indices[k<j ? k : k+1], N-1))))
+face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
+
 """
     BC!(a,U,saveexit=false,perdir=(),t=0)
 
@@ -206,17 +232,17 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
-            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ slice(N,1,j)
-            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ slice(N,N[j],j)
+            @loop a[I,i] = a[CIj(j,I,N[j]-1),i] over I ∈ face(N,1,j)
+            @loop a[I,i] = a[CIj(j,I,2),i] over I ∈ face(N,N[j],j)
         else
             if i==j # Normal direction, Dirichlet
                 for s ∈ (1,2)
-                    @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ slice(N,s,j)
+                    @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ face(N,s,j)
                 end
-                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ slice(N,N[j],j)) # overwrite exit
+                (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ face(N,N[j],j)) # overwrite exit
             else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I),eltype(a)),t) over I ∈ slice(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I),eltype(a)),t) over I ∈ slice(N,N[j],j)
+                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I),eltype(a)),t) over I ∈ face(N,1,j)
+                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I),eltype(a)),t) over I ∈ face(N,N[j],j)
             end
         end
     end
@@ -231,9 +257,9 @@ function exitBC!(u,u⁰,Δt)
     N,_ = size_u(u)
     exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
     U = sum(@view(u[slice(N.-1,2,1,2),1]))/length(exitR) # inflow mass flux
-    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
+    @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ face(exitR,1)
     ∮u = sum(@view(u[exitR,1]))/length(exitR)-U   # mass flux imbalance
-    @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
+    @loop u[I,1] -= ∮u over I ∈ face(exitR,1)     # correct flux
 end
 """
     perBC!(a,perdir)
@@ -242,8 +268,8 @@ Apply periodic conditions to the ghost cells of a _scalar_ field.
 """
 perBC!(a,::Tuple{}) = nothing
 perBC!(a, perdir, N = size(a)) = for j ∈ perdir
-    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ slice(N,1,j)
-    @loop a[I] = a[CIj(j,I,2)] over I ∈ slice(N,N[j],j)
+    @loop a[I] = a[CIj(j,I,N[j]-1)] over I ∈ face(N,1,j)
+    @loop a[I] = a[CIj(j,I,2)] over I ∈ face(N,N[j],j)
 end
 
 using ForwardDiff
