@@ -93,10 +93,10 @@ without the corrections, no solution exists.
 """
 function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
-    @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
+    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x)) # a typed zero, so the SIMD loop vectorizes
     s = sum(p.r)/count(!iszero,p.iD) # only solved rows absorb the imbalance
     abs(s) <= 2eps(eltype(s)) && return
-    @inside p.r[I] = ifelse(p.iD[I]==0,0,p.r[I]-s)
+    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.r[I]-s)
 end
 
 function increment!(p::Poisson{T};ω=1) where {T}

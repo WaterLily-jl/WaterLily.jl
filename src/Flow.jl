@@ -5,10 +5,12 @@
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @fastmath cds(u,c,d) = (c+d)/2
 
-@inline ϕu(a,I,f,u,λ) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuP(a,Ip,I,f,u,λ) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuL(a,I,f,u,λ) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuR(a,I,f,u,λ) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+# Upwind fluxes. The upwind values are chosen with `ifelse` instead of a branch, so both sides are
+# read and the SIMD loops vectorize. Every value read is inside the array where these are used.
+@inline ϕu(a,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[I-2δ(a,I)],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
+@inline ϕuP(a,Ip,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[Ip],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
+@inline ϕuL(a,I,f,u,λ) = @inbounds u*ifelse(u>0,ϕ(a,I,f),λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)]))
+@inline ϕuR(a,I,f,u,λ) = @inbounds u*ifelse(u<0,ϕ(a,I,f),λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]))
 
 @fastmath @inline function div(I::CartesianIndex{m},u) where {m}
     init=zero(eltype(u))
@@ -27,30 +29,36 @@ end
 @fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
-    r .= zero(eltype(r))
+    fill!(r,zero(eltype(r)))
     N,n = size_u(u)
-    for i ∈ 1:n, j ∈ 1:n
-        # if it is periodic direction
-        tagper = (j in perdir)
-        # treatment for bottom boundary with BCs
-        lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
-        # inner cells
-        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
-               r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
-        # treatment for upper boundary with BCs
-        upperBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
+    for j ∈ 1:n
+        for i ∈ 1:n # inner cells
+            @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
+                   r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
+            @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
+        end
+        boundaries!(r,u,ν,j,N,λ,Val{j in perdir}())
     end
 end
 
-# Neumann BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ face(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ face(N,N[j],j,2)
-
-# Periodic BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ face(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ face(N,N[j],j,2)
+# The fluxes on both domain boundaries normal to `j`, for every component, in one loop over the cells next to the lower one
+function boundaries!(r,u,ν,j,N,λ,per)
+    R = CartesianIndices((ntuple(k -> k==j ? (2:2) : (2:N[k]), length(N))...,1:length(N)))
+    Nj = N[j] # a plain number: indexing N with j in the kernel would put N in GPU local memory
+    @loop boundary!(r,Ii,u,ν,j,Nj,λ,per) over Ii ∈ face(R,j)
+end
+# Neumann BC: one-sided fluxes on the lower face of cell 2 and the upper face of cell N-1
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{false})
+    I,i,IN = Base.front(Ii),last(Ii),CIj(j,Ii,N)
+    @inbounds r[Ii] += ϕuL(j,Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
+    @inbounds r[CIj(j,Ii,N-1)] -= ϕuR(j,IN,u,ϕ(i,CI(Base.front(IN),j),u),λ) - ν*∂(j,IN,u)
+end
+# Periodic BC: the flux on the lower face of cell 2 is also the flux on the upper face of cell N-1
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{true})
+    I,i = Base.front(Ii),last(Ii)
+    Φ = ϕuP(j,CIj(j,Ii,N-2),Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
+    @inbounds r[Ii] += Φ; @inbounds r[CIj(j,Ii,N-1)] -= Φ
+end
 
 """
     accelerate!(r,t,g,U)
@@ -170,10 +178,10 @@ Current flow time.
 """
 time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
-function BDIM!(a::AbstractFlow)
-    dt = a.Δt[end]
+function BDIM!(a::AbstractFlow,s=1) # `s` scales the new velocity
+    dt = a.Δt[end]; s = eltype(a.u)(s)
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
-    @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
+    @loop a.u[Ii] = s*(a.u[Ii]+(μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii])) over Ii ∈ inside_u(size(a.p))
 end
 
 """
@@ -200,7 +208,7 @@ function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
     accelerate!(a.f,t,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5)
+    BDIM!(a,0.5)
 end
 function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
     s = T(scale)
