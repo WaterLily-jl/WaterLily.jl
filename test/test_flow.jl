@@ -28,10 +28,10 @@
     ϕuP = WaterLily.ϕuP
     λ = WaterLily.quick
 
-    I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,quick);
-    I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,quick);
+    I = CartesianIndex(3); # 1D check, positive flux (both upwind stencils are read, so f has a cell on each side)
+    @test ϕu(1,I,[0.,0.5,2.,0.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.,0.],1,quick);
+    I = CartesianIndex(3); # 1D check, negative flux
+    @test ϕu(1,I,[0.,0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.,0.5,2.],-1,quick);
 
     # check for periodic flux
     I=CartesianIndex(3);Ip=I-2δ(1,I);
@@ -81,6 +81,15 @@
         mom_step!(a, MultiLevelPoisson(a.p,a.μ₀,a.σ))
         @test L₂(a.u[:,:,1].-U[1]) < 2e-5
         @test L₂(a.u[:,:,2].-U[2]) < 1e-5
+    end
+end
+
+@testset "conv_diff! against the reference loops" begin # the upwind values are chosen with ifelse and each direction has one boundary loop
+    for f ∈ arrays, dims ∈ ((12,10),(12,10,8)), λ ∈ (quick,WaterLily.vanLeer,cds), m ∈ 0:2^length(dims)-1
+        D = length(dims); perdir = Tuple(j for j ∈ 1:D if isodd(m>>(j-1)))
+        u = rand(dims...,D) .- 0.5; r = fill(7.,dims...,D); RefLoops.conv_diff!(r,u,zeros(dims),λ;ν=0.01,perdir)
+        r̃ = f(fill(7.,dims...,D)); WaterLily.conv_diff!(r̃,f(u),f(zeros(dims)),λ;ν=0.01,perdir) # every cell is written
+        @test Array(r̃) ≈ r
     end
 end
 
