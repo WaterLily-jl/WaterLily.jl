@@ -229,6 +229,7 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
 end
 
 function CFL(a::AbstractFlow;Δt_max=10)
+    fill!(a.σ,0) # the ghosts hold scratch values (such as the fluxes of conv_diff!)
     @inside a.σ[I] = flux_out(I,a.u)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end

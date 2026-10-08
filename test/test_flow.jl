@@ -84,6 +84,15 @@
     end
 end
 
+@testset "CFL ignores the ghosts of σ" begin # they hold scratch values, such as the fluxes of conv_diff!
+    for f ∈ arrays
+        sim = Simulation((16,16),(1,0),8;U=1,ν=0.01,mem=f,T=Float32); sim_step!(sim)
+        Δt = WaterLily.CFL(sim.flow)
+        sim.flow.σ .= 1f6 # as large scratch values in the ghosts
+        @test WaterLily.CFL(sim.flow) == Δt
+    end
+end
+
 @testset "Convection scheme selection" begin
     # λ is chosen once at Simulation/Flow construction (stored as flow.λ)
     nonuniform(i,x) = i==1 ? sinpi(x[1]/8) : 0*x[1]   # gradients so quick ≠ cds
