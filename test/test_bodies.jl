@@ -55,7 +55,7 @@ end
     for T ∈ (Float32,Float64)
         # initialize a rigid body
         sdf(x,t) = sqrt(sum(abs2,x))-1
-        body = AutoBody(sdf, RigidMap(SA{T}[0,0],T(0)))
+        body = AutoBody(sdf, RigidMap(SA{T}[0,0]))
         # check sdf
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[0,0]))
         # rotate and add linear velocity
@@ -66,7 +66,7 @@ end
         body = setmap(body;ω=T(0.1))
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,1.5*0.1]))
         # 3D rigid body
-        body3D = AutoBody(sdf, RigidMap(SA{T}[0,0,0],SA{T}[0,0,0];xₚ=SA{T}[-.5,0,0]))
+        body3D = AutoBody(sdf, RigidMap(SA{T}[0,0,0];xₚ=SA{T}[-.5,0,0]))
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
         # test rotations about x, y, and z
         # rotate by 180 degrees about x-axis, should not change

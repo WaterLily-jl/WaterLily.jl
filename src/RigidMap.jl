@@ -1,8 +1,8 @@
 """
-    RigidMap(center, θ) <: AbstractBody
+    RigidMap(center, θ=0) <: AbstractBody
 
   - `x₀::SVector{D}`: coordinate of the center of the body
-  - `θ::Union{Real, SVector{3}}`: rotation (single angle in 2D, and in 3D these are the rotation angle around
+  - `θ::Union{Real, SVector{3}}=0`: rotation (single angle in 2D, and in 3D these are the rotation angle around
                                   the x, y, and z axes respectively.)
   - `V::SVector{D}=zero(center)`: linear velocity of the center
   - `xₚ::SVector{D}=zero(center)`: offset of the pivot point compared to center
@@ -33,7 +33,9 @@ struct RigidMap{A<:AbstractVector,R,M} <: Function
     ω  :: R   # angular velocity (scalar in 2D, vector in 3D)
     R̂  :: M   # rotation matrix (precomputed for efficiency)
 end
-RigidMap(x₀::SVector,θ;xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x₀, θ, xₚ, V, ω, rotation(θ))
+RigidMap(x₀::SVector,θ=no_rotation(x₀);xₚ=zero(x₀),V=zero(x₀),ω=zero(θ)) = RigidMap(x₀, θ, xₚ, V, ω, rotation(θ))
+no_rotation(::SVector{2,T}) where T = zero(T)
+no_rotation(x₀::SVector{3}) = zero(x₀)
 
 # this is the function map(x,t) AND derivative(t->map(x,t),t)
 (m::RigidMap)(x::SVector,t=0) = m.R̂*(x-m.x₀-m.xₚ)+m.xₚ
