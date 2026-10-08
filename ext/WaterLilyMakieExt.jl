@@ -9,14 +9,11 @@ import WaterLily: viz!, viz_step!, get_body, plot_body_obs!, isosurface_mesh
 const _fig_steppers = IdDict{Any, Function}()
 
 """
-    update_body!(a_cpu::Array, sim)
+    update_body!(a, sim)
 
-Measure the body SDF and update the CPU buffer array.
+Measure the body SDF into `a`.
 """
-function update_body!(a_cpu::Array, sim)
-    WaterLily.measure_sdf!(sim.flow.σ, sim.body, WaterLily.time(sim))
-    copyto!(a_cpu, ad_f(sim)(@view sim.flow.σ[inside(sim.flow.σ)]))
-end
+update_body!(a, sim) = WaterLily.measure_sdf!(a, sim.body, WaterLily.time(sim))
 
 """
     default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap=:seismic, threshhold_color=RGB(1,1,1))
@@ -35,16 +32,8 @@ function default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap
 end
 
 
-function ω2D_viz!(cpu_array, sim)
-    a = sim.flow.σ
-    WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
-    copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
-end
-function ω3D_viz!(cpu_array, sim)
-    a = sim.flow.σ
-    WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
-end
+ω2D_viz!(a, sim) = WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
+ω3D_viz!(a, sim) = WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
 """
 Default visualization function for 2D/3D simulations
 """
@@ -109,20 +98,15 @@ plot_σ_obs!(ax, σ::Observable{<:GeometryBasics.Mesh}; color=RGBf(0.35,0.55,0.8
 
 General visualization routine to simulate and render the flow field using Makie.
 Works for both 2D and 3D simulations. For 3D simulations, the user can choose to render 3D volumetric scalar data, or a 2D slice.
-Users ca pass a function `f` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
+Users can pass a function `f(a, sim)` that fills the scalar field `a` (`sim.flow.σ`) to plot; `viz!` copies it to the CPU.
 The default visualization function returns the vorticity.
-The interface of `f` must follow `f(arr::Array, sim::AbstractSimulation)`, where `arr` is a CPU array.
-For example, to visualize vorticity magnitude:
+For example, to visualize the λ₂ criterion:
 ```
-function f(arr, sim)
-    a = sim.flow.σ
-    WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
-    copyto!(arr, a[inside(a)]) # copy to CPU
-end
+f(a, sim) = WaterLily.@inside a[I] = WaterLily.λ₂(I,sim.flow.u)
 ```
 Keyword arguments:
 
-    - `f::Function`: Visualization function with interface f(arr::Array, sim::AbstractSimulation), where `arr` is the plotted data.
+    - `f::Function`: Visualization function with interface `f(a, sim::AbstractSimulation)`, filling the plotted field `a`.
     - `duration::Number`: Simulation end time.
     - `remeasure::Bool`: Update the body position.
     - `verbose::Bool`: Print simulation information.
@@ -185,14 +169,18 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     pathlines = !isnothing(WaterLily._pathlines_viz_hook[])
     update_render_fn = nothing  # populated below when pathlines=true
 
+    function update_dat!(g!) # fill sim.flow.σ with g! and copy it to the CPU
+        g!(sim.flow.σ, sim)
+        copyto!(dat, ad_f(sim)(@view sim.flow.σ[inside(sim.flow.σ)]))
+    end
     function update_data()
         if !pathlines
-            f(dat, sim)
+            update_dat!(f)
             mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym)
             σ[] = σ_buf
         end
         if body && remeasure
-            update_body!(dat, sim)
+            update_dat!(update_body!)
             mirror_sym!(σb_buf, WaterLily.squeeze(@view dat[CIs]), sym)
             σb_obs[] = get_body(σb_buf, Val{body2mesh}())
         end
@@ -241,7 +229,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         fig, ax, update_render_fn = WaterLily._pathlines_viz_hook[](sim; kwargs...)
         new_fig = true
     else
-        f(dat, sim)
+        update_dat!(f)
         slice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
         σ_buf = similar(dat, mirror_size(slice0, sym))
         mirror_sym!(σ_buf, slice0, sym)
@@ -271,7 +259,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     end
 
     if body
-        update_body!(dat, sim)
+        update_dat!(update_body!)
         bslice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
         σb_buf = similar(dat, mirror_size(bslice0, sym))
         mirror_sym!(σb_buf, bslice0, sym)
@@ -326,7 +314,7 @@ end
 function viz!(sim, a::AbstractArray; kwargs...)
     kwargs = remove_kwargs(:f, :duration; kwargs...) # do not allow co-visualization (is not a simulation)
     @assert size(a) == size(sim.flow.σ) "Visualized array needs to be a scalar and same size as Simulation."
-    f(cpu_array, sim) = copyto!(cpu_array, Array(a[inside(a)]))
+    f(b, sim) = copyto!(b, a)
     viz!(sim; f, duration=nothing, kwargs...)
 end
 
