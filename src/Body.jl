@@ -106,3 +106,5 @@ function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T
     body.op(measure(body.a,x,t;fastd²),measure(body.b,x,t;fastd²)) # can't mapreduce within GPU kernel
 end
 measure(body::SetBody{typeof(-)},x::AbstractVector{T},t;fastd²=T(Inf)) where T = ((d,n,V) = measure(body.a,x,t;fastd²); (-d,-n,V))
+sdf(body::SetBody,x,t=0;kwargs...) = body.op(sdf(body.a,x,t;kwargs...),sdf(body.b,x,t;kwargs...))
+sdf(body::SetBody{typeof(-)},x,t=0;kwargs...) = -sdf(body.a,x,t;kwargs...)
