@@ -45,7 +45,7 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
             end
         end
     end
-    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
+    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ bbox(body,inside(a.p))
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
 end
@@ -65,6 +65,8 @@ end
 Measure only the distance. Defaults to fastd²=0 for quick evaluation.
 """
 sdf(body::AbstractBody,x,t=0;fastd²=0) = measure(body,x,t;fastd²)[1]
+
+@inline bbox(body::AbstractBody,R) = R
 
 """
     measure_sdf!(a::AbstractArray, body::AbstractBody, t=0; fastd²=0)
@@ -106,5 +108,3 @@ function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T
     body.op(measure(body.a,x,t;fastd²),measure(body.b,x,t;fastd²)) # can't mapreduce within GPU kernel
 end
 measure(body::SetBody{typeof(-)},x::AbstractVector{T},t;fastd²=T(Inf)) where T = ((d,n,V) = measure(body.a,x,t;fastd²); (-d,-n,V))
-sdf(body::SetBody,x,t=0;kwargs...) = body.op(sdf(body.a,x,t;kwargs...),sdf(body.b,x,t;kwargs...))
-sdf(body::SetBody{typeof(-)},x,t=0;kwargs...) = -sdf(body.a,x,t;kwargs...)
