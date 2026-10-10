@@ -155,6 +155,7 @@ end
 Rate-of-strain tensor.
 """
 @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
+@inline Snds(I,u,body,t) = (n = nds(body,loc(0,I,eltype(u)),t); iszero(n) ? n : S(I,u)*n)
 
 """
     viscous_force(sim)
@@ -165,7 +166,7 @@ viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0)
     df .= zero(eltype(u))
-    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,eltype(u)),t) over I ∈ inside_u(u)
+    @loop df[I,:] .= -2ν*Snds(I,u,body,t) over I ∈ inside_u(u)
     sumdims(df)
 end
 
@@ -175,6 +176,7 @@ end
 Total stress tensor (pressure and viscous) acting on the body surface, so that `τ⋅nds` is the force density.
 """
 @inline τ(I::CartesianIndex{D},p,u,ν) where D = (s = S(I,u); p[I]*one(s)-2ν*s)
+@inline τnds(I,p,u,ν,body,t) = (n = nds(body,loc(0,I,eltype(p)),t); iszero(n) ? n : τ(I,p,u,ν)*n)
 
 """
     total_force(sim)
@@ -185,7 +187,7 @@ total_force(sim) = total_force(sim.flow,sim.body)
 total_force(flow,body) = total_force(flow.p,flow.u,flow.ν,flow.f,body,time(flow))
 function total_force(p,u,ν,df,body,t=0)
     df .= zero(eltype(p))
-    @loop df[I,:] .= τ(I,p,u,ν)*nds(body,loc(0,I,eltype(p)),t) over I ∈ inside(p)
+    @loop df[I,:] .= τnds(I,p,u,ν,body,t) over I ∈ inside(p)
     sumdims(df)
 end
 
@@ -214,7 +216,7 @@ viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
 viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_moment(x₀,u,ν,df,body,t=0)
     df .= zero(eltype(u)); x₀ = eltype(u).(x₀)
-    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,S(I,u)*nds(body,loc(0,I,eltype(u)),t)) over I ∈ inside_u(u)
+    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t)) over I ∈ inside_u(u)
     sumdims(df)
 end
 
@@ -227,7 +229,7 @@ total_moment(x₀,sim) = total_moment(x₀,sim.flow,sim.body)
 total_moment(x₀,flow,body) = total_moment(x₀,flow.p,flow.u,flow.ν,flow.f,body,time(flow))
 function total_moment(x₀,p,u,ν,df,body,t=0)
     df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
-    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τ(I,p,u,ν)*nds(body,loc(0,I,eltype(p)),t)) over I ∈ inside(p)
+    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t)) over I ∈ inside(p)
     sumdims(df)
 end
 
@@ -245,8 +247,8 @@ function total_force_and_moment(x₀,p,u,ν,df,dm,body,t=0)
     sumdims(df), sumdims(dm)
 end
 @inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t)
-    x = loc(0,I,eltype(p)); F = τ(I,p,u,ν)*nds(body,x,t)
-    df[I,:] .= F; dm[I,:] .= cross(x-x₀,F)
+    F = τnds(I,p,u,ν,body,t)
+    df[I,:] .= F; dm[I,:] .= cross(loc(0,I,eltype(p))-x₀,F)
 end
 
 """
