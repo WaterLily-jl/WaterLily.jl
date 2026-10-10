@@ -130,13 +130,11 @@ BDIM-masked surface normal.
 end
 
 """
-    sumtype(a)
+    sumdims(df)
 
-Accumulation type for global sums over `a`: at least `Float64` to limit round-off, unless
-the backend of `a` has no `Float64` support (e.g. Metal), in which case `eltype(a)` is used.
+Sum the workspace `df` over the domain in its own element type, returning one value per component.
 """
-sumtype(a::AbstractArray{T}) where T = sumtype(get_backend(a),T)
-sumtype(backend,T) = supports_float64(backend) ? promote_type(Float64,T) : T
+sumdims(df) = sum(df,dims=ntuple(i->i,ndims(df)-1))[:] |> Array
 
 """
     pressure_force(sim)
@@ -146,10 +144,9 @@ Compute the pressure force on an immersed body.
 pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
 function pressure_force(p,df,body,t=0)
-    Tp = eltype(p); To = sumtype(p)
-    df .= zero(Tp)
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    df .= zero(eltype(p))
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ bbox(body,inside(p))
+    sumdims(df)
 end
 
 """
@@ -158,6 +155,7 @@ end
 Rate-of-strain tensor.
 """
 @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
+@inline Snds(I,u,body,t) = (n = nds(body,loc(0,I,eltype(u)),t); iszero(n) ? n : S(I,u)*n)
 
 """
     viscous_force(sim)
@@ -167,18 +165,31 @@ Compute the viscous force on an immersed body.
 viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0)
-    Tu = eltype(u); To = sumtype(u)
-    df .= zero(Tu)
-    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,eltype(u)),t) over I ∈ inside_u(u)
-    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    df .= zero(eltype(u))
+    @loop df[I,:] .= -2ν*Snds(I,u,body,t) over I ∈ bbox(body,inside_u(u))
+    sumdims(df)
 end
+
+"""
+    τ(I,p,u,ν)
+
+Total stress tensor (pressure and viscous) acting on the body surface, so that `τ⋅nds` is the force density.
+"""
+@inline τ(I::CartesianIndex{D},p,u,ν) where D = (s = S(I,u); p[I]*one(s)-2ν*s)
+@inline τnds(I,p,u,ν,body,t) = (n = nds(body,loc(0,I,eltype(p)),t); iszero(n) ? n : τ(I,p,u,ν)*n)
 
 """
     total_force(sim)
 
 Compute the total force on an immersed body.
 """
-total_force(sim) = pressure_force(sim) .+ viscous_force(sim)
+total_force(sim) = total_force(sim.flow,sim.body)
+total_force(flow,body) = total_force(flow.p,flow.u,flow.ν,flow.f,body,time(flow))
+function total_force(p,u,ν,df,body,t=0)
+    df .= zero(eltype(p))
+    @loop df[I,:] .= τnds(I,p,u,ν,body,t) over I ∈ bbox(body,inside(p))
+    sumdims(df)
+end
 
 using LinearAlgebra: cross
 """
@@ -190,10 +201,9 @@ Computes the pressure moment on an immersed body relative to point x₀.
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
 function pressure_moment(x₀,p,df,body,t=0)
-    Tp = eltype(p); To = sumtype(p)
-    df .= zero(Tp); x₀ = Tp.(x₀)
-    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
+    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ bbox(body,inside(p))
+    sumdims(df)
 end
 
 """
@@ -205,10 +215,9 @@ Computes the viscous moment on an immersed body relative to point x₀.
 viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
 viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_moment(x₀,u,ν,df,body,t=0)
-    Tu = eltype(u); To = sumtype(u)
-    df .= zero(Tu); x₀ = Tu.(x₀)
-    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,S(I,u)*nds(body,loc(0,I,eltype(u)),t)) over I ∈ inside_u(u)
-    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    df .= zero(eltype(u)); x₀ = eltype(u).(x₀)
+    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t)) over I ∈ bbox(body,inside_u(u))
+    sumdims(df)
 end
 
 """
@@ -216,8 +225,31 @@ end
 
 Computes the total (pressure + viscous) moment on an immersed body relative to point x₀.
 """
-total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
+total_moment(x₀,sim) = total_moment(x₀,sim.flow,sim.body)
+total_moment(x₀,flow,body) = total_moment(x₀,flow.p,flow.u,flow.ν,flow.f,body,time(flow))
+function total_moment(x₀,p,u,ν,df,body,t=0)
+    df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
+    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t)) over I ∈ bbox(body,inside(p))
+    sumdims(df)
+end
 
+"""
+    total_force_and_moment(x₀,sim)
+
+Computes the total force and the total moment relative to point x₀ in a single pass over the body.
+The moment is accumulated in `flow.u⁰`, which is free between time steps.
+"""
+total_force_and_moment(x₀,sim) = total_force_and_moment(x₀,sim.flow,sim.body)
+total_force_and_moment(x₀,flow,body) = total_force_and_moment(x₀,flow.p,flow.u,flow.ν,flow.f,flow.u⁰,body,time(flow))
+function total_force_and_moment(x₀,p,u,ν,df,dm,body,t=0)
+    df .= zero(eltype(p)); dm .= zero(eltype(p)); x₀ = eltype(p).(x₀)
+    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t) over I ∈ bbox(body,inside(p))
+    sumdims(df), sumdims(dm)
+end
+@inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t)
+    F = τnds(I,p,u,ν,body,t)
+    df[I,:] .= F; dm[I,:] .= cross(loc(0,I,eltype(p))-x₀,F)
+end
 
 """
     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
