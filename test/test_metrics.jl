@@ -81,6 +81,12 @@ import WaterLily: ×
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
         @test WaterLily.pressure_moment(SVector{2,Float64}(N/2,N/2),p₂,df₂,body,0)[1] ≈ 0 # no moment in hydrostatic pressure
         @test all(WaterLily.pressure_moment(SVector{3,Float64}(N/2,N/2,N/2),p₃,df₃,body,0) .≈ SA[0 0 0]) # with a 3D field, 3D moments
+        # fused force and moment
+        sim = Simulation((16,16,16),(1,0,0),8;body=AutoBody((x,t)->√sum(abs2,x.-8)-4),mem=f)
+        copyto!(sim.flow.p,rand(Float32,size(sim.flow.p))); copyto!(sim.flow.u,rand(Float32,size(sim.flow.u)))
+        x₀ = SA[4f0,8,8]; F,M = WaterLily.total_force_and_moment(x₀,sim)
+        @test F ≈ WaterLily.pressure_force(sim)+WaterLily.viscous_force(sim) ≈ WaterLily.total_force(sim)
+        @test M ≈ WaterLily.pressure_moment(x₀,sim)+WaterLily.viscous_moment(x₀,sim) ≈ WaterLily.total_moment(x₀,sim)
         # temporal averages
         T = Float32
         sim = make_bl_flow(; T, mem=f)

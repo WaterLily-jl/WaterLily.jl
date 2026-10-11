@@ -126,11 +126,11 @@ end
 @inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
     k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
     I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
-    x[I] = gauss(I,r,L,iD,x)
+    k < size(x,d) && (x[I] = gauss(I,r,L,iD,x)) # with an odd size, the last k is a ghost for one colour
 end
 
 @inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
-    return CartesianIndices(ntuple( i-> i==N ? (2:size(x,i)÷2) : (2:size(x,i)-1), N))
+    return CartesianIndices(ntuple( i-> i==N ? (2:cld(size(x,i),2)) : (2:size(x,i)-1), N)) # every interior k of both colours
 end
 
 """
