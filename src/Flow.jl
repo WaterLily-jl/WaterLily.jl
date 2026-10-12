@@ -157,7 +157,7 @@ Integrate the `Flow` one time step using the [Boundary Data Immersion Method](ht
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
 """
 @fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
-    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+    a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
@@ -176,10 +176,10 @@ Current flow time.
 """
 time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
-function BDIM!(a::AbstractFlow,s=1) # `s` scales the new velocity
-    dt = a.Δt[end]; s = eltype(a.u)(s)
+function BDIM!(a::AbstractFlow,s=1)
+    dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
-    @loop a.u[Ii] = s*(a.u[Ii]+(μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii])) over Ii ∈ inside_u(size(a.p))
+    @loop a.u[Ii] = (a.u[Ii]+(μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii]))/s over Ii ∈ inside_u(size(a.p))
 end
 
 """
@@ -191,7 +191,7 @@ by `mom_project!`.
 """
 function mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u⁰,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,a.u⁰,t₀; kwargs...) # advect with u⁰ (a.u is zeroed by scale_u!)
+    udf!(a,udf,a.u⁰,t₀; kwargs...) # advect with u⁰
     accelerate!(a.f,t₀,a.g,a.uBC)
     BDIM!(a)
 end
@@ -206,12 +206,9 @@ function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
     accelerate!(a.f,t,a.g,a.uBC)
-    BDIM!(a,0.5)
+    BDIM!(a,2)
 end
-function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
-    s = T(scale)
-    @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p))
-end
+scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p)))
 
 """
     mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)

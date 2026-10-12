@@ -102,6 +102,15 @@ end
     end
 end
 
+@testset "scale_u! scales the interior velocity" begin # not used by mom_step!, kept for codes that write their own
+    for f ∈ arrays
+        flow = Flow((8,6),(1,0);mem=f,T=Float32); flow.u .= 2
+        WaterLily.scale_u!(flow,0.5); u = Array(flow.u); R = WaterLily.inside_u(size(flow.p))
+        @test all(==(1),u[R])
+        u[R] .= 2; @test all(==(2),u) # the ghosts are not scaled
+    end
+end
+
 @testset "Convection scheme selection" begin
     # λ is chosen once at Simulation/Flow construction (stored as flow.λ)
     nonuniform(i,x) = i==1 ? sinpi(x[1]/8) : 0*x[1]   # gradients so quick ≠ cds
