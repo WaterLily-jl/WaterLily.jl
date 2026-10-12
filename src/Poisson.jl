@@ -93,7 +93,7 @@ without the corrections, no solution exists.
 """
 function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
-    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x)) # a typed zero, so the SIMD loop vectorizes
+    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x))
     s = sum(p.r)/count(!iszero,p.iD) # only solved rows absorb the imbalance
     abs(s) <= 2eps(eltype(s)) && return
     @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.r[I]-s)
@@ -159,7 +159,7 @@ Apply dot product to the inner cells of two _scalar_ fields, assuming zero value
 perdot(a,b,::Tuple{}) = a⋅b
 perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
 perdot(::Backend,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
-perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...)) # no scalar indexing on GPU arrays, see also WaterLilyCUDAExt
+perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...))
 
 """
     pcg!(p::Poisson; it=6)
@@ -197,7 +197,7 @@ Squared L₂ norm of array `a` over `R`, which excludes the ghost cells by defau
 """
 L₂(a,R::CartesianIndices=inside(a)) = L₂(get_backend(a),a,R)
 L₂(backend,a,R) = sum(abs2,@inbounds(a[I]) for I ∈ R)
-L₂(::GPU,a,R) = mapreduce(abs2,+,view(a,R.indices...)) # no scalar indexing on GPU arrays
+L₂(::GPU,a,R) = mapreduce(abs2,+,view(a,R.indices...))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L₁(p::Poisson) = sum(abs,p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)

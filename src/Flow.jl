@@ -5,8 +5,6 @@
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @fastmath cds(u,c,d) = (c+d)/2
 
-# Upwind fluxes. The upwind values are chosen with `ifelse` instead of a branch, so both sides are
-# read and the SIMD loops vectorize. Every value read is inside the array where these are used.
 @inline ϕu(a,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[I-2δ(a,I)],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
 @inline ϕuP(a,Ip,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[Ip],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
 @inline ϕuL(a,I,f,u,λ) = @inbounds u*ifelse(u>0,ϕ(a,I,f),λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)]))
@@ -41,19 +39,19 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     end
 end
 
-# The fluxes on both domain boundaries normal to `j`, for every component, in one loop over the cells next to the lower one
+# Fluxes on domain boundaries normal to `j`
 function boundaries!(r,u,ν,j,N,λ,per)
     R = CartesianIndices((ntuple(k -> k==j ? (2:2) : (2:N[k]), length(N))...,1:length(N)))
-    Nj = N[j] # a plain number: indexing N with j in the kernel would put N in GPU local memory
+    Nj = N[j]
     @loop boundary!(r,Ii,u,ν,j,Nj,λ,per) over Ii ∈ face(R,j)
 end
-# Neumann BC: one-sided fluxes on the lower face of cell 2 and the upper face of cell N-1
+# Neumann BC
 @fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{false})
     I,i,IN = Base.front(Ii),last(Ii),CIj(j,Ii,N)
     @inbounds r[Ii] += ϕuL(j,Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
     @inbounds r[CIj(j,Ii,N-1)] -= ϕuR(j,IN,u,ϕ(i,CI(Base.front(IN),j),u),λ) - ν*∂(j,IN,u)
 end
-# Periodic BC: the flux on the lower face of cell 2 is also the flux on the upper face of cell N-1
+# Periodic BC
 @fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{true})
     I,i = Base.front(Ii),last(Ii)
     Φ = ϕuP(j,CIj(j,Ii,N-2),Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
@@ -218,7 +216,7 @@ end
 """
     mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
 
-Projection phase of `mom_step!`: solve the pressure Poisson equation, correct 
+Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
 in the corrector. On return `a.u` is divergence-free and BC-consistent.
 """
