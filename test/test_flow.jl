@@ -28,10 +28,10 @@
     ϕuP = WaterLily.ϕuP
     λ = WaterLily.quick
 
-    I = CartesianIndex(3); # 1D check, positive flux
-    @test ϕu(1,I,[0.,0.5,2.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],1,quick);
-    I = CartesianIndex(2); # 1D check, negative flux
-    @test ϕu(1,I,[0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.],-1,quick);
+    I = CartesianIndex(3); # 1D check, positive flux (both upwind stencils are read, so f has a cell on each side)
+    @test ϕu(1,I,[0.,0.5,2.,0.],1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.5,2.,0.],1,quick);
+    I = CartesianIndex(3); # 1D check, negative flux
+    @test ϕu(1,I,[0.,0.,0.5,2.],-1,quick)==ϕuP(1,I-2δ(1,I),I,[0.,0.,0.5,2.],-1,quick);
 
     # check for periodic flux
     I=CartesianIndex(3);Ip=I-2δ(1,I);
@@ -84,12 +84,30 @@
     end
 end
 
+@testset "conv_diff! against the reference loops" begin # the upwind values are chosen with ifelse and each direction has one boundary loop
+    for f ∈ arrays, dims ∈ ((12,10),(12,10,8)), λ ∈ (quick,WaterLily.vanLeer,cds), m ∈ 0:2^length(dims)-1
+        D = length(dims); perdir = Tuple(j for j ∈ 1:D if isodd(m>>(j-1)))
+        u = rand(dims...,D) .- 0.5; r = fill(7.,dims...,D); RefLoops.conv_diff!(r,u,zeros(dims),λ;ν=0.01,perdir)
+        r̃ = f(fill(7.,dims...,D)); WaterLily.conv_diff!(r̃,f(u),f(zeros(dims)),λ;ν=0.01,perdir) # every cell is written
+        @test Array(r̃) ≈ r
+    end
+end
+
 @testset "CFL ignores the ghosts of σ" begin # they hold scratch values, such as the fluxes of conv_diff!
     for f ∈ arrays
         sim = Simulation((16,16),(1,0),8;U=1,ν=0.01,mem=f,T=Float32); sim_step!(sim)
         Δt = WaterLily.CFL(sim.flow)
         sim.flow.σ .= 1f6 # as large scratch values in the ghosts
         @test WaterLily.CFL(sim.flow) == Δt
+    end
+end
+
+@testset "scale_u! scales the interior velocity" begin # not used by mom_step!, kept for codes that write their own
+    for f ∈ arrays
+        flow = Flow((8,6),(1,0);mem=f,T=Float32); flow.u .= 2
+        WaterLily.scale_u!(flow,0.5); u = Array(flow.u); R = WaterLily.inside_u(size(flow.p))
+        @test all(==(1),u[R])
+        u[R] .= 2; @test all(==(2),u) # the ghosts are not scaled
     end
 end
 
