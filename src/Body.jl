@@ -26,8 +26,16 @@ of size `2+ϵ` around the body. This function also fills `flow.σ` with the sign
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
 function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
-    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=T(2+ϵ)^2
-    measure_sdf!(a.σ, body, t; fastd²=d²) # measure separately to allow specialization
+    d²=T(2+ϵ)^2
+    # define kernel functions to reset and remeasure the fields
+    @inline function clear!(μ₀,μ₁,V,I)
+        for i ∈ 1:N
+            V[I,i] = zero(T); μ₀[I,i] = one(T)
+            for j ∈ 1:N
+                μ₁[I,i,j] = zero(T)
+            end
+        end
+    end
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         if d[I]^2<d²
             for i ∈ 1:N
@@ -45,6 +53,9 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
             end
         end
     end
+    # loop the kernels, measure the sdf and udpate the BCs
+    @loop clear!(a.μ₀,a.μ₁,a.V,I) over I ∈ bbox(body,inside(a.p))
+    measure_sdf!(a.σ, body, t; fastd²=d²)
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ bbox(body,inside(a.p))
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
