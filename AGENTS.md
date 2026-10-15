@@ -202,5 +202,6 @@ changes that affect packages in `NEWS.md`.
   `SKIP=no-commit-to-branch pre-commit run -a` (or `pipx run pre-commit run -a` without
   installing it). They fix most problems in place.
 - Note user-visible changes, and changes to internals that packages use, in `NEWS.md`.
+- Say in the PR description which parts an AI tool contributed (`CONTRIBUTING.md`).
 - Do not commit local settings or output (`Manifest.toml`, `LocalPreferences.toml`, simulation
   files, images, logs).
