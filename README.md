@@ -1,9 +1,11 @@
 # WaterLily.jl
 
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/dev/)
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
 [![News](https://img.shields.io/badge/release-notes-blue.svg)](NEWS.md)
 [![CI](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml)
+[![Lint](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml/badge.svg?branch=master)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml?query=branch%3Amaster)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
 [![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109748-blue.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
 
