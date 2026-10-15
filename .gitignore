@@ -33,6 +33,7 @@ LocalPreferences.toml
 !/examples/hover.gif
 !/examples/oscillating.gif
 !/.markdownlint.json
+!/.zenodo.json
 
 # tooling
 *.jl.cov
