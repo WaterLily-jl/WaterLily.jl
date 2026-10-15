@@ -141,6 +141,8 @@ WATERLILY_BACKENDS=cpu,cuda julia --project -e 'using Pkg; Pkg.test(test_args=["
   tests loop over; GPU packages are installed on demand. With a GPU, pass a small `--jobs`
   (2 works) or the workers run out of device memory. `WATERLILY_NTHREADS` (default 2) sets
   the threads per worker. The header of `test/runtests.jl` documents the rest.
+- The test dependencies are in `test/Project.toml`, which loads WaterLily from this
+  checkout. `julia --project=test` gives an environment for running test code by hand.
 - With the `"SIMD"` backend preference only `test_alloc.jl` runs (allocation checks);
   with `"KernelAbstractions"` every other set runs. CI runs both, on Julia 1.11 and 1.13,
   and Buildkite runs the GPU backends.

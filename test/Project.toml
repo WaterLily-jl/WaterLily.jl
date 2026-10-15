@@ -1,0 +1,16 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+WaterLily = "ed894a53-35f9-47f1-b17f-85db9237eebd"
+WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+
+[sources]
+WaterLily = {path = ".."}
