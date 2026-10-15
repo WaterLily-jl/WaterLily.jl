@@ -170,4 +170,4 @@ Of course, ideas, suggestions, and questions are welcome too! Please [raise an i
 ## Development goals
 
 - Multi-CPU/GPU simulations (<https://github.com/WaterLily-jl/WaterLily.jl/pull/141>)
-- Free-surface physics with ([Volume-of-Fluid](https://github.com/TzuYaoHuang/WaterLily.jl/blob/master/src/Multiphase.jl)) or other methods.
+- Free-surface physics with Volume-of-Fluid (see [InterfaceAdvection.jl](https://github.com/TzuYaoHuang/InterfaceAdvection.jl)) or other methods.
