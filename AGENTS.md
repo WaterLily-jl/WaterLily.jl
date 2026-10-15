@@ -178,7 +178,9 @@ machine; compare means as well as medians.
   `AbstractSimulation`.
 
 These packages use internal functions, so internals are API for them. Search them before
-renaming a function or changing its arguments or meaning:
+renaming a function or changing its arguments or meaning. The Downstream workflow runs the
+tests of the first three, and of ParametricBodies.jl and WaterLilyMeshBodies.jl, on every PR
+that changes `src/`, `ext/` or `Project.toml`:
 
 | Package | How it extends WaterLily |
 |---------|--------------------------|

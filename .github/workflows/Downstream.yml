@@ -1,0 +1,65 @@
+# Runs the tests of packages that build on WaterLily's internal functions against this
+# version of WaterLily, so a change that breaks them shows up in the PR. Adapted from
+# Trixi.jl's downstream workflow.
+name: Downstream
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/Downstream.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'Project.toml'
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/Downstream.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'Project.toml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.event.pull_request.draft == false
+    name: ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - LilyPad.jl
+          - BiotSavartBCs.jl
+          - WaterLilyNarrowBand.jl
+          - ParametricBodies.jl
+          - WaterLilyMeshBodies.jl
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - name: Check out the downstream package
+        # its default branch, so that a break shows up before the package's next release
+        uses: actions/checkout@v7
+        with:
+          repository: WaterLily-jl/${{ matrix.package }}
+          path: downstream
+      - name: Use this WaterLily in the downstream environment
+        shell: julia --color=yes --project=downstream {0}
+        run: |
+          using Pkg
+          Pkg.develop(PackageSpec(path="."))
+          Pkg.update()
+      - name: Run the downstream tests
+        shell: julia --color=yes --project=downstream {0}
+        run: |
+          using Pkg
+          Pkg.test(coverage=false)
+        env:
+          JULIA_NUM_THREADS: 2 # the test process inherits it; WaterLily warns when KernelAbstractions runs on one thread
