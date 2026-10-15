@@ -6,7 +6,6 @@ exclude = [
   "^https://WaterLily-jl.github.io/WaterLily.jl/stable/?$",
 
   "zenodo.org/badge/DOI/FIXME$",
-  "^https://eprints.soton.ac.uk/", # answers 401 to link checkers
   "^https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/", # badges of workflows not yet on master are 404
 ]
 
