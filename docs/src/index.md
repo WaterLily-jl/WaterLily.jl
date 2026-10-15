@@ -7,6 +7,7 @@ WaterLily
 ```
 
 ## Types Methods and Functions
+
 ```@meta
 CurrentModule = WaterLily
 ```
