@@ -26,7 +26,7 @@ GitHubActionVersionAutoUpdate: dependabot
 JuliaCompatAutoUpdate: dependabot
 JuliaIndentation: 4
 JuliaMinVersion: '1.11'
-License: MIT
+License: nothing
 LicenseCopyrightHolders: Gabriel Weymouth
 MarkdownIndentation: 2
 PackageName: WaterLily
