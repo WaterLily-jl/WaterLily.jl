@@ -29,6 +29,8 @@ If you have used WaterLily for research, please **cite us**! The [2025 paper](ht
 }
 ```
 
+The same reference is in `CITATION.bib`.
+
 ## Method/capabilities
 
 WaterLily solves the unsteady incompressible 2D or 3D [Navier-Stokes equations](https://en.wikipedia.org/wiki/Navier%E2%80%93Stokes_equations) on a Cartesian grid. The pressure Poisson equation is solved with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method. Solid boundaries are modelled using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/). The solver can run on serial CPU, multi-threaded CPU, or GPU backends.
@@ -152,6 +154,10 @@ As you can see, the 3D sphere set-up is almost identical to the 2D circle, but u
 To run on other GPUs, swap the package and the memory type: `using AMDGPU` with `mem=ROCArray`, or `using Metal` with `mem=MtlArray`. Note that Apple GPUs do not support Float64, so use `T=Float32` and make sure no Float64 value reaches the GPU kernels. This is why `sphere` casts its constants with `T(...)`, which is good practice on any GPU since it avoids mixed-precision arithmetic in the kernels. Global sums such as the force and moment integrals are accumulated in the simulation type `T`.
 
 Finally, KernelAbstractions does incur some CPU allocations for every loop, but other than this `sim_step!` is completely non-allocating. This is one reason why the speed-up improves as the size of the simulation increases.
+
+## Authors and license
+
+WaterLily.jl was originally created by Gabriel Weymouth, and has since been developed principally by Gabriel Weymouth, Bernat Font, Marin Lauber and Tzu-Yao Huang. The full list of authors is in `AUTHORS.md`. WaterLily.jl is licensed under the MIT license (see `LICENSE.md`).
 
 ## Contributing and issues
 
