@@ -32,3 +32,12 @@ LocalPreferences.toml
 !/examples/julia2024.gif
 !/examples/hover.gif
 !/examples/oscillating.gif
+!/.markdownlint.json
+
+# tooling
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+*.rej
+coverage
+node_modules
