@@ -1,0 +1,25 @@
+{
+  "access_right": "open",
+  "creators": [
+    {
+      "affiliation": "Delft University of Technology, The Netherlands",
+      "name": "Weymouth, Gabriel D."
+    },
+    {
+      "affiliation": "Delft University of Technology, The Netherlands",
+      "name": "Font, Bernat"
+    },
+    {
+      "affiliation": "Delft University of Technology, The Netherlands",
+      "name": "Lauber, Marin"
+    },
+    {
+      "affiliation": "Delft University of Technology, The Netherlands",
+      "name": "Huang, Tzu-Yao"
+    }
+  ],
+  "description": "A differentiable and backend-agnostic Julia solver for incompressible viscous flow around dynamic bodies",
+  "license": "MIT",
+  "title": "WaterLily.jl",
+  "upload_type": "software"
+}
