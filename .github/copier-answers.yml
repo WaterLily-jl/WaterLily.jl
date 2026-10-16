@@ -21,14 +21,11 @@ AddVSCodeRecommendations: false
 AddWinToCI: false
 Authors: Gabriel Weymouth <gabriel.weymouth@gmail.com>
 CheckExplicitImports: false
-ConfigIndentation: 2
 GitHubActionVersionAutoUpdate: dependabot
 JuliaCompatAutoUpdate: dependabot
-JuliaIndentation: 4
 JuliaMinVersion: '1.11'
 License: nothing
 LicenseCopyrightHolders: Gabriel Weymouth
-MarkdownIndentation: 2
 PackageName: WaterLily
 PackageOwner: WaterLily-jl
 PackageUUID: ed894a53-35f9-47f1-b17f-85db9237eebd
@@ -37,5 +34,5 @@ StrategyConfirmIncluded: true
 StrategyLevel: 2
 StrategyReviewExcluded: true
 TestingStrategy: basic
-_commit: v0.20.0
+_commit: py-v0.2.0
 _src_path: https://github.com/JuliaBesties/BestieTemplate.jl.git
