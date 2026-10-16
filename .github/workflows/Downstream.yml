@@ -1,6 +1,5 @@
 # Runs the tests of packages that build on WaterLily's internal functions against this
-# version of WaterLily, so a change that breaks them shows up in the PR. Adapted from
-# Trixi.jl's downstream workflow.
+# version of WaterLily, so a change that breaks them shows up in the PR.
 name: Downstream
 
 on:

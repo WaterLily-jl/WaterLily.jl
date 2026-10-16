@@ -1,6 +1,6 @@
 ### Review checklist
 
-This checklist tells PR authors what reviewers look for, and gives reviewers a structure. The items do not all need to be checked for a PR to be merged. Adapted from the Trixi.jl review checklist.
+This checklist tells PR authors what reviewers look for, and gives reviewers a structure. The items do not all need to be checked for a PR to be merged.
 
 #### Purpose and scope
 
