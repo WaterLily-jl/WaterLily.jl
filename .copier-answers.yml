@@ -7,7 +7,7 @@ AddCodeOfConduct: false
 AddCopierCI: false
 AddDocs: false
 AddDocsCI: false
-AddFormatterAndLinterConfigFiles: true
+AddFormatterAndLinterConfigFiles: false
 AddGitHubPRTemplate: true
 AddGitHubTemplates: false
 AddLintCI: true
