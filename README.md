@@ -173,7 +173,7 @@ julia --project compare.jl
 
 This will run benchmarks for CPU and GPU backends. If you do not have a GPU, simply pass `-b "Array"` when runnning `benchmark.sh`. More information on the benchmark suite is available in that [README](https://github.com/WaterLily-jl/WaterLily-Benchmarks/blob/main/README.md).
 
-See `CONTRIBUTING.md` for the details, including our policy on LLM/AI-assisted contributions. Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
+See `.github/CONTRIBUTING.md` for the details, including our policy on LLM/AI-assisted contributions. Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
 
 ## Development goals
 
