@@ -53,4 +53,4 @@ jobs:
         uses: lycheeverse/lychee-action@v2
         with:
           fail: true
-          args: --hidden --exclude '@ref' --exclude '@[Cc]ite.*' --exclude '^https://github.com/.*/releases/tag/v.*$' --exclude '^https://WaterLily-jl.github.io/WaterLily.jl/stable/?$' --exclude '^https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/' --exclude-path docs/build .
+          args: --hidden --accept '100..=103,200..=299,429,503' --exclude '@ref' --exclude '@[Cc]ite.*' --exclude '^https://github.com/.*/releases/tag/v.*$' --exclude '^https://WaterLily-jl.github.io/WaterLily.jl/stable/?$' --exclude '^https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/' --exclude-path docs/build .
