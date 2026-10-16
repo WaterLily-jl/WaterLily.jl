@@ -36,6 +36,7 @@ repos:
     hooks:
       - id: yamlfmt
         args: [-formatter, 'type=basic,indent=2,retain_line_breaks_single=true,scan_folded_as_literal=true,line_ending=lf']
+        exclude: ^\.github/copier-answers\.yml$
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.35.1
     hooks:
