@@ -3,12 +3,17 @@ name: Copier Update
 # Opens a pull request when a new BestieTemplate release changes the files this
 # repository takes from the template. Nothing happens without a new release.
 # With the COPIER_PAT secret (a token that can push branches and open pull requests)
-# the usual checks run on that pull request; with the default token they do not.
+# the usual checks run on that pull request; with the default token they do not, and the
+# permissions below are what it needs to push the branch and open the pull request.
 
 on:
   schedule:
     - cron: 0 7 * * 1 # Mondays at 7:00 UTC
   workflow_dispatch:
+
+permissions:
+  contents: write # push the update branch
+  pull-requests: write # open the pull request
 
 jobs:
   copier:
