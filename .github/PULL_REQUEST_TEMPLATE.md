@@ -25,4 +25,4 @@ There is no related issue.
 - [ ] Docs were updated and workflow is passing
 - [ ] Benchmark results are posted (`/benchmark` comment or WaterLily-Benchmarks)
 - [ ] `NEWS.md` and `AGENTS.md` are updated if this changes behavior or internals that other packages use
-- [ ] Any LLM/AI assistance is mentioned in the description (see `CONTRIBUTING.md`)
+- [ ] Any LLM/AI assistance is mentioned in the description (see `.github/CONTRIBUTING.md`)
