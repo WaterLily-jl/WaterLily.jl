@@ -1,0 +1,49 @@
+name: Copier Update
+
+# Opens a pull request when a new BestieTemplate release changes the files this
+# repository takes from the template. Nothing happens without a new release.
+# With the COPIER_PAT secret (a token that can push branches and open pull requests)
+# the usual checks run on that pull request; with the default token they do not.
+
+on:
+  schedule:
+    - cron: 0 7 * * 1 # Mondays at 7:00 UTC
+  workflow_dispatch:
+
+jobs:
+  copier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.COPIER_PAT || github.token }}
+      - name: Hack for setup-python cache # https://github.com/actions/setup-python/issues/807
+        run: touch requirements.txt
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          cache: pip
+          python-version: "3.11"
+      - name: Hack for setup-python cache # https://github.com/actions/setup-python/issues/807
+        run: rm requirements.txt
+      - name: Update from the template
+        run: |
+          pip install copier pre-commit
+          copier update -a .github/copier-answers.yml --defaults --exclude README.md --exclude .lychee.toml -o rej
+          echo -e "Automated update from BestieTemplate by the Copier workflow.\n" > /tmp/body.md
+          echo -e 'Rejected changes (if any):\n```diff' >> /tmp/body.md
+          find . -name "*.rej" -exec cat {} + >> /tmp/body.md
+          find . -name "*.rej" -delete
+          echo '```' >> /tmp/body.md
+          SKIP=no-commit-to-branch pre-commit run -a || true # the hooks format the updated files
+          git diff
+      - name: Create the pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.COPIER_PAT || github.token }}
+          commit-message: Update from BestieTemplate
+          title: "[AUTO] BestieTemplate update"
+          body-path: /tmp/body.md
+          branch: auto-copier-template-update
+          delete-branch: true
+          labels: configuration, automated pr
