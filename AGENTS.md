@@ -1,8 +1,9 @@
 # AGENTS.md
 
 Instructions for AI coding agents (Claude Code, Codex, Copilot, Cursor, ...) working on
-WaterLily.jl. Claude Code reads this file through the `@AGENTS.md` import in `CLAUDE.md`.
-Keep this file the single source; put tool-specific notes in tool-specific files.
+WaterLily.jl. Agents read this file directly (Claude Code since v2.1.277, so there is no
+`CLAUDE.md`). Keep this file the single source; put tool-specific notes in tool-specific
+files.
 
 Only add instructions and commands that have been tested in this repository. When this
 file and the code disagree, the code is right: fix this file in the same PR. For scripts
