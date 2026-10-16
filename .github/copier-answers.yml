@@ -34,5 +34,5 @@ StrategyConfirmIncluded: true
 StrategyLevel: 2
 StrategyReviewExcluded: true
 TestingStrategy: basic
-_commit: py-v0.2.0
+_commit: v0.20.0
 _src_path: https://github.com/JuliaBesties/BestieTemplate.jl.git
