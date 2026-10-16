@@ -70,6 +70,7 @@ How these were measured:
 #### Development
 
 - **Benchmarking PRs** ([#350](https://github.com/WaterLily-jl/WaterLily.jl/pull/350)): any PR can be benchmarked on demand with a `/benchmark` comment.
+- **Repository tooling** ([#268](https://github.com/WaterLily-jl/WaterLily.jl/pull/268)): pre-commit checks and a link checker run in a Lint workflow, the tests of LilyPad, BiotSavartBCs, WaterLilyNarrowBand, ParametricBodies and WaterLilyMeshBodies run on every PR that changes the source (Downstream workflow), and a review checklist is posted on new PRs. New `AGENTS.md` (instructions for AI coding agents), `AUTHORS.md`, `CITATION.cff` and `.github/CONTRIBUTING.md`, with a policy for LLM-assisted contributions. The test dependencies live in `test/Project.toml`, so `julia --project=test` gives the test environment.
 
 ### API changes across the ecosystem
 
