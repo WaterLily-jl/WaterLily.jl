@@ -40,10 +40,10 @@ WaterLilyWriteVTKExt = "WriteVTK"
 
 [compat]
 ConstructionBase = "1.6.0"
-DocStringExtensions = "0.9"
+DocStringExtensions = "0.9, 0.10"
 EllipsisNotation = "1.8"
 ForwardDiff = "0.10.18, 1"
-KernelAbstractions = "0.9.1"
+KernelAbstractions = "0.9.1, 0.10"
 LoggingExtras = "1.1"
 Makie = "0.24"
 Preferences = "1.4"
