@@ -39,6 +39,9 @@ jobs:
         run: pip install pre-commit
       - name: Run pre-commit
         run: SKIP=no-commit-to-branch pre-commit run -a
+      - name: Show the fixes
+        if: failure()
+        run: git diff
   link-checker:
     name: Link checker
     runs-on: ubuntu-latest
@@ -50,4 +53,4 @@ jobs:
         uses: lycheeverse/lychee-action@v2
         with:
           fail: true
-          args: --config '.lychee.toml' .
+          args: --hidden --exclude '@ref' --exclude '@[Cc]ite.*' --exclude '^https://github.com/.*/releases/tag/v.*$' --exclude '^https://WaterLily-jl.github.io/WaterLily.jl/stable/?$' --exclude '^https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/' --exclude-path docs/build .
