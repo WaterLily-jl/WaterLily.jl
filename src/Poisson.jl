@@ -150,7 +150,6 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
 end
 
 using LinearAlgebra: ⋅
-using KernelAbstractions: Backend, CPU
 """
     perdot(a,b,perdir)
 

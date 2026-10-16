@@ -21,6 +21,10 @@
     for f ∈ arrays, R ∈ ([CartesianIndex(2,3),CartesianIndex(5,1)],CartesianIndices((1:2:7,2:3))) # a vector and a stepped range
         @test marked((7,9),R,f)==marks((7,9),R)
     end
+    for f ∈ arrays # @loop workgroup: 64 work-items, except on the PoCL CPU backend of KernelAbstractions ≥ 0.10, which picks its own
+        b = get_backend(zeros(Float32,2) |> f)
+        @test WaterLily.workgroup(b) == (f==Array && pkgversion(WaterLily.KernelAbstractions) ≥ v"0.10" ? () : (64,))
+    end
     for dims ∈ ((7,9),(5,6,8)), j ∈ 1:length(dims)
         D = length(dims); sl(i,low=1) = WaterLily.slice(dims,i,j,low)
         R = CartesianIndices(ntuple(k -> k==j ? (3:3) : (k+1:dims[k]-1), D)) # a different range in each dimension, as `slice_u` in BiotSavartBCs
