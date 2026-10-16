@@ -1,0 +1,38 @@
+# Changes here will be overwritten by Copier
+AddAgentsMd: false
+AddAllcontributors: false
+AddChangelog: false
+AddCitationCFF: false
+AddCodeOfConduct: false
+AddCopierCI: false
+AddDocs: false
+AddDocsCI: false
+AddFormatterAndLinterConfigFiles: false
+AddGitHubPRTemplate: true
+AddGitHubTemplates: false
+AddLintCI: true
+AddLychee: true
+AddMacToCI: false
+AddPrecommit: true
+AddPrecommitUpdateCI: false
+AddTagBotCI: false
+AddTestCI: false
+AddVSCodeRecommendations: false
+AddWinToCI: false
+Authors: Gabriel Weymouth <gabriel.weymouth@gmail.com>
+CheckExplicitImports: false
+GitHubActionVersionAutoUpdate: dependabot
+JuliaCompatAutoUpdate: dependabot
+JuliaMinVersion: '1.11'
+License: nothing
+LicenseCopyrightHolders: Gabriel Weymouth
+PackageName: WaterLily
+PackageOwner: WaterLily-jl
+PackageUUID: ed894a53-35f9-47f1-b17f-85db9237eebd
+RunJuliaNightlyOnCI: false
+StrategyConfirmIncluded: true
+StrategyLevel: 2
+StrategyReviewExcluded: true
+TestingStrategy: basic
+_commit: v0.20.0
+_src_path: https://github.com/JuliaBesties/BestieTemplate.jl.git

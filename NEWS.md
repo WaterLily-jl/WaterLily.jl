@@ -18,6 +18,7 @@ Time per `sim_step!` (mean, ms) and speedup over v1.8.0:
 | Jellyfish, Biot-Savart BCs, 1.0 M cells | GPU | 79.2 | 72.5 (1.09×) | **62.8 (1.26×)** |
 
 How these were measured:
+
 - **Hardware:** a Windows laptop with an NVIDIA RTX A2000 8GB Laptop GPU; Julia 1.11.9, Float32.
 - **Method:** [WaterLily-Benchmarks](https://github.com/WaterLily-jl/WaterLily-Benchmarks), timing 5 runs of 25 steps from a developed flow (minimum of the run means).
 - **Jellyfish:** each WaterLily version runs with the BiotSavartBCs.jl of the same time, so these rows include BiotSavartBCs changes too.
@@ -35,40 +36,48 @@ How these were measured:
 
 ### Details
 
-**Solver**
+#### Solver
+
 - **Boundary conditions** ([#339](https://github.com/WaterLily-jl/WaterLily.jl/pull/339)): now enforced in `mom_project!`.
 - **CFL time step** ([#352](https://github.com/WaterLily-jl/WaterLily.jl/pull/352)): taken from the interior cells only.
 - **Red-black Gauss-Seidel** ([#353](https://github.com/WaterLily-jl/WaterLily.jl/pull/353)): smooths the last interior plane for odd grid sizes.
 - **`MultiLevelPoisson`** ([#308](https://github.com/WaterLily-jl/WaterLily.jl/pull/308)): no longer allocates on every V-cycle.
 - **Kernel launches** ([#330](https://github.com/WaterLily-jl/WaterLily.jl/pull/330), [#345](https://github.com/WaterLily-jl/WaterLily.jl/pull/345), [#346](https://github.com/WaterLily-jl/WaterLily.jl/pull/346)): `@loop` launches are type-stable, boundary loops launch over the faces only, and the SIMD loop uses `@inbounds`.
 
-**Bodies and metrics**
+#### Bodies and metrics
+
 - **`RigidMap(center)`** ([#357](https://github.com/WaterLily-jl/WaterLily.jl/pull/357)): the rotation now defaults to zero.
 - **Force and moment integrals** ([#361](https://github.com/WaterLily-jl/WaterLily.jl/pull/361)): these now sum in the element type of the fields.
 - **Helicity density** ([#292](https://github.com/WaterLily-jl/WaterLily.jl/pull/292), [@TzuYaoHuang](https://github.com/TzuYaoHuang)): new `WaterLily.helicity(I, u, ω)`.
 
-**GPU**
+#### GPU
+
 - **Boundary and initial conditions** ([#330](https://github.com/WaterLily-jl/WaterLily.jl/pull/330)): `uBC` and `u0` tuples work on GPU.
 - **Metal support** ([#329](https://github.com/WaterLily-jl/WaterLily.jl/pull/329)): `L₂` is backend-generic, and `ke` and `ω_θ` keep the field's element type.
 
-**Flow and I/O**
+#### Flow and I/O
+
 - **`Flow` constructor** ([#340](https://github.com/WaterLily-jl/WaterLily.jl/pull/340)): new field-wise constructor, so `setproperties(flow; uBC)` swaps boundary conditions without reallocating the fields.
 - **`load!`** ([#314](https://github.com/WaterLily-jl/WaterLily.jl/pull/314)): copies host arrays straight into place, with no transient device copy.
 
-**Visualization**
+#### Visualization
+
 - **`viz!`** ([#334](https://github.com/WaterLily-jl/WaterLily.jl/pull/334)): new `isomesh` keyword for solid 3D isosurfaces.
 - **`sim_gif!`** ([#323](https://github.com/WaterLily-jl/WaterLily.jl/pull/323), [@TzuYaoHuang](https://github.com/TzuYaoHuang)): takes the same field and plotting options as `viz!`.
 - **Vector export** ([#319](https://github.com/WaterLily-jl/WaterLily.jl/pull/319)): volume plots are rasterized when exporting to SVG and PDF.
 - **Pathlines** ([#313](https://github.com/WaterLily-jl/WaterLily.jl/pull/313), [#336](https://github.com/WaterLily-jl/WaterLily.jl/pull/336)): the Pathlines-based interactive `viz!`/`viz_step!` backend now lives in Pathlines.jl.
 
-**Development**
+#### Development
+
 - **Benchmarking PRs** ([#350](https://github.com/WaterLily-jl/WaterLily.jl/pull/350)): any PR can be benchmarked on demand with a `/benchmark` comment.
+- **Repository tooling** ([#268](https://github.com/WaterLily-jl/WaterLily.jl/pull/268)): pre-commit checks and a link checker run in a Lint workflow, the tests of LilyPad, BiotSavartBCs, WaterLilyNarrowBand, ParametricBodies and WaterLilyMeshBodies run on every PR that changes the source (Downstream workflow), and a review checklist is posted on new PRs. New `AGENTS.md` (instructions for AI coding agents), `AUTHORS.md`, `CITATION.cff` and `.github/CONTRIBUTING.md`, with a policy for LLM-assisted contributions. The test dependencies live in `test/Project.toml`, so `julia --project=test` gives the test environment.
 
 ### API changes across the ecosystem
 
 For developers of packages built on WaterLily. The WaterLily version that introduced each change is in brackets, for setting `[compat]` bounds.
 
-**WaterLily.jl**
+#### WaterLily.jl
+
 - **`mom_project!(a, b, w::Int, t)`** [1.9.1] ([#339](https://github.com/WaterLily-jl/WaterLily.jl/pull/339)): now applies the domain BCs (and `exitBC!` in the predictor) before the pressure solve, and divides the time step by `w` (1 in the predictor, 2 in the corrector). Overrides of `mom_predict!` and `mom_correct!` should no longer call `BC!` or `exitBC!`, and custom `mom_project!` methods need the new signature.
 - **Pressure source** [1.9.1] ([#328](https://github.com/WaterLily-jl/WaterLily.jl/pull/328), [#338](https://github.com/WaterLily-jl/WaterLily.jl/pull/338)): `div(I, u) - δv(D, I)*div(I, V)`, where `D = diagonal(pois)` is a plain array, safe to pass into GPU kernels. Custom Poisson solvers that set their own source should match.
 - **Poisson convergence** [1.9.0] ([#307](https://github.com/WaterLily-jl/WaterLily.jl/pull/307)): `solver!` defaults to `tol=2e-3` and stops when `L₁(p) < l1n_tol(p, tol)` and `L∞(p) < tol`. Custom solvers can reuse `L₁`, `L∞` and `l1n_tol` to match.
@@ -81,20 +90,24 @@ For developers of packages built on WaterLily. The WaterLily version that introd
 - **Visualization** [1.9.0] ([#313](https://github.com/WaterLily-jl/WaterLily.jl/pull/313), [#336](https://github.com/WaterLily-jl/WaterLily.jl/pull/336)): `viz_step!` is exported, and `WaterLily._pathlines_viz_hook` lets a package take over `viz!` rendering, which is how Pathlines.jl plugs in.
 
 **[BiotSavartBCs.jl](https://github.com/WaterLily-jl/BiotSavartBCs.jl)**: first registered releases, v1.0.0 and v1.0.1; requires WaterLily ≥ 1.9.2.
+
 - **Exports:** the public API is `BiotSimulation(...; fmm=true, nonbiotfaces=(), symmetry=(), mem=Array)` and `BiotSavartPoisson`. The lower-level helpers (`MLArray`, `collect_targets`, `flatten_targets`, `fill_ω!`, `biotBC!`, `pflowBC!`) are no longer exported.
 - **`symmetry` keyword** ([#20](https://github.com/WaterLily-jl/BiotSavartBCs.jl/pull/20)): marks faces as symmetry planes and includes the image vorticity across them. Needs `fmm=true` and no periodic direction.
 - **Periodic in one direction** ([#19](https://github.com/WaterLily-jl/BiotSavartBCs.jl/pull/19)): set through WaterLily's `perdir`.
 - **WaterLily alignment:** follows WaterLily's `mom_project!` signature and Poisson criterion, and takes the vorticity from `WaterLily.ω` ([#23](https://github.com/WaterLily-jl/BiotSavartBCs.jl/pull/23)). The kernels are also faster ([#14](https://github.com/WaterLily-jl/BiotSavartBCs.jl/pull/14), [@KristianHolme](https://github.com/KristianHolme)).
 
 **[WaterLilyNarrowBand.jl](https://github.com/WaterLily-jl/WaterLilyNarrowBand.jl)**: new, v0.1.0; works with WaterLily ≥ 1.7, and uses `bbox` when it is available (≥ 1.9.2).
+
 - **`NarrowBand(body, dims; k=4, interior, mem=Array)`:** wraps any `AbstractBody`; `setmap` and `update!` pass through the wrapper.
 - **Hooks for body authors:** for bodies without a reliable sign or interior, such as mesh bodies, extend `WaterLilyNarrowBand.outside!(reached, body, t)` and `hasinterior(body)`.
 
 **[LilyPad.jl](https://github.com/WaterLily-jl/LilyPad.jl)**: requires WaterLily ≥ 1.9.1.
+
 - **`mom_project!` changes:** its `mom_predict!` and `mom_correct!` no longer apply BCs ([#3](https://github.com/WaterLily-jl/LilyPad.jl/pull/3)), and it uses the integer `w` ([#2](https://github.com/WaterLily-jl/LilyPad.jl/pull/2)).
 - **`LilyFlow`:** carries `Flow`'s λ type parameter ([#1](https://github.com/WaterLily-jl/LilyPad.jl/pull/1)).
 
 **[Pathlines.jl](https://github.com/WaterLily-jl/Pathlines.jl)**: requires WaterLily ≥ 1.9.
+
 - **Rendering API:** now `PathlineCanvas`, `fade!` and `draw!`. `ParticleViz`, `PathViz`, `step!` and `notify!` are removed; `Particles` and `update!` are unchanged.
 - **`viz!` backend** ([#3](https://github.com/WaterLily-jl/Pathlines.jl/pull/3)): hosts the pathline backend that used to be a WaterLily extension, so loading Pathlines.jl makes `viz!` render pathlines.
 
