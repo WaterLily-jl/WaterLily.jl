@@ -31,7 +31,7 @@ If you have used WaterLily for research, please **cite us**! The [2025 paper](ht
 }
 ```
 
-The same reference is in `CITATION.bib`.
+The same reference is in `CITATION.cff`, which GitHub's "Cite this repository" button reads.
 
 ## Method/capabilities
 
