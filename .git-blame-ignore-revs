@@ -1,5 +1,0 @@
-# Commits that only reformat, skipped by `git blame` (GitHub does this automatically).
-# Locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
-
-# Apply the pre-commit fixes (#268)
-90853fd25c5f7bae513a29b4504803e9b6a671db
