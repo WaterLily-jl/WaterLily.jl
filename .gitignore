@@ -32,7 +32,6 @@ LocalPreferences.toml
 !/examples/julia2024.gif
 !/examples/hover.gif
 !/examples/oscillating.gif
-!/.zenodo.json
 
 # tooling
 *.jl.cov
