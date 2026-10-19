@@ -33,14 +33,14 @@ WaterLily solves the unsteady incompressible 2D or 3D [Navier-Stokes equations](
 
 ## Example: Flow over a circle
 
-WaterLily lets the user can set the domain size and boundary conditions, the fluid viscosity (which determines the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number)), and immerse solid obstacles. A large selection of examples, notebooks, and tutorials are found in the [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) repository. Here, we will illustrate the basics by simulating and plotting the flow over a circle.
+WaterLily lets the user set the domain size and boundary conditions, the fluid viscosity (which determines the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number)), and immerse solid obstacles. A large selection of examples, notebooks, and tutorials are found in the [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) repository. Here, we will illustrate the basics by simulating and plotting the flow over a circle.
 
-We define the size of the simulation domain as `n` by `m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U,0)`, where we set `U=1`, and the Reynolds number is `Re=U*radius/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid.
+We define the size of the simulation domain as `n` by `m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U,0)`, where we set `U=1`, and the Reynolds number is based on the diameter, `Re=U*2radius/ν`, where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid.
 ```julia
 using WaterLily
 function circle(n,m;Re=100,U=1)
     # signed distance function to circle
-    radius, center = m/8, m/2-1
+    radius, center = m/8, m/2
     sdf(x,t) = √sum(abs2, x .- center) - radius
 
     Simulation((n,m),   # domain size
@@ -52,7 +52,7 @@ end
 ```
 The circle geometry is defined using a [signed distance function](https://en.wikipedia.org/wiki/Signed_distance_function#Applications). The `AutoBody` function uses [automatic differentiation](https://github.com/JuliaDiff/) to infer the other geometric parameters of the body automatically. Replace the circle's distance function with any other, and now you have the flow around something else... such as a [donut](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/ThreeD_Donut.jl) or the [Julia logo](https://github.com/WaterLily-jl/WaterLily-Examples/blob/main/examples/TwoD_Julia.jl). For more complex geometries, [ParametricBodies.jl](https://github.com/WaterLily-jl/ParametricBodies.jl) defines a `body` using any parametric curve, such as a spline. See that repo (and the video above) for examples.
 
-The code block above return a `Simulation` with the parameters we've defined. Now we can initialize a simulation (first line) and step it forward in time (second line)
+The code block above returns a `Simulation` with the parameters we've defined. Now we can initialize a simulation (first line) and step it forward in time (second line)
 ```julia
 circ = circle(3*2^5,2^6)
 sim_step!(circ)
@@ -69,7 +69,7 @@ contourf(u') # transpose the array for the plot
 
 As you can see, the velocity within the circle is zero, the velocity far from the circle is one, and there are accelerated and decelerated regions around the circle. The `sim_step!` has only taken a single time step, and this initial flow around our circle looks similar to the potential flow because the viscous boundary layer has not separated yet.
 
-A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the force on the immersed body. The function is applied over a time range, and the forces are plotted.
+A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the pressure force on the immersed body. Note that `pressure_force` returns the integral of `p n` with the normal `n` pointing out of the body, which is the negative of the force acting on the body, so the drag below comes out negative. The function is applied over a time range, and the forces are plotted.
 ```Julia
 function get_forces!(sim,t)
     sim_step!(sim,t,remeasure=false)
@@ -142,16 +142,15 @@ Finally, KernelAbstractions does incur some CPU allocations for every loop, but 
 
 ## Contributing and issues
 
-We always appreciate new contributions, so please [submit a pull request](https://github.com/WaterLily-jl/WaterLily.jl/compare) with your changes and help us make WaterLily even better! Note that contributions need to be submitted together with benchmark results - WaterLily should always be fast! 😃 For this, we have a [fully automated benchmarking suite](https://github.com/WaterLily-jl/WaterLily-Benchmarks) that conducts performance tests. In short, to compare your changes with the latest WaterLily, clone the that repo and run the benchmarks with
+We always appreciate new contributions, so please [submit a pull request](https://github.com/WaterLily-jl/WaterLily.jl/compare) with your changes and help us make WaterLily even better! Note that contributions need to be submitted together with benchmark results - WaterLily should always be fast! 😃 For this, we have a [fully automated benchmarking suite](https://github.com/WaterLily-jl/WaterLily-Benchmarks) that conducts performance tests. In short, to compare your changes with the latest WaterLily, clone that repo and run the benchmarks with
 ``` sh
 git clone https://github.com/WaterLily-jl/WaterLily-Benchmarks && cd WaterLily-Benchmarks
 sh benchmark.sh -wd "<your/waterlily/path>" -w "<your_waterlily_branch> master"
 julia --project compare.jl
 ```
-This will run benchmarks for CPU and GPU backends. If you do not have a GPU, simply pass `-b "Array"` when runnning `benchmark.sh`. More information on the benchmark suite is available in that [README](https://github.com/WaterLily-jl/WaterLily-Benchmarks/blob/main/README.md).
+This will run benchmarks for CPU and GPU backends. If you do not have a GPU, simply pass `-b "Array"` when running `benchmark.sh`. More information on the benchmark suite is available in that [README](https://github.com/WaterLily-jl/WaterLily-Benchmarks/blob/main/README.md).
 
 Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
 
 ## Development goals
- - Multi-CPU/GPU simulations (https://github.com/WaterLily-jl/WaterLily.jl/pull/141)
- - Free-surface physics with ([Volume-of-Fluid](https://github.com/TzuYaoHuang/WaterLily.jl/blob/master/src/Multiphase.jl)) or other methods.
+ - Multi-CPU/GPU simulations (https://github.com/WaterLily-jl/WaterLily.jl/pull/281)
