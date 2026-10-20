@@ -30,12 +30,14 @@ _amdgpu = any(b -> b in ("amdgpu","all"), WATERLILY_BACKENDS)
 _metal = "metal" in WATERLILY_BACKENDS && Sys.isapple() # not part of "all" since most test sets are Float64
 
 # GPU packages are not test deps: install the requested ones once here in the main process. A backend that cannot be installed is skipped
+# Pkg 1.13 precompiles the packages an add changes by name and fails on indirect deps ("Unknown package"), so leave that to the workers
+gpuadd(pkg) = withenv(() -> Pkg.add(pkg), "JULIA_PKG_PRECOMPILE_AUTO" => "0")
 _cuda &&
-    try Pkg.add("CUDA") catch e; @warn "Requested CUDA could not be installed; skipping" exception=e; global _cuda = false end
+    try gpuadd("CUDA") catch e; @warn "Requested CUDA could not be installed; skipping" exception=e; global _cuda = false end
 _amdgpu &&
-    try Pkg.add("AMDGPU") catch e; @warn "Requested AMDGPU could not be installed; skipping" exception=e; global _amdgpu = false end
+    try gpuadd("AMDGPU") catch e; @warn "Requested AMDGPU could not be installed; skipping" exception=e; global _amdgpu = false end
 _metal &&
-    try Pkg.add("Metal") catch e; @warn "Requested Metal could not be installed; skipping" exception=e; global _metal = false end
+    try gpuadd("Metal") catch e; @warn "Requested Metal could not be installed; skipping" exception=e; global _metal = false end
 
 # Discover test sets: every test_*.jl, gated by the WaterLily `backend` preference
 const TESTDIR = @__DIR__
