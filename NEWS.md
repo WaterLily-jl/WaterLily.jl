@@ -2,7 +2,7 @@
 
 ## v1.10.0
 
-WaterLily v1.10 is out. It follows v1.9 by only two weeks, so this note covers everything since **v1.8** (June 2026): 40 pull requests from 6 contributors.
+WaterLily v1.10 is out. It follows v1.9 by only two weeks, so this note covers everything since **v1.8** (June 2026): 42 pull requests from 6 contributors.
 
 ### Performance since v1.8
 
@@ -46,6 +46,7 @@ How these were measured:
 - **`RigidMap(center)`** ([#357](https://github.com/WaterLily-jl/WaterLily.jl/pull/357)): the rotation now defaults to zero.
 - **Force and moment integrals** ([#361](https://github.com/WaterLily-jl/WaterLily.jl/pull/361)): these now sum in the element type of the fields.
 - **Helicity density** ([#292](https://github.com/WaterLily-jl/WaterLily.jl/pull/292), [@TzuYaoHuang](https://github.com/TzuYaoHuang)): new `WaterLily.helicity(I, u, ω)`.
+- **Combined bodies** ([#368](https://github.com/WaterLily-jl/WaterLily.jl/pull/368)): `body.map` returns the shared map of a `SetBody`.
 
 **GPU**
 - **Boundary and initial conditions** ([#330](https://github.com/WaterLily-jl/WaterLily.jl/pull/330)): `uBC` and `u0` tuples work on GPU.
@@ -54,6 +55,7 @@ How these were measured:
 **Flow and I/O**
 - **`Flow` constructor** ([#340](https://github.com/WaterLily-jl/WaterLily.jl/pull/340)): new field-wise constructor, so `setproperties(flow; uBC)` swaps boundary conditions without reallocating the fields.
 - **`load!`** ([#314](https://github.com/WaterLily-jl/WaterLily.jl/pull/314)): copies host arrays straight into place, with no transient device copy.
+- **`interp`** ([#371](https://github.com/WaterLily-jl/WaterLily.jl/pull/371)): vector interpolation is 3-4x faster on GPU, speeding up Pathlines.jl's `Particles`.
 
 **Visualization**
 - **`viz!`** ([#334](https://github.com/WaterLily-jl/WaterLily.jl/pull/334)): new `isomesh` keyword for solid 3D isosurfaces.
@@ -78,6 +80,8 @@ For developers of packages built on WaterLily. The WaterLily version that introd
 - **`BDIM!(a, s=1)`** [1.9.2] ([#354](https://github.com/WaterLily-jl/WaterLily.jl/pull/354)): now divides the result by `s`, fusing in the corrector's averaging. `scale_u!` remains as a helper.
 - **`Flow`** [1.9.1] ([#340](https://github.com/WaterLily-jl/WaterLily.jl/pull/340)): a field-wise constructor, so `setproperties` works on a `Flow`.
 - **Vorticity** [1.9.2] ([#344](https://github.com/WaterLily-jl/WaterLily.jl/pull/344), [#347](https://github.com/WaterLily-jl/WaterLily.jl/pull/347)): `ω(I, u)` now also works in 2D (as a scalar) and is inlined. `helicity(I, u, ω)` is new [1.9.0] ([#292](https://github.com/WaterLily-jl/WaterLily.jl/pull/292)).
+- **`SetBody` map** [1.10.0] ([#368](https://github.com/WaterLily-jl/WaterLily.jl/pull/368)): `body.map` returns the map shared by both parts.
+- **EllipsisNotation** [1.10.0] ([#371](https://github.com/WaterLily-jl/WaterLily.jl/pull/371)): no longer a dependency.
 - **Visualization** [1.9.0] ([#313](https://github.com/WaterLily-jl/WaterLily.jl/pull/313), [#336](https://github.com/WaterLily-jl/WaterLily.jl/pull/336)): `viz_step!` is exported, and `WaterLily._pathlines_viz_hook` lets a package take over `viz!` rendering, which is how Pathlines.jl plugs in.
 
 **[BiotSavartBCs.jl](https://github.com/WaterLily-jl/BiotSavartBCs.jl)**: first registered releases, v1.0.0 and v1.0.1; requires WaterLily ≥ 1.9.2.
