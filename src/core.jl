@@ -1,4 +1,4 @@
-using KernelAbstractions: get_backend, @index, @kernel
+using KernelAbstractions: KernelAbstractions, get_backend, @index, @kernel, Backend, CPU
 using LoggingExtras
 
 # custom log macro
@@ -96,6 +96,20 @@ function set_backend(new_backend::String)
 end
 
 """
+    workgroup(backend)
+
+Workgroup size of the `@loop` kernels, as the trailing arguments of the kernel constructor:
+64 work-items on GPUs and on the task-based CPU backend of KernelAbstractions 0.9. From
+KernelAbstractions 0.10 the CPU backend runs on PoCL, where each workgroup runs on one thread
+with a fixed cost, and the groups of thousands of work-items that PoCL picks by default run
+about twice as slow; 128 work-items measured fastest on 2D and 3D flows.
+"""
+workgroup(::Backend) = (64,)
+@static if pkgversion(KernelAbstractions) >= v"0.10"
+    workgroup(::CPU) = (128,)
+end
+
+"""
     @loop <expr> over <I ∈ R>
 
 Macro to automate fast loops using @simd when running in serial,
@@ -118,9 +132,9 @@ on serial execution, or
         I = R[@index(Global,Cartesian)]
         @fastmath @inbounds a[I,i] += sum(loc(i,I))
     end
-    kern(get_backend(a),64)(a,i,R,ndrange=size(R))
+    kern(get_backend(a),workgroup(get_backend(a))...)(a,i,R,ndrange=size(R))
 
-when multi-threading on CPU or using CuArrays.
+when multi-threading on CPU or using CuArrays, with the workgroup size of [`workgroup`](@ref).
 Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 
 `R` is any array, such as a `CartesianIndices`, a [`face`](@ref) or a vector on the same device as `a`,
@@ -134,7 +148,7 @@ macro loop(args...)
     setdiff!(sym,[I]) # don't want to pass I as an argument
     symT = [gensym() for _ in 1:length(sym)] # generate a list of types for each symbol
     symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
-    @gensym(kern, kern_, R_, J_) # generate unique kernel function names for serial and KA execution, and the range and launch index
+    @gensym(kern, kern_, R_, J_, B_) # generate unique kernel function names for serial and KA execution, and the range, launch index and backend
     @static if backend == "KernelAbstractions"
         return quote
             @kernel function $kern_($(symWtypes...),$R_) where {$(symT...)} # replace composite arguments
@@ -143,8 +157,8 @@ macro loop(args...)
                 @fastmath @inbounds $ex
             end
             function $kern($kern_,$(symWtypes...)) where {$(symT...)} # kernel passed as argument: capturing it would box it
-                $R_ = $R
-                $kern_(get_backend($(rep(sym[1]))),64)($(rep.(sym)...),$R_,ndrange=size($R_))
+                $R_ = $R; $B_ = get_backend($(rep(sym[1])))
+                $kern_($B_,$workgroup($B_)...)($(rep.(sym)...),$R_,ndrange=size($R_))
             end
             $kern($kern_,$(sym...))
         end |> esc
