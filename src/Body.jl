@@ -117,7 +117,6 @@ Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
 Base.getproperty(b::SetBody,s::Symbol) = s===:map ? sharedmap(b.a.map,b.b.map) : getfield(b,s)
 Base.getproperty(b::NoBody,s::Symbol) = s===:map ? nothing : getfield(b,s)
 sharedmap(a,::Nothing) = a
-sharedmap(::Nothing,b) = b
 sharedmap(a,b) = a==b ? a : throw(ArgumentError("SetBody parts have different maps"))
 
 # Measurements
