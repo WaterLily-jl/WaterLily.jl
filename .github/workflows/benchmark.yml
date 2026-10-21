@@ -21,8 +21,8 @@ on:
 
 permissions:
   contents: read
-  issues: write         # reaction
-  pull-requests: write  # report comment
+  issues: write # reaction
+  pull-requests: write # report comment
 
 # One benchmark per PR at a time. A group keeps a single pending run and cancels the older one, and every comment
 # starts a run, so only requests that the job runs share a group: another comment cannot replace a pending request.
