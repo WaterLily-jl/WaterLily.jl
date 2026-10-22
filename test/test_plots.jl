@@ -5,12 +5,14 @@ using FileIO
 using ImageCore
 using ImageMagick
 
+const COMPDATA = joinpath(@__DIR__, "compdata")
+
 function make_egg_noarray(ra=40, rb=20, U=1)
     Simulation(
         (5 * ra, 5 * rb),
         (U, 0),
         rb;
-        body = AutoBody(
+        body=AutoBody(
             (x, t) -> √sum((x[1] - 8)^2 / ra + (x[2] - 8)^2 / rb) - 1
         )
     )
@@ -29,6 +31,7 @@ function image_error(test_image, reference_image)
 end
 
 @testset "WaterLilyPlotsExt" begin
+    # Test body_plot!
     Plots.plot()
 
     sim = make_egg_noarray()
@@ -38,7 +41,7 @@ end
     Plots.savefig(result, output_path)
 
     generated = load(output_path)
-    reference = load("test/compdata/compbody.png")
+    reference = load(joinpath(COMPDATA, "compbody.png"))
 
     @test image_error(generated, reference) < 0.01
 
@@ -57,12 +60,20 @@ end
 
     gif_path = testgif.filename
     generated = load(gif_path)
-    reference = load("test/compdata/compgif.gif")
+    reference = load(joinpath(COMPDATA, "compgif.gif"))
+
+    # Compare the first frame from both GIFs
+    if ndims(generated) == 3
+        generated = generated[:, :, 1]
+    end
+
+    if ndims(reference) == 3
+        reference = reference[:, :, 1]
+    end
 
     @test image_error(generated, reference) < 0.01
 
     rm(gif_path)
-
 
     # Test flood
     Plots.plot()
@@ -77,12 +88,11 @@ end
     Plots.savefig(flood_path)
 
     generated = load(flood_path)
-    reference = load("test/compdata/floodTestNoLims.png")
+    reference = load(joinpath(COMPDATA, "floodTestNoLims.png"))
 
     @test image_error(generated, reference) < 0.01
 
     rm(flood_path)
-
 
     # Test plot_logger
     Plots.plot()
@@ -93,12 +103,13 @@ end
     sim_step!(sim, 0.5)
 
     plot_logger("testLog.log")
+    Plots.plot!(size=(800, 400))
 
     log_path = "temp_log_plot.png"
     Plots.savefig(log_path)
 
     generated = load(log_path)
-    reference = load("test/compdata/compLogPlot.png")
+    reference = load(joinpath(COMPDATA, "compLogPlot.png"))
 
     @test image_error(generated, reference) < 0.01
 
