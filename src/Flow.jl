@@ -155,17 +155,18 @@ end
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+`poisson_kwargs` (eg. `(;tol=1e-4,itmx=10)`) is passed to `solver!` and kept separate from `kwargs`, so it never reaches `udf`.
 """
-@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
     a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
-    mom_project!(a,b,1,t₁)
+    mom_project!(a,b,1,t₁;poisson_kwargs...)
     # corrector u → u¹
     @log "c"
     mom_correct!(a,t₁;udf,kwargs...)
-    mom_project!(a,b,2,t₁)
+    mom_project!(a,b,2,t₁;poisson_kwargs...)
     push!(a.Δt,CFL(a))
 end
 
@@ -211,19 +212,19 @@ end
 scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p)))
 
 """
-    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
-in the corrector. On return `a.u` is divergence-free and BC-consistent.
+in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` (eg. `tol`, `itmx`) are passed to `solver!`.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
     w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
     Dp = diagonal(b)                                # Poisson matrix diagonal
     @inside b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
-    solver!(b)
+    solver!(b; kwargs...)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
