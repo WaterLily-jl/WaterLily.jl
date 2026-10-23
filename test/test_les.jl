@@ -1,10 +1,9 @@
 using WaterLily: inside_u
 
 # Regression test for the udf advecting-velocity fix (branch udf-advecting-velocity):
-# `mom_step!` now passes the velocity field the convective flux is evaluated on to the udf —
-# `a.u⁰` in the predictor (`a.u` is zeroed by `scale_u!`) and the projected `a.u` in the
-# corrector — so SGS/eddy-viscosity udfs see a nonzero advecting field instead of the zeroed
-# predictor velocity. The general udf machinery (body force, rotating frame) is already covered
+# `mom_step!` now passes the velocity field the convective flux is evaluated on to the udf:
+# `a.u⁰` in the predictor and the projected `a.u` in the corrector.
+# The general udf machinery (body force, rotating frame) is already covered
 # in test_flow.jl ("increasing body force", "rotating reference frame"); here we only check the
 # new 3-arg advecting-velocity signature and that the 2-arg force-only fallback still dispatches.
 @testset "udf advecting velocity" begin

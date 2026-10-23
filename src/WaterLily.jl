@@ -37,6 +37,20 @@ include("RigidMap.jl")
 export RigidMap,setmap
 
 """
+    check_fn(f,N,T,nargs)
+
+Check a user-supplied BC/IC function `f(i,x)` or `f(i,x,t)` has `nargs`
+arguments and is type-stable, returning `T` for every `i in 1:N`. No-op if
+`f` is not a `Function`.
+"""
+check_fn(f,N,T,nargs) = nothing
+function check_fn(f::Function,N,T,nargs)
+    @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
+    @assert all(typeof.(ntuple(i->f(i,xtargs(Val{}(nargs),N,T)...),N)).==T) "$f is not type stable"
+end
+xtargs(::Val{2},N,T) = (zeros(SVector{N,T}),)
+xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
+"""
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
                U=nothing, Δt=0.25, ν=0., ϵ=1, g=nothing,
                u0=nothing, perdir=(), exitBC=false, λ=quick,
@@ -73,16 +87,8 @@ Constructor for a WaterLily.jl simulation:
         Called after `flow_ctor` with the constructed flow as argument.
         Used by downstream packages (e.g. BiotSavartBCs.jl) to inject a custom `AbstractPoisson` subtype.
 
-See files in `examples` folder for examples.
+See the repository [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) for more examples.
 """
-check_fn(f,N,T,nargs) = nothing
-function check_fn(f::Function,N,T,nargs)
-    @assert first(methods(f)).nargs==nargs+1 "$f signature needs $nargs arguments"
-    @assert all(typeof.(ntuple(i->f(i,xtargs(Val{}(nargs),N,T)...),N)).==T) "$f is not type stable"
-end
-xtargs(::Val{2},N,T) = (zeros(SVector{N,T}),)
-xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
-
 mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
     L :: Number # length scale
@@ -108,7 +114,7 @@ end
 
 time(sim::AbstractSimulation) = time(sim.flow)
 """
-    sim_time(sim::Simulation)
+    sim_time(sim::AbstractSimulation)
 
 Return the current dimensionless time of the simulation `tU/L`
 where `t=sum(Δt)`, and `U`,`L` are the simulation velocity and length
@@ -141,7 +147,7 @@ function sim_step!(sim::AbstractSimulation;remeasure=true,udf=nothing,poisson_kw
 end
 
 """
-    measure!(sim::Simulation,t=timeNext(sim))
+    measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
 
 Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
@@ -157,7 +163,7 @@ Prints information on the current state of a simulation.
 sim_info(sim::AbstractSimulation) = @printf "tU/L=%.4f, Δt=%.3f\n" sim_time(sim) sim.flow.Δt[end]
 
 """
-    perturb!(sim; noise=0.1)
+    perturb!(sim::AbstractSimulations; noise=0.1)
 Perturb the velocity field of a simulation with `noise` level with respect to velocity scale `U`.
 """
 perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flow.u))*sim.U*noise |> typeof(sim.flow.u).name.wrapper
@@ -191,19 +197,25 @@ export flood,addbody,body_plot!,sim_gif!,plot_logger
 
 # default Makie functions
 function viz! end
+function viz_step! end
 function get_body end
 function plot_body_obs! end
+function isosurface_mesh end
+# hook set by Pathlines.jl in its __init__, so viz! draws pathlines when Pathlines is loaded
+const _pathlines_viz_hook = Ref{Union{Nothing,Function}}(nothing)
 # export
-export viz!, get_body, plot_body_obs!
+export viz!, viz_step!, get_body, plot_body_obs!
 
 # Check number of threads when loading WaterLily
 """
     check_nthreads()
 
 Check the number of threads available for the Julia session that loads WaterLily.
+Called from `__init__`; skipped during package precompilation (which always runs with one thread).
 A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstractions enabled.
 """
 function check_nthreads()
+    Base.generating_output() && return nothing
     if backend == "KernelAbstractions" && Threads.nthreads() == 1
         @warn """
         Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
@@ -212,6 +224,7 @@ function check_nthreads()
         """
     end
 end
-check_nthreads()
+
+__init__() = check_nthreads()
 
 end # module

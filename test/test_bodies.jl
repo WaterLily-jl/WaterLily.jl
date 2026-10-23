@@ -55,7 +55,7 @@ end
     for T ∈ (Float32,Float64)
         # initialize a rigid body
         sdf(x,t) = sqrt(sum(abs2,x))-1
-        body = AutoBody(sdf, RigidMap(SA{T}[0,0],T(0)))
+        body = AutoBody(sdf, RigidMap(SA{T}[0,0]))
         # check sdf
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[0,0]))
         # rotate and add linear velocity
@@ -66,7 +66,7 @@ end
         body = setmap(body;ω=T(0.1))
         @test all(measure(body,SA{T}[1.5,0],0) .≈ (1/2,SA{T}[1,0],SA{T}[1,1.5*0.1]))
         # 3D rigid body
-        body3D = AutoBody(sdf, RigidMap(SA{T}[0,0,0],SA{T}[0,0,0];xₚ=SA{T}[-.5,0,0]))
+        body3D = AutoBody(sdf, RigidMap(SA{T}[0,0,0];xₚ=SA{T}[-.5,0,0]))
         @test all(measure(body3D,SA{T}[1.5,0,0],0) .≈ (1/2,SA{T}[1,0,0],SA{T}[0,0,0]))
         # test rotations about x, y, and z
         # rotate by 180 degrees about x-axis, should not change
@@ -91,6 +91,7 @@ end
         body = setmap(body;θ=T(π/4),V=SA{T}[1.0,0])
         @test all(body.a.map.θ == body.b.map.θ  == T(π/4))
         @test all(body.a.map.V .≈ body.b.map.V  .≈ [1,0])
+        @test_throws ArgumentError body.map
         # try measure in the sim using different backends
         for array in arrays
             body = AutoBody((x,t)->sqrt(sum(abs2,x))-4,RigidMap(SA{T}[16,16,16],SA{T}[0,0,0];
@@ -104,4 +105,6 @@ end
     rmap = RigidMap(SA[0.,0.],π/4)
     body = AutoBody((x,t)->√(x'x)-1,rmap)-AutoBody((x,t)->√(x'x)-0.5,rmap) # annulus
     @test all(measure(setmap(body,ω=1.),SA[0.25,0.],0) .≈ (0.25,SA[-1,0],SA[0,0.25]))
+    @test body.map == rmap && setmap(body,ω=1.).map.ω == 1
+    @test isnothing(WaterLily.NoBody().map)
 end

@@ -1,19 +1,22 @@
 using StaticArrays
 
 # utilities
-Base.@propagate_inbounds @inline fSV(f,n) = SA[ntuple(f,n)...]
+# Each f(i) gets a call-site @inline, which ntuple's internal calls cannot take
+Base.@propagate_inbounds @inline _tuple_inl(f,::Val{0}) = ()
+Base.@propagate_inbounds @inline _tuple_inl(f,::Val{N}) where N = (_tuple_inl(f,Val(N-1))...,@inline f(N))
+Base.@propagate_inbounds @inline fSV(f,n) = SVector(_tuple_inl(f,Val(n)))
 Base.@propagate_inbounds @inline @fastmath fsum(f,n) = sum(ntuple(f,n))
 norm2(x) = √(x'*x)
 """
     shiftDir(d,D,i)
 
 Shift the index of direction `d` to `i` steps away in dimension space of `D`.
-So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4` 
+So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4`
 """
 shiftDir(d,D,i) = mod(d+i-1,D)+1
 Base.@propagate_inbounds @fastmath function permute(f,i)
     j,k = shiftDir(i,3,1), shiftDir(i,3,2)
-    f(j,k)-f(k,j)
+    @inline f(j,k)-f(k,j)
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
 @fastmath @inline function dot(a,b)
@@ -30,8 +33,8 @@ end
 Compute ``½∥𝐮-𝐔∥²`` at center of cell `I` where `U` can be used
 to subtract a background flow (by default, `U=0`).
 """
-ke(I::CartesianIndex{m},u,U=fSV(zero,m)) where m = 0.125fsum(m) do i
-    abs2(@inbounds(u[I,i]+u[I+δ(i,I),i]-2U[i]))
+ke(I::CartesianIndex{m},u,U=fSV(zero,m)) where m = fsum(m) do i
+    abs2(@inbounds(u[I,i]+u[I+δ(i,I),i]-2U[i]))/8
 end
 """
     ∂(i,j,I,u)
@@ -71,23 +74,31 @@ curl(i,I,u) = permute((j,k)->∂(j,CI(I,k),u), i)
 
 Compute 3-vector ``𝛚=𝛁×𝐮`` at the center of cell `I`.
 """
-ω(I::CartesianIndex{3},u) = fSV(i->permute((j,k)->∂(k,j,I,u),i),3)
+@inline ω(I::CartesianIndex{3},u) = fSV(i->permute((j,k)->∂(k,j,I,u),i),3)
+"""
+    ω(I::CartesianIndex{2},u)
+
+Compute the scalar out-of-plane vorticity ``ω₃=∂u₂/∂x₁-∂u₁/∂x₂`` at the center of cell `I`.
+"""
+@inline ω(I::CartesianIndex{2},u) = permute((j,k)->∂(k,j,I,u),3)
 """
     ω_mag(I::CartesianIndex{3},u)
 
 Compute ``∥𝛚∥`` at the center of cell `I`.
 """
-ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
+@inline ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
 """
     ω_θ(I::CartesianIndex{3},z,center,u)
 
 Compute ``𝛚⋅𝛉`` at the center of cell `I` where ``𝛉`` is the azimuth
 direction around vector `z` passing through `center`.
+`z` and `center` are converted to the element type of `u`.
 """
-function ω_θ(I::CartesianIndex{3},z,center,u)
-    θ = z × (loc(0,I,eltype(u))-SVector{3}(center))
+@inline function ω_θ(I::CartesianIndex{3},z,center,u)
+    T = eltype(u)
+    θ = SVector{3,T}(z) × (loc(0,I,T)-SVector{3,T}(center))
     n = norm2(θ)
-    n<=eps(n) ? 0. : θ'*ω(I,u) / n
+    n<=eps(n) ? zero(n) : θ'*ω(I,u) / n
 end
 
 """
@@ -119,17 +130,23 @@ BDIM-masked surface normal.
 end
 
 """
-    pressure_force(sim::Simulation)
+    sumdims(df)
+
+Sum the workspace `df` over the domain in its own element type, returning one value per component.
+"""
+sumdims(df) = sum(df,dims=ntuple(i->i,ndims(df)-1))[:] |> Array
+
+"""
+    pressure_force(sim)
 
 Compute the pressure force on an immersed body.
 """
 pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
 function pressure_force(p,df,body,t=0)
-    Tp = eltype(p); To = promote_type(Float64,Tp)
-    df .= zero(Tp)
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,Tp),t) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    df .= zero(eltype(p))
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ bbox(body,inside(p))
+    sumdims(df)
 end
 
 """
@@ -138,64 +155,101 @@ end
 Rate-of-strain tensor.
 """
 @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
+@inline Snds(I,u,body,t) = (n = nds(body,loc(0,I,eltype(u)),t); iszero(n) ? n : S(I,u)*n)
 
 """
-    viscous_force(sim::Simulation)
+    viscous_force(sim)
 
 Compute the viscous force on an immersed body.
 """
 viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0)
-    Tu = eltype(u); To = promote_type(Float64,Tu)
-    df .= zero(Tu)
-    @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
-    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    df .= zero(eltype(u))
+    @loop df[I,:] .= -2ν*Snds(I,u,body,t) over I ∈ bbox(body,inside_u(u))
+    sumdims(df)
 end
 
 """
-    total_force(sim::Simulation)
+    τ(I,p,u,ν)
+
+Total stress tensor (pressure and viscous) acting on the body surface, so that `τ⋅nds` is the force density.
+"""
+@inline τ(I::CartesianIndex{D},p,u,ν) where D = (s = S(I,u); p[I]*one(s)-2ν*s)
+@inline τnds(I,p,u,ν,body,t) = (n = nds(body,loc(0,I,eltype(p)),t); iszero(n) ? n : τ(I,p,u,ν)*n)
+
+"""
+    total_force(sim)
 
 Compute the total force on an immersed body.
 """
-total_force(sim) = pressure_force(sim) .+ viscous_force(sim)
+total_force(sim) = total_force(sim.flow,sim.body)
+total_force(flow,body) = total_force(flow.p,flow.u,flow.ν,flow.f,body,time(flow))
+function total_force(p,u,ν,df,body,t=0)
+    df .= zero(eltype(p))
+    @loop df[I,:] .= τnds(I,p,u,ν,body,t) over I ∈ bbox(body,inside(p))
+    sumdims(df)
+end
 
 using LinearAlgebra: cross
 """
-    pressure_moment(x₀,sim::Simulation)
+    pressure_moment(x₀,sim)
 
 Computes the pressure moment on an immersed body relative to point x₀.
+`x₀` is converted to the element type of the pressure field.
 """
 pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
 function pressure_moment(x₀,p,df,body,t=0)
-    Tp = eltype(p); To = promote_type(Float64,Tp)
-    df .= zero(Tp)
-    @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
-    sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
+    df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
+    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ bbox(body,inside(p))
+    sumdims(df)
 end
 
 """
-    viscous_moment(x₀,sim::Simulation)
+    viscous_moment(x₀,sim)
 
 Computes the viscous moment on an immersed body relative to point x₀.
+`x₀` is converted to the element type of the velocity field.
 """
 viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
 viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_moment(x₀,u,ν,df,body,t=0)
-    Tu = eltype(u); To = promote_type(Float64,Tu)
-    df .= zero(Tu)
-    @loop df[I,:] .= -2ν*cross(loc(0,I,Tu)-x₀,S(I,u)*nds(body,loc(0,I,Tu),t)) over I ∈ inside_u(u)
-    sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
+    df .= zero(eltype(u)); x₀ = eltype(u).(x₀)
+    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t)) over I ∈ bbox(body,inside_u(u))
+    sumdims(df)
 end
 
 """
-    total_moment(x₀,sim::Simulation)
+    total_moment(x₀,sim)
 
 Computes the total (pressure + viscous) moment on an immersed body relative to point x₀.
 """
-total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
+total_moment(x₀,sim) = total_moment(x₀,sim.flow,sim.body)
+total_moment(x₀,flow,body) = total_moment(x₀,flow.p,flow.u,flow.ν,flow.f,body,time(flow))
+function total_moment(x₀,p,u,ν,df,body,t=0)
+    df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
+    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t)) over I ∈ bbox(body,inside(p))
+    sumdims(df)
+end
 
+"""
+    total_force_and_moment(x₀,sim)
+
+Computes the total force and the total moment relative to point x₀ in a single pass over the body.
+The moment is accumulated in `flow.u⁰`, which is free between time steps.
+"""
+total_force_and_moment(x₀,sim) = total_force_and_moment(x₀,sim.flow,sim.body)
+total_force_and_moment(x₀,flow,body) = total_force_and_moment(x₀,flow.p,flow.u,flow.ν,flow.f,flow.u⁰,body,time(flow))
+function total_force_and_moment(x₀,p,u,ν,df,dm,body,t=0)
+    df .= zero(eltype(p)); dm .= zero(eltype(p)); x₀ = eltype(p).(x₀)
+    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t) over I ∈ bbox(body,inside(p))
+    sumdims(df), sumdims(dm)
+end
+@inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t)
+    F = τnds(I,p,u,ν,body,t)
+    df[I,:] .= F; dm[I,:] .= cross(loc(0,I,eltype(p))-x₀,F)
+end
 
 """
     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}

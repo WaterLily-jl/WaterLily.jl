@@ -1,7 +1,7 @@
 abstract type AbstractPoisson{T,S,V} end
 
 """
-    Poisson{N,M}
+    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
 
 Composite type for conservative variable coefficient Poisson equations:
 
@@ -53,6 +53,8 @@ update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
     end
     return s
 end
+@fastmath @inline δv(D,I::CartesianIndex{d}) where {d} = 1+@inbounds(D[I])/2d
+diagonal(p::Poisson) = p.D
 
 """
     mult!(p::Poisson,x)
@@ -91,10 +93,10 @@ without the corrections, no solution exists.
 """
 function residual!(p::Poisson)
     perBC!(p.x,p.perdir)
-    @inside p.r[I] = ifelse(p.iD[I]==0,0,p.z[I]-mult(I,p.L,p.D,p.x))
-    s = sum(p.r)/length(inside(p.r))
+    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x))
+    s = sum(p.r)/count(!iszero,p.iD) # only solved rows absorb the imbalance
     abs(s) <= 2eps(eltype(s)) && return
-    @inside p.r[I] = p.r[I]-s
+    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.r[I]-s)
 end
 
 function increment!(p::Poisson{T};ω=1) where {T}
@@ -124,11 +126,11 @@ end
 @inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
     k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
     I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
-    x[I] = gauss(I,r,L,iD,x)
+    k < size(x,d) && (x[I] = gauss(I,r,L,iD,x)) # with an odd size, the last k is a ghost for one colour
 end
 
 @inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
-    return CartesianIndices(ntuple( i-> i==N ? (2:size(x,i)÷2) : (2:size(x,i)-1), N))
+    return CartesianIndices(ntuple( i-> i==N ? (2:cld(size(x,i),2)) : (2:size(x,i)-1), N)) # every interior k of both colours
 end
 
 """
@@ -148,13 +150,16 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
 end
 
 using LinearAlgebra: ⋅
+using KernelAbstractions: Backend, GPU
 """
     perdot(a,b,perdir)
 
 Apply dot product to the inner cells of two _scalar_ fields, assuming zero values in ghost cell when using Neumann BC.
 """
 perdot(a,b,::Tuple{}) = a⋅b
-perdot(a,b,perdir,R=inside(a)) = @view(a[R])⋅@view(b[R])
+perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
+perdot(::Backend,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
+perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...))
 
 """
     pcg!(p::Poisson; it=6)
@@ -185,7 +190,14 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     end
 end
 
-L₂(a) = sum(abs2,@inbounds(a[I]) for I ∈ inside(a))
+"""
+    L₂(a,R=inside(a))
+
+Squared L₂ norm of array `a` over `R`, which excludes the ghost cells by default.
+"""
+L₂(a,R::CartesianIndices=inside(a)) = L₂(get_backend(a),a,R)
+L₂(backend,a,R) = sum(abs2,@inbounds(a[I]) for I ∈ R)
+L₂(::GPU,a,R) = mapreduce(abs2,+,view(a,R.indices...))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L₁(p::Poisson) = sum(abs,p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)

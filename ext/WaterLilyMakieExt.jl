@@ -3,7 +3,10 @@ module WaterLilyMakieExt
 using Makie, WaterLily, ForwardDiff, Printf
 using Makie.GeometryBasics, Makie.PlotUtils
 using ForwardDiff: Dual, value
-import WaterLily: viz!, get_body, plot_body_obs!
+import WaterLily: viz!, viz_step!, get_body, plot_body_obs!, isosurface_mesh
+
+# Stepper registry for viz_step!: maps figure → step closure
+const _fig_steppers = IdDict{Any, Function}()
 
 """
     update_body!(a_cpu::Array, sim)
@@ -16,7 +19,10 @@ function update_body!(a_cpu::Array, sim)
 end
 
 """
-    default_colormap_and_levels(minv, maxv, threshhold, levels)
+    default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap=:seismic, threshhold_color=RGB(1,1,1))
+
+Build a diverging colormap and contour levels spanning `clims=(min,max)`, with `nlevels`
+bands and a `threshhold_color` band straddling zero of half-width `threshhold`.
 """
 function default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap=:seismic, threshhold_color=RGB(1,1,1))
     @assert clims[2] > clims[1] "clims argument does not satisfy clims[2] > clims[1]"
@@ -28,9 +34,7 @@ function default_colormap_and_levels(clims; threshhold=0.1, nlevels=10, colormap
     colors, [lowerrange; upperrange]
 end
 
-"""
-Default visualization function for 2D/3D simulations
-"""
+
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
     WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
@@ -41,6 +45,9 @@ function ω3D_viz!(cpu_array, sim)
     WaterLily.@inside a[I] = WaterLily.ω_mag(I,sim.flow.u)
     copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
 end
+"""
+Default visualization function for 2D/3D simulations
+"""
 ω_viz!(n) = n == 2 ? ω2D_viz! : ω3D_viz!
 
 """
@@ -83,9 +90,19 @@ Plot the 3D scalar `σ::Observable` in a 3D volume axis.
 plot_σ_obs!(ax, σ::Observable{Array{T,3}} where T; kwargs...) = Makie.volume!(ax, σ; kwargs...)
 
 """
+    plot_σ_obs!(ax, σ::Observable{<:GeometryBasics.Mesh}; color=RGBf(0.35,0.55,0.8), shading=true, backlight=1, kwargs...)
+
+Plot the isosurface mesh of a 3D scalar `σ::Observable` (see `isomesh` in [`viz!`](@ref)) as a shaded surface in a 3D axis.
+Marching cubes orients the normals towards increasing values, so they point into the region of interest when it lies above
+the level (eg. vorticity) and out of it when it lies below (eg. low pressure); `backlight=1` lights both sides alike.
+"""
+plot_σ_obs!(ax, σ::Observable{<:GeometryBasics.Mesh}; color=RGBf(0.35,0.55,0.8), shading=true, backlight=1, kwargs...) =
+    Makie.mesh!(ax, σ; color, shading, backlight, kwargs...)
+
+"""
     viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
         udf=nothing, udf_kwargs=nothing,
-        d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true,
+        d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true, isomesh=nothing,
         body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
         video=nothing, img=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
         theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
@@ -104,6 +121,7 @@ function f(arr, sim)
 end
 ```
 Keyword arguments:
+
     - `f::Function`: Visualization function with interface f(arr::Array, sim::AbstractSimulation), where `arr` is the plotted data.
     - `duration::Number`: Simulation end time.
     - `remeasure::Bool`: Update the body position.
@@ -124,6 +142,10 @@ Keyword arguments:
         passed into `kwargs` (eg. colormap, levels) are preserved.
         Pass `threshhold::Number` to adjust the near-0 range`, `threshhold_color::RGBA` to set to a color different from white, and
         clims::Tuple{Number,Number} to adjust the colormap limits.
+    - `isomesh::Number`: For `d=3`, plot the solid surface where the scalar field equals `isomesh`, triangulated with marching
+        cubes (as `body2mesh` does for the body), instead of a `Makie.volume`. The surface is shaded and depth-tested against the
+        body, and `kwargs` are passed to `Makie.mesh!`, eg. `color=(:steelblue, 0.5), transparency=true` for a translucent
+        surface. Note that Meshing must be loaded. Defaults to `nothing` (volume rendering).
     - `body::Bool`: Plot the body.
     - `body2mesh::Bool`: The body is plotted by generating a GeometryBasics.mesh, otherwise just as a Makie.volume (faster).
         Note that Meshing and GeometryBasics packages must be loaded if `body2mesh=true`.
@@ -132,9 +154,12 @@ Keyword arguments:
     - `img`: Save rendered frame(s) as image file(s). Pass a filename `String` with a `.png` extension to save with the
         active backend, e.g. `img="frame.png"`. To save a `.svg` or `.pdf`, pass a `(name, backend)` tuple where `backend` is a
         loaded Makie backend that supports vector output (CairoMakie) (eg. `img=("frame.svg", CairoMakie)`).
+        An optional third tuple element sets the raster pixels per figure-size unit, eg. `img=("frame.png", GLMakie, 2)`.
         If `name` contains a printf integer placeholder (e.g. `img="frame_%04d.png"` or `img=("frame_%04d.svg", CairoMakie)`),
         one image is saved per simulation frame (like `video`, rendered offscreen with no interactive window); otherwise only the last frame is saved.
         Can be combined with `video`. Defaults to `nothing`.
+        Figures with `volume` plots have no vector form: the `.svg`/`.pdf` embeds a raster rendered by the *active*
+        backend, so keep GLMakie active (`GLMakie.activate!()` if CairoMakie was loaded last).
     - `hidedecorations::Bool`: Figures without axis details.
     - `azimuth::Number`: Camera azimuth angle. Find a suitable angle interactively checking `ax.azimuth.val`
     - `elevation::Number`: Camera elevation angle. Find a suitable angle interactively checking `ax.elevation.val`.
@@ -145,19 +170,27 @@ Keyword arguments:
     - `fig_pad::Int`: Figure padding.
     - `fig::Makie.Figure`: Figure object.
     - `axis::Makie.Axis` or `axis::Makie.Axis`: Axis object.
-    - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`.
+    - `kwargs`: Additional keyword arguments passed to `plot_σ_obs!`. For `d=3` volumes other than `algorithm=:iso`,
+        `enable_depth=false` is added unless given, so the body is always drawn over the volume. With `enable_depth=true` the
+        volume is depth-tested against the body instead (`:mip` at its brightest sample, so the field in front hides the body);
+        add `transparency=true` and a translucent colormap, eg. `colormap=cgrad(:Blues, alpha=0.6)`, to see the body through it.
 """
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
     udf=nothing, udf_kwargs=nothing,
-    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, tidy_colormap=true,
+    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, tidy_colormap=true, isomesh=nothing,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, img=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
     theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
 
+    pathlines = !isnothing(WaterLily._pathlines_viz_hook[])
+    update_render_fn = nothing  # populated below when pathlines=true
+
     function update_data()
-        f(dat, sim)
-        mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym)
-        σ[] = σ_buf
+        if !pathlines
+            f(dat, sim)
+            mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym)
+            σ[] = σ_buf
+        end
         if body && remeasure
             update_body!(dat, sim)
             mirror_sym!(σb_buf, WaterLily.squeeze(@view dat[CIs]), sym)
@@ -165,71 +198,88 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         end
     end
     function step_sim_and_viz!(sim, tᵢ)
-        sim_step!(sim, tᵢ; remeasure, udf, udf_kwargs...)
+        if pathlines; while sim_time(sim) < tᵢ
+            sim_step!(sim; remeasure, udf, udf_kwargs...)
+            update_render_fn(sim)
+        end; else
+            sim_step!(sim, tᵢ; remeasure, udf, udf_kwargs...)
+        end
         verbose && sim_info(sim)
         update_data()
     end
 
-    d==2 && (@assert !(body2mesh) "body2mesh only allowed for 3D plots (d=3).")
+    d==2 && @assert !body2mesh "body2mesh only allowed for 3D plots (d=3)."
     body2mesh && (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If body2mesh=true, Meshing must be loaded.")
-    img_name, img_backend, img_fmt = parse_img(img) # validate and unpack the image spec; img_fmt set => save one image per frame
+    isnothing(isomesh) || (@assert d==3 "isomesh only allowed for 3D plots (d=3).")
+    isnothing(isomesh) || (@assert !isnothing(Base.get_extension(WaterLily, :WaterLilyMeshingExt)) "If isomesh is set, Meshing must be loaded.")
+    img_name, img_backend, img_fmt, img_ppu = parse_img(img) # validate and unpack the image spec; img_fmt set => save one image per frame
     D = ndims(sim.flow.σ)
     @assert d <= D "Cannot do a 3D plot on a 2D simulation."
     !isnothing(sym) && @assert length(sym) == d "sym kwarg must have length equal to plot dimension d=$d, got $(length(sym))."
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
-    isnothing(f) && (f = ω_viz!(d))
+    isnothing(f) && !pathlines && (f = ω_viz!(d))
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> ad_f(sim) |> Array
-    if d != D && all(>(1), length.(CIs.indices)) # Requesting 2D plot on 3D data, and CIs is not a slice
-        isnothing(cut) && (cut = (0, 0, size(dat,3)÷2))
-        @assert count(==(0), cut) == 2 "Requesting 2D plot on 3D data, but `cut` is not an slice, eg: (0,0,10)"
-        cut_dim = findfirst(!=(0), cut)
-        CIs = Tuple(i == cut_dim ? (cut[i]:cut[i]) : CIs.indices[i] for i in 1:D) |> CartesianIndices
-    end
-    limits = Tuple((1,n) for n in size(CIs) if n > 1)
-    !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (1, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
-    if isnothing(fig_size)
-        fig_size = (1200, 1200)
-        d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))
+    if !pathlines
+        if d != D && all(>(1), length.(CIs.indices)) # Requesting 2D plot on 3D data, and CIs is not a slice
+            isnothing(cut) && (cut = (0, 0, size(dat,3)÷2))
+            @assert count(==(0), cut) == 2 "Requesting 2D plot on 3D data, but `cut` is not an slice, eg: (0,0,10)"
+            cut_dim = findfirst(!=(0), cut)
+            CIs = Tuple(i == cut_dim ? (cut[i]:cut[i]) : CIs.indices[i] for i in 1:D) |> CartesianIndices
+        end
+        limits = Tuple((1,n) for n in size(CIs) if n > 1)
+        !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (1, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
+        if isnothing(fig_size)
+            fig_size = (1200, 1200)
+            d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))
+        end
     end
 
-    f(dat, sim)
-    slice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
-    σ_buf = similar(dat, mirror_size(slice0, sym))
-    mirror_sym!(σ_buf, slice0, sym)
-    σ = Observable(σ_buf)
+    if pathlines
+        fig, ax, update_render_fn = WaterLily._pathlines_viz_hook[](sim; kwargs...)
+        new_fig = true
+    else
+        f(dat, sim)
+        slice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
+        σ_buf = similar(dat, mirror_size(slice0, sym))
+        mirror_sym!(σ_buf, slice0, sym)
+        σ = Observable(σ_buf)
+
+        !isnothing(theme) && set_theme!(theme)
+        new_fig = isnothing(fig)
+        new_fig && (fig = Figure(size=fig_size, figure_padding=fig_pad))
+        isnothing(ax) && (ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation))
+        if d == 2 && tidy_colormap
+            clims = :clims in keys(kwargs) ? kwargs[:clims] : (-1,1)
+            nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 10
+            colormap = :colormap in keys(kwargs) ? kwargs[:colormap] : :seismic
+            threshhold = :threshhold in keys(kwargs) ? kwargs[:threshhold] : 0.01
+            threshhold_color = :threshhold_color in keys(kwargs) ? kwargs[:threshhold_color] : RGB(1,1,1)
+            tidy_colormap, tidy_levels = default_colormap_and_levels(clims; threshhold, nlevels, colormap, threshhold_color)
+            kwargs = remove_kwargs(:levels, :colormap, :clims, :threshhold, :threshhold_color, :extendlow, :extendhigh; kwargs...)
+            kwargs = add_kwarg(:colormap=>tidy_colormap, :levels=>tidy_levels, :extendlow=>:auto, :extendhigh=>:auto; kwargs...)
+        end
+        if d == 3 && isnothing(isomesh)
+            algorithm = :algorithm in keys(kwargs) ? kwargs[:algorithm] : :mip
+            algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
+        end
+        plot_σ_obs!(ax, isnothing(isomesh) ? σ : lift(a -> isosurface_mesh(a, isomesh), σ); kwargs...)
+        hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
+        hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
+    end
+
     if body
         update_body!(dat, sim)
         bslice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
         σb_buf = similar(dat, mirror_size(bslice0, sym))
         mirror_sym!(σb_buf, bslice0, sym)
         σb_obs = Observable(get_body(σb_buf, Val{body2mesh}()))
+        plot_body_obs!(ax, σb_obs; color=body_color)
     end
 
-    !isnothing(theme) && set_theme!(theme)
-    new_fig = isnothing(fig)
-    new_fig && (fig = Figure(size=fig_size, figure_padding=fig_pad))
-    isnothing(ax) && (ax = d==2 ? Axis(fig[1, 1]; aspect=DataAspect(), limits) : Axis3(fig[1, 1]; aspect=:data, limits, azimuth, elevation))
-    if d == 2 && tidy_colormap
-        clims = :clims in keys(kwargs) ? kwargs[:clims] : (-1,1)
-        nlevels = :levels in keys(kwargs) && kwargs[:levels] isa Int ? kwargs[:levels] : 10
-        colormap = :colormap in keys(kwargs) ? kwargs[:colormap] : :seismic
-        threshhold = :threshhold in keys(kwargs) ? kwargs[:threshhold] : 0.01
-        threshhold_color = :threshhold_color in keys(kwargs) ? kwargs[:threshhold_color] : RGB(1,1,1)
-        tidy_colormap, tidy_levels = default_colormap_and_levels(clims; threshhold, nlevels, colormap, threshhold_color)
-        kwargs = remove_kwargs(:levels, :colormap, :clims, :threshhold, :threshhold_color, :extendlow, :extendhigh; kwargs...)
-        kwargs = add_kwarg(:colormap=>tidy_colormap, :levels=>tidy_levels, :extendlow=>:auto, :extendhigh=>:auto; kwargs...)
-    end
-    if d == 3
-        algorithm = :algorithm in keys(kwargs) ? kwargs[:algorithm] : :mip
-        algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
-    end
-    plot_σ_obs!(ax, σ; kwargs...)
-    body && plot_body_obs!(ax, σb_obs; color=body_color)
-    hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
-    hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
+    _fig_steppers[fig] = (sim,t) -> step_sim_and_viz!(sim, t)
 
     if !isnothing(duration) # time loop for animation
         t₀ = round(WaterLily.sim_time(sim))
@@ -239,7 +289,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
                 for (i,tᵢ) in enumerate(range(t₀,t₀+duration;step))
                     step_sim_and_viz!(sim,tᵢ)
                     recordframe!(frame)
-                    isnothing(img_fmt) || save_img(Printf.format(img_fmt,i), img_backend, fig)
+                    isnothing(img_fmt) || save_img(Printf.format(img_fmt,i), img_backend, fig; px_per_unit=img_ppu)
                 end
             end
             println("Video saved to $(abspath(video))")
@@ -247,18 +297,32 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
             new_fig && isnothing(img_fmt) && display(Makie.current_backend().Screen(), fig) # an image series renders offscreen
             for (i,tᵢ) in enumerate(range(t₀,t₀+duration;step))
                 step_sim_and_viz!(sim,tᵢ)
-                isnothing(img_fmt) || save_img(Printf.format(img_fmt,i), img_backend, fig)
+                isnothing(img_fmt) || save_img(Printf.format(img_fmt,i), img_backend, fig; px_per_unit=img_ppu)
             end
         end
-        isnothing(img_fmt) && save_img(img_name, img_backend, fig) # single image: save the last frame (a series is saved in the loop)
+        isnothing(img_fmt) && save_img(img_name, img_backend, fig; px_per_unit=img_ppu) # single image: save the last frame (a series is saved in the loop)
         report_img(img_name, img_fmt)
         return fig, ax
     end
     new_fig && isnothing(img_fmt) && display(Makie.current_backend().Screen(), fig)
-    save_img(isnothing(img_fmt) ? img_name : Printf.format(img_fmt,1), img_backend, fig) # the single rendered frame
+    save_img(isnothing(img_fmt) ? img_name : Printf.format(img_fmt,1), img_backend, fig; px_per_unit=img_ppu) # the single rendered frame
     report_img(img_name, img_fmt)
     return fig, ax
 end
+"""
+    viz_step!(fig, t)
+
+Advance the simulation and visualization associated with `fig` to absolute time `t`.
+Equivalent to one frame of `viz!`'s animation loop, but callable from user code.
+Call `viz!(sim)` without a `duration` to set up the figure, then drive it manually
+with `viz_step!` inside your own loop for interactive or event-driven animations.
+"""
+function viz_step!(fig, sim, t=sim_time(sim)+0.1)
+    haskey(_fig_steppers, fig) || error("No viz! state for this figure — call viz!(sim) without a duration first.")
+    _fig_steppers[fig](sim, t)
+    yield() # allow Makie to update the figure
+end
+
 function viz!(sim, a::AbstractArray; kwargs...)
     kwargs = remove_kwargs(:f, :duration; kwargs...) # do not allow co-visualization (is not a simulation)
     @assert size(a) == size(sim.flow.σ) "Visualized array needs to be a scalar and same size as Simulation."
@@ -311,31 +375,48 @@ end
 """
     parse_img(img)
 
-Validate and unpack the `img` image-saving spec into `(name, backend, fmt)`. `img` is either a filename `String`
-(must be `.png`) or a `(name, backend)` tuple (the backend must support the requested extension, e.g. CairoMakie for `.svg`/`.pdf`)
-If `name` contains a printf integer placeholder (eg. `frame_%04d.png`), `fmt` is a `Printf.Format` and one image is saved per simulation frame.
+Validate and unpack the `img` spec — a filename `String` (`.png` only), `(name, backend)`, or
+`(name, backend, px_per_unit)` — into `(name, backend, fmt, px_per_unit)`. A printf placeholder in
+`name` (eg. `frame_%04d.png`) sets `fmt` and saves one image per simulation frame.
 """
-parse_img(img::Nothing) = (nothing, nothing, nothing)
+parse_img(img::Nothing) = (nothing, nothing, nothing, nothing)
 function parse_img(img)
     explicit_backend = img isa Tuple
     name, backend = explicit_backend ? (img[1], img[2]) : (img, Makie.current_backend())
+    px_per_unit = explicit_backend && length(img) >= 3 ? img[3] : nothing
+    isnothing(px_per_unit) || @assert px_per_unit isa Real && px_per_unit > 0 "img px_per_unit must be a positive Real, got $(px_per_unit)."
     ext = lowercase(splitext(name)[2])
     @assert ext in (".png", ".svg", ".pdf") "img name must end in .png, .svg, or .pdf, got \"$name\"."
     @assert explicit_backend || ext == ".png" "Saving a $ext image requires a Makie backend that supports it: pass it as a (name, backend) tuple, eg. img=(\"$name\", CairoMakie). Without a backend only .png is supported."
     fmt = occursin('%', name) ? Printf.Format(name) : nothing # `frame_%04d.png` -> one image per frame
-    return name, backend, fmt
+    return name, backend, fmt, px_per_unit
 end
 
 """
-    save_img(name, backend, fig)
+    save_img(name, backend, fig; px_per_unit=nothing)
 
-Save `fig` to `name` with `backend`, creating the parent directory if needed. Returns the absolute path,
-or `nothing` (no-op) when `name === nothing`.
+Save `fig` to `name` with `backend`, creating the parent directory if needed. Returns the absolute path
+(no-op when `name === nothing`). `px_per_unit` scales raster output relative to the figure size (`nothing`
+keeps the backend default). CairoMakie cannot draw `volume` plots (blank `.svg`/`.pdf`), so figures
+containing one are rasterized by the *active* GL backend (at `px_per_unit`, default 2) and the raster
+is embedded in the vector file.
 """
-save_img(name::Nothing, backend, fig) = nothing
-function save_img(name, backend, fig)
+save_img(name::Nothing, backend, fig; px_per_unit=nothing) = nothing
+function save_img(name, backend, fig; px_per_unit=nothing)
     dir = dirname(name); isempty(dir) || mkpath(dir)
-    Makie.save(name, fig; backend)
+    ext = lowercase(splitext(name)[2])
+    if ext in (".svg", ".pdf") && any(p -> p isa Makie.Volume, Makie.collect_atomic_plots(fig.scene))
+        Makie.current_backend() === backend && @warn "Active backend $(nameof(backend)) cannot render volumes (blank raster): activate a GL backend first, e.g. GLMakie.activate!()."
+        buf = Makie.colorbuffer(fig; px_per_unit=something(px_per_unit, 2)) # raster render with the active (GL) backend
+        w, h = size(fig.scene)
+        scene = Makie.Scene(size=(w, h), camera=Makie.campixel!)
+        Makie.image!(scene, (0, w), (0, h), rotr90(buf))
+        Makie.save(name, scene; backend)
+    elseif isnothing(px_per_unit)
+        Makie.save(name, fig; backend)
+    else
+        Makie.save(name, fig; backend, px_per_unit)
+    end
     return abspath(name)
 end
 

@@ -53,10 +53,10 @@ prolongate!(a,b,c) = @inside a[I] = b[down(I,c)]
 # keep coarsening while ANY direction is still divisible (semi-coarsening)
 @inline divisible(l::Poisson) = any(size(l.x) .|> divisible)
 """
-    MultiLevelPoisson{N,M}
+    MultiLevelPoisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
-The only variable is `levels`, a vector of nested `Poisson` systems.
+The main field is `levels`, a vector of nested `Poisson` systems from fine to coarse.
 """
 struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     x::S
@@ -102,6 +102,7 @@ end
 
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+diagonal(ml::MultiLevelPoisson) = diagonal(ml.levels[1])
 
 const smooth! = GaussSeidelRB!
 

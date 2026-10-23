@@ -4,6 +4,11 @@ import WaterLily: ×
     @test WaterLily.shiftDir(1,3,2) == 3
     @test WaterLily.shiftDir(1,4,-1) == 4
     @test WaterLily.shiftDir(4,4,1) == 1
+    # metrics keep the element type of the field
+    u32 = zeros(Float32,3,4,5,3); apply!((i,x)->x[i]+prod(x),u32)
+    @test (@inferred WaterLily.ke(J,u32)) isa Float32
+    @test (@inferred WaterLily.ω_θ(J,(0,0,1),x .+ (0,1,2),u32)) isa Float32 # Float64 `center` is converted
+    @test WaterLily.ω_θ(J,(0,0,1),x,u32) === 0f0 # on the axis
     for f ∈ arrays
         u = zeros(3,4,5,3) |> f; apply!((i,x)->x[i]+prod(x),u)
         p = zeros(3,4,5) |> f
@@ -21,6 +26,17 @@ import WaterLily: ×
         @test GPUArrays.@allowscalar p[J]==sqrt(sum(abs2,ω))
         @inside p[I] = WaterLily.ω_θ(I,(0,0,1),x .+ (0,1,2),u)
         @test GPUArrays.@allowscalar p[J]≈ω[1]
+        # ω at the cell centre for quadratic fields: catches sign, scale, component and location (edge) errors
+        u2 = zeros(8,8,2) |> f; apply!((i,x)-> i==1 ? -x[2]^2 : x[1]^2, u2) # ω = 2(x+y)
+        p2 = zeros(8,8) |> f; @inside p2[I] = WaterLily.ω(I,u2)
+        r2 = zeros(8,8) |> f; apply!(x->2(x[1]+x[2]), r2)
+        @test Array(p2)[2:7,2:7] ≈ Array(r2)[2:7,2:7]
+        u3 = zeros(8,8,8,3) |> f; apply!((i,x)->x[(i+1)%3+1]^2, u3) # u = (z²,x²,y²), ω = 2(y,z,x)
+        p3,r3 = zeros(8,8,8) |> f, zeros(8,8,8) |> f
+        @test all(1:3) do i
+            @inside p3[I] = WaterLily.ω(I,u3)[i]; apply!(x->2x[i%3+1], r3)
+            Array(p3)[2:7,2:7,2:7] ≈ Array(r3)[2:7,2:7,2:7]
+        end
         # test helicity
         u_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[1] : 0.0, u_h)
         ω_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[2]-0.5 + 1 : 0.0, ω_h)
@@ -31,6 +47,7 @@ import WaterLily: ×
         
         apply!((x)->1,p)
         @test WaterLily.L₂(p)≈prod(size(p).-2)
+        @test WaterLily.L₂(p,CartesianIndices((2:2,2:3,2:4)))≈6
         # test force routines
         N = 32
         p = zeros(N,N) |> f; df₂ = zeros(N,N,2) |> f; df₃ = zeros(N,N,N,3) |> f
@@ -64,6 +81,12 @@ import WaterLily: ×
         p₃ = zeros(N,N,N) |> f; apply!(x->x[2],p₃)
         @test WaterLily.pressure_moment(SVector{2,Float64}(N/2,N/2),p₂,df₂,body,0)[1] ≈ 0 # no moment in hydrostatic pressure
         @test all(WaterLily.pressure_moment(SVector{3,Float64}(N/2,N/2,N/2),p₃,df₃,body,0) .≈ SA[0 0 0]) # with a 3D field, 3D moments
+        # fused force and moment
+        sim = Simulation((16,16,16),(1,0,0),8;body=AutoBody((x,t)->√sum(abs2,x.-8)-4),mem=f)
+        copyto!(sim.flow.p,rand(Float32,size(sim.flow.p))); copyto!(sim.flow.u,rand(Float32,size(sim.flow.u)))
+        x₀ = SA[4f0,8,8]; F,M = WaterLily.total_force_and_moment(x₀,sim)
+        @test F ≈ WaterLily.pressure_force(sim)+WaterLily.viscous_force(sim) ≈ WaterLily.total_force(sim)
+        @test M ≈ WaterLily.pressure_moment(x₀,sim)+WaterLily.viscous_moment(x₀,sim) ≈ WaterLily.total_moment(x₀,sim)
         # temporal averages
         T = Float32
         sim = make_bl_flow(; T, mem=f)
