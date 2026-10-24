@@ -155,7 +155,7 @@ end
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
-`poisson_kwargs` (eg. `(;tol=1e-4,itmx=10)`) is passed to `solver!` and kept separate from `kwargs`, so it never reaches `udf`.
+`kwargs` are passed to `udf` and `poisson_kwargs` to `solver!`.
 """
 @fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
     a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
@@ -216,7 +216,7 @@ scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over 
 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
-in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` (eg. `tol`, `itmx`) are passed to `solver!`.
+in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
 """
 function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
