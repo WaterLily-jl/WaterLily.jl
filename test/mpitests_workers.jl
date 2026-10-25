@@ -5,6 +5,7 @@
 
 using Test
 using WaterLily
+using WaterLily: @loop, loc, inside
 using StaticArrays
 
 const ROLE   = ARGS[1]
@@ -159,6 +160,19 @@ elseif ROLE == "unit"
             @test mpi_nprocs() == np
             @test 0 <= mpi_rank() < np
             @test mpi_comm() == comm
+        end
+
+        @testset "loc in @loop bodies" begin
+            off = global_offset(Val(2), Float64)
+            a = zeros(Nloc .+ 2)
+            @loop a[I] = loc(0,I,Float64)[1] over I ∈ inside(a)           # global coordinates
+            @test all(a[I] == loc(0,I,Float64)[1] + off[1] for I in inside(a))
+            @loop a[I] = WaterLily.loc(0,I,Float64)[2] over I ∈ inside(a) # qualified name: local
+            @test all(a[I] == loc(0,I,Float64)[2] for I in inside(a))
+            let loc = fill(3.0, size(a))                                    # a variable named loc
+                @loop a[I] = loc[I] over I ∈ inside(a)
+            end
+            @test all(a[I] == 3 for I in inside(a))
         end
 
         @testset "live-grid accessors" begin

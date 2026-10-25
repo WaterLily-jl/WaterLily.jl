@@ -114,9 +114,9 @@ end
     _loop_offset(::Type{T})
 
 Return the offset captured into `@loop` bodies so `loc(...)` calls inside the
-expression return global coordinates.  Serial returns `nothing` (no-op — the
-`loc(..., ::Nothing)` overload falls back to plain `loc(...)`); the MPI
-extension returns an `SVector{N,T}` rank-local offset.
+expression return global coordinates.  Serial returns `nothing` (the body sees
+plain `loc`, see `_loop_loc`); the MPI extension returns an `SVector{N,T}`
+rank-local offset.
 """
 _loop_offset(::Type{T}) where T = _loop_offset(T, par_mode[])
 _loop_offset(::Type{T}, ::Serial) where T = nothing
