@@ -295,11 +295,15 @@ _get_halo_buf(::Type{T}, dims::NTuple{N,Int}) where {T,N} = get!(() -> Array{T}(
 # components and skips the scratch-buffer round-trip copies entirely.
 # Coarse multigrid `L` arrays also land here (via `BC!` on `restrictL!`
 # output), so component size routes to the per-size side-table like scalars.
-function _velocity_halo_igg!(u::Array{T,N}) where {T,N}
+# The aliases are `unsafe_wrap`s on the CPU; on GPUs a component (a contiguous
+# view) of a CuArray/ROCArray is itself a device array, which IGG takes as is.
+_components(u::Array{T,N}, sz3) where {T,N} =
+    (len = prod(size(u)[1:N-1]); [unsafe_wrap(Array, pointer(u, (c-1)*len + 1), sz3) for c in 1:size(u, N)])
+_components(u::AbstractArray{T,N}, sz3) where {T,N} = [reshape(selectdim(u, N, c), sz3) for c in 1:size(u, N)]
+function _velocity_halo_igg!(u::AbstractArray{T,N}) where {T,N}
     csize = size(u)[1:N-1]
     sz3   = ntuple(d -> d <= N-1 ? csize[d] : 1, 3)
-    len   = prod(csize)
-    comps = [unsafe_wrap(Array, pointer(u, (c-1)*len + 1), sz3) for c in 1:size(u, N)]
+    comps = _components(u, sz3)
     if _is_fine_size(csize, _nd())
         GC.@preserve u update_halo!(comps...; dims=_decomp_dims())
     else
@@ -310,7 +314,7 @@ end
 
 function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
     _any_decomposed() || return
-    if u isa Array && _native_eltype(T)
+    if _native_eltype(T) && (u isa Array || selectdim(u, N, 1) isa DenseArray)
         _velocity_halo_igg!(u)
     else  # Dual / Bool / non-contiguous: per-component scratch-buffer path
         tmp = _get_halo_buf(T, size(u)[1:N-1])
