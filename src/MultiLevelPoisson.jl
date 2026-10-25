@@ -100,11 +100,6 @@ function update!(ml::MultiLevelPoisson)
     end
 end
 
-mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
-residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
-
-const smooth! = GaussSeidelRB!
-
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     c = coarsen_mask(fine.x,coarse.x)
@@ -119,6 +114,12 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     prolongate!(fine.ϵ,coarse.x,c)
     increment!(fine; ω)
 end
+
+mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
+residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+diagonal(ml::MultiLevelPoisson) = diagonal(ml.levels[1])
+
+const smooth! = GaussSeidelRB!
 
 """
     solver!(ml::MultiLevelPoisson; tol=2e-3, itmx=32)
@@ -135,7 +136,7 @@ function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω);
+        smooth!(p; ω)
         rnew = L₁(p); r∞ = L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $rnew, $ω\n"
         if     rnew ≥ r₁

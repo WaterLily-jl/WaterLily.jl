@@ -38,6 +38,10 @@
         sim_step!(sim)
         @test length(sim.pois.n)==2 && all(sim.pois.n .<5)
         @test 1.2 > sim.flow.Δt[end] > 0.8
+        # Mixed-type `uBC` and tuple `u0` are converted to T (they are indexed inside GPU kernels)
+        sim = Simulation(nm,(1.0,0),radius; u0=(1,0.5), T, mem, exitBC)
+        @test sim.flow.uBC === (T(1),T(0))
+        @test all(sim.flow.u[3:end-2,3:end-2,2] .== T(0.5))
     end
     # Test flow_ctor factory: explicit lambda wrapping Flow produces a working simulation
     sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
@@ -52,6 +56,11 @@
     @test sim.pois isa MultiLevelPoisson
     sim_step!(sim,0.5,remeasure=false)
     @test all(isfinite, sim.flow.u)
+
+    # `poisson_kwargs` reaches both projections and not `udf`; the impulsive start needs more than one V-cycle
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)
+    sim_step!(sim; udf=(a,t)->nothing, poisson_kwargs=(;itmx=1))
+    @test sim.pois.n == [1,1]
 
     # Initial-condition keyword `u0` and its deprecated alias `uλ`
     # Test to be removed in WL 2.0

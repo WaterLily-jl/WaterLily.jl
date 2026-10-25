@@ -17,7 +17,6 @@ using ImplicitGlobalGrid
 using MPI
 using StaticArrays
 using ForwardDiff: Dual, Partials, value, partials
-using EllipsisNotation
 
 # ── MPI parallel mode ────────────────────────────────────────────────────────
 
@@ -306,9 +305,9 @@ function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
     else  # Dual / Bool / non-contiguous: per-component scratch-buffer path
         tmp = _get_halo_buf(T, size(u)[1:N-1])
         for d in 1:size(u, N)
-            copyto!(tmp, @view u[.., d])
+            copyto!(tmp, selectdim(u, ndims(u), d))
             _do_scalar_halo!(tmp)
-            copyto!(@view(u[.., d]), tmp)
+            copyto!(selectdim(u, ndims(u), d), tmp)
         end
     end
 end
@@ -370,7 +369,7 @@ function WaterLily._velocity_comm!(a, perdir, ::Parallel)
     lp = _local_perdir(perdir)
     if !isempty(lp)
         for i in 1:size(a, ndims(a))
-            WaterLily.perBC!(@view(a[.., i]), lp)
+            WaterLily.perBC!(selectdim(a, ndims(a), i), lp)
         end
     end
     _do_velocity_halo!(a)

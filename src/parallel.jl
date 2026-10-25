@@ -8,7 +8,6 @@
 # `AbstractParMode`).
 using LinearAlgebra: ⋅
 using StaticArrays
-using EllipsisNotation
 
 abstract type AbstractParMode end
 struct Serial <: AbstractParMode end
@@ -220,7 +219,7 @@ velocity_comm!(a, perdir) = _velocity_comm!(a, perdir, par_mode[])
 function _velocity_comm!(a, perdir, ::Serial)
     _, n = size_u(a)
     for i ∈ 1:n
-        perBC!(@view(a[..,i]), perdir)
+        perBC!(selectdim(a, ndims(a), i), perdir)
     end
 end
 

@@ -1,7 +1,7 @@
 module WaterLilyCUDAExt
 
 using CUDA, WaterLily
-import WaterLily: L₂
+using LinearAlgebra: ⋅
 
 """
     __init__()
@@ -10,11 +10,7 @@ Asserts CUDA is functional when loading this extension.
 """
 __init__() = @assert CUDA.functional()
 
-"""
-    L₂(a)
-
-L₂ norm of CUDA array `a` excluding ghosts.
-"""
-L₂(a::CuArray,R::CartesianIndices=inside(a)) = mapreduce(abs2,+,@inbounds(a[R]))
+# CUDA.jl has a dot kernel for views of CuArrays, faster than the generic GPU mapreduce in perdot
+WaterLily.perdot(::CUDABackend,a,b,R) = @view(a[R])⋅@view(b[R])
 
 end # module

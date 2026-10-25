@@ -11,8 +11,10 @@ Test suite set by the WaterLily `backend` preference (LocalPreferences.toml):
     "KernelAbstractions" -> main test sets (every test_*.jl except test_alloc.jl)
     "SIMD"               -> allocation tests (test_alloc.jl) only
 
-Array backends: WATERLILY_BACKENDS=cpu|cuda|amdgpu|all (comma-separated, default "cpu").
+Array backends: WATERLILY_BACKENDS=cpu|cuda|amdgpu|metal|all (comma-separated, default "cpu").
 GPU backends are opt-in and installed on demand (they are not test dependencies).
+Metal has no Float64 support, so only Float32 test sets (e.g. "float32") can pass on it.
+So "all" does not include it: request "metal" explicitly (Apple only).
 
 Run a subset by passing set name(s) (matched with startswith) and/or runner flags
 (--jobs=N, --list, --verbose, --quickfail), e.g.
@@ -20,17 +22,22 @@ Run a subset by passing set name(s) (matched with startswith) and/or runner flag
 =#
 
 const WATERLILY_BACKENDS = filter(!isempty, strip.(split(lowercase(get(ENV, "WATERLILY_BACKENDS", "cpu")), ',')))
-(isempty(WATERLILY_BACKENDS) || any(b -> b ∉ ("cpu","cuda","amdgpu","all"), WATERLILY_BACKENDS)) &&
-    throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|amdgpu|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
+(isempty(WATERLILY_BACKENDS) || any(b -> b ∉ ("cpu","cuda","amdgpu","metal","all"), WATERLILY_BACKENDS)) &&
+    throw(ArgumentError("WATERLILY_BACKENDS must be a comma-separated list of cpu|cuda|amdgpu|metal|all, got \"$(get(ENV, "WATERLILY_BACKENDS", ""))\""))
 _cpu = any(b -> b in ("cpu","all"), WATERLILY_BACKENDS)
 _cuda = any(b -> b in ("cuda","all"), WATERLILY_BACKENDS)
 _amdgpu = any(b -> b in ("amdgpu","all"), WATERLILY_BACKENDS)
+_metal = "metal" in WATERLILY_BACKENDS && Sys.isapple() # not part of "all" since most test sets are Float64
 
 # GPU packages are not test deps: install the requested ones once here in the main process. A backend that cannot be installed is skipped
+# Pkg 1.13 precompiles the packages an add changes by name and fails on indirect deps ("Unknown package"), so leave that to the workers
+gpuadd(pkg) = withenv(() -> Pkg.add(pkg), "JULIA_PKG_PRECOMPILE_AUTO" => "0")
 _cuda &&
-    try Pkg.add("CUDA") catch e; @warn "Requested CUDA could not be installed; skipping" exception=e; global _cuda = false end
+    try gpuadd("CUDA") catch e; @warn "Requested CUDA could not be installed; skipping" exception=e; global _cuda = false end
 _amdgpu &&
-    try Pkg.add("AMDGPU") catch e; @warn "Requested AMDGPU could not be installed; skipping" exception=e; global _amdgpu = false end
+    try gpuadd("AMDGPU") catch e; @warn "Requested AMDGPU could not be installed; skipping" exception=e; global _amdgpu = false end
+_metal &&
+    try gpuadd("Metal") catch e; @warn "Requested Metal could not be installed; skipping" exception=e; global _metal = false end
 
 # Discover test sets: every test_*.jl, gated by the WaterLily `backend` preference
 const TESTDIR = @__DIR__
@@ -51,8 +58,10 @@ const init_code = quote
     $(_cpu)    && push!(arrays, Array)
     $(_cuda)   && using CUDA
     $(_amdgpu) && using AMDGPU
+    $(_metal)  && using Metal
     $(_cuda)   && CUDA.functional()   && push!(arrays, CUDA.CuArray)
     $(_amdgpu) && AMDGPU.functional() && push!(arrays, AMDGPU.ROCArray)
+    $(_metal)  && Metal.functional()  && push!(arrays, Metal.MtlArray)
     isempty(arrays) && error("No functional backend available")
     include($(joinpath(TESTDIR, "helper.jl")))
 end
