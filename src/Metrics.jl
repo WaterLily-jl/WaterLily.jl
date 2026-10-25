@@ -139,7 +139,7 @@ struct Walls{D,M} <: AbstractBody
     faces :: NTuple{M,Int} # signed faces, as the `walls` keyword
 end
 Walls(flow::AbstractFlow) = Walls(size(flow.p).-2,flow.walls)
-measure!(::AbstractFlow,::Walls;kwargs...) = error("`Walls` is not immersible, use the `walls` keyword")
+measure!(::AbstractFlow,::Union{Walls,SetBody{<:Any,<:Walls},SetBody{<:Any,<:Any,<:Walls}};kwargs...) = error("`Walls` is not immersible, use the `walls` keyword")
 @inline walld(w::Walls,g,x) = g<0 ? x[-g] : w.N[g]-x[g] # distance to face g
 @inline walln(g,x::SVector{D,T}) where {D,T} = SVector{D,T}(ntuple(i->i==abs(g) ? -sign(g) : 0,D)) # into the fluid
 # twice the normal on the first cell row, as `nds` weights it by kern(1/2)=1/2 (the ghost half is outside `inside`), corner cells sum their faces

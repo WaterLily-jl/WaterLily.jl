@@ -146,6 +146,7 @@ end
         @test vec(sum(Array(WaterLily.surface_values(sim.flow,f(R*n.+N/2),f(n)).τ),dims=1))*2π*R/128 ≈ F(body) rtol=0.02
         sim = Simulation((16,16),(1.,0.),4.;mem=f) # no walls by default
         @test WaterLily.total_force(sim.flow,Walls(sim.flow)) == [0,0]
-        @test_throws ErrorException Simulation((16,16),(1.,0.),4.;body=Walls((16,16),(-2,)),mem=f)
+        w = Walls((16,16),(-2,)) # not immersible, also in a set operation
+        for b ∈ (w,body ∪ w,-w); @test_throws ErrorException Simulation((16,16),(1.,0.),4.;body=b,mem=f); end
     end
 end

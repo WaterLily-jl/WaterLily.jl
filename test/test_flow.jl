@@ -231,6 +231,7 @@ end
         @test all(Array(sim.flow.u)[2,2:end-1,1] .== 2) # BC! uses the new uBC
         swap!(sim,(3,0)) # Int tuple must be converted to the flow's eltype
         @test sim.flow.uBC === (3f0,0f0)
+        @test Flow(ntuple(i->getfield(sim.flow,i),15)...).walls === () # the signature before `walls` still works
     end
 end
 
