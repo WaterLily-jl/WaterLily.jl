@@ -128,6 +128,27 @@ BDIM-masked surface normal.
     d,n,_ = measure(body,x,t,fastd²=one(T))
     n*WaterLily.kern(clamp(d,-1,1))
 end
+"""
+    Walls(flow) <: AbstractBody
+
+The no-slip `walls` of `flow` as a body for the force metrics, e.g. `total_force(flow,Walls(flow))`.
+Not immersible: `measure` only returns the wall distance.
+"""
+struct Walls{D,M} <: AbstractBody
+    N :: NTuple{D,Int}     # domain size
+    faces :: NTuple{M,Int} # signed faces, as the `walls` keyword
+end
+Walls(flow::AbstractFlow) = Walls(size(flow.p).-2,flow.walls)
+measure!(::AbstractFlow,::Walls;kwargs...) = error("`Walls` is not immersible, use the `walls` keyword")
+@inline walld(w::Walls,g,x) = g<0 ? x[-g] : w.N[g]-x[g] # distance to face g
+@inline walln(g,x::SVector{D,T}) where {D,T} = SVector{D,T}(ntuple(i->i==abs(g) ? -sign(g) : 0,D)) # into the fluid
+measure(w::Walls,x::AbstractVector{T},t=0;kwargs...) where T = (minimum(g->walld(w,g,x),w.faces;init=T(Inf)),zero(x),zero(x))
+# unit weight on the first cell row (the ghost half of the kernel is outside `inside`), corner cells sum their faces
+@inline nds(w::Walls,x::AbstractVector,t) = sum(g->walld(w,g,x)<1 ? walln(g,x) : zero(x),w.faces;init=zero(x))
+# keep per-body `nds` through set operations
+nds(b::SetBody{typeof(min)},x::AbstractVector,t) = sdf(b.a,x,t)≤sdf(b.b,x,t) ? nds(b.a,x,t) : nds(b.b,x,t)
+nds(b::SetBody{typeof(max)},x::AbstractVector,t) = sdf(b.a,x,t)≥sdf(b.b,x,t) ? nds(b.a,x,t) : nds(b.b,x,t)
+nds(b::SetBody{typeof(-)},x::AbstractVector,t) = -nds(b.a,x,t)
 
 """
     sumdims(df)
@@ -249,6 +270,29 @@ end
 @inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t)
     F = τnds(I,p,u,ν,body,t)
     df[I,:] .= F; dm[I,:] .= cross(loc(0,I,eltype(p))-x₀,F)
+end
+
+"""
+    surface_values(flow,x,n)
+
+Pressure `p` and traction `τ=(pI-2νS)⋅n` at the points `x` with normals `n` (K×D, into the fluid), interpolated
+from the interior cells. Points on a wall use its first cell row, so a wall mesh with vertices on the cell corners
+integrates exactly to the wall metrics. Smoothed bodies are better sampled outside the BDIM kernel.
+"""
+function surface_values(a::AbstractFlow{D,T},x::AbstractMatrix,n::AbstractMatrix) where {D,T}
+    ps,ts = similar(x,T,size(x,1)),similar(x,T,size(x))
+    @loop surface_value!(ps,ts,k,x,n,a.p,a.u,a.ν) over k ∈ CartesianIndices((size(x,1),))
+    (p=ps,τ=ts)
+end
+@inline function surface_value!(ps,ts,k,x,n,p::AbstractArray{T,D},u,ν) where {T,D}
+    xk,nk = SVector{D,T}(ntuple(i->x[k,i],D)),SVector{D,T}(ntuple(i->n[k,i],D))
+    ps[k] = cinterp(J->p[J],xk,size(p)); ts[k,:] .= cinterp(J->τ(J,p,u,ν)*nk,xk,size(p))
+end
+# linear interpolation of `f(J)` between the interior cell centres, clamped to them
+@inline function cinterp(f,x::SVector{D,T},N) where {D,T}
+    y = clamp.(x,T(0.5),SVector{D,T}(N).-T(2.5)).+T(1.5); i = min.(floor.(Int,y),SVector(N).-2); y = y.-i
+    I = CartesianIndex(Tuple(i)); s = zero(f(I))
+    for J in I:I+oneunit(I); s += f(J)*prod(ifelse.(J.I.==I.I,1 .-y,y)); end; s
 end
 
 """

@@ -216,19 +216,20 @@ face(R::CartesianIndices{N},j) where N = (i=only(R.indices[j]); MappedArr(J->ins
 face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
 
 """
-    BC!(a,U,saveexit=false,perdir=(),t=0)
+    BC!(a,U,saveexit=false,perdir=(),t=0;walls=())
 
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
 condition `a[I,i]=U[i]` is applied to the vector component _normal_ to the domain
 boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`.
-A zero Neumann condition is applied to the tangential components.
+A zero Neumann condition is applied to the tangential components, or a no-slip one on the `walls` faces
+(signed dimensions, `-j` (`j`) the lower (upper) face normal to `j`): `a[I,i]=2U[i]-a[I±δ,i]`, so `a=U` on the wall.
 `saveexit=true` leaves the normal component on the `x` exit face (upper `x` boundary) untouched,
 so a convective outflow set by `exitBC!` is kept and every other face is always overwritten.
 `perdir` lists the dimensions using periodic BCs instead.
 `t` is passed to `U` when it is a function `(i,x,t)->...`.
 """
-BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
+BC!(a,U,saveexit=false,perdir=(),t=0;walls=()) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t;walls)
+function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0;walls=())
     N,n = size_u(a)
     for i ∈ 1:n, j ∈ 1:n
         if j in perdir
@@ -240,9 +241,11 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0)
                     @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ face(N,s,j)
                 end
                 (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ face(N,N[j],j)) # overwrite exit
-            else    # Tangential directions, Neumann
-                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I),eltype(a)),t) over I ∈ face(N,1,j)
-                @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I),eltype(a)),t) over I ∈ face(N,N[j],j)
+            else    # Tangential directions, lower and upper ghosts: no-slip on `walls`, else Neumann (one kernel each, to vectorize)
+                for (s,d,wall) ∈ ((1,1,-j in walls),(N[j],-1,j in walls))
+                    wall ? (@loop a[I,i] = 2uBC(i,(loc(i,I,eltype(a))+loc(i,I+d*δ(j,I),eltype(a)))/2,t)-a[I+d*δ(j,I),i] over I ∈ face(N,s,j)) :
+                           (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+d*δ(j,I),i]-uBC(i,loc(i,I+d*δ(j,I),eltype(a)),t) over I ∈ face(N,s,j))
+                end
             end
         end
     end

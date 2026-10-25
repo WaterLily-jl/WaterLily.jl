@@ -29,7 +29,7 @@ include("AutoBody.jl")
 export AutoBody,Bodies,measure,sdf,+,-
 
 include("Metrics.jl")
-export MeanFlow,update!,uu!,uu
+export MeanFlow,update!,uu!,uu,Walls
 
 include("util.jl")
 
@@ -53,7 +53,7 @@ xtargs(::Val{3},N,T) = (zeros(SVector{N,T}),zero(T))
 """
     Simulation(dims::NTuple, uBC::Union{NTuple,Function}, L::Number;
                U=nothing, Δt=0.25, ν=0., ϵ=1, g=nothing,
-               u0=nothing, perdir=(), exitBC=false, λ=quick,
+               u0=nothing, perdir=(), walls=(), exitBC=false, λ=quick,
                body::AbstractBody=NoBody(),
                T=Float32, mem=Array,
                flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
@@ -71,6 +71,8 @@ Constructor for a WaterLily.jl simulation:
   - `g`: Domain acceleration, `g(i,x,t)=duᵢ/dt`
   - `ϵ`: BDIM kernel width.
   - `perdir`: Domain periodic boundary condition in the `(i,)` direction.
+  - `walls`: No-slip faces as signed directions, `-i` (`i`) the lower (upper) face normal to `i`, e.g. `(-2,2)` for a channel.
+        The wall velocity is `uBC` on the wall (e.g. a lid). Other faces are free-slip. Wall forces use `Walls(sim.flow)`.
   - `λ`: Convective interpolation scheme `λ(u,c,d)` (upstream, central, downstream), e.g. `quick` (default),
         `cds`, or `vanLeer`.
   - `u0`: Velocity field applied to the initial condition.
@@ -97,7 +99,7 @@ mutable struct Simulation <: AbstractSimulation
     body :: AbstractBody
     pois :: AbstractPoisson
     function Simulation(dims::NTuple{N}, uBC, L::Number;
-                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
+                        Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(), walls=(),
                         u0=nothing, uλ=nothing, exitBC=false, λ=quick, body::AbstractBody=NoBody(),
                         flow_ctor=(dims,uBC;kw...)->Flow(dims,uBC;kw...),
                         pois_ctor=flow->MultiLevelPoisson(flow.p,flow.μ₀,flow.σ;perdir),
@@ -106,7 +108,7 @@ mutable struct Simulation <: AbstractSimulation
         isnothing(U) && (U = √sum(abs2,uBC))
         u0 = ic_kwarg(u0, uλ)
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(u0,N,T,2)
-        flow = flow_ctor(dims,uBC;u0,Δt,ν,g,λ,T,mem,perdir,exitBC)
+        flow = flow_ctor(dims,uBC;u0,Δt,ν,g,λ,T,mem,perdir,walls,exitBC)
         measure!(flow,body;ϵ)
         new(U,L,ϵ,flow,body,pois_ctor(flow))
     end

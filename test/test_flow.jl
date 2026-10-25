@@ -233,3 +233,37 @@ end
         @test sim.flow.uBC === (3f0,0f0)
     end
 end
+
+@testset "No-slip walls" begin
+    # Couette flow: the linear profile is exact
+    for f ∈ arrays
+        L = 8; lid(i,x,t) = convert(eltype(x), i==1 && x[2]≥L)
+        sim = Simulation((L,L),lid,L;U=1,ν=1.,perdir=(1,),walls=(-2,2),T=Float64,mem=f)
+        sim_step!(sim,20.) # ≫ the slowest transient L²/(νπ²)·U/L
+        y = (2:L+1) .- 1.5
+        @test maximum(abs, Array(sim.flow.u)[2:end-1,2:end-1,1] .- (y ./ L)') < 1e-8
+    end
+    # `walls` matches the examples' recipe (TwoD_Channel.jl): free-slip BC!, then reflect the ghosts after each projection
+    function wallfix!(u,walls)
+        N,_ = WaterLily.size_u(u)
+        -2 ∈ walls && (WaterLily.@loop u[I,1] = -u[I+δ(2,I),1] over I ∈ WaterLily.slice(N,1,2))
+         2 ∈ walls && (WaterLily.@loop u[I,1] = -u[I-δ(2,I),1] over I ∈ WaterLily.slice(N,N[2],2))
+    end
+    function legacy_step!(a,b,walls)
+        a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+        WaterLily.mom_predict!(a,t₀,t₁); WaterLily.mom_project!(a,b,1,t₁); wallfix!(a.u,walls)
+        WaterLily.mom_correct!(a,t₁);    WaterLily.mom_project!(a,b,2,t₁); wallfix!(a.u,walls)
+        push!(a.Δt,WaterLily.CFL(a))
+    end
+    for f ∈ arrays, walls ∈ ((-2,),(-2,2))
+        L = 16; bump = AutoBody((x,t)->√sum(abs2, x - SA[2L,0]) - L/2) # body-wall corner
+        g(i,x,t) = i==1 ? convert(typeof(t),0.01) : zero(t)
+        kw = (U=1, ν=0.01, g, perdir=(1,), u0=(1,0), T=Float32, mem=f, body=bump)
+        new = Simulation((4L,2L),(0,0),L; walls, kw...)
+        old = Simulation((4L,2L),(0,0),L; kw...); wallfix!(old.flow.u,walls)
+        for _ ∈ 1:20
+            sim_step!(new;remeasure=false); legacy_step!(old.flow,old.pois,walls)
+        end
+        @test Array(new.flow.u) == Array(old.flow.u) && Array(new.flow.p) == Array(old.flow.p)
+    end
+end

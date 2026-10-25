@@ -119,3 +119,32 @@ import WaterLily: ×
         @test size(meanflow2.P) == size(meanflow.P)
     end
 end
+
+@testset "Walls" begin
+    # 2D wall mesh on face g: vertices on the cell corners, normals into the fluid
+    wallmesh(N,g) = (Float64[i==abs(g) ? (g<0 ? 0 : N[i]) : k for k in 0:N[3-abs(g)], i in 1:2],
+                     repeat(Float64[i==abs(g) ? -sign(g) : 0 for i in 1:2]',N[3-abs(g)]+1))
+    trapz(τ) = vec(sum(τ[1:end-1,:].+τ[2:end,:],dims=1))/2
+    lid(H) = (i,x,t)->convert(Float64, i==1 && x[2]≥H)
+    for f ∈ arrays
+        # Couette flow: the linear profile is exact, so is the wall shear
+        H = 16; ν = 1.0
+        sim = Simulation((H,H),lid(H),H;U=1,ν,perdir=(1,),walls=(-2,2),T=Float64,mem=f); sim_step!(sim,40.)
+        w = Walls(sim.flow); x,n = f.(wallmesh(w.N,-2))
+        @test WaterLily.viscous_force(sim.flow,Walls(w.N,(-2,))) ≈ [-ν,0] atol=1e-8 # -ν/H on a floor of length H
+        @test WaterLily.viscous_force(sim.flow,w) ≈ [0,0] atol=1e-8 # the lid cancels the floor
+        @test Array(WaterLily.surface_values(sim.flow,x,n).τ) ≈ repeat([-ν/H 0],H+1) atol=1e-8
+        # cylinder in a lid-driven cavity
+        N = 32; R = 4.; body = AutoBody((x,t)->√sum(abs2,x.-N/2)-R)
+        sim = Simulation((N,N),lid(N),R;U=1,ν=0.1,walls=(-1,1,-2,2),body,T=Float64,mem=f); sim_step!(sim,5.)
+        w = Walls(sim.flow); F(b) = WaterLily.total_force(sim.flow,b)
+        Fg = [trapz(Array(WaterLily.surface_values(sim.flow,f.(wallmesh(w.N,g))...).τ)) for g in w.faces]
+        @test all(Fg .≈ [F(Walls(w.N,(g,))) for g in w.faces]) && sum(Fg) ≈ F(w) # exact, corners included
+        @test F(body ∪ w) ≈ F(body)+F(w)
+        θ = 2π*(0:127)/128; n = [cos.(θ) sin.(θ)]
+        @test vec(sum(Array(WaterLily.surface_values(sim.flow,f(R*n.+N/2),f(n)).τ),dims=1))*2π*R/128 ≈ F(body) rtol=0.02
+        sim = Simulation((16,16),(1.,0.),4.;mem=f) # no walls by default
+        @test WaterLily.total_force(sim.flow,Walls(sim.flow)) == [0,0]
+        @test_throws ErrorException Simulation((16,16),(1.,0.),4.;body=Walls((16,16),(-2,)),mem=f)
+    end
+end
