@@ -151,7 +151,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
 
     WaterLily.par_mode[] = Parallel(comm, Int(me))
     # Drop per-size caches from any previous grid (re-init in the same session)
-    foreach(empty!, (_coarse_grids, _mpi_bufs, _halo_bufs))
+    foreach(empty!, (_coarse_grids, _mpi_bufs))
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -224,15 +224,17 @@ end
 # ── Direct MPI halo exchange (Dual / Bool eltypes) ───────────────────────────
 # IGG's `update_halo!` rejects non-primitive eltypes (its `GGNumber` union),
 # so `ForwardDiff.Dual` and `Bool` arrays take this manual `Sendrecv!` shift:
-# 1-cell slabs per active dim, pre-allocated per-(eltype, shape, dim) buffers.
+# 1-cell slabs per active dim, pre-allocated per-(eltype, shape, dim, backend)
+# buffers. The buffers live where `arr` lives, so GPU halos stay on the device
+# and MPI gets device pointers (CUDA-aware MPI).
 
-const _mpi_bufs = Dict{Tuple, NTuple{4,Array}}()
+const _mpi_bufs = Dict{Tuple, NTuple{4,AbstractArray}}()
 
-@inline function _get_mpi_bufs(::Type{T}, slab_shape::Tuple, dim::Int) where T
-    key  = (T, slab_shape, dim)
+@inline function _get_mpi_bufs(arr::AbstractArray{T}, slab_shape::Tuple, dim::Int) where T
+    key  = (T, slab_shape, dim, KernelAbstractions.get_backend(arr))
     bufs = get(_mpi_bufs, key, nothing)   # single lookup; `get!` do-block allocates
-    bufs === nothing || return bufs::NTuple{4,Array{T}}
-    _mpi_bufs[key] = ntuple(_ -> zeros(T, slab_shape), 4)
+    bufs === nothing || return bufs
+    _mpi_bufs[key] = ntuple(_ -> fill!(similar(arr, T, slab_shape), zero(T)), 4)
 end
 
 function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
@@ -250,11 +252,13 @@ function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
         (nleft < 0 && nright < 0) && continue
 
         slab_shape = ntuple(i -> i == dim ? 1 : N[i], ndims(arr))
-        send_left, recv_left, send_right, recv_right = _get_mpi_bufs(T, slab_shape, dim)
+        send_left, recv_left, send_right, recv_right = _get_mpi_bufs(arr, slab_shape, dim)
 
-        # pack first/last interior cells (index 2 and N-1)
+        # pack first/last interior cells (index 2 and N-1); on GPUs the copies
+        # are asynchronous and MPI does not wait for them
         copyto!(send_left,  _slab(arr, dim, 2:2))
         copyto!(send_right, _slab(arr, dim, N[dim]-1:N[dim]-1))
+        _sync(arr)
 
         # Classical shift pattern: send right / recv left, then the reverse.
         # Missing neighbors are already `MPI.PROC_NULL` (no-op slots), and the
@@ -273,8 +277,8 @@ end
 
 # ── Unified scalar halo exchange ─────────────────────────────────────────────
 
-@inline _wire_view(arr::Array) = arr
-@inline _wire_view(arr::Array{<:Dual}) = _dual_view(arr)
+@inline _wire_view(arr::AbstractArray) = arr
+@inline _wire_view(arr::AbstractArray{<:Dual}) = _dual_view(arr)
 
 @inline _native_eltype(::Type{<:Dual}) = false
 @inline _native_eltype(::Type{Bool})   = false
@@ -291,10 +295,6 @@ function _do_scalar_halo!(arr::AbstractArray)
 end
 
 # ── Vector (velocity-shaped) halo exchange ────────────────────────────────────
-
-const _halo_bufs = Dict{Tuple, Array}()
-
-_get_halo_buf(::Type{T}, dims::NTuple{N,Int}) where {T,N} = get!(() -> Array{T}(undef, dims), _halo_bufs, (T, dims))
 
 # All components in ONE `update_halo!` call, on zero-copy 3D aliases of the
 # contiguous component blocks: amortises IGG's per-call floor across the
@@ -323,12 +323,9 @@ function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
     _sync(u)
     if _native_eltype(T) && (u isa Array || selectdim(u, N, 1) isa DenseArray)
         _velocity_halo_igg!(u)
-    else  # Dual / Bool / non-contiguous: per-component scratch-buffer path
-        tmp = _get_halo_buf(T, size(u)[1:N-1])
+    else  # Dual / Bool / non-contiguous: one Sendrecv! shift per component, in place
         for d in 1:size(u, N)
-            copyto!(tmp, selectdim(u, ndims(u), d))
-            _do_scalar_halo!(tmp)
-            copyto!(selectdim(u, ndims(u), d), tmp)
+            _scalar_halo_mpi!(selectdim(u, N, d))
         end
     end
 end
@@ -344,10 +341,13 @@ end
     Dual{T,V,N}(f[1], Partials{N,V}(NTuple{N,V}(@view f[2:end])))
 
 # Zero-copy flat-V alias of a contiguous Dual array. Callers must keep the
-# parent rooted (GC.@preserve) for the lifetime of the view.
+# parent rooted (GC.@preserve) for the lifetime of the view. MPI.jl has no
+# `Buffer` for a host `ReinterpretArray`, hence the `unsafe_wrap`; `reinterpret`
+# of a device array (CuArray, ROCArray) is itself a device array.
 @inline function _dual_view(arr::Array{D}) where {Tg,V,N,D<:Dual{Tg,V,N}}
     unsafe_wrap(Array, Ptr{V}(pointer(arr)), length(arr) * (N + 1))
 end
+@inline _dual_view(arr::AbstractArray{<:Dual{Tg,V}}) where {Tg,V} = reinterpret(V, vec(arr))
 
 _dual_sum(x::Dual{T,V,N}) where {T,V,N} =
     (f = _dual_flat(x); MPI.Allreduce!(f, MPI.SUM, _comm()); _dual_unflat(Dual{T,V,N}, f))

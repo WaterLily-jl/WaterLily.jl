@@ -338,6 +338,26 @@ elseif ROLE == "unit"
                     @test all(partials(d)[1] ≈ Float64(nright) for d in rslice)
                 end
             end
+
+            # Velocity-shaped Dual array: the same shift on each component, in place.
+            u = fill(mkdual1(-1.0, -1.0), (Nloc[1]+2, Nloc[2]+2, 2))
+            for c in 1:2
+                u[2:Nloc[1]+1, 2:Nloc[2]+1, c] .= mkdual1(Float64(me + 10c), Float64(c))
+            end
+            WaterLily.velocity_halo!(u)
+            for c in 1:2, j in 1:2
+                nleft, nright = g.neighbors[1, j], g.neighbors[2, j]
+                lslice = j == 1 ? @view(u[1, 2:end-1, c]) : @view(u[2:end-1, 1, c])
+                rslice = j == 1 ? @view(u[end, 2:end-1, c]) : @view(u[2:end-1, end, c])
+                if nleft >= 0
+                    @test all(value(d)       ≈ Float64(nleft + 10c) for d in lslice)
+                    @test all(partials(d)[1] ≈ Float64(c)           for d in lslice)
+                end
+                if nright >= 0
+                    @test all(value(d)       ≈ Float64(nright + 10c) for d in rslice)
+                    @test all(partials(d)[1] ≈ Float64(c)            for d in rslice)
+                end
+            end
         end
     end
 
