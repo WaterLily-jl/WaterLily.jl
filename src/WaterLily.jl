@@ -72,7 +72,8 @@ Constructor for a WaterLily.jl simulation:
   - `ϵ`: BDIM kernel width.
   - `perdir`: Domain periodic boundary condition in the `(i,)` direction.
   - `walls`: No-slip faces as signed directions, `-i` (`i`) the lower (upper) face normal to `i`, e.g. `(-2,2)` for a channel.
-        The wall velocity is `uBC` on the wall (e.g. a lid). Other faces are free-slip. Wall forces use `Walls(sim.flow)`.
+        The wall velocity is `uBC` on the wall, so a `Tuple` moves the walls and a `Function` can set e.g. a lid (its time
+        derivative accelerates the whole domain, as for any `uBC`). Other faces are free-slip. Wall forces use `Walls(sim.flow)`.
   - `λ`: Convective interpolation scheme `λ(u,c,d)` (upstream, central, downstream), e.g. `quick` (default),
         `cds`, or `vanLeer`.
   - `u0`: Velocity field applied to the initial condition.

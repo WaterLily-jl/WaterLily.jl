@@ -132,7 +132,7 @@ end
     Walls(flow) <: AbstractBody
 
 The no-slip `walls` of `flow` as a body for the force metrics, e.g. `total_force(flow,Walls(flow))`.
-Not immersible: `measure` only returns the wall distance.
+Not immersible: its `measure` is only meant for the force metrics.
 """
 struct Walls{D,M} <: AbstractBody
     N :: NTuple{D,Int}     # domain size
@@ -142,13 +142,9 @@ Walls(flow::AbstractFlow) = Walls(size(flow.p).-2,flow.walls)
 measure!(::AbstractFlow,::Walls;kwargs...) = error("`Walls` is not immersible, use the `walls` keyword")
 @inline walld(w::Walls,g,x) = g<0 ? x[-g] : w.N[g]-x[g] # distance to face g
 @inline walln(g,x::SVector{D,T}) where {D,T} = SVector{D,T}(ntuple(i->i==abs(g) ? -sign(g) : 0,D)) # into the fluid
-measure(w::Walls,x::AbstractVector{T},t=0;kwargs...) where T = (minimum(g->walld(w,g,x),w.faces;init=T(Inf)),zero(x),zero(x))
-# unit weight on the first cell row (the ghost half of the kernel is outside `inside`), corner cells sum their faces
-@inline nds(w::Walls,x::AbstractVector,t) = sum(g->walld(w,g,x)<1 ? walln(g,x) : zero(x),w.faces;init=zero(x))
-# keep per-body `nds` through set operations
-nds(b::SetBody{typeof(min)},x::AbstractVector,t) = sdf(b.a,x,t)≤sdf(b.b,x,t) ? nds(b.a,x,t) : nds(b.b,x,t)
-nds(b::SetBody{typeof(max)},x::AbstractVector,t) = sdf(b.a,x,t)≥sdf(b.b,x,t) ? nds(b.a,x,t) : nds(b.b,x,t)
-nds(b::SetBody{typeof(-)},x::AbstractVector,t) = -nds(b.a,x,t)
+# twice the normal on the first cell row, as `nds` weights it by kern(1/2)=1/2 (the ghost half is outside `inside`), corner cells sum their faces
+measure(w::Walls,x::AbstractVector{T},t=0;kwargs...) where T = (minimum(g->walld(w,g,x),w.faces;init=T(Inf)),
+    sum(g->walld(w,g,x)<1 ? 2walln(g,x) : zero(x),w.faces;init=zero(x)),zero(x))
 
 """
     sumdims(df)

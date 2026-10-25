@@ -235,14 +235,6 @@ end
 end
 
 @testset "No-slip walls" begin
-    # Couette flow: the linear profile is exact
-    for f ∈ arrays
-        L = 8; lid(i,x,t) = convert(eltype(x), i==1 && x[2]≥L)
-        sim = Simulation((L,L),lid,L;U=1,ν=1.,perdir=(1,),walls=(-2,2),T=Float64,mem=f)
-        sim_step!(sim,20.) # ≫ the slowest transient L²/(νπ²)·U/L
-        y = (2:L+1) .- 1.5
-        @test maximum(abs, Array(sim.flow.u)[2:end-1,2:end-1,1] .- (y ./ L)') < 1e-8
-    end
     # `walls` matches the examples' recipe (TwoD_Channel.jl): free-slip BC!, then reflect the ghosts after each projection
     function wallfix!(u,walls)
         N,_ = WaterLily.size_u(u)

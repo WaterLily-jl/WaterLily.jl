@@ -132,8 +132,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
             u0=nothing, uλ=nothing, perdir=(), walls=(), exitBC=false, λ=quick, T=Float32) where D
         u0 = ic_kwarg(u0, uλ) # to be removed in v2.0
         uBC isa Tuple && (uBC = T.(uBC)) # same type for all components: `uBC[i]` must be type-stable in GPU kernels
-        @assert all(j->1≤abs(j)≤D && abs(j)∉perdir, walls) "`walls` faces must be ±j with j in 1:$D and not in `perdir`"
-        @assert !(exitBC && 1 in walls) "the exit face `1` cannot be a wall"
+        @assert all(j->1≤abs(j)≤D && abs(j)∉perdir && !(exitBC && j==1), walls) "`walls` faces must be ±j with j in 1:$D, not in `perdir` nor the `exitBC` face 1"
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(u0) && (u0 = ic_function(uBC))

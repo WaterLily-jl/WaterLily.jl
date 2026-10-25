@@ -130,6 +130,7 @@ end
         # Couette flow: the linear profile is exact, so is the wall shear
         H = 16; ν = 1.0
         sim = Simulation((H,H),lid(H),H;U=1,ν,perdir=(1,),walls=(-2,2),T=Float64,mem=f); sim_step!(sim,40.)
+        @test maximum(abs, Array(sim.flow.u)[2:end-1,2:end-1,1] .- (((2:H+1) .- 1.5) ./ H)') < 1e-8 # exact linear profile
         w = Walls(sim.flow); x,n = f.(wallmesh(w.N,-2))
         @test WaterLily.viscous_force(sim.flow,Walls(w.N,(-2,))) ≈ [-ν,0] atol=1e-8 # -ν/H on a floor of length H
         @test WaterLily.viscous_force(sim.flow,w) ≈ [0,0] atol=1e-8 # the lid cancels the floor
