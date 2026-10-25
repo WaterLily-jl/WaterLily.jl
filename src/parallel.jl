@@ -257,7 +257,7 @@ global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
 _global_offset(::Val{N}, ::Type{T}, ::Serial) where {N,T} = zero(SVector{N,T})
 
 """
-    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device) → (local_dims, rank, comm)
 
 Initialize MPI domain decomposition for WaterLily.  Implemented by `WaterLilyMPIExt`.
 """

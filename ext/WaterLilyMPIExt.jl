@@ -114,13 +114,16 @@ end
 end
 
 """
-    init_waterlily_mpi(global_dims; perdir=()) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound()) → (local_dims, rank, comm)
 
 Initialize MPI domain decomposition: picks the rank topology
 (`_shape_aware_topology`), initializes ImplicitGlobalGrid, and sets
-`par_mode[] = Parallel(comm, rank)`.
+`par_mode[] = Parallel(comm, rank)`. With CUDA or AMDGPU loaded,
+`select_device=true` gives each node-local rank its own GPU (ImplicitGlobalGrid's
+`select_device`); when the launcher already binds one GPU per rank (e.g. Slurm
+`--gpus-per-task=1`), each rank keeps the GPU it sees.
 """
-function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
+function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_device=!_gpu_bound()) where N
     MPI.Initialized() || MPI.Init()
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
 
@@ -142,6 +145,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
         halowidths = (1, 1, 1),
         periodx = igg_per[1], periody = igg_per[2], periodz = igg_per[3],
         init_MPI = false,
+        select_device,
     )
 
     WaterLily.par_mode[] = Parallel(comm, Int(me))
@@ -157,6 +161,12 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=()) where N
     end
 
     return local_dims, me, comm
+end
+
+# One visible GPU per process: the launcher bound the GPUs (ImplicitGlobalGrid's
+# select_device would count one GPU for all the ranks of a node and stop)
+_gpu_bound() = any(("CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES")) do k
+    v = get(ENV, k, ""); !isempty(v) && !occursin(',', v)
 end
 
 # ── Per-size GlobalGrid side-table (coarse multigrid arrays) ─────────────────
