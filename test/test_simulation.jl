@@ -57,6 +57,11 @@
     sim_step!(sim,0.5,remeasure=false)
     @test all(isfinite, sim.flow.u)
 
+    # `poisson_kwargs` reaches both projections and not `udf`; the impulsive start needs more than one V-cycle
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)
+    sim_step!(sim; udf=(a,t)->nothing, poisson_kwargs=(;itmx=1))
+    @test sim.pois.n == [1,1]
+
     # Initial-condition keyword `u0` and its deprecated alias `uλ`
     # Test to be removed in WL 2.0
     ic(i,x) = i==1 ? 2.0f0 : 0.0f0

@@ -1,4 +1,3 @@
-using EllipsisNotation
 """
     interp(x::SVector, arr::AbstractArray)
 
@@ -21,25 +20,15 @@ function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
     # Each component is stored on a staggered face, so shift query for that
     # component and then clamp to the valid scalar interpolation domain.
     @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(_interp(_interp_clamp(x + shift(i), size(varr)[1:D]), @view(varr[..,i])) for i in 1:D)
+    return SVector{D,T}(_interp(_interp_clamp(x + shift(i), size(varr)[1:D]), varr, i) for i in 1:D)
 end
-function interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
-    _interp(_interp_clamp(x, size(arr)), arr)
-end
-function _interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T}
-    # Index below the interpolation coordinate and the difference
-    x = x .+ 1.5f0; i = floor.(Int,x); y = x.-i
-
-    # CartesianIndices around x
-    I = CartesianIndex(i...); R = I:I+oneunit(I)
-
-    # Linearly weighted sum over arr[R] (in serial)
-    s = zero(T)
-    @fastmath @inbounds @simd for J in R
-        weight = prod(@. ifelse(J.I==I.I,1-y,y))
-        s += arr[J]*weight
-    end
-    return s
+interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T} = _interp(_interp_clamp(x, size(arr)), arr)
+function _interp(x::SVector{D,T}, arr::AbstractArray{T}, c...) where {D,T}
+    x = x .+ 1.5f0; I = floor.(Int,x); y = x.-I
+    sum(ntuple(Val(1<<D)) do k
+        o = ntuple(d -> ((k-1)>>(d-1)) & 1, D)
+        @inbounds arr[CartesianIndex(Tuple(I) .+ o), c...] * prod(ntuple(d -> o[d]==1 ? y[d] : 1-y[d], D))
+    end)
 end
 
 """
