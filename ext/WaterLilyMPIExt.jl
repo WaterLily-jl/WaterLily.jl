@@ -16,6 +16,7 @@ import WaterLily: @loop
 using ImplicitGlobalGrid
 using MPI
 using StaticArrays
+import KernelAbstractions
 using ForwardDiff: Dual, Partials, value, partials
 
 # ── MPI parallel mode ────────────────────────────────────────────────────────
@@ -279,8 +280,13 @@ end
 @inline _native_eltype(::Type{Bool})   = false
 @inline _native_eltype(::Type)         = true
 
+# IGG packs and unpacks GPU halos on its own streams, which do not wait for the
+# `@loop` kernels still running on the task stream: wait for them first.
+_sync(a) = KernelAbstractions.synchronize(KernelAbstractions.get_backend(a))
+
 function _do_scalar_halo!(arr::AbstractArray)
     _any_decomposed() || return
+    _sync(arr)
     _native_eltype(eltype(arr)) ? _scalar_halo_igg!(arr) : _scalar_halo_mpi!(arr)
 end
 
@@ -314,6 +320,7 @@ end
 
 function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
     _any_decomposed() || return
+    _sync(u)
     if _native_eltype(T) && (u isa Array || selectdim(u, N, 1) isa DenseArray)
         _velocity_halo_igg!(u)
     else  # Dual / Bool / non-contiguous: per-component scratch-buffer path
