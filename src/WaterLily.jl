@@ -161,7 +161,6 @@ Measure a dynamic `body` to update the `flow` and `pois` coefficients.
 """
 function measure!(sim::AbstractSimulation,t=sum(sim.flow.Δt))
     measure!(sim.flow,sim.body;t,ϵ=sim.ϵ)
-    sim.pois.levels[1].L .= sim.flow.μ₀
     update!(sim.pois)
 end
 
