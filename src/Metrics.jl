@@ -149,7 +149,7 @@ pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
 function pressure_force(p,df,body,t=0)
     df .= zero(eltype(p))
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -172,7 +172,7 @@ viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0)
     df .= zero(eltype(u)); offset = global_offset(Val(ndims(u)-1),eltype(u)) # rank-local → global coords (zero in serial)
-    @loop df[I,:] .= -2ν*Snds(I,u,body,t,offset) over I ∈ bbox(body,inside_u(u))
+    @loop df[I,:] .= -2ν*Snds(I,u,body,t,offset) over I ∈ local_bbox(body,inside_u(u))
     sumdims(df)
 end
 
@@ -193,7 +193,7 @@ total_force(sim) = total_force(sim.flow,sim.body)
 total_force(flow,body) = total_force(flow.p,flow.u,flow.ν,flow.f,body,time(flow))
 function total_force(p,u,ν,df,body,t=0)
     df .= zero(eltype(p)); offset = global_offset(Val(ndims(p)),eltype(p)) # rank-local → global coords (zero in serial)
-    @loop df[I,:] .= τnds(I,p,u,ν,body,t,offset) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= τnds(I,p,u,ν,body,t,offset) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -208,7 +208,7 @@ pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
 function pressure_moment(x₀,p,df,body,t=0)
     df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
-    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -222,7 +222,7 @@ viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
 viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_moment(x₀,u,ν,df,body,t=0)
     df .= zero(eltype(u)); x₀ = eltype(u).(x₀); offset = global_offset(Val(ndims(u)-1),eltype(u)) # rank-local → global coords (zero in serial)
-    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t,offset)) over I ∈ bbox(body,inside_u(u))
+    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t,offset)) over I ∈ local_bbox(body,inside_u(u))
     sumdims(df)
 end
 
@@ -235,7 +235,7 @@ total_moment(x₀,sim) = total_moment(x₀,sim.flow,sim.body)
 total_moment(x₀,flow,body) = total_moment(x₀,flow.p,flow.u,flow.ν,flow.f,body,time(flow))
 function total_moment(x₀,p,u,ν,df,body,t=0)
     df .= zero(eltype(p)); x₀ = eltype(p).(x₀); offset = global_offset(Val(ndims(p)),eltype(p)) # rank-local → global coords (zero in serial)
-    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t,offset)) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t,offset)) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -249,7 +249,7 @@ total_force_and_moment(x₀,sim) = total_force_and_moment(x₀,sim.flow,sim.body
 total_force_and_moment(x₀,flow,body) = total_force_and_moment(x₀,flow.p,flow.u,flow.ν,flow.f,flow.u⁰,body,time(flow))
 function total_force_and_moment(x₀,p,u,ν,df,dm,body,t=0)
     df .= zero(eltype(p)); dm .= zero(eltype(p)); x₀ = eltype(p).(x₀); offset = global_offset(Val(ndims(p)),eltype(p)) # rank-local → global coords (zero in serial)
-    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t,offset) over I ∈ bbox(body,inside(p))
+    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t,offset) over I ∈ local_bbox(body,inside(p))
     sumdims(df), sumdims(dm)
 end
 @inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t,offset)

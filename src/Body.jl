@@ -55,9 +55,9 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
         end
     end
     # loop the kernels, measure the sdf and udpate the BCs
-    @loop clear!(a.μ₀,a.μ₁,a.V,I) over I ∈ bbox(body,inside(a.p))
+    @loop clear!(a.μ₀,a.μ₁,a.V,I) over I ∈ local_bbox(body,inside(a.p))
     measure_sdf!(a.σ, body, t; fastd²=d²)
-    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ bbox(body,inside(a.p))
+    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ local_bbox(body,inside(a.p))
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
     velocity_halo!(reshape(a.μ₁, size(a.σ)..., :)) # halo on μ₁ tensor (no-op in serial)
@@ -79,7 +79,22 @@ Measure only the distance. Defaults to fastd²=0 for quick evaluation.
 """
 sdf(body::AbstractBody,x,t=0;fastd²=0) = measure(body,x,t;fastd²)[1]
 
+"""
+    bbox(body::AbstractBody, R)
+
+Return the part of the cell range `R` where `body` needs measuring. `measure!` and the force
+and moment integrals only loop over it. Defaults to `R`. Under MPI, `R` and the returned range
+are in global cell indices (the serial domain's indices, as `sdf` takes global coordinates).
+"""
 @inline bbox(body::AbstractBody,R) = R
+"""
+    local_bbox(body, R)
+
+`bbox(body, R)` for this rank's block `R`. Serial calls `bbox` directly; the MPI extension shifts
+`R` to global cell indices and the result back, clipped to `R`.
+"""
+local_bbox(body,R) = _local_bbox(body,R,par_mode[])
+_local_bbox(body,R,::Serial) = bbox(body,R)
 
 """
     measure_sdf!(a::AbstractArray, body::AbstractBody, t=0; fastd²=0)

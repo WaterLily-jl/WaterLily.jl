@@ -65,6 +65,13 @@ WaterLily._loop_offset(::Type{T}, p::Parallel) where T =
 WaterLily._loop_offset(::Type{Bool}, p::Parallel) =
     WaterLily._global_offset(Val(_nd()), Float32, p)
 
+# A body's `bbox` is in global cell indices: shift the block there and the result
+# back, clipped to the block (an empty range on ranks the box misses).
+function WaterLily._local_bbox(body, R::CartesianIndices{N}, p::Parallel) where N
+    o = CartesianIndex(Tuple(WaterLily._global_offset(Val(N), Int, p)))
+    (WaterLily.bbox(body, R .+ o) .- o) ∩ R
+end
+
 # ── MPI initialization ───────────────────────────────────────────────────────
 
 # Rank layout minimising the per-rank halo surface Σ_d ∏_{k≠d} local[k], with

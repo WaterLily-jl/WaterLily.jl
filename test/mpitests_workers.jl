@@ -97,6 +97,17 @@ function run_sphere!(parallel::Bool; nsteps=15)
             t=Float64(sim_time(sim)))
 end
 
+# A body with a `bbox`: another body's fields, measured only over a fixed box of global
+# cell indices. The box isn't intersected with `R`, which is fine in serial since it lies
+# in the domain; under MPI the rank's share of it has to come from WaterLily.
+struct Boxed{B} <: WaterLily.AbstractBody
+    body::B
+    box::CartesianIndices{2,NTuple{2,UnitRange{Int}}}
+end
+WaterLily.measure(b::Boxed, x, t; kwargs...) = WaterLily.measure(b.body, x, t; kwargs...)
+WaterLily.sdf(b::Boxed, x, t=0; kwargs...) = WaterLily.sdf(b.body, x, t; kwargs...)
+WaterLily.bbox(b::Boxed, R) = b.box
+
 # ── Serialise a NamedTuple to TOML so the parent can read without JLD2 ────────
 
 function write_results(path, key, nt::NamedTuple)
@@ -270,6 +281,28 @@ elseif ROLE == "unit"
             # First interior cell in x: local index 2, face 1 → loc = 0 + offset[1]
             @test arr[2, 2] ≈ offset[1]
             @test arr[3, 2] ≈ offset[1] + 1
+        end
+
+        @testset "bbox in global cell indices" begin
+            # Circles boxed a few cells wider than the band `measure!` fills: the first across
+            # the x and y seams, the second left of x = 33, so the ranks right of it loop over nothing.
+            r, R = T(6), inside(zeros(T, Nloc .+ 2))
+            for (c, box) in ((SA{T}[33, 17], (24:45, 8:29)), (SA{T}[20, 17], (11:32, 8:29)))
+                circle = AutoBody((x, t) -> √sum(abs2, x .- c) - r)
+                boxed = Boxed(circle, CartesianIndices(box))
+                Rb = WaterLily.local_bbox(boxed, R)
+                @test Rb ⊆ R
+                @test WaterLily.global_allreduce(length(Rb)) == length(boxed.box) # the blocks tile the box
+                c[1] < 33 && ImplicitGlobalGrid.global_grid().dims[1] > 1 &&
+                    @test WaterLily.global_allreduce(Int(isempty(Rb))) > 0
+                a, b = (Simulation(Nloc, (T(1), T(0)), 2r; body, T) for body in (circle, boxed))
+                foreach(sim_step!, (a, b))
+                @test a.flow.μ₀ == b.flow.μ₀ && a.flow.μ₁ == b.flow.μ₁ && a.flow.V == b.flow.V
+                @test a.flow.p == b.flow.p && a.flow.u == b.flow.u
+                @test WaterLily.total_force(a) == WaterLily.total_force(b)
+                @test WaterLily.viscous_force(a) == WaterLily.viscous_force(b)
+                @test WaterLily.pressure_moment(c, a) == WaterLily.pressure_moment(c, b)
+            end
         end
 
         @testset "phys_left / phys_right gates" begin
