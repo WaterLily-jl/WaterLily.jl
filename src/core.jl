@@ -100,13 +100,13 @@ end
 
 Workgroup size of the `@loop` kernels, as the trailing arguments of the kernel constructor:
 64 work-items on GPUs and on the task-based CPU backend of KernelAbstractions 0.9. From
-KernelAbstractions 0.10 the CPU backend runs on PoCL, where each workgroup runs on one thread
-with a fixed cost, and the groups of thousands of work-items that PoCL picks by default run
-about twice as slow; 128 work-items measured fastest on 2D and 3D flows.
+KernelAbstractions 0.10 the CPU backend runs on PoCL, where none is given, so that
+KernelAbstractions shapes the workgroups to each range. This needs 0.10.2, which launches the
+ranges with more than three dimensions, such as the loops over vector fields, on the N-d grid.
 """
 workgroup(::Backend) = (64,)
 @static if pkgversion(KernelAbstractions) >= v"0.10"
-    workgroup(::CPU) = (128,)
+    workgroup(::CPU) = ()
 end
 
 """
