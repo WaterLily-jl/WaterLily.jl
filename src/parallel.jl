@@ -168,6 +168,14 @@ This is the primitive that other global reductions build on:
 """
 global_allreduce(x) = _global_allreduce(x, par_mode[])
 _global_allreduce(x, ::Serial) = x
+"""
+    global_allreduce!(x)
+
+In-place `global_allreduce` of a contiguous array `x` (on any backend): `x` becomes
+the element-wise sum across ranks and is returned.  In serial, returns `x` unchanged.
+"""
+global_allreduce!(x) = _global_allreduce!(x, par_mode[])
+_global_allreduce!(x, ::Serial) = x
 
 """
     scalar_halo!(x)

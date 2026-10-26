@@ -370,18 +370,15 @@ function _dual_extremum(x::Dual{T,V,N}, op) where {T,V,N}
     MPI.Bcast!(f, root, comm); _dual_unflat(Dual{T,V,N}, f)
 end
 
-function _dual_arr_sum(x::AbstractArray{<:Dual})
-    arr = x isa Array ? x : Array(x)
-    GC.@preserve arr MPI.Allreduce!(_dual_view(arr), MPI.SUM, _comm())
-    return arr
-end
-
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
 WaterLily._global_allreduce(x, ::Parallel) = MPI.Allreduce(x, MPI.SUM, _comm())
-# a kernel may still be writing a device array: wait for it, as before a halo exchange
-WaterLily._global_allreduce(x::AbstractArray, ::Parallel) = (_sync(x); MPI.Allreduce(x, MPI.SUM, _comm()))
+WaterLily._global_allreduce(x::AbstractArray, p::Parallel) = WaterLily._global_allreduce!(copy(x), p)
 WaterLily._global_allreduce(x::Dual, ::Parallel) = _dual_sum(x)
-WaterLily._global_allreduce(x::AbstractArray{<:Dual}, ::Parallel) = _dual_arr_sum(x)
+# In place on the array's backend (a Dual array as its flat V alias). A kernel may
+# still be writing a device array: wait for it, as before a halo exchange.
+WaterLily._global_allreduce!(x::AbstractArray, ::Parallel) = (_sync(x); MPI.Allreduce!(x, MPI.SUM, _comm()); x)
+WaterLily._global_allreduce!(x::AbstractArray{<:Dual}, ::Parallel) =
+    (_sync(x); GC.@preserve x MPI.Allreduce!(_dual_view(x), MPI.SUM, _comm()); x)
 WaterLily._global_min(a, b, ::Parallel) = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
 WaterLily._global_min(a::Dual, b::Dual, ::Parallel) = _dual_extremum(min(a, b), MPI.MIN)
 WaterLily._global_max(x, ::Parallel) = MPI.Allreduce(x, MPI.MAX, _comm())

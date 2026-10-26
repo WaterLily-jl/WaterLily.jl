@@ -208,6 +208,9 @@ elseif ROLE == "unit"
         @testset "global reductions" begin
             # Σ rank = np*(np-1)/2
             @test WaterLily.global_allreduce(me) == np*(np-1)÷2
+            v = fill(T(me), 3); w = WaterLily.global_allreduce(v) # a new array, v unchanged
+            @test w == fill(T(np*(np-1)÷2), 3) && v == fill(T(me), 3)
+            @test WaterLily.global_allreduce!(v) === v && v == w      # in place
             @test WaterLily.global_min(T(me), T(me)) == T(0)
             @test WaterLily.global_max(T(me)) == T(np-1)
             # Σ ones (one per rank) over a length-Nloc[1] vector
@@ -365,9 +368,11 @@ elseif ROLE == "unit"
             @test partials(mx)[1] ≈ 1.0
             @test partials(mx)[2] ≈ Float64(np - 1)
 
-            # Array SUM (in-place via flat-V reinterpret).
+            # Array SUM (via the flat-V alias), into a copy or in place.
             a = fill(mkdual2(Float64(me), Float64(me), 1.0), 3)
             sa = WaterLily.global_allreduce(a)
+            @test all(==(mkdual2(Float64(me), Float64(me), 1.0)), a)
+            @test WaterLily.global_allreduce!(a) === a && a == sa
             sumvals = sum(0:np-1)               # Σ rank
             for k in 1:length(a)
                 @test value(sa[k])       ≈ sumvals

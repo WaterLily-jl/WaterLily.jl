@@ -11,7 +11,7 @@ abstract type AbstractSimulation end
 # WaterLilyMPIExt adds the Parallel methods). Included before core.jl because
 # `_BC!`/`_exitBC!` signatures reference `AbstractParMode`.
 include("parallel.jl")
-export global_allreduce,global_dot,global_sum,global_length,global_min,global_max,
+export global_allreduce,global_allreduce!,global_dot,global_sum,global_length,global_min,global_max,
        scalar_halo!,velocity_halo!,comm!,velocity_comm!,
        AbstractParMode,Serial,par_mode,
        global_offset,init_waterlily_mpi,mpi_rank,mpi_comm,mpi_nprocs,@distributed
