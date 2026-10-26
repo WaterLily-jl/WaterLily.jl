@@ -378,6 +378,8 @@ end
 
 # ── Dispatch hooks for Parallel ──────────────────────────────────────────────
 WaterLily._global_allreduce(x, ::Parallel) = MPI.Allreduce(x, MPI.SUM, _comm())
+# a kernel may still be writing a device array: wait for it, as before a halo exchange
+WaterLily._global_allreduce(x::AbstractArray, ::Parallel) = (_sync(x); MPI.Allreduce(x, MPI.SUM, _comm()))
 WaterLily._global_allreduce(x::Dual, ::Parallel) = _dual_sum(x)
 WaterLily._global_allreduce(x::AbstractArray{<:Dual}, ::Parallel) = _dual_arr_sum(x)
 WaterLily._global_min(a, b, ::Parallel) = MPI.Allreduce(min(a, b), MPI.MIN, _comm())
