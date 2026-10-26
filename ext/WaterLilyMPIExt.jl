@@ -215,17 +215,72 @@ end
 @inline _grid_for(arr_size::Tuple) = _is_fine_size(arr_size, _nd()) ? _grid() : _coarse_grid(arr_size)
 
 # ── Scalar halo exchange (native eltypes — via IGG) ──────────────────────────
-# Fine-sized arrays skip the Dict lookup AND the `active_global_grid=` kwarg,
-# so IGG's activate/restore dance never fires on the most-called path.
+# `update_halo!` exchanges one dim after the other, so that the edge and corner
+# ghosts get the diagonal neighbours' values, and pays its per-dim latency
+# (mostly the wait for the neighbours' messages) once per dim. `face_comm!`,
+# for the 7-point stencils of the Poisson iterations, which read face ghosts
+# only, posts the messages of every dim together instead (`_face_halo!`), with
+# one set of buffers and streams per dim. Within a dim the steps keep
+# `_update_halo!`'s order, which pairs the messages when both neighbours are the
+# same rank (2 periodic ranks). The edge and corner ghosts get the face
+# neighbour's stale ghosts instead; on GPUs the unpacks of two dims even write
+# them concurrently, harmless only because nothing reads them before the next
+# full `comm!` (the one ending `solver!`) rebuilds them.
+# Built on IGG internals (re-check on an IGG update): allocate_bufs,
+# allocate_tasks/custreams/rocstreams, iwrite_sendbufs!, irecv_halo!,
+# wait_iwrite, isend_halo, iread_recvbufs!, wait_iread, has_neighbor,
+# activate_global_grid, wrap_field (same signatures in 0.17.1 and 0.17.3).
+const IGG = ImplicitGlobalGrid
 
-function _scalar_halo_igg!(arr::AbstractArray)
+function _face_halo!(F, dims)
+    nd = length(dims)
+    Fs = ntuple(_ -> F, nd)  # buffers and streams of index k serve dim dims[k]
+    IGG.allocate_bufs(Fs...)
+    IGG.any_array(Fs...)    && IGG.allocate_tasks(Fs...)
+    IGG.any_cuarray(Fs...)  && IGG.allocate_custreams(Fs...)
+    IGG.any_rocarray(Fs...) && IGG.allocate_rocstreams(Fs...)
+    recvs = fill(MPI.REQUEST_NULL, 2, nd); sends = fill(MPI.REQUEST_NULL, 2, nd)
+    for (k, d) in enumerate(dims), n in 1:2
+        IGG.has_neighbor(n, d) && IGG.iwrite_sendbufs!(n, d, F, k)
+    end
+    for (k, d) in enumerate(dims), n in 2:-1:1
+        IGG.has_neighbor(n, d) && (recvs[n, k] = IGG.irecv_halo!(n, d, F, k; tag=k))
+    end
+    for (k, d) in enumerate(dims), n in 1:2
+        IGG.has_neighbor(n, d) || continue
+        IGG.wait_iwrite(n, F, k)
+        sends[n, k] = IGG.isend_halo(n, d, F, k; tag=k)
+    end
+    for (k, d) in enumerate(dims), n in 2:-1:1
+        IGG.has_neighbor(n, d) || continue
+        MPI.Wait(recvs[n, k])
+        IGG.iread_recvbufs!(n, d, F, k)
+    end
+    for (k, d) in enumerate(dims), n in 2:-1:1
+        IGG.has_neighbor(n, d) && IGG.wait_iread(n, F, k)
+    end
+    MPI.Waitall(vec(sends))
+end
+
+# Fine-sized arrays skip the Dict lookup AND the grid swap (the
+# `active_global_grid=` kwarg), the most-called path.
+function _scalar_halo_igg!(arr::AbstractArray, faces::Bool)
     arr3d = ndims(arr) < 3 ?
             reshape(arr, size(arr)..., ntuple(_ -> 1, 3 - ndims(arr))...) : arr
+    WaterLily._no_stream_sync!(arr)
+    dims = _decomp_dims()
     if _is_fine_size(size(arr), _nd())
-        update_halo!(arr3d; dims=_decomp_dims())
+        faces ? _face_halo!(IGG.wrap_field(arr3d), dims) : update_halo!(arr3d; dims)
+    elseif faces
+        fine = _grid()
+        IGG.activate_global_grid(_coarse_grid(size(arr)))
+        try
+            _face_halo!(IGG.wrap_field(arr3d), dims)
+        finally
+            IGG.activate_global_grid(fine)
+        end
     else
-        update_halo!(arr3d; dims=_decomp_dims(),
-                     active_global_grid=_coarse_grid(size(arr)))
+        update_halo!(arr3d; dims, active_global_grid=_coarse_grid(size(arr)))
     end
 end
 
@@ -293,13 +348,17 @@ end
 @inline _native_eltype(::Type)         = true
 
 # IGG packs and unpacks GPU halos on its own streams, which do not wait for the
-# `@loop` kernels still running on the task stream: wait for them first.
+# `@loop` kernels still running on the task stream: wait for them first. The
+# halo arrays have CUDA.jl's implicit synchronization between streams turned
+# off (`_no_stream_sync!`), so this wait is the only one, on every CUDA.jl.
 _sync(a) = KernelAbstractions.synchronize(KernelAbstractions.get_backend(a))
 
-function _do_scalar_halo!(arr::AbstractArray)
+# `faces=true` (`face_comm!`): all decomposed dims at once, face ghosts only.
+# Dual and Bool arrays take the shift one dim after the other either way.
+function _do_scalar_halo!(arr::AbstractArray; faces::Bool=false)
     _any_decomposed() || return
     _sync(arr)
-    _native_eltype(eltype(arr)) ? _scalar_halo_igg!(arr) : _scalar_halo_mpi!(arr)
+    _native_eltype(eltype(arr)) ? _scalar_halo_igg!(arr, faces) : _scalar_halo_mpi!(arr)
 end
 
 # ── Vector (velocity-shaped) halo exchange ────────────────────────────────────
@@ -317,6 +376,7 @@ _components(u::AbstractArray{T,N}, sz3) where {T,N} = [reshape(selectdim(u, N, c
 function _velocity_halo_igg!(u::AbstractArray{T,N}) where {T,N}
     csize = size(u)[1:N-1]
     sz3   = ntuple(d -> d <= N-1 ? csize[d] : 1, 3)
+    WaterLily._no_stream_sync!(u)  # the components share u's memory and its flag
     comps = _components(u, sz3)
     if _is_fine_size(csize, _nd())
         GC.@preserve u update_halo!(comps...; dims=_decomp_dims())
@@ -392,6 +452,10 @@ WaterLily._velocity_halo!(u, ::Parallel) = _do_velocity_halo!(u)
 function WaterLily._comm!(a, perdir, ::Parallel)
     WaterLily.perBC!(a, _local_perdir(perdir))
     _do_scalar_halo!(a)
+end
+function WaterLily._face_comm!(a, perdir, ::Parallel)
+    WaterLily.perBC!(a, _local_perdir(perdir))
+    _do_scalar_halo!(a; faces=true)
 end
 function WaterLily._velocity_comm!(a, perdir, ::Parallel)
     lp = _local_perdir(perdir)

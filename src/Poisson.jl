@@ -19,7 +19,8 @@ The lower diagonal `L` is aliased to `flow.μ₀`; `BC!` on μ₀ already
 zeros normal-direction values at wall faces, giving `L[wall_face]=0` for
 an implicit Neumann BC.  Ghost-cell synchronization uses `comm!`
 (= `perBC!` + `scalar_halo!`) rather than bare `perBC!`, so that MPI
-rank-internal boundaries are handled correctly.
+rank-internal boundaries are handled correctly; inside the iterations,
+`face_comm!` skips the edge and corner ghosts, which the stencils never read.
 
 To help iteratively solve the system, the structure holds helper arrays
 for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative solution
@@ -101,7 +102,7 @@ Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
 function residual!(p::Poisson)
-    comm!(p.x,p.perdir)
+    face_comm!(p.x,p.perdir)
     @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x))
     s = global_sum(p.r)/global_allreduce(count(!iszero,p.iD)) # only solved rows absorb the imbalance
     abs(s) <= 2eps(eltype(s)) && return
@@ -109,7 +110,7 @@ function residual!(p::Poisson)
 end
 
 function increment!(p::Poisson{T};ω=1) where {T}
-    comm!(p.ϵ,p.perdir)
+    face_comm!(p.ϵ,p.perdir)
     @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
            p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
 end
@@ -159,7 +160,7 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     # This matches the old N+4/halowidth=2 pattern (reverse-engineered from
     # commit 391b999); the halowidth-2 layout wasn't necessary, the frequency
     # was.
-    comm!(p.ϵ,p.perdir)
+    face_comm!(p.ϵ,p.perdir)
     for i ∈ 1:it
         @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
@@ -198,7 +199,7 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     rho = global_dot(r,z)
     abs(rho)<10eps(T) && return
     for i in 1:it
-        comm!(ϵ,p.perdir)
+        face_comm!(ϵ,p.perdir)
         @inside z[I] = mult(I,p.L,p.D,ϵ)
         alpha = rho/global_perdot(z,ϵ,p.perdir)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)

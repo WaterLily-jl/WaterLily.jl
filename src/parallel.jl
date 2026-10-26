@@ -194,6 +194,9 @@ The MPI extension exchanges all components in one batched call.
 velocity_halo!(u) = _velocity_halo!(u, par_mode[])
 _scalar_halo!(x, ::Serial) = nothing
 _velocity_halo!(u, ::Serial) = nothing
+# Halo arrays opt out of the GPU package's implicit synchronization between streams
+# (WaterLilyCUDAExt); the MPI extension waits for the backend and its streams itself.
+_no_stream_sync!(a) = a
 
 """
     phys_left(j), phys_right(j)
@@ -216,6 +219,17 @@ dims owned in full by the rank and the MPI halo handles decomposed dims.
 """
 comm!(a, perdir) = _comm!(a, perdir, par_mode[])
 _comm!(a, perdir, ::Serial) = perBC!(a, perdir)
+
+"""
+    face_comm!(a, perdir)
+
+`comm!` for the 7-point stencils of the Poisson solvers, which read the face
+ghosts only. In parallel the halo exchanges all decomposed dims at once
+instead of one after the other, so the edge and corner ghosts shared by two
+of them are left stale. Same as `comm!` in serial.
+"""
+face_comm!(a, perdir) = _face_comm!(a, perdir, par_mode[])
+_face_comm!(a, perdir, ::Serial) = perBC!(a, perdir)
 
 """
     velocity_comm!(a, perdir)

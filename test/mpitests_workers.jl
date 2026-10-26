@@ -264,6 +264,21 @@ elseif ROLE == "unit"
             @test arr_igg == arr_mpi
         end
 
+        @testset "face_comm!: all dims at once ≡ comm! on the faces" begin
+            # The face ghosts (at most one index in a ghost layer) match the
+            # exchange one dim after the other, on the fine grid and a coarse one.
+            for sz in (Tuple(Nloc .+ 2), (18, 10))
+                full = fill(T(-1), sz)
+                full[2:end-1, 2:end-1] .= T(me) .+ T(0.01) .* (1:sz[1]-2) .+ T(0.1) .* (1:sz[2]-2)'
+                face = copy(full)
+                WaterLily.comm!(full, ())
+                WaterLily.face_comm!(face, ())
+                nghost = [count(d -> I[d] in (1, sz[d]), 1:2) for I in CartesianIndices(sz)]
+                @test full[nghost .<= 1] == face[nghost .<= 1]
+                @test any(face[nghost .== 1] .!= T(-1))  # some face ghosts were exchanged
+            end
+        end
+
         @testset "_grid_for: cache reuse + fine-grid shortcut" begin
             g = ImplicitGlobalGrid.global_grid()
             nd = ext._nd()
