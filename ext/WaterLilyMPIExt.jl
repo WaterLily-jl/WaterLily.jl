@@ -58,15 +58,12 @@ function WaterLily._global_offset(::Val{N}, ::Type{T}, ::Parallel) where {N,T}
     SVector{N,T}(ntuple(d -> T(g.coords[d] * (g.nxyz[d] - g.overlaps[d])), N))
 end
 
-# @loop auto-offset. Keeps T so Float32/Float64/Dual offsets carry correct
-# precision / AD tags; Bool arrays can't hold the offset, and a first argument
-# without a number eltype (an array of SVectors, a tuple of arrays) has no T:
-# both take `loc`'s default Float32.
-WaterLily._loop_offset(::Type{T}, p::Parallel) where T<:Number =
+# @loop auto-offset. Float and Dual eltypes keep T, so offsets carry their
+# precision / AD tags; any other first argument (Bool or Int arrays, arrays of
+# SVectors, a tuple of arrays) takes `loc`'s default Float32.
+WaterLily._loop_offset(::Type{T}, p::Parallel) where T<:Union{AbstractFloat,Dual} =
     WaterLily._global_offset(Val(_nd()), T, p)
 WaterLily._loop_offset(::Type, p::Parallel) =
-    WaterLily._global_offset(Val(_nd()), Float32, p)
-WaterLily._loop_offset(::Type{Bool}, p::Parallel) =
     WaterLily._global_offset(Val(_nd()), Float32, p)
 
 # A body's `bbox` is in global cell indices: shift the block there and the result
