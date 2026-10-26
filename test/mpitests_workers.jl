@@ -184,6 +184,9 @@ elseif ROLE == "unit"
                 @loop a[I] = loc[I] over I ∈ inside(a)
             end
             @test all(a[I] == 3 for I in inside(a))
+            v = fill(zero(SVector{2,Float64}), size(a))                     # no number eltype: Float32 offset
+            @loop v[I] = loc(0,I) over I ∈ inside(v)
+            @test all(v[I] == loc(0,I) + global_offset(Val(2), Float32) for I in inside(v))
         end
 
         @testset "live-grid accessors" begin

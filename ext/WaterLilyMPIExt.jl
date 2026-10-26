@@ -59,9 +59,13 @@ function WaterLily._global_offset(::Val{N}, ::Type{T}, ::Parallel) where {N,T}
 end
 
 # @loop auto-offset. Keeps T so Float32/Float64/Dual offsets carry correct
-# precision / AD tags; Bool arrays can't hold the offset — divert to Float32.
-WaterLily._loop_offset(::Type{T}, p::Parallel) where T =
+# precision / AD tags; Bool arrays can't hold the offset, and a first argument
+# without a number eltype (an array of SVectors, a tuple of arrays) has no T:
+# both take `loc`'s default Float32.
+WaterLily._loop_offset(::Type{T}, p::Parallel) where T<:Number =
     WaterLily._global_offset(Val(_nd()), T, p)
+WaterLily._loop_offset(::Type, p::Parallel) =
+    WaterLily._global_offset(Val(_nd()), Float32, p)
 WaterLily._loop_offset(::Type{Bool}, p::Parallel) =
     WaterLily._global_offset(Val(_nd()), Float32, p)
 
