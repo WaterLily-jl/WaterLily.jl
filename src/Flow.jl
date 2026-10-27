@@ -127,26 +127,28 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
+    walls :: NTuple # tuple of no-slip wall faces, as signed directions
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
-            u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
+            u0=nothing, uλ=nothing, perdir=(), walls=(), exitBC=false, λ=quick, T=Float32) where D
         u0 = ic_kwarg(u0, uλ) # to be removed in v2.0
         uBC isa Tuple && (uBC = T.(uBC)) # same type for all components: `uBC[i]` must be type-stable in GPU kernels
+        @assert all(j->1≤abs(j)≤D && abs(j)∉perdir && !(exitBC && j==1), walls) "`walls` faces must be ±j with j in 1:$D, not in `perdir` nor the `exitBC` face 1"
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(u0) && (u0 = ic_function(uBC))
         u = Array{T}(undef, Nd...) |> mem
         isa(u0, Function) ? apply!(u0, u) : apply!(ic_function(T.(u0)), u)
-        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
+        BC!(u,uBC,exitBC,perdir;walls); exitBC!(u,u,zero(T))
         u⁰ = copy(u)
         fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
         V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ,walls)
     end
     # field-wise constructor: lets `setproperties(flow; uBC)` swap non-field values without reallocating the fields
-    function Flow(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
+    function Flow(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ,walls=()) # `walls` last and optional, as it was added later
         uBC isa Tuple && (uBC = eltype(p).(uBC)) # same type-stability requirement as above
-        new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
+        new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ,walls)
     end
 end
 
@@ -219,7 +221,7 @@ the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predict
 in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
 """
 function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
-    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
+    BC!(a.u,a.uBC,a.exitBC,a.perdir,t;walls=a.walls) # BC MUST be at t₁
     w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
     Dp = diagonal(b)                                # Poisson matrix diagonal
@@ -229,7 +231,7 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
     b.x ./= dt
-    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
+    BC!(a.u,a.uBC,a.exitBC,a.perdir,t;walls=a.walls)
 end
 
 function CFL(a::AbstractFlow;Δt_max=10)

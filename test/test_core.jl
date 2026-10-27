@@ -86,5 +86,28 @@
         w = zeros(Float64, 6, 6, 2) |> f
         BC!(w,(i,x,t)->eltype(x)==Float64 ? 1. : 0.)
         @test all(w[1,:,1] .== 1)
+
+        # no-slip walls reflect the tangential ghosts about U, the rest is unchanged
+        for (Nw,Dw) ∈ (((6,7),2),((6,7,5),3)), walls ∈ ((-2,),(2,),(-2,2))
+            Uw = ntuple(i->Float64(i),Dw); uw = rand(Nw...,Dw) |> f
+            BC!(uw,Uw;walls); v = Array(uw)
+            for i ∈ 1:Dw, j ∈ 1:Dw
+                g,g1 = selectdim(selectdim(v,Dw+1,i),j,1),selectdim(selectdim(v,Dw+1,i),j,2)           # lower ghost, interior
+                G,G1 = selectdim(selectdim(v,Dw+1,i),j,Nw[j]),selectdim(selectdim(v,Dw+1,i),j,Nw[j]-1) # upper ghost, interior
+                if i==j # normal: Dirichlet
+                    @test all(g .== Uw[i]) && all(g1 .== Uw[i]) && all(G .== Uw[i])
+                else    # no-slip: (ghost+interior)/2 = U, free-slip: Neumann
+                    @test -j ∈ walls ? all(g .+ g1 .≈ 2Uw[i]) : all(g .== g1)
+                    @test  j ∈ walls ? all(G .+ G1 .≈ 2Uw[i]) : all(G .== G1)
+                end
+            end
+        end
+        uw = rand(6,7,2) |> f; BC!(uw,(1.,2.),false,(1,);walls=(-2,)); v = Array(uw) # periodic x, floor
+        @test all(v[1:2,:,:] .== v[end-1:end,:,:]) && all(v[:,1,1] .+ v[:,2,1] .≈ 2) && all(v[:,end,1] .== v[:,end-1,1])
+        Lw = 8; lid(i,x,t) = convert(eltype(x), i==1 && x[2]≥Lw)
+        uw = rand(Lw+2,Lw+2,2) |> f; BC!(uw,lid,false,(),0.;walls=(-1,1,-2,2)); v = Array(uw)
+        @test all(v[:,end,1] .+ v[:,end-1,1] .≈ 2) && all(v[:,1,1] .+ v[:,2,1] .== 0) # moving lid, floor at rest
+        @test all(v[1,:,2] .+ v[2,:,2] .== 0) && all(v[end,:,2] .+ v[end-1,:,2] .== 0) # side walls at rest
+        @test all(v[2,3:end-1,1] .== 0) && all(v[end,3:end-1,1] .== 0)                 # and impermeable
     end
 end

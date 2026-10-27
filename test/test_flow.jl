@@ -231,5 +231,32 @@ end
         @test all(Array(sim.flow.u)[2,2:end-1,1] .== 2) # BC! uses the new uBC
         swap!(sim,(3,0)) # Int tuple must be converted to the flow's eltype
         @test sim.flow.uBC === (3f0,0f0)
+        @test Flow(ntuple(i->getfield(sim.flow,i),15)...).walls === () # the signature before `walls` still works
+    end
+end
+
+@testset "No-slip walls" begin
+    # `walls` matches the examples' recipe (TwoD_Channel.jl): free-slip BC!, then reflect the ghosts after each projection
+    function wallfix!(u,walls)
+        N,_ = WaterLily.size_u(u)
+        -2 ∈ walls && (WaterLily.@loop u[I,1] = -u[I+δ(2,I),1] over I ∈ WaterLily.slice(N,1,2))
+         2 ∈ walls && (WaterLily.@loop u[I,1] = -u[I-δ(2,I),1] over I ∈ WaterLily.slice(N,N[2],2))
+    end
+    function legacy_step!(a,b,walls)
+        a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+        WaterLily.mom_predict!(a,t₀,t₁); WaterLily.mom_project!(a,b,1,t₁); wallfix!(a.u,walls)
+        WaterLily.mom_correct!(a,t₁);    WaterLily.mom_project!(a,b,2,t₁); wallfix!(a.u,walls)
+        push!(a.Δt,WaterLily.CFL(a))
+    end
+    for f ∈ arrays, walls ∈ ((-2,),(-2,2))
+        L = 16; bump = AutoBody((x,t)->√sum(abs2, x - SA[2L,0]) - L/2) # body-wall corner
+        g(i,x,t) = i==1 ? convert(typeof(t),0.01) : zero(t)
+        kw = (U=1, ν=0.01, g, perdir=(1,), u0=(1,0), T=Float32, mem=f, body=bump)
+        new = Simulation((4L,2L),(0,0),L; walls, kw...)
+        old = Simulation((4L,2L),(0,0),L; kw...); wallfix!(old.flow.u,walls)
+        for _ ∈ 1:20
+            sim_step!(new;remeasure=false); legacy_step!(old.flow,old.pois,walls)
+        end
+        @test Array(new.flow.u) == Array(old.flow.u) && Array(new.flow.p) == Array(old.flow.p)
     end
 end
