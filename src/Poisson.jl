@@ -13,7 +13,7 @@ The resulting linear system is
 
 where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
-ect can be easily implemented and optimized without external libraries.
+etc. can be easily implemented and optimized without external libraries.
 
 To help iteratively solve the system above, the Poisson structure holds
 helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
@@ -70,9 +70,9 @@ function mult!(p::Poisson,x)
     return p.z
 end
 @fastmath @inline function mult(I::CartesianIndex{d},L,D,x) where {d}
-    s = @inbounds(x[I]*D[I])
+    s = zero(eltype(L))
     for i in 1:d
-        s += @inbounds(x[I-δ(i,I)]*L[I,i]+x[I+δ(i,I)]*L[I+δ(i,I),i])
+        s += @inbounds(L[I,i]*(x[I-δ(i,I)]-x[I])+L[I+δ(i,I),i]*(x[I+δ(i,I)]-x[I]))
     end
     return s
 end
