@@ -26,9 +26,17 @@ end
 end
 @fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
+"""
+    conv_diff!(r, u, Φ, λ; ν=0.1, perdir=())
+
+Compute the convective and diffusive fluxes of velocity `u` using the
+convection scheme `λ(u,c,d)` and kinematic viscosity `ν`.  The result is
+accumulated into `r` (force per unit volume) and `Φ` is a working scalar.
+"""
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     fill!(r,zero(eltype(r)))
     N,n = size_u(u)
+    perdir = effective_perdir(perdir)  # MPI-decomposed periodic → non-periodic boundary
     for j ∈ 1:n
         for i ∈ 1:n # inner cells
             @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
@@ -107,6 +115,9 @@ Flow solves the unsteady incompressible [Navier-Stokes equations](https://en.wik
 Solid boundaries are modelled using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/).
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
+
+All arrays use the N+2 staggered layout: `N` interior cells plus 1 ghost/boundary
+cell per side, giving total size `M = N + 2` per spatial dimension.
 """
 struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf} <: AbstractFlow{D,T}
     # Fluid fields
@@ -123,7 +134,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    g :: Union{Function,Nothing} # acceleration field funciton
+    g :: Union{Function,Nothing} # acceleration field function
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
     λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
@@ -177,6 +188,14 @@ Current flow time.
 """
 time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
+"""
+    BDIM!(a::Flow,s=1)
+
+Apply the Boundary Data Immersion Method to enforce the body velocity.
+Uses the zeroth and first kernel moments (`μ₀`, `μ₁`) to blend the
+body velocity `V` with the predicted fluid velocity, divided by `s`
+(`s=2` averages the predictor and corrector velocities).
+"""
 function BDIM!(a::AbstractFlow,s=1)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
@@ -232,10 +251,16 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 
-function CFL(a::AbstractFlow;Δt_max=10)
+"""
+    CFL(a::AbstractFlow{D,T};Δt_max=T(10))
+
+Compute the CFL-limited time step from the maximum outward flux at each cell.
+Uses `global_min` for MPI-safe reduction across all ranks.
+"""
+function CFL(a::AbstractFlow{D,T};Δt_max=T(10)) where {D,T}
     fill!(a.σ,0) # the ghosts hold scratch values (such as the fluxes of conv_diff!)
     @inside a.σ[I] = flux_out(I,a.u)
-    min(Δt_max,inv(maximum(a.σ)+5a.ν))
+    global_min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = z = zero(eltype(u))

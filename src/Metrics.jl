@@ -88,15 +88,16 @@ Compute ``∥𝛚∥`` at the center of cell `I`.
 """
 @inline ω_mag(I::CartesianIndex{3},u) = norm2(ω(I,u))
 """
-    ω_θ(I::CartesianIndex{3},z,center,u)
+    ω_θ(I::CartesianIndex{3}, z, center, u, offset=zero(SVector{3,eltype(u)}))
 
 Compute ``𝛚⋅𝛉`` at the center of cell `I` where ``𝛉`` is the azimuth
 direction around vector `z` passing through `center`.
-`z` and `center` are converted to the element type of `u`.
+`z` and `center` are converted to the element type of `u`. Pass `offset` to
+map rank-local indices to global coordinates in MPI parallel.
 """
-@inline function ω_θ(I::CartesianIndex{3},z,center,u)
+@inline function ω_θ(I::CartesianIndex{3},z,center,u,offset=zero(SVector{3,eltype(u)}))
     T = eltype(u)
-    θ = SVector{3,T}(z) × (loc(0,I,T)-SVector{3,T}(center))
+    θ = SVector{3,T}(z) × (loc(0,I,T)+offset-SVector{3,T}(center))
     n = norm2(θ)
     n<=eps(n) ? zero(n) : θ'*ω(I,u) / n
 end
@@ -133,19 +134,22 @@ end
     sumdims(df)
 
 Sum the workspace `df` over the domain in its own element type, returning one value per component.
+MPI-aware: each rank sums its local contribution, then `global_allreduce` sums across ranks.
 """
-sumdims(df) = sum(df,dims=ntuple(i->i,ndims(df)-1))[:] |> Array
+sumdims(df) = global_allreduce(sum(df,dims=ntuple(i->i,ndims(df)-1))[:] |> Array) # summed across ranks in MPI parallel
 
 """
     pressure_force(sim)
 
 Compute the pressure force on an immersed body.
+MPI-aware: each rank computes its local contribution, then
+`global_allreduce` sums across ranks.
 """
 pressure_force(sim) = pressure_force(sim.flow,sim.body)
 pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
 function pressure_force(p,df,body,t=0)
     df .= zero(eltype(p))
-    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= p[I]*nds(body,loc(0,I,eltype(p)),t) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -155,18 +159,20 @@ end
 Rate-of-strain tensor.
 """
 @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
-@inline Snds(I,u,body,t) = (n = nds(body,loc(0,I,eltype(u)),t); iszero(n) ? n : S(I,u)*n)
+@inline Snds(I::CartesianIndex{D},u,body,t,offset=zero(SVector{D,eltype(u)})) where D = (n = nds(body,loc(0,I,eltype(u))+offset,t); iszero(n) ? n : S(I,u)*n)
 
 """
     viscous_force(sim)
 
 Compute the viscous force on an immersed body.
+MPI-aware: each rank computes its local contribution, then
+`global_allreduce` sums across ranks.
 """
 viscous_force(sim) = viscous_force(sim.flow,sim.body)
 viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_force(u,ν,df,body,t=0)
-    df .= zero(eltype(u))
-    @loop df[I,:] .= -2ν*Snds(I,u,body,t) over I ∈ bbox(body,inside_u(u))
+    df .= zero(eltype(u)); offset = global_offset(Val(ndims(u)-1),eltype(u)) # rank-local → global coords (zero in serial)
+    @loop df[I,:] .= -2ν*Snds(I,u,body,t,offset) over I ∈ local_bbox(body,inside_u(u))
     sumdims(df)
 end
 
@@ -176,7 +182,7 @@ end
 Total stress tensor (pressure and viscous) acting on the body surface, so that `τ⋅nds` is the force density.
 """
 @inline τ(I::CartesianIndex{D},p,u,ν) where D = (s = S(I,u); p[I]*one(s)-2ν*s)
-@inline τnds(I,p,u,ν,body,t) = (n = nds(body,loc(0,I,eltype(p)),t); iszero(n) ? n : τ(I,p,u,ν)*n)
+@inline τnds(I::CartesianIndex{D},p,u,ν,body,t,offset=zero(SVector{D,eltype(p)})) where D = (n = nds(body,loc(0,I,eltype(p))+offset,t); iszero(n) ? n : τ(I,p,u,ν)*n)
 
 """
     total_force(sim)
@@ -186,8 +192,8 @@ Compute the total force on an immersed body.
 total_force(sim) = total_force(sim.flow,sim.body)
 total_force(flow,body) = total_force(flow.p,flow.u,flow.ν,flow.f,body,time(flow))
 function total_force(p,u,ν,df,body,t=0)
-    df .= zero(eltype(p))
-    @loop df[I,:] .= τnds(I,p,u,ν,body,t) over I ∈ bbox(body,inside(p))
+    df .= zero(eltype(p)); offset = global_offset(Val(ndims(p)),eltype(p)) # rank-local → global coords (zero in serial)
+    @loop df[I,:] .= τnds(I,p,u,ν,body,t,offset) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -202,7 +208,7 @@ pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
 pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
 function pressure_moment(x₀,p,df,body,t=0)
     df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
-    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= p[I]*cross(loc(0,I,eltype(p))-x₀,nds(body,loc(0,I,eltype(p)),t)) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -215,8 +221,8 @@ Computes the viscous moment on an immersed body relative to point x₀.
 viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
 viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
 function viscous_moment(x₀,u,ν,df,body,t=0)
-    df .= zero(eltype(u)); x₀ = eltype(u).(x₀)
-    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t)) over I ∈ bbox(body,inside_u(u))
+    df .= zero(eltype(u)); x₀ = eltype(u).(x₀); offset = global_offset(Val(ndims(u)-1),eltype(u)) # rank-local → global coords (zero in serial)
+    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t,offset)) over I ∈ local_bbox(body,inside_u(u))
     sumdims(df)
 end
 
@@ -228,8 +234,8 @@ Computes the total (pressure + viscous) moment on an immersed body relative to p
 total_moment(x₀,sim) = total_moment(x₀,sim.flow,sim.body)
 total_moment(x₀,flow,body) = total_moment(x₀,flow.p,flow.u,flow.ν,flow.f,body,time(flow))
 function total_moment(x₀,p,u,ν,df,body,t=0)
-    df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
-    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t)) over I ∈ bbox(body,inside(p))
+    df .= zero(eltype(p)); x₀ = eltype(p).(x₀); offset = global_offset(Val(ndims(p)),eltype(p)) # rank-local → global coords (zero in serial)
+    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t,offset)) over I ∈ local_bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -242,13 +248,13 @@ The moment is accumulated in `flow.u⁰`, which is free between time steps.
 total_force_and_moment(x₀,sim) = total_force_and_moment(x₀,sim.flow,sim.body)
 total_force_and_moment(x₀,flow,body) = total_force_and_moment(x₀,flow.p,flow.u,flow.ν,flow.f,flow.u⁰,body,time(flow))
 function total_force_and_moment(x₀,p,u,ν,df,dm,body,t=0)
-    df .= zero(eltype(p)); dm .= zero(eltype(p)); x₀ = eltype(p).(x₀)
-    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t) over I ∈ bbox(body,inside(p))
+    df .= zero(eltype(p)); dm .= zero(eltype(p)); x₀ = eltype(p).(x₀); offset = global_offset(Val(ndims(p)),eltype(p)) # rank-local → global coords (zero in serial)
+    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t,offset) over I ∈ local_bbox(body,inside(p))
     sumdims(df), sumdims(dm)
 end
-@inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t)
-    F = τnds(I,p,u,ν,body,t)
-    df[I,:] .= F; dm[I,:] .= cross(loc(0,I,eltype(p))-x₀,F)
+@inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t,offset)
+    F = τnds(I,p,u,ν,body,t,offset)
+    df[I,:] .= F; dm[I,:] .= cross(loc(0,I,eltype(p))+offset-x₀,F)
 end
 
 """
