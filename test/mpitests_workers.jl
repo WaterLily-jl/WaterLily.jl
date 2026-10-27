@@ -279,6 +279,16 @@ elseif ROLE == "unit"
             end
         end
 
+        @testset "inner + shell: every cell of a range once" begin
+            # inner(R) reads no ghost of a decomposed dim (both are, 2×2 ranks);
+            # with shell(R) it covers R once, also when R is one or two cells thick
+            for R in (inside(zeros(T, Nloc .+ 2)), CartesianIndices((2:2, 2:5)), CartesianIndices((2:3, 4:4)))
+                I, S = vec(collect(WaterLily.inner(R))), collect(WaterLily.shell(R))
+                @test sort!(vcat(I, S)) == sort!(vec(collect(R)))
+                @test all(J -> all(j -> !WaterLily.decomposed(j) || first(R.indices[j]) < J[j] < last(R.indices[j]), 1:2), I)
+            end
+        end
+
         @testset "_grid_for: cache reuse + fine-grid shortcut" begin
             g = ImplicitGlobalGrid.global_grid()
             nd = ext._nd()

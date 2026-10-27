@@ -232,6 +232,41 @@ face_comm!(a, perdir) = _face_comm!(a, perdir, par_mode[])
 _face_comm!(a, perdir, ::Serial) = perBC!(a, perdir)
 
 """
+    face_comm!(f, a, perdir, R=inside(a))
+
+`face_comm!(a, perdir); f(R)`, with the halo messages in flight while `f`
+runs. `f` loops over the range it is given (a 7-point stencil of `a`, which
+may write the cells of `a` it loops over, not its ghosts): first over
+`inner(R)` while the messages travel, then over `shell(R)` once the halo is
+in. In serial, and when the halo cannot be split, `f(R)` after the halo.
+"""
+face_comm!(f, a, perdir, R=inside(a)) = _face_comm!(f, a, perdir, R, par_mode[])
+_face_comm!(f, a, perdir, R, ::Serial) = (perBC!(a, perdir); f(R))
+
+"""
+    inner(R), shell(R)
+
+The cells of `R` whose 7-point stencil reads no ghost of a decomposed dim
+(`R` without its first and last layer in those dims), and the others, as one
+range for a single `@loop`: the layers of `R` in the decomposed dims, each
+without the cells of the layers before it (`max(a+1,b)` keeps a one-cell
+range from counting its cell twice).
+"""
+inner(R::CartesianIndices{N}) where N =
+    CartesianIndices(ntuple(j -> decomposed(j) ? (first(R.indices[j])+1:last(R.indices[j])-1) : R.indices[j], N))
+function shell(R::CartesianIndices{N}) where N
+    r, i = R.indices, inner(R).indices
+    layer(j, k) = CartesianIndices(ntuple(d -> d < j ? i[d] : d == j ? k : r[d], N))
+    s = ntuple(2N) do m
+        j = cld(m, 2); a, b = first(r[j]), last(r[j])
+        !decomposed(j) ? layer(j, a:a-1) : isodd(m) ? layer(j, a:a) : layer(j, max(a+1, b):b)
+    end
+    MappedArr(n -> _shell_index(s, n), 1:sum(length, s))
+end
+@inline _shell_index(s::Tuple{Any}, n) = @inbounds first(s)[n]
+@inline _shell_index(s::Tuple, n) = (l = length(first(s)); n <= l ? @inbounds(first(s)[n]) : _shell_index(Base.tail(s), n - l))
+
+"""
     velocity_comm!(a, perdir)
 
 Velocity communication: periodic BC copy + MPI halo exchange.

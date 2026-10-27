@@ -160,6 +160,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
     WaterLily.par_mode[] = Parallel(comm, Int(me))
     # Drop per-size caches from any previous grid (re-init in the same session)
     foreach(empty!, (_coarse_grids, _mpi_bufs))
+    _overlap_min[] = parse(Int, get(ENV, "WATERLILY_OVERLAP_MIN", string(2^20)))
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -262,11 +263,12 @@ function _face_halo!(F, dims)
     MPI.Waitall(vec(sends))
 end
 
+_arr3d(arr) = ndims(arr) < 3 ? reshape(arr, size(arr)..., ntuple(_ -> 1, 3 - ndims(arr))...) : arr  # IGG's 3-D view
+
 # Fine-sized arrays skip the Dict lookup AND the grid swap (the
 # `active_global_grid=` kwarg), the most-called path.
 function _scalar_halo_igg!(arr::AbstractArray, faces::Bool)
-    arr3d = ndims(arr) < 3 ?
-            reshape(arr, size(arr)..., ntuple(_ -> 1, 3 - ndims(arr))...) : arr
+    arr3d = _arr3d(arr)
     WaterLily._no_stream_sync!(arr)
     dims = _decomp_dims()
     if _is_fine_size(size(arr), _nd())
@@ -456,6 +458,29 @@ end
 function WaterLily._face_comm!(a, perdir, ::Parallel)
     WaterLily.perBC!(a, _local_perdir(perdir))
     _do_scalar_halo!(a; faces=true)
+end
+
+# `face_comm!` with a loop: the ImplicitGlobalGrid fork (branch halo-fused)
+# splits its fused updates (IGG_FUSED=1 or 2, CUDA arrays) in
+# `update_halo_start!` and `update_halo_finish!`, so the inner loop runs on the
+# GPU while the host waits for the messages; the shell loop follows the unpack
+# on the same stream. Below `_overlap_min[]` cells (`WATERLILY_OVERLAP_MIN` at
+# `init_waterlily_mpi`, default 2^20) the loop is too short to hide the
+# messages behind (on a 66³ level ~5 µs, about the launch of the shell loop it
+# would add) and runs once, after the halo. Without the fork, or when it cannot
+# split the update, the halo is in before the loop.
+const _split_halo = isdefined(IGG, :update_halo_start!)
+const _overlap_min = Ref(2^20)
+function WaterLily._face_comm!(f, a, perdir, R, ::Parallel)
+    (_split_halo && _native_eltype(eltype(a)) && _any_decomposed()) || return (WaterLily.face_comm!(a, perdir); f(R))
+    WaterLily.perBC!(a, _local_perdir(perdir))
+    _sync(a)
+    h = IGG.update_halo_start!(_arr3d(a); dims=_decomp_dims(), active_global_grid=_grid_for(size(a)))
+    if h === nothing || length(R) < _overlap_min[]  # the halo is in, or too short a loop to hide it behind
+        IGG.update_halo_finish!(h); f(R)
+    else
+        f(WaterLily.inner(R)); IGG.update_halo_finish!(h); f(WaterLily.shell(R))
+    end
 end
 function WaterLily._velocity_comm!(a, perdir, ::Parallel)
     lp = _local_perdir(perdir)
