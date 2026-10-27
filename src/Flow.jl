@@ -164,7 +164,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 `kwargs` are passed to `udf` and `poisson_kwargs` to `solver!`.
 """
 @fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
-    a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+    copyto!(a.u⁰,a.u); fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
