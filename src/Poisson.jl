@@ -19,8 +19,9 @@ The lower diagonal `L` is aliased to `flow.μ₀`; `BC!` on μ₀ already
 zeros normal-direction values at wall faces, giving `L[wall_face]=0` for
 an implicit Neumann BC.  Ghost-cell synchronization uses `comm!`
 (= `perBC!` + `scalar_halo!`) rather than bare `perBC!`, so that MPI
-rank-internal boundaries are handled correctly; inside the iterations,
-`face_comm!` skips the edge and corner ghosts, which the stencils never read.
+rank-internal boundaries are handled correctly; inside the iterations, the
+stencil loops run on the cells that read no ghost while the halo messages
+travel (`comm!(f, a, perdir)`).
 
 To help iteratively solve the system, the structure holds helper arrays
 for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative solution
@@ -102,17 +103,19 @@ Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
 function residual!(p::Poisson)
-    face_comm!(p.x,p.perdir)
-    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x))
+    comm!(p.x,p.perdir) do R
+        @loop p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x)) over I ∈ R
+    end
     s = global_sum(p.r)/global_allreduce(count(!iszero,p.iD)) # only solved rows absorb the imbalance
     abs(s) <= 2eps(eltype(s)) && return
     @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.r[I]-s)
 end
 
 function increment!(p::Poisson{T};ω=1) where {T}
-    face_comm!(p.ϵ,p.perdir)
-    @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
-           p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
+    comm!(p.ϵ,p.perdir) do R
+        @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
+               p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ R
+    end
 end
 """
     Jacobi!(p::Poisson; it=1)
@@ -159,9 +162,12 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     # extra halos per sweep contribute only synchronization, not convergence.
     # This matches the old N+4/halowidth=2 pattern (reverse-engineered from
     # commit 391b999); the halowidth-2 layout wasn't necessary, the frequency
-    # was.
-    face_comm!(p.ϵ,p.perdir)
-    for i ∈ 1:it
+    # was. The first sweep runs while the halo travels: its colour reads only
+    # the other one, so the inner cells and then the shell give the same ϵ.
+    comm!(p.ϵ,p.perdir,half_rangek(p.ϵ)) do R
+        @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,1,I) over I ∈ R
+    end
+    for i ∈ 2:it
         @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
     increment!(p;ω) # increment solution and residual
@@ -199,8 +205,9 @@ function pcg!(p::Poisson{T};it=6,kwargs...) where T
     rho = global_dot(r,z)
     abs(rho)<10eps(T) && return
     for i in 1:it
-        face_comm!(ϵ,p.perdir)
-        @inside z[I] = mult(I,p.L,p.D,ϵ)
+        comm!(ϵ,p.perdir) do R
+            @loop z[I] = mult(I,p.L,p.D,ϵ) over I ∈ R
+        end
         alpha = rho/global_perdot(z,ϵ,p.perdir)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];

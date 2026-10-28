@@ -181,22 +181,21 @@ _global_allreduce!(x, ::Serial) = x
     scalar_halo!(x)
 
 Exchange halo cells for scalar array `x`.  No-op in serial.
-The MPI extension routes fine-grid arrays through IGG `update_halo!`
-and coarse multigrid arrays through per-size IGG grids or `MPI.Sendrecv!`.
 """
 scalar_halo!(x) = _scalar_halo!(x, par_mode[])
 """
     velocity_halo!(u)
 
-Exchange halo cells for a velocity (vector) array `u`.  No-op in serial.
-The MPI extension exchanges all components in one batched call.
+Exchange halo cells for a velocity (vector) array `u` (all components at once).
+No-op in serial.
 """
 velocity_halo!(u) = _velocity_halo!(u, par_mode[])
 _scalar_halo!(x, ::Serial) = nothing
 _velocity_halo!(u, ::Serial) = nothing
-# Halo arrays opt out of the GPU package's implicit synchronization between streams
-# (WaterLilyCUDAExt); the MPI extension waits for the backend and its streams itself.
-_no_stream_sync!(a) = a
+# Halo buffers of `n` elements of type `T` for `a`: what the pack and unpack kernels use, and
+# what MPI sends and receives (the same array, unless a GPU extension maps host memory into
+# the device for it, as WaterLilyCUDAExt does)
+_halo_buffers(a, T, n) = (b = similar(a, T, n); (b, b))
 
 """
     phys_left(j), phys_right(j)
@@ -221,15 +220,35 @@ comm!(a, perdir) = _comm!(a, perdir, par_mode[])
 _comm!(a, perdir, ::Serial) = perBC!(a, perdir)
 
 """
-    face_comm!(a, perdir)
+    comm!(f, a, perdir, R=inside(a))
 
-`comm!` for the 7-point stencils of the Poisson solvers, which read the face
-ghosts only. In parallel the halo exchanges all decomposed dims at once
-instead of one after the other, so the edge and corner ghosts shared by two
-of them are left stale. Same as `comm!` in serial.
+`comm!(a, perdir); f(R)`, with the halo messages in flight while `f` runs.
+`f` loops over the range it is given (a 7-point stencil of `a`, which may
+write the cells of `a` it loops over, not its ghosts): first over `inner(R)`
+while the messages travel, then over `shell(R)` once the halo is in.
 """
-face_comm!(a, perdir) = _face_comm!(a, perdir, par_mode[])
-_face_comm!(a, perdir, ::Serial) = perBC!(a, perdir)
+comm!(f, a, perdir, R=inside(a)) = _comm!(f, a, perdir, R, par_mode[])
+_comm!(f, a, perdir, R, ::Serial) = (perBC!(a, perdir); f(R))
+
+"""
+    inner(R), shell(R)
+
+The cells of `R` whose 7-point stencil reads no ghost of a decomposed dim
+(`R` without its first and last layer in those dims), and the others, as one
+range for a single `@loop`: the layers of `R` in the decomposed dims, each
+without the cells of the layers before it (`max(a+1,b)` keeps a one-cell
+range from counting its cell twice).
+"""
+inner(R::CartesianIndices{N}) where N =
+    CartesianIndices(ntuple(j -> decomposed(j) ? (first(R.indices[j])+1:last(R.indices[j])-1) : R.indices[j], N))
+function shell(R::CartesianIndices{N}) where N
+    r, i = R.indices, inner(R).indices
+    layer(j, k) = CartesianIndices(ntuple(d -> d < j ? i[d] : d == j ? k : r[d], N))
+    chain(ntuple(2N) do m
+        j = cld(m, 2); a, b = first(r[j]), last(r[j])
+        !decomposed(j) ? layer(j, a:a-1) : isodd(m) ? layer(j, a:a) : layer(j, max(a+1, b):b)
+    end)
+end
 
 """
     velocity_comm!(a, perdir)

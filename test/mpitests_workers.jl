@@ -5,7 +5,7 @@
 
 using Test
 using WaterLily
-using WaterLily: @loop, loc, inside
+using WaterLily: @loop, loc, inside, δ
 using StaticArrays
 
 const ROLE   = ARGS[1]
@@ -201,8 +201,6 @@ elseif ROLE == "unit"
             @test ext._grid() === g
             @test ext._nd() == sum(g.nxyz .> 1)
             @test ext._any_decomposed() == any(g.dims[d] > 1 for d in 1:ext._nd())
-            @test ext._decomp_dims() ==
-                  filter(d -> g.dims[d] > 1, ntuple(identity, ext._nd()))
         end
 
         @testset "global reductions" begin
@@ -244,60 +242,50 @@ elseif ROLE == "unit"
             end
         end
 
-        @testset "coarse halo: IGG side-table ≡ custom Sendrecv" begin
-            # Coarse-sized array (second multigrid restriction of the fine 64×32
-            # local: Na = 1 + (N+2)÷2 applied twice → (34,18) → (18,10)).
-            # IGG's per-size GlobalGrid cache must produce the same ghost values
-            # as the manual _scalar_halo_mpi! shift loop.
-            coarse_size = (18, 10)
-            seed(rank, lvl) = T(100 * (rank + 1) + lvl)
-            arr_igg = fill(T(-1), coarse_size)
-            arr_mpi = fill(T(-1), coarse_size)
-            arr_igg[2:end-1, 2:end-1] .= seed(me, 1)
-            arr_mpi[2:end-1, 2:end-1] .= seed(me, 1)
-
-            # IGG path (uses _grid_for to look up a coarse GlobalGrid)
-            WaterLily.scalar_halo!(arr_igg)
-            # Custom path
-            ext._scalar_halo_mpi!(arr_mpi)
-
-            @test arr_igg == arr_mpi
-        end
-
-        @testset "face_comm!: all dims at once ≡ comm! on the faces" begin
-            # The face ghosts (at most one index in a ghost layer) match the
-            # exchange one dim after the other, on the fine grid and a coarse one.
-            for sz in (Tuple(Nloc .+ 2), (18, 10))
-                full = fill(T(-1), sz)
-                full[2:end-1, 2:end-1] .= T(me) .+ T(0.01) .* (1:sz[1]-2) .+ T(0.1) .* (1:sz[2]-2)'
-                face = copy(full)
-                WaterLily.comm!(full, ())
-                WaterLily.face_comm!(face, ())
-                nghost = [count(d -> I[d] in (1, sz[d]), 1:2) for I in CartesianIndices(sz)]
-                @test full[nghost .<= 1] == face[nghost .<= 1]
-                @test any(face[nghost .== 1] .!= T(-1))  # some face ghosts were exchanged
+        @testset "halo ≡ update_halo! one dim after the other, edges and corners too" begin
+            # fine, coarse and velocity-shaped arrays; Dual and Bool through Float references
+            g = ImplicitGlobalGrid.global_grid()
+            function ref!(a)  # IGG on each component, on a grid of the array's size
+                gg = ImplicitGlobalGrid.create_global_grid(size(a, 1), size(a, 2), 1; dimx=g.dims[1], dimy=g.dims[2], dimz=1,
+                    overlaps=Tuple(g.overlaps), halowidths=Tuple(g.halowidths), comm=MPI.COMM_WORLD, quiet=true)
+                for c in axes(a, 3)
+                    b = a[:, :, c]
+                    update_halo!(reshape(b, size(b)..., 1); dims=filter(d -> g.dims[d] > 1, (1, 2)), active_global_grid=gg)
+                    a[:, :, c] .= b
+                end
+                a
+            end
+            for sz in (Tuple(Nloc .+ 2), (18, 10), (Tuple(Nloc .+ 2)..., 2))
+                a = rand(T, sz); b = copy(a); WaterLily.scalar_halo!(b)
+                @test b == ref!(copy(a)) && b != a
+                v, p = rand(sz...), rand(sz...)
+                d = Dual{Nothing,Float64,1}.(v, Partials.(tuple.(p))); WaterLily.scalar_halo!(d)
+                @test value.(d) == ref!(v) && partials.(d, 1) == ref!(p)
+                l = rand(Bool, sz); m = copy(l); WaterLily.scalar_halo!(m)
+                @test m == (ref!(T.(l)) .== 1)
             end
         end
 
-        @testset "_grid_for: cache reuse + fine-grid shortcut" begin
-            g = ImplicitGlobalGrid.global_grid()
-            nd = ext._nd()
-            # Fine-size lookup returns the active grid (zero-copy, no cache entry).
-            fine_size = Tuple(g.nxyz[1:nd])
-            @test ext._grid_for(fine_size) === g
+        @testset "inner + shell: every cell of a range once" begin
+            # inner(R) reads no ghost of a decomposed dim (both are, 2×2 ranks);
+            # with shell(R) it covers R once, also when R is one or two cells thick
+            for R in (inside(zeros(T, Nloc .+ 2)), CartesianIndices((2:2, 2:5)), CartesianIndices((2:3, 4:4)))
+                I, S = vec(collect(WaterLily.inner(R))), collect(WaterLily.shell(R))
+                @test sort!(vcat(I, S)) == sort!(vec(collect(R)))
+                @test all(J -> all(j -> !WaterLily.decomposed(j) || first(R.indices[j]) < J[j] < last(R.indices[j]), 1:2), I)
+            end
+        end
 
-            # Coarse size: cache hit on second call returns the same struct.
-            coarse_size = (18, 10)
-            gg1 = ext._grid_for(coarse_size)
-            gg2 = ext._grid_for(coarse_size)
-            @test gg1 === gg2
-            @test gg1 !== g
-            # Coarse grid inherits the fine grid's topology / periods / overlaps.
-            @test gg1.dims[1:nd]    == g.dims[1:nd]
-            @test gg1.periods[1:nd] == g.periods[1:nd]
-            @test Tuple(gg1.overlaps)   == Tuple(g.overlaps)
-            @test Tuple(gg1.halowidths) == Tuple(g.halowidths)
-            @test Tuple(gg1.nxyz[1:nd]) == coarse_size
+        @testset "comm!(f, ...): the loop split around the halo ≡ after it" begin
+            x = rand(T, Nloc .+ 2); y = copy(x); r1, r2 = zeros(T, size(x)), zeros(T, size(x))
+            ext._overlap_min[] = 0  # split every loop
+            WaterLily.comm!(x, ()) do R
+                @loop r1[I] = x[I-δ(1,I)]+x[I+δ(1,I)]+x[I-δ(2,I)]+x[I+δ(2,I)] over I ∈ R
+            end
+            ext._overlap_min[] = 2^20
+            WaterLily.comm!(y, ())
+            @loop r2[I] = y[I-δ(1,I)]+y[I+δ(1,I)]+y[I-δ(2,I)]+y[I+δ(2,I)] over I ∈ inside(y)
+            @test x == y && r1 == r2
         end
 
         @testset "global_offset + @loop coords" begin
@@ -395,8 +383,7 @@ elseif ROLE == "unit"
                 @test partials(sa[k])[2] ≈ Float64(np)
             end
 
-            # Halo exchange of a Dual array routes through `_scalar_halo_mpi!`
-            # (Dual eltype is non-native — IGG's typed buffers can't carry it).
+            # Halo exchange of a Dual array (MPI sends it as a derived datatype).
             arr = fill(mkdual1(-1.0, -1.0), (Nloc[1]+2, Nloc[2]+2))
             interior = mkdual1(Float64(me), Float64(me))
             arr[2:Nloc[1]+1, 2:Nloc[2]+1] .= interior
@@ -416,7 +403,7 @@ elseif ROLE == "unit"
                 end
             end
 
-            # Velocity-shaped Dual array: the same shift on each component, in place.
+            # Velocity-shaped Dual array: all components at once.
             u = fill(mkdual1(-1.0, -1.0), (Nloc[1]+2, Nloc[2]+2, 2))
             for c in 1:2
                 u[2:Nloc[1]+1, 2:Nloc[2]+1, c] .= mkdual1(Float64(me + 10c), Float64(c))

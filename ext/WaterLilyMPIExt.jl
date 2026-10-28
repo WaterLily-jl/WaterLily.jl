@@ -6,8 +6,8 @@ overwriting, so precompilation works.
 
 Topology queries read IGG's `global_grid()` directly (single source of truth;
 costs a few ns, invisible under the ~50 ns `par_mode[]` dynamic dispatch).
-The only stored state is genuine caches: per-size coarse `GlobalGrid`s and
-pre-allocated MPI buffers.
+The only stored state is a genuine cache: the halo plans (regions, buffers,
+requests) per array type and size.
 """
 module WaterLilyMPIExt
 
@@ -44,7 +44,6 @@ _nd() = count(>(1), _grid().nxyz)                      # active spatial dims
 # Halo exchange only covers dims split across ranks. Periodic dims owned in
 # full by every rank wrap locally via `perBC!` (exactly as in serial) — going
 # through MPI for the self-wrap costs the full per-call floor for nothing.
-_decomp_dims() = (g = _grid(); filter(d -> g.dims[d] > 1, ntuple(identity, _nd())))
 _any_decomposed() = (g = _grid(); any(g.dims[d] > 1 for d in 1:_nd()))
 
 # Periodic dims that are NOT decomposed — handled by a local `perBC!` copy
@@ -158,8 +157,8 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
     )
 
     WaterLily.par_mode[] = Parallel(comm, Int(me))
-    # Drop per-size caches from any previous grid (re-init in the same session)
-    foreach(empty!, (_coarse_grids, _mpi_bufs))
+    empty!(_halos)  # the plans of any previous grid (re-init in the same session)
+    _overlap_min[] = parse(Int, get(ENV, "WATERLILY_OVERLAP_MIN", string(2^20)))
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -178,225 +177,74 @@ _gpu_bound() = any(("CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE
     v = get(ENV, k, ""); !isempty(v) && !occursin(',', v)
 end
 
-# ── Per-size GlobalGrid side-table (coarse multigrid arrays) ─────────────────
-# IGG ≥ 0.17: `create_global_grid` builds a `GlobalGrid` without side effects;
-# `update_halo!(arr; active_global_grid=gg)` swaps to it for one call. One
-# grid per rank-local coarse size (same topology / periods / overlaps as the
-# fine grid), shared by all `MultiLevelPoisson`s in the process.
+# ── Halo exchange ─────────────────────────────────────────────────────────────
+# One message per neighbour rank, the diagonal ones included (up to 3^nd - 1), so
+# that the edge and corner ghosts come straight from the rank that owns them: the
+# ghosts of exchanging one dim after the other, in one round of messages. One
+# kernel packs every region into a flat send buffer, the messages all go at once,
+# and one kernel unpacks the flat receive buffer. A plan (regions, buffers,
+# requests) is cached per array type and size: scalar, velocity, coarse-level,
+# Dual and Bool arrays all take this path, on every backend.
 
-const _coarse_grids = Dict{Tuple, ImplicitGlobalGrid.GlobalGrid}()
+const _halos = Dict{Tuple, Any}()
+const _overlap_min = Ref(2^20)  # the fewest cells of a loop that `comm!(f, ...)` splits
 
-function _create_coarse_grid(arr_size::Tuple)
-    g    = _grid()
-    nxyz = ntuple(d -> d <= _nd() ? arr_size[d] : 1, 3)
-    ImplicitGlobalGrid.create_global_grid(
-        nxyz...;
-        dimx       = g.dims[1],    dimy    = g.dims[2],    dimz    = g.dims[3],
-        periodx    = g.periods[1], periody = g.periods[2], periodz = g.periods[3],
-        overlaps   = Tuple(g.overlaps),
-        halowidths = Tuple(g.halowidths),
-        comm       = MPI.COMM_WORLD,   # IGG re-runs Cart_create internally
-        quiet      = true,
-    )
+# The rank in direction `d` (-1, 0 or 1 per spatial dim), or -1 past a physical boundary
+function _peer(d)
+    g = _grid(); c = [g.coords[k] + get(d, k, 0) for k in 1:3]
+    all(k -> g.periods[k] == 1 || 0 <= c[k] < g.dims[k], 1:3) ? MPI.Cart_rank(_comm(), c) : -1
 end
 
-@inline _coarse_grid(arr_size::Tuple) =
-    get!(() -> _create_coarse_grid(arr_size), _coarse_grids, arr_size)
+# The cells of `a` sent toward (`send`) or received from direction `d`: in a dim of
+# `d`, the first or last interior layer, or the ghost layer; in the other decomposed
+# dims, the interior and the ghosts of a physical side (they travel with the
+# messages, as when the dims go one after the other); in the rest, every cell.
+_halo_cells(a, d, send) = CartesianIndices(ntuple(ndims(a)) do k
+    n, dk = size(a, k), get(d, k, 0)
+    dk < 0 ? (send ? (2:2) : (1:1)) : dk > 0 ? (send ? (n-1:n-1) : (n:n)) :
+    WaterLily.decomposed(k) ? ((WaterLily.phys_left(k) ? 1 : 2):(WaterLily.phys_right(k) ? n : n-1)) : (1:n)
+end)
+_dirkey(d) = evalpoly(3, d .+ 1)
 
-@inline function _is_fine_size(sz::Tuple, nd::Int)
-    nxyz = _grid().nxyz
-    @inbounds for d in 1:nd
-        sz[d] != nxyz[d] && return false
-    end
-    return true
+function _halo_plan(a::AbstractArray{T}) where T
+    dirs = [d for d in Iterators.product(ntuple(k -> WaterLily.decomposed(k) ? (-1:1) : (0:0), _nd())...)
+            if any(!=(0), d) && _peer(d) >= 0]
+    sort!(dirs, by=d -> count(!=(0), d))  # faces first: most threads of the kernels find their region at once
+    peers = unique(_peer.(dirs))
+    msgs = [filter(d -> _peer(d) == p, dirs) for p in peers]  # the directions of the message to/from each peer
+    # a message holds its regions in the order of the sender's directions
+    S = Tuple(_halo_cells(a, d, true) for m in msgs for d in sort(m, by=_dirkey))
+    R = Tuple(_halo_cells(a, d, false) for m in msgs for d in sort(m, by=d -> _dirkey(.-d)))
+    lens = [sum(d -> length(_halo_cells(a, d, true)), m) for m in msgs]; ends = cumsum(lens)
+    (s, sh), (r, rh) = WaterLily._halo_buffers(a, T, ends[end]), WaterLily._halo_buffers(a, T, ends[end])
+    (; S=WaterLily.chain(S), R=WaterLily.chain(R), s, sh, r, rh, peers, ranges=UnitRange.(ends .- lens .+ 1, ends),
+       sreq=MPI.UnsafeMultiRequest(length(peers)), rreq=MPI.UnsafeMultiRequest(length(peers)))
 end
 
-# Test / introspection API — the grid `update_halo!` resolves for `arr_size`.
-@inline _grid_for(arr_size::Tuple) = _is_fine_size(arr_size, _nd()) ? _grid() : _coarse_grid(arr_size)
-
-# ── Scalar halo exchange (native eltypes — via IGG) ──────────────────────────
-# `update_halo!` exchanges one dim after the other, so that the edge and corner
-# ghosts get the diagonal neighbours' values, and pays its per-dim latency
-# (mostly the wait for the neighbours' messages) once per dim. `face_comm!`,
-# for the 7-point stencils of the Poisson iterations, which read face ghosts
-# only, posts the messages of every dim together instead (`_face_halo!`), with
-# one set of buffers and streams per dim. Within a dim the steps keep
-# `_update_halo!`'s order, which pairs the messages when both neighbours are the
-# same rank (2 periodic ranks). The edge and corner ghosts get the face
-# neighbour's stale ghosts instead; on GPUs the unpacks of two dims even write
-# them concurrently, harmless only because nothing reads them before the next
-# full `comm!` (the one ending `solver!`) rebuilds them.
-# Built on IGG internals (re-check on an IGG update): allocate_bufs,
-# allocate_tasks/custreams/rocstreams, iwrite_sendbufs!, irecv_halo!,
-# wait_iwrite, isend_halo, iread_recvbufs!, wait_iread, has_neighbor,
-# activate_global_grid, wrap_field (same signatures in 0.17.1 and 0.17.3).
-const IGG = ImplicitGlobalGrid
-
-function _face_halo!(F, dims)
-    nd = length(dims)
-    Fs = ntuple(_ -> F, nd)  # buffers and streams of index k serve dim dims[k]
-    IGG.allocate_bufs(Fs...)
-    IGG.any_array(Fs...)    && IGG.allocate_tasks(Fs...)
-    IGG.any_cuarray(Fs...)  && IGG.allocate_custreams(Fs...)
-    IGG.any_rocarray(Fs...) && IGG.allocate_rocstreams(Fs...)
-    recvs = fill(MPI.REQUEST_NULL, 2, nd); sends = fill(MPI.REQUEST_NULL, 2, nd)
-    for (k, d) in enumerate(dims), n in 1:2
-        IGG.has_neighbor(n, d) && IGG.iwrite_sendbufs!(n, d, F, k)
-    end
-    for (k, d) in enumerate(dims), n in 2:-1:1
-        IGG.has_neighbor(n, d) && (recvs[n, k] = IGG.irecv_halo!(n, d, F, k; tag=k))
-    end
-    for (k, d) in enumerate(dims), n in 1:2
-        IGG.has_neighbor(n, d) || continue
-        IGG.wait_iwrite(n, F, k)
-        sends[n, k] = IGG.isend_halo(n, d, F, k; tag=k)
-    end
-    for (k, d) in enumerate(dims), n in 2:-1:1
-        IGG.has_neighbor(n, d) || continue
-        MPI.Wait(recvs[n, k])
-        IGG.iread_recvbufs!(n, d, F, k)
-    end
-    for (k, d) in enumerate(dims), n in 2:-1:1
-        IGG.has_neighbor(n, d) && IGG.wait_iread(n, F, k)
-    end
-    MPI.Waitall(vec(sends))
+# The halo of `a`, with `work()` run while its messages travel. One halo at a time:
+# a plan's buffers serve every array of its type and size.
+function _halo!(work, a)
+    _any_decomposed() || return work()
+    _halo!(work, a, get!(() -> _halo_plan(a), _halos, (typeof(a), size(a))))
 end
-
-# Fine-sized arrays skip the Dict lookup AND the grid swap (the
-# `active_global_grid=` kwarg), the most-called path.
-function _scalar_halo_igg!(arr::AbstractArray, faces::Bool)
-    arr3d = ndims(arr) < 3 ?
-            reshape(arr, size(arr)..., ntuple(_ -> 1, 3 - ndims(arr))...) : arr
-    WaterLily._no_stream_sync!(arr)
-    dims = _decomp_dims()
-    if _is_fine_size(size(arr), _nd())
-        faces ? _face_halo!(IGG.wrap_field(arr3d), dims) : update_halo!(arr3d; dims)
-    elseif faces
-        fine = _grid()
-        IGG.activate_global_grid(_coarse_grid(size(arr)))
-        try
-            _face_halo!(IGG.wrap_field(arr3d), dims)
-        finally
-            IGG.activate_global_grid(fine)
-        end
-    else
-        update_halo!(arr3d; dims, active_global_grid=_coarse_grid(size(arr)))
+function _halo!(work, a, h)
+    WaterLily.pack!(h.s, a, h.S)
+    _sync(a)  # the pack is done, and so is the last unpack from h.r, which MPI.Irecv! may now overwrite
+    for (i, p) in enumerate(h.peers)
+        MPI.Irecv!(view(h.rh, h.ranges[i]), _comm(), h.rreq[i]; source=p)
     end
-end
-
-# ── Direct MPI halo exchange (Dual / Bool eltypes) ───────────────────────────
-# IGG's `update_halo!` rejects non-primitive eltypes (its `GGNumber` union),
-# so `ForwardDiff.Dual` and `Bool` arrays take this manual `Sendrecv!` shift:
-# 1-cell slabs per active dim, pre-allocated per-(eltype, shape, dim, backend)
-# buffers. The buffers live where `arr` lives, so GPU halos stay on the device
-# and MPI gets device pointers (CUDA-aware MPI).
-
-const _mpi_bufs = Dict{Tuple, NTuple{4,AbstractArray}}()
-
-@inline function _get_mpi_bufs(arr::AbstractArray{T}, slab_shape::Tuple, dim::Int) where T
-    key  = (T, slab_shape, dim, KernelAbstractions.get_backend(arr))
-    bufs = get(_mpi_bufs, key, nothing)   # single lookup; `get!` do-block allocates
-    bufs === nothing || return bufs
-    _mpi_bufs[key] = ntuple(_ -> fill!(similar(arr, T, slab_shape), zero(T)), 4)
-end
-
-function _slab(arr::AbstractArray, dim::Int, r::UnitRange)
-    colons = ntuple(i -> i == dim ? r : (:), ndims(arr))
-    @view arr[colons...]
-end
-
-function _scalar_halo_mpi!(arr::AbstractArray{T}) where T
-    g    = _grid()
-    N    = size(arr)
-    comm = _comm()
-    for dim in _decomp_dims()
-        nleft  = g.neighbors[1, dim]
-        nright = g.neighbors[2, dim]
-        (nleft < 0 && nright < 0) && continue
-
-        slab_shape = ntuple(i -> i == dim ? 1 : N[i], ndims(arr))
-        send_left, recv_left, send_right, recv_right = _get_mpi_bufs(arr, slab_shape, dim)
-
-        # pack first/last interior cells (index 2 and N-1); on GPUs the copies
-        # are asynchronous and MPI does not wait for them
-        copyto!(send_left,  _slab(arr, dim, 2:2))
-        copyto!(send_right, _slab(arr, dim, N[dim]-1:N[dim]-1))
-        _sync(arr)
-
-        # Classical shift pattern: send right / recv left, then the reverse.
-        # Missing neighbors are already `MPI.PROC_NULL` (no-op slots), and the
-        # pairing handles 2-rank periodic self-wrap without deadlock. For Dual,
-        # `_wire_view` aliases buffers to flat V storage so MPI sees a native type.
-        sR, rL = _wire_view(send_right), _wire_view(recv_left)
-        sL, rR = _wire_view(send_left),  _wire_view(recv_right)
-        MPI.Sendrecv!(sR, nright, dim*10,    rL, nleft,  dim*10,   comm, nothing)
-        MPI.Sendrecv!(sL, nleft,  dim*10+1,  rR, nright, dim*10+1, comm, nothing)
-
-        # unpack into ghost cells (index 1 and N)
-        nleft  >= 0 && copyto!(_slab(arr, dim, 1:1),            recv_left)
-        nright >= 0 && copyto!(_slab(arr, dim, N[dim]:N[dim]),  recv_right)
+    for (i, p) in enumerate(h.peers)
+        MPI.Isend(view(h.sh, h.ranges[i]), _comm(), h.sreq[i]; dest=p)
     end
+    work()
+    MPI.Waitall(h.rreq)
+    WaterLily.unpack!(a, h.r, h.R)  # not waited for: later kernels on the backend's queue run after it
+    MPI.Waitall(h.sreq)
 end
+_halo!(a) = _halo!(Returns(nothing), a)
 
-# ── Unified scalar halo exchange ─────────────────────────────────────────────
-
-@inline _wire_view(arr::AbstractArray) = arr
-@inline _wire_view(arr::AbstractArray{<:Dual}) = _dual_view(arr)
-
-@inline _native_eltype(::Type{<:Dual}) = false
-@inline _native_eltype(::Type{Bool})   = false
-@inline _native_eltype(::Type)         = true
-
-# IGG packs and unpacks GPU halos on its own streams, which do not wait for the
-# `@loop` kernels still running on the task stream: wait for them first. The
-# halo arrays have CUDA.jl's implicit synchronization between streams turned
-# off (`_no_stream_sync!`), so this wait is the only one, on every CUDA.jl.
+# Kernels may still be writing an array that MPI is about to read: wait for them.
 _sync(a) = KernelAbstractions.synchronize(KernelAbstractions.get_backend(a))
-
-# `faces=true` (`face_comm!`): all decomposed dims at once, face ghosts only.
-# Dual and Bool arrays take the shift one dim after the other either way.
-function _do_scalar_halo!(arr::AbstractArray; faces::Bool=false)
-    _any_decomposed() || return
-    _sync(arr)
-    _native_eltype(eltype(arr)) ? _scalar_halo_igg!(arr, faces) : _scalar_halo_mpi!(arr)
-end
-
-# ── Vector (velocity-shaped) halo exchange ────────────────────────────────────
-
-# All components in ONE `update_halo!` call, on zero-copy 3D aliases of the
-# contiguous component blocks: amortises IGG's per-call floor across the
-# components and skips the scratch-buffer round-trip copies entirely.
-# Coarse multigrid `L` arrays also land here (via `BC!` on `restrictL!`
-# output), so component size routes to the per-size side-table like scalars.
-# The aliases are `unsafe_wrap`s on the CPU; on GPUs a component (a contiguous
-# view) of a CuArray/ROCArray is itself a device array, which IGG takes as is.
-_components(u::Array{T,N}, sz3) where {T,N} =
-    (len = prod(size(u)[1:N-1]); [unsafe_wrap(Array, pointer(u, (c-1)*len + 1), sz3) for c in 1:size(u, N)])
-_components(u::AbstractArray{T,N}, sz3) where {T,N} = [reshape(selectdim(u, N, c), sz3) for c in 1:size(u, N)]
-function _velocity_halo_igg!(u::AbstractArray{T,N}) where {T,N}
-    csize = size(u)[1:N-1]
-    sz3   = ntuple(d -> d <= N-1 ? csize[d] : 1, 3)
-    WaterLily._no_stream_sync!(u)  # the components share u's memory and its flag
-    comps = _components(u, sz3)
-    if _is_fine_size(csize, _nd())
-        GC.@preserve u update_halo!(comps...; dims=_decomp_dims())
-    else
-        GC.@preserve u update_halo!(comps...; dims=_decomp_dims(),
-                                    active_global_grid=_coarse_grid(csize))
-    end
-end
-
-function _do_velocity_halo!(u::AbstractArray{T,N}) where {T,N}
-    _any_decomposed() || return
-    _sync(u)
-    if _native_eltype(T) && (u isa Array || selectdim(u, N, 1) isa DenseArray)
-        _velocity_halo_igg!(u)
-    else  # Dual / Bool / non-contiguous: one Sendrecv! shift per component, in place
-        for d in 1:size(u, N)
-            _scalar_halo_mpi!(selectdim(u, N, d))
-        end
-    end
-end
 
 # ── ForwardDiff.Dual support ─────────────────────────────────────────────────
 # `Dual{T,V,N}` is `isbits` with layout [value, partial₁, …, partialₙ] of `V`.
@@ -443,19 +291,21 @@ WaterLily._global_min(a, b, ::Parallel) = MPI.Allreduce(min(a, b), MPI.MIN, _com
 WaterLily._global_min(a::Dual, b::Dual, ::Parallel) = _dual_extremum(min(a, b), MPI.MIN)
 WaterLily._global_max(x, ::Parallel) = MPI.Allreduce(x, MPI.MAX, _comm())
 WaterLily._global_max(x::Dual, ::Parallel) = _dual_extremum(x, MPI.MAX)
-WaterLily._scalar_halo!(x, ::Parallel) = _do_scalar_halo!(x)
-WaterLily._velocity_halo!(u, ::Parallel) = _do_velocity_halo!(u)
+WaterLily._scalar_halo!(x, ::Parallel) = _halo!(x)
+WaterLily._velocity_halo!(u, ::Parallel) = _halo!(u)
 
 # Decomposed periodic dims wrap through the halo (IGG periodic topology);
 # non-decomposed ones wrap locally via `perBC!`, exactly as in serial.
 # `perBC!` runs first so the halo slabs carry the wrapped corner values.
 function WaterLily._comm!(a, perdir, ::Parallel)
     WaterLily.perBC!(a, _local_perdir(perdir))
-    _do_scalar_halo!(a)
+    _halo!(a)
 end
-function WaterLily._face_comm!(a, perdir, ::Parallel)
+function WaterLily._comm!(f, a, perdir, R, ::Parallel)
     WaterLily.perBC!(a, _local_perdir(perdir))
-    _do_scalar_halo!(a; faces=true)
+    _any_decomposed() && length(R) >= _overlap_min[] || return (_halo!(a); f(R))  # too short to hide the halo behind
+    _halo!(() -> f(WaterLily.inner(R)), a)
+    f(WaterLily.shell(R))
 end
 function WaterLily._velocity_comm!(a, perdir, ::Parallel)
     lp = _local_perdir(perdir)
@@ -464,7 +314,7 @@ function WaterLily._velocity_comm!(a, perdir, ::Parallel)
             WaterLily.perBC!(selectdim(a, ndims(a), i), lp)
         end
     end
-    _do_velocity_halo!(a)
+    _halo!(a)
 end
 
 # Rank-internal faces are non-physical: `_BC!`/`_exitBC!` skip writes there
