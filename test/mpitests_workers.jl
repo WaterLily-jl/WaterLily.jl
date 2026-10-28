@@ -158,6 +158,30 @@ elseif ROLE == "unit"
     Nloc = local_dims                         # rank-local interior dims
     ext  = Base.get_extension(WaterLily, :WaterLilyMPIExt)
 
+    # Every ghost must hold the value of the cell it stands for: its global index (G₁ + 1000G₂ + 10⁶G₃, plus
+    # 10⁹ per component), -1 past a physical boundary. Fine, coarse and velocity-shaped arrays; Dual and Bool too.
+    function halo_selfcheck(ldims, perdir)
+        p, D = ext._par(), length(ldims)
+        for sz in (Tuple(ldims .+ 2), Tuple(ldims .÷ 2 .+ 2), (Tuple(ldims .+ 2)..., D))
+            n = sz[1:D] .- 2
+            function cell(I)
+                G = ntuple(k -> I[k] - 1 + p.coords[k]*n[k], D)
+                G = ntuple(k -> p.periods[k] ? mod1(G[k], p.dims[k]*n[k]) : G[k], D)
+                all(k -> 1 <= G[k] <= p.dims[k]*n[k], 1:D) ? sum(G[k]*1000^(k-1) for k in 1:D) + 10^9*get(Tuple(I), D+1, 1) : -1
+            end
+            ghost(I) = any(k -> I[k] in (1, sz[k]), 1:D)
+            want = [Float64(cell(I)) for I in CartesianIndices(sz)]
+            a0 = [ghost(I) ? -1.0 : want[I] for I in CartesianIndices(sz)]
+            a, d = copy(a0), Dual{Nothing,Float64,1}.(a0, Partials.(tuple.(-a0)))
+            b = [!ghost(I) && isodd(Int(want[I])) for I in CartesianIndices(sz)]
+            comm!(x) = length(sz) > D ? WaterLily.velocity_comm!(x, perdir) : WaterLily.comm!(x, perdir)
+            foreach(comm!, (a, d, b))
+            @test a == want && a != a0
+            @test value.(d) == want && partials.(d, 1) == -want
+            @test b == [w != -1 && isodd(Int(w)) for w in want]
+        end
+    end
+
     # Tests run on every rank — `Test` aborts with non-zero exit on first
     # failure, which the orchestrator surfaces via `success(run(cmd))`.
     @testset "MPI unit (rank $(me)/$(np))" begin
@@ -241,26 +265,7 @@ elseif ROLE == "unit"
         end
 
         @testset "halo: every ghost holds the value of its cell, edges and corners too" begin
-            # A cell's value is its global index (G₁ + 1000G₂ + 10⁶ component); a ghost past a physical
-            # boundary keeps -1. Fine, coarse and velocity-shaped arrays; Dual and Bool too.
-            p = ext._par()
-            for sz in (Tuple(Nloc .+ 2), (18, 10), (Tuple(Nloc .+ 2)..., 2))
-                n = sz[1:2] .- 2
-                function cell(I)
-                    G = ntuple(k -> I[k] - 1 + p.coords[k]*n[k], 2)
-                    G = ntuple(k -> p.periods[k] ? mod1(G[k], p.dims[k]*n[k]) : G[k], 2)
-                    all(k -> 1 <= G[k] <= p.dims[k]*n[k], 1:2) ? G[1] + 1000G[2] + 10^6*get(Tuple(I), 3, 1) : -1
-                end
-                ghost(I) = any(k -> I[k] in (1, sz[k]), 1:2)
-                want = [Float64(cell(I)) for I in CartesianIndices(sz)]
-                a = [ghost(I) ? -1.0 : want[I] for I in CartesianIndices(sz)]
-                d = Dual{Nothing,Float64,1}.(a, Partials.(tuple.(-a)))
-                b = [!ghost(I) && isodd(Int(want[I])) for I in CartesianIndices(sz)]
-                foreach(WaterLily.scalar_halo!, (a, d, b))
-                @test a == want && a != [ghost(I) ? -1.0 : want[I] for I in CartesianIndices(sz)]
-                @test value.(d) == want && partials.(d, 1) == -want
-                @test b == [w != -1 && isodd(Int(w)) for w in want]
-            end
+            halo_selfcheck(Nloc, ())
         end
 
         @testset "inner + shell: every cell of a range once" begin
@@ -419,6 +424,12 @@ elseif ROLE == "unit"
                     @test all(partials(d)[1] ≈ Float64(c)            for d in rslice)
                 end
             end
+        end
+
+        @testset "halo, 3D and periodic: every ghost holds the value of its cell" begin
+            # last, since it changes the decomposition: 2×2×1 ranks, so perBC! wraps z and the halo x and y
+            ld, _, _ = init_waterlily_mpi((16, 16, 8); perdir=(1, 2, 3))
+            halo_selfcheck(ld, (1, 2, 3))
         end
     end
 
