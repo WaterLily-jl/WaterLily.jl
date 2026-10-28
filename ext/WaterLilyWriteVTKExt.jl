@@ -174,18 +174,16 @@ end
 
 function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.AbstractParMode)
     mpi_id = Base.PkgId(Base.UUID("da04e1cc-30fd-572f-bb4f-1f8673147195"), "MPI")
-    igg_id = Base.PkgId(Base.UUID("4d7a3746-15be-11ea-1130-334b0c4f5fa0"), "ImplicitGlobalGrid")
-    (haskey(Base.loaded_modules, mpi_id) && haskey(Base.loaded_modules, igg_id)) ||
-        return _save!(w, a, WaterLily.Serial())
+    haskey(Base.loaded_modules, mpi_id) || return _save!(w, a, WaterLily.Serial())
 
-    MPIMod, IGG = Base.loaded_modules[mpi_id], Base.loaded_modules[igg_id]
+    MPIMod = Base.loaded_modules[mpi_id]
     comm = MPIMod.COMM_WORLD; me = MPIMod.Comm_rank(comm); nprocs = MPIMod.Comm_size(comm)
     nprocs == 1 && return _save!(w, a, WaterLily.Serial())
 
-    g  = IGG.global_grid()
-    nd = sum(g.nxyz .> 1)
-    nx = ntuple(d -> g.nxyz[d] - g.overlaps[d], nd)
-    coords_mat = reshape(MPIMod.Allgather(Int32[g.coords[d] for d in 1:nd], comm), nd, nprocs)
+    nd = ndims(a.flow.p)
+    nx = size(a.flow.p) .- 2                                            # rank-local interior cells
+    off = WaterLily.global_offset(Val(nd), Int)                         # coords .* nx
+    coords_mat = reshape(MPIMod.Allgather(Int32[off[d] ÷ nx[d] for d in 1:nd], comm), nd, nprocs)
     dims_proc  = ntuple(d -> Int(maximum(@view coords_mat[d, :])) + 1, nd)
     bc = ntuple(d -> w.include_bc && !(d in a.flow.perdir) ? 1 : 0, nd)
 

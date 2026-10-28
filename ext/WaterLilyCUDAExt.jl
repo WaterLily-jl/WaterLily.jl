@@ -6,9 +6,13 @@ using LinearAlgebra: ⋅
 """
     __init__()
 
-Asserts CUDA is functional when loading this extension.
+Asserts CUDA is functional when loading this extension, and registers how an MPI rank
+picks one of the node's GPUs (`init_waterlily_mpi`).
 """
-__init__() = @assert CUDA.functional()
+function __init__()
+    @assert CUDA.functional()
+    push!(WaterLily._device_selectors, i -> CUDA.device!(i % length(CUDA.devices())))  # MPI ranks of a node
+end
 
 # CUDA.jl has a dot kernel for views of CuArrays, faster than the generic GPU mapreduce in perdot
 WaterLily.perdot(::CUDABackend,a,b,R) = @view(a[R])⋅@view(b[R])

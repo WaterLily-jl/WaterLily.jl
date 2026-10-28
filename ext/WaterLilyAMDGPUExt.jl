@@ -5,9 +5,13 @@ using AMDGPU, WaterLily
 """
     __init__()
 
-Asserts AMDGPU is functional when loading this extension.
+Asserts AMDGPU is functional when loading this extension, and registers how an MPI rank
+picks one of the node's GPUs (`init_waterlily_mpi`).
 """
-__init__() = @assert AMDGPU.functional()
+function __init__()
+    @assert AMDGPU.functional()
+    push!(WaterLily._device_selectors, i -> AMDGPU.device_id!(i % length(AMDGPU.devices()) + 1))  # MPI ranks of a node
+end
 
 # MPI halos staged through host memory, registered (page-locked) and mapped into the device for
 # the pack and unpack kernels: no copies, and MPI is given host memory

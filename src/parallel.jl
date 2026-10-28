@@ -44,9 +44,8 @@ Boilerplate-free MPI initialization for a WaterLily simulation.  The macro
 pulls the global `dims` (first positional argument) and the optional `perdir`
 keyword out of the constructor call, invokes `init_waterlily_mpi(dims; perdir)`,
 and substitutes the returned rank-local dimensions back into the call.
-Requires `using MPI, ImplicitGlobalGrid` so the extension is loaded; otherwise
-the generated `init_waterlily_mpi` call throws `MethodError`.  The user is
-still responsible for `finalize_global_grid()` at script end.
+Requires `using MPI` so the extension is loaded; otherwise the generated
+`init_waterlily_mpi` call throws `MethodError`.
 
 Any constructor that follows `Simulation`'s calling convention is accepted, not
 only `Simulation` itself: the first positional argument must be the global
@@ -58,12 +57,11 @@ Downstream `AbstractSimulation` constructors such as
 
 Example:
 
-    using WaterLily, MPI, ImplicitGlobalGrid
+    using WaterLily, MPI
     sim = @distributed Simulation((192, 128), (U, 0), L;
                                   ν=ν, body=body, perdir=(1,2))
     mpi_rank() == 0 && @info "decomposed and ready"
     # ... time stepping ...
-    finalize_global_grid()
 """
 macro distributed(ex)
     if ex isa Expr && ex.head === :(=)
@@ -196,6 +194,8 @@ _velocity_halo!(u, ::Serial) = nothing
 # array they use, and the one MPI sends and receives (the same, unless a GPU extension maps
 # page-locked host memory into the device: WaterLilyCUDAExt, WaterLilyAMDGPUExt)
 _host_buffers(a, T, n) = (b = similar(a, T, n); (b, b))
+# The device choice of each GPU package loaded, for a node-local MPI rank (from 0)
+const _device_selectors = Function[]
 
 """
     phys_left(j), phys_right(j)

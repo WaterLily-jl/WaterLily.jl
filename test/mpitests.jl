@@ -27,7 +27,7 @@ const WORKER  = joinpath(TESTDIR, "mpitests_workers.jl")
 const OUTDIR  = mktempdir()
 const JULIA   = Base.julia_cmd()
 # Inherit the orchestrator's active project so workers see the test [extras]
-# (MPI, ImplicitGlobalGrid, ...) without us having to configure a separate env.
+# (MPI, ...) without us having to configure a separate env.
 const PROJECT = "--project=$(Base.active_project())"
 
 # CI runners may have fewer hardware cores than the rank count.  Both env vars
@@ -36,13 +36,11 @@ const OVERSUB_ENV = ("OMPI_MCA_rmaps_base_oversubscribe"   => "1",
                      "PRTE_MCA_rmaps_default_mapping_policy" => ":oversubscribe")
 
 # Run the worker under `MPI.mpiexec()` (returns the launcher Cmd directly —
-# the do-block form is deprecated since MPI.jl 0.20).  Pass `--depwarn=no` to
-# silence ImplicitGlobalGrid's internal deprecations (`Dims_create!`,
-# `Cart_create`, `Wait!`, `Waitall!`); not our code, not actionable here.
+# the do-block form is deprecated since MPI.jl 0.20).
 function mpi_run(np::Int, role::AbstractString)
     cmd = addenv(
         `$(MPI.mpiexec()) -n $(np) $(JULIA) $(PROJECT) --startup-file=no
-         --threads=1 --check-bounds=yes --heap-size-hint=0.5G --depwarn=no
+         --threads=1 --check-bounds=yes --heap-size-hint=0.5G
          $(WORKER) $(role) $(OUTDIR)`,
         OVERSUB_ENV...)
     return Base.success(run(ignorestatus(cmd)))
@@ -96,11 +94,10 @@ end
     end
 
     # ── parity tests ──────────────────────────────────────────────────────────
-    # IGG can only be initialised once per process, so cylinder and sphere
-    # parallel runs each get their own subprocess.
+    # Each parallel run gets its own subprocess (and rank count).
     @testset "parity" begin
         @test true
-        cmd_s = `$(JULIA) $(PROJECT) --startup-file=no --depwarn=no $(WORKER) parity_serial $(OUTDIR)`
+        cmd_s = `$(JULIA) $(PROJECT) --startup-file=no $(WORKER) parity_serial $(OUTDIR)`
         @test success(run(ignorestatus(cmd_s)))
 
         for (case, key, np) in (("cyl",  "cylinder", NP_2D),

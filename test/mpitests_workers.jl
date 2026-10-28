@@ -122,7 +122,7 @@ end
 # ── Roles ─────────────────────────────────────────────────────────────────────
 
 if ROLE == "parity_serial"
-    # IGG isn't initialised here — both cases run rank-locally back-to-back.
+    # MPI isn't initialised here — the cases run rank-locally back-to-back.
     cyl = run_cylinder!(false)
     sph = run_sphere!(false)
     chan = run_channel!(false)
@@ -131,31 +131,28 @@ if ROLE == "parity_serial"
     write_results(joinpath(OUTDIR, "serial_chan.toml"), "channel",  chan)
 
 elseif ROLE == "parity_parallel_cyl"
-    using ImplicitGlobalGrid, MPI
+    using MPI
     cyl = run_cylinder!(true)
     WaterLily.mpi_rank() == 0 &&
         write_results(joinpath(OUTDIR, "parallel_cyl.toml"), "cylinder", cyl)
-    finalize_global_grid()
 
 elseif ROLE == "parity_parallel_sph"
-    using ImplicitGlobalGrid, MPI
+    using MPI
     sph = run_sphere!(true)
     WaterLily.mpi_rank() == 0 &&
         write_results(joinpath(OUTDIR, "parallel_sph.toml"), "sphere", sph)
-    finalize_global_grid()
 
 elseif ROLE == "parity_parallel_chan"
-    using ImplicitGlobalGrid, MPI
+    using MPI
     chan = run_channel!(true)
     WaterLily.mpi_rank() == 0 &&
         write_results(joinpath(OUTDIR, "parallel_chan.toml"), "channel", chan)
-    finalize_global_grid()
 
 elseif ROLE == "unit"
-    using ImplicitGlobalGrid, MPI
+    using MPI
     using ForwardDiff: Dual, Partials, value, partials
 
-    # Initialise a 64×32 IGG grid so the unit tests run on a real decomposition.
+    # Initialise a 64×32 grid so the unit tests run on a real decomposition.
     local_dims, me, comm = init_waterlily_mpi((64, 32))
     np   = MPI.Comm_size(comm)
     Nloc = local_dims                         # rank-local interior dims
@@ -196,11 +193,12 @@ elseif ROLE == "unit"
             @test all(b[I] == (loc(0,I)[1] + off32[1] > 40) for I in inside(b))
         end
 
-        @testset "live-grid accessors" begin
-            g = ImplicitGlobalGrid.global_grid()
-            @test ext._grid() === g
-            @test ext._nd() == sum(g.nxyz .> 1)
-            @test ext._any_decomposed() == any(g.dims[d] > 1 for d in 1:ext._nd())
+        @testset "topology accessors" begin
+            p = ext._par()
+            @test p === WaterLily.par_mode[] && ext._nd() == 2 && prod(p.dims) == np
+            @test ext._any_decomposed() == any(>(1), p.dims)
+            @test p.coords == MPI.Cart_coords(comm) && p.nlocal == collect(Nloc)
+            @test all(p.neighbors[:, j] == collect(MPI.Cart_shift(comm, j-1, 1)) for j in 1:2)
         end
 
         @testset "global reductions" begin
@@ -223,7 +221,7 @@ elseif ROLE == "unit"
             arr = fill(T(-1), (Nloc[1]+2, Nloc[2]+2))
             arr[2:Nloc[1]+1, 2:Nloc[2]+1] .= T(me)
             WaterLily.scalar_halo!(arr)
-            g = ImplicitGlobalGrid.global_grid()
+            g = ext._par()
             for j in 1:2
                 nleft, nright = g.neighbors[1, j], g.neighbors[2, j]
                 # left ghost should hold neighbour's rank value (or -1 at physical wall)
@@ -242,27 +240,26 @@ elseif ROLE == "unit"
             end
         end
 
-        @testset "halo ≡ update_halo! one dim after the other, edges and corners too" begin
-            # fine, coarse and velocity-shaped arrays; Dual and Bool through Float references
-            g = ImplicitGlobalGrid.global_grid()
-            function ref!(a)  # IGG on each component, on a grid of the array's size
-                gg = ImplicitGlobalGrid.create_global_grid(size(a, 1), size(a, 2), 1; dimx=g.dims[1], dimy=g.dims[2], dimz=1,
-                    overlaps=Tuple(g.overlaps), halowidths=Tuple(g.halowidths), comm=MPI.COMM_WORLD, quiet=true)
-                for c in axes(a, 3)
-                    b = a[:, :, c]
-                    update_halo!(reshape(b, size(b)..., 1); dims=filter(d -> g.dims[d] > 1, (1, 2)), active_global_grid=gg)
-                    a[:, :, c] .= b
-                end
-                a
-            end
+        @testset "halo: every ghost holds the value of its cell, edges and corners too" begin
+            # A cell's value is its global index (G₁ + 1000G₂ + 10⁶ component); a ghost past a physical
+            # boundary keeps -1. Fine, coarse and velocity-shaped arrays; Dual and Bool too.
+            p = ext._par()
             for sz in (Tuple(Nloc .+ 2), (18, 10), (Tuple(Nloc .+ 2)..., 2))
-                a = rand(T, sz); b = copy(a); WaterLily.scalar_halo!(b)
-                @test b == ref!(copy(a)) && b != a
-                v, p = rand(sz...), rand(sz...)
-                d = Dual{Nothing,Float64,1}.(v, Partials.(tuple.(p))); WaterLily.scalar_halo!(d)
-                @test value.(d) == ref!(v) && partials.(d, 1) == ref!(p)
-                l = rand(Bool, sz); m = copy(l); WaterLily.scalar_halo!(m)
-                @test m == (ref!(T.(l)) .== 1)
+                n = sz[1:2] .- 2
+                function cell(I)
+                    G = ntuple(k -> I[k] - 1 + p.coords[k]*n[k], 2)
+                    G = ntuple(k -> p.periods[k] ? mod1(G[k], p.dims[k]*n[k]) : G[k], 2)
+                    all(k -> 1 <= G[k] <= p.dims[k]*n[k], 1:2) ? G[1] + 1000G[2] + 10^6*get(Tuple(I), 3, 1) : -1
+                end
+                ghost(I) = any(k -> I[k] in (1, sz[k]), 1:2)
+                want = [Float64(cell(I)) for I in CartesianIndices(sz)]
+                a = [ghost(I) ? -1.0 : want[I] for I in CartesianIndices(sz)]
+                d = Dual{Nothing,Float64,1}.(a, Partials.(tuple.(-a)))
+                b = [!ghost(I) && isodd(Int(want[I])) for I in CartesianIndices(sz)]
+                foreach(WaterLily.scalar_halo!, (a, d, b))
+                @test a == want && a != [ghost(I) ? -1.0 : want[I] for I in CartesianIndices(sz)]
+                @test value.(d) == want && partials.(d, 1) == -want
+                @test b == [w != -1 && isodd(Int(w)) for w in want]
             end
         end
 
@@ -309,7 +306,7 @@ elseif ROLE == "unit"
                 Rb = WaterLily.local_bbox(boxed, R)
                 @test Rb ⊆ R
                 @test WaterLily.global_allreduce(length(Rb)) == length(boxed.box) # the blocks tile the box
-                c[1] < 33 && ImplicitGlobalGrid.global_grid().dims[1] > 1 &&
+                c[1] < 33 && ext._par().dims[1] > 1 &&
                     @test WaterLily.global_allreduce(Int(isempty(Rb))) > 0
                 a, b = (Simulation(Nloc, (T(1), T(0)), 2r; body, T) for body in (circle, boxed))
                 foreach(sim_step!, (a, b))
@@ -322,7 +319,7 @@ elseif ROLE == "unit"
         end
 
         @testset "phys_left / phys_right gates" begin
-            g = ImplicitGlobalGrid.global_grid()
+            g = ext._par()
             for j in 1:2
                 @test WaterLily.phys_left(j)  == (g.neighbors[1, j] < 0)
                 @test WaterLily.phys_right(j) == (g.neighbors[2, j] < 0)
@@ -330,7 +327,7 @@ elseif ROLE == "unit"
         end
 
         @testset "decomposed + effective_perdir" begin
-            g = ImplicitGlobalGrid.global_grid()
+            g = ext._par()
             for j in 1:2
                 @test WaterLily.decomposed(j) == (g.dims[j] > 1)
             end
@@ -388,7 +385,7 @@ elseif ROLE == "unit"
             interior = mkdual1(Float64(me), Float64(me))
             arr[2:Nloc[1]+1, 2:Nloc[2]+1] .= interior
             WaterLily.scalar_halo!(arr)
-            g = ImplicitGlobalGrid.global_grid()
+            g = ext._par()
             for j in 1:2
                 nleft, nright = g.neighbors[1, j], g.neighbors[2, j]
                 lslice = j == 1 ? @view(arr[1, 2:end-1]) : @view(arr[2:end-1, 1])
@@ -425,7 +422,6 @@ elseif ROLE == "unit"
         end
     end
 
-    finalize_global_grid()
 
 else
     error("Unknown ROLE: $(ROLE)")

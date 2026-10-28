@@ -1,19 +1,17 @@
 """
-WaterLilyMPIExt — activated when ImplicitGlobalGrid and MPI are loaded with
-WaterLily. Adds `Parallel <: AbstractParMode` methods for the `par_mode[]`
-dispatch hooks (reductions, halo exchange, BC gates) — new methods only, no
-overwriting, so precompilation works.
+WaterLilyMPIExt — activated when MPI is loaded with WaterLily. Adds
+`Parallel <: AbstractParMode` methods for the `par_mode[]` dispatch hooks
+(reductions, halo exchange, BC gates) — new methods only, no overwriting, so
+precompilation works.
 
-Topology queries read IGG's `global_grid()` directly (single source of truth;
-costs a few ns, invisible under the ~50 ns `par_mode[]` dynamic dispatch).
-The only stored state is a genuine cache: the halo plans (regions, buffers,
-requests) per array type and size.
+The topology (a Cartesian communicator, this rank's coordinates and neighbours)
+lives in `par_mode[]` itself. The only other stored state is a genuine cache:
+the halo plans (regions, buffers, requests) per array type and size.
 """
 module WaterLilyMPIExt
 
 using WaterLily
 import WaterLily: @loop
-using ImplicitGlobalGrid
 using MPI
 using StaticArrays
 import KernelAbstractions
@@ -22,40 +20,39 @@ using ForwardDiff: Dual, Partials, value, partials
 # ── MPI parallel mode ────────────────────────────────────────────────────────
 
 struct Parallel <: WaterLily.AbstractParMode
-    comm::MPI.Comm
+    comm::MPI.Comm           # Cartesian communicator of the ranks
     rank::Int
+    dims::Vector{Int}        # ranks per dim
+    coords::Vector{Int}      # of this rank, from 0
+    periods::Vector{Bool}
+    neighbors::Matrix{Int}   # left and right rank per dim, negative (MPI.PROC_NULL) past a physical boundary
+    nlocal::Vector{Int}      # interior cells of this rank per dim
 end
 
-_comm() = (WaterLily.par_mode[]::Parallel).comm
+_par() = WaterLily.par_mode[]::Parallel
+_comm() = _par().comm
 
 WaterLily._mpi_rank(p::Parallel)   = p.rank
 WaterLily._mpi_comm(p::Parallel)   = p.comm
 WaterLily._mpi_nprocs(p::Parallel) = MPI.Comm_size(p.comm)
 
-# ── Live-grid accessors ──────────────────────────────────────────────────────
-# `par_mode[] isa Parallel` implies `init_waterlily_mpi` ran, so the grid is
-# initialized; after `finalize_global_grid()` these fail loudly via IGG's
-# initialization check rather than serving stale topology.
+# ── Topology accessors ───────────────────────────────────────────────────────
 
-const _grid = ImplicitGlobalGrid.global_grid           # the active GlobalGrid
-
-_nd() = count(>(1), _grid().nxyz)                      # active spatial dims
+_nd() = length(_par().dims)                             # spatial dims
 
 # Halo exchange only covers dims split across ranks. Periodic dims owned in
 # full by every rank wrap locally via `perBC!` (exactly as in serial) — going
 # through MPI for the self-wrap costs the full per-call floor for nothing.
-_any_decomposed() = (g = _grid(); any(g.dims[d] > 1 for d in 1:_nd()))
+_any_decomposed() = any(>(1), _par().dims)
 
 # Periodic dims that are NOT decomposed — handled by a local `perBC!` copy
-_local_perdir(perdir) = (g = _grid(); filter(j -> g.dims[j] == 1, perdir))
+_local_perdir(perdir) = (p = _par(); filter(j -> p.dims[j] == 1, perdir))
 
 # ── Global coordinate offset ──────────────────────────────────────────────────
 
 # Rank-local origin in global index space: offset[d] = coords[d] * nx_loc.
-function WaterLily._global_offset(::Val{N}, ::Type{T}, ::Parallel) where {N,T}
-    g = _grid()
-    SVector{N,T}(ntuple(d -> T(g.coords[d] * (g.nxyz[d] - g.overlaps[d])), N))
-end
+WaterLily._global_offset(::Val{N}, ::Type{T}, p::Parallel) where {N,T} =
+    SVector{N,T}(ntuple(d -> T(get(p.coords, d, 0) * get(p.nlocal, d, 0)), N))
 
 # @loop auto-offset. Float and Dual eltypes keep T, so offsets carry their
 # precision / AD tags; any other first argument (Bool or Int arrays, arrays of
@@ -122,16 +119,15 @@ end
 end
 
 """
-    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound()) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device=true) → (local_dims, rank, comm)
 
 Initialize MPI domain decomposition: picks the rank topology
-(`_shape_aware_topology`), initializes ImplicitGlobalGrid, and sets
-`par_mode[] = Parallel(comm, rank)`. With CUDA or AMDGPU loaded,
-`select_device=true` gives each node-local rank its own GPU (ImplicitGlobalGrid's
-`select_device`); when the launcher already binds one GPU per rank (e.g. Slurm
-`--gpus-per-task=1`), each rank keeps the GPU it sees.
+(`_shape_aware_topology`), creates its Cartesian communicator, and sets
+`par_mode[] = Parallel(...)`. With CUDA or AMDGPU loaded, `select_device=true`
+gives each node-local rank a GPU, round robin over the GPUs it sees (the one
+it sees when the launcher binds one GPU per rank, e.g. Slurm `--gpus-per-task=1`).
 """
-function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_device=!_gpu_bound()) where N
+function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_device=true) where N
     MPI.Initialized() || MPI.Init()
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
 
@@ -141,41 +137,28 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
         error("Global dims $global_dims not evenly divisible by MPI topology " *
               "$mpi_dims with $nprocs ranks")
 
-    # IGG always expects 3 dimensions — pad
-    igg_local = ntuple(d -> d <= N ? local_dims[d] + 2 : 1, 3)
-    igg_mpi   = ntuple(d -> d <= N ? mpi_dims[d] : 1, 3)
-    igg_per   = ntuple(d -> d <= N && d in perdir ? 1 : 0, 3)
-
-    me, dims, np, coords, comm = init_global_grid(
-        igg_local...;
-        dimx = igg_mpi[1], dimy = igg_mpi[2], dimz = igg_mpi[3],
-        overlaps = (2, 2, 2),
-        halowidths = (1, 1, 1),
-        periodx = igg_per[1], periody = igg_per[2], periodz = igg_per[3],
-        init_MPI = false,
-        select_device,
-    )
-
-    WaterLily.par_mode[] = Parallel(comm, Int(me))
+    periods = [d in perdir for d in 1:N]
+    comm = MPI.Cart_create(MPI.COMM_WORLD, collect(mpi_dims); periodic=periods, reorder=true)
+    me = MPI.Comm_rank(comm)
+    neighbors = [MPI.Cart_shift(comm, d-1, 1)[s] for s in 1:2, d in 1:N]
+    WaterLily.par_mode[] = Parallel(comm, me, collect(mpi_dims), MPI.Cart_coords(comm), periods, neighbors, collect(local_dims))
+    if select_device  # the node-local rank picks a GPU of each GPU package loaded
+        l = MPI.Comm_rank(MPI.Comm_split_type(comm, MPI.COMM_TYPE_SHARED, me))
+        foreach(f -> f(l), WaterLily._device_selectors)
+    end
     empty!(_halos)  # the plans of any previous grid (re-init in the same session)
     _overlap_min[] = parse(Int, get(ENV, "WATERLILY_OVERLAP_MIN", string(2^20)))
     _aware_min[] = (n = parse(Int, get(ENV, "WATERLILY_GPU_AWARE_MPI", "0")); n == 0 ? typemax(Int) : n)
 
     if me == 0
-        topo = join(string.(dims[1:N]), "×")
+        topo = join(string.(mpi_dims), "×")
         loc  = join(string.(local_dims), "×")
         glob = join(string.(global_dims), "×")
-        @info "WaterLily MPI: $(np) ranks, topology=$(topo), " *
+        @info "WaterLily MPI: $(nprocs) ranks, topology=$(topo), " *
               "local=$(loc), global=$(glob)"
     end
 
     return local_dims, me, comm
-end
-
-# One visible GPU per process: the launcher bound the GPUs (ImplicitGlobalGrid's
-# select_device would count one GPU for all the ranks of a node and stop)
-_gpu_bound() = any(("CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES")) do k
-    v = get(ENV, k, ""); !isempty(v) && !occursin(',', v)
 end
 
 # ── Halo exchange ─────────────────────────────────────────────────────────────
@@ -195,8 +178,8 @@ const _aware_min   = Ref(typemax(Int))  # the fewest bytes of a halo passed to M
 
 # The rank in direction `d` (-1, 0 or 1 per spatial dim), or -1 past a physical boundary
 function _peer(d)
-    g = _grid(); c = [g.coords[k] + get(d, k, 0) for k in 1:3]
-    all(k -> g.periods[k] == 1 || 0 <= c[k] < g.dims[k], 1:3) ? MPI.Cart_rank(_comm(), c) : -1
+    p = _par(); c = p.coords .+ collect(d)
+    all(k -> p.periods[k] || 0 <= c[k] < p.dims[k], eachindex(c)) ? MPI.Cart_rank(p.comm, c) : -1
 end
 
 # The cells of `a` sent toward (`send`) or received from direction `d`: in a dim of
@@ -299,7 +282,7 @@ WaterLily._global_max(x::Dual, ::Parallel) = _dual_extremum(x, MPI.MAX)
 WaterLily._scalar_halo!(x, ::Parallel) = _halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel) = _halo!(u)
 
-# Decomposed periodic dims wrap through the halo (IGG periodic topology);
+# Decomposed periodic dims wrap through the halo (periodic Cartesian topology);
 # non-decomposed ones wrap locally via `perBC!`, exactly as in serial.
 # `perBC!` runs first so the halo slabs carry the wrapped corner values.
 function WaterLily._comm!(a, perdir, ::Parallel)
@@ -325,13 +308,13 @@ end
 
 # Rank-internal faces are non-physical: `_BC!`/`_exitBC!` skip writes there
 # and the halo supplies neighbor data.
-WaterLily._phys_left(j,  ::Parallel) = _grid().neighbors[1, j] < 0
-WaterLily._phys_right(j, ::Parallel) = _grid().neighbors[2, j] < 0
+WaterLily._phys_left(j,  p::Parallel) = p.neighbors[1, j] < 0
+WaterLily._phys_right(j, p::Parallel) = p.neighbors[2, j] < 0
 
 # `effective_perdir` filter: conv_diff!'s periodic stencil `ϕuP` wraps within
 # the local array — wrong when the periodic partner is on a remote rank and
 # halowidth=1 can't supply its 2-cell stencil. Decomposed dims route to the
 # `Val{false}` stencil, whose 1 ghost cell the halo's periodic wrap fills.
-WaterLily._decomposed(j, ::Parallel) = j <= _nd() && _grid().dims[j] > 1
+WaterLily._decomposed(j, p::Parallel) = j <= length(p.dims) && p.dims[j] > 1
 
 end # module WaterLilyMPIExt
