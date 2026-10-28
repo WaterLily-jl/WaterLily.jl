@@ -124,13 +124,13 @@ end
 end
 
 @inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
-    k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
-    I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
-    k < size(x,d) && (x[I] = gauss(I,r,L,iD,x)) # with an odd size, the last k is a ghost for one colour
+    i = 2*Iv.I[1] - 1 - (sum(Base.tail(Iv.I)) + k₀) % 2 # double the first index and shift for red-black indexing
+    I = CartesianIndex(ntuple( j-> j==1 ? i : Iv.I[j], d))
+    i < size(x,1) && (x[I] = gauss(I,r,L,iD,x)) # with an odd size, the last cell is a ghost for one colour
 end
 
-@inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
-    return CartesianIndices(ntuple( i-> i==N ? (2:cld(size(x,i),2)) : (2:size(x,i)-1), N)) # every interior k of both colours
+@inline function half_range(x::AbstractArray{T,N}) where{T,N} # every interior cell of both colours, halved along the first dimension
+    return CartesianIndices(ntuple( i-> i==1 ? (2:cld(size(x,i),2)) : (2:size(x,i)-1), N)) # so a colour's cells along a line have stride 2
 end
 
 """
@@ -144,7 +144,7 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
     perBC!(p.ϵ,p.perdir)
     for i ∈ 1:it
-        @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
+        @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_range(p.ϵ)
     end
     increment!(p;ω) # increment solution and residual
 end
