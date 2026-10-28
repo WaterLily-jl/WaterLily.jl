@@ -119,15 +119,16 @@ end
 end
 
 """
-    init_waterlily_mpi(global_dims; perdir=(), select_device=true) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound()) → (local_dims, rank, comm)
 
 Initialize MPI domain decomposition: picks the rank topology
 (`_shape_aware_topology`), creates its Cartesian communicator, and sets
 `par_mode[] = Parallel(...)`. With CUDA or AMDGPU loaded, `select_device=true`
-gives each node-local rank a GPU, round robin over the GPUs it sees (the one
-it sees when the launcher binds one GPU per rank, e.g. Slurm `--gpus-per-task=1`).
+gives each node-local rank its own GPU, and stops when a node has more ranks
+than GPUs; when the launcher already binds one GPU per rank (e.g. Slurm
+`--gpus-per-task=1`), each rank keeps the GPU it sees.
 """
-function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_device=true) where N
+function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_device=!_gpu_bound()) where N
     MPI.Initialized() || MPI.Init()
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
 
@@ -143,8 +144,8 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
     neighbors = [MPI.Cart_shift(comm, d-1, 1)[s] for s in 1:2, d in 1:N]
     WaterLily.par_mode[] = Parallel(comm, me, collect(mpi_dims), MPI.Cart_coords(comm), periods, neighbors, collect(local_dims))
     if select_device  # the node-local rank picks a GPU of each GPU package loaded
-        l = MPI.Comm_rank(MPI.Comm_split_type(comm, MPI.COMM_TYPE_SHARED, me))
-        foreach(f -> f(l), WaterLily._device_selectors)
+        node = MPI.Comm_split_type(comm, MPI.COMM_TYPE_SHARED, me)
+        foreach(f -> f(MPI.Comm_rank(node), MPI.Comm_size(node)), WaterLily._device_selectors)
     end
     empty!(_halos)  # the plans of any previous grid (re-init in the same session)
     _overlap_min[] = parse(Int, get(ENV, "WATERLILY_OVERLAP_MIN", string(2^20)))
@@ -159,6 +160,12 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
     end
 
     return local_dims, me, comm
+end
+
+# One visible GPU per process: the launcher bound the GPUs (select_device would
+# count one GPU for all the ranks of a node and stop)
+_gpu_bound() = any(("CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES")) do k
+    v = get(ENV, k, ""); !isempty(v) && !occursin(',', v)
 end
 
 # ── Halo exchange ─────────────────────────────────────────────────────────────

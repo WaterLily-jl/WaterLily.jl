@@ -11,7 +11,7 @@ picks one of the node's GPUs (`init_waterlily_mpi`).
 """
 function __init__()
     @assert CUDA.functional()
-    push!(WaterLily._device_selectors, i -> CUDA.device!(i % length(CUDA.devices())))  # MPI ranks of a node
+    push!(WaterLily._device_selectors, (l, n) -> CUDA.device!(WaterLily._node_gpu(l, n, length(CUDA.devices()))))
 end
 
 # CUDA.jl has a dot kernel for views of CuArrays, faster than the generic GPU mapreduce in perdot

@@ -194,8 +194,11 @@ _velocity_halo!(u, ::Serial) = nothing
 # array they use, and the one MPI sends and receives (the same, unless a GPU extension maps
 # page-locked host memory into the device: WaterLilyCUDAExt, WaterLilyAMDGPUExt)
 _host_buffers(a, T, n) = (b = similar(a, T, n); (b, b))
-# The device choice of each GPU package loaded, for a node-local MPI rank (from 0)
+# The device choice of each GPU package loaded, for node-local MPI rank `l` (from 0) of `n`
 const _device_selectors = Function[]
+# The GPU of node-local rank `l` of `n`, out of `ndev`: one each, as ImplicitGlobalGrid's `select_device`
+_node_gpu(l, n, ndev) = n <= ndev ? l : error("more MPI ranks on a node ($n) than GPUs ($ndev): start one rank per GPU, " *
+    "make one GPU visible to each rank (CUDA_VISIBLE_DEVICES, ROCR_VISIBLE_DEVICES), or pass select_device=false")
 
 """
     phys_left(j), phys_right(j)
@@ -306,7 +309,7 @@ global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
 _global_offset(::Val{N}, ::Type{T}, ::Serial) where {N,T} = zero(SVector{N,T})
 
 """
-    init_waterlily_mpi(global_dims; perdir=(), select_device) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound()) → (local_dims, rank, comm)
 
 Initialize MPI domain decomposition for WaterLily.  Implemented by `WaterLilyMPIExt`.
 """

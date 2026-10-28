@@ -10,7 +10,7 @@ picks one of the node's GPUs (`init_waterlily_mpi`).
 """
 function __init__()
     @assert AMDGPU.functional()
-    push!(WaterLily._device_selectors, i -> AMDGPU.device_id!(i % length(AMDGPU.devices()) + 1))  # MPI ranks of a node
+    push!(WaterLily._device_selectors, (l, n) -> AMDGPU.device_id!(WaterLily._node_gpu(l, n, length(AMDGPU.devices())) + 1))
 end
 
 # MPI halos staged through host memory, registered (page-locked) and mapped into the device for
