@@ -1,0 +1,41 @@
+# Metadata for GitHub's "Cite this repository" button and for Zenodo software records.
+# The paper is the preferred citation; the authors below are the principal developers.
+cff-version: 1.2.0
+message: If you use WaterLily.jl, please cite the paper given under preferred-citation.
+title: WaterLily.jl
+type: software
+abstract: A differentiable and backend-agnostic Julia solver for incompressible viscous flow around dynamic bodies
+license: MIT
+repository-code: https://github.com/WaterLily-jl/WaterLily.jl
+keywords:
+  - computational fluid dynamics
+  - immersed boundary method
+  - Julia
+  - GPU
+  - automatic differentiation
+authors:
+  - family-names: Weymouth
+    given-names: Gabriel D.
+    affiliation: Delft University of Technology, The Netherlands
+  - family-names: Font
+    given-names: Bernat
+    affiliation: Delft University of Technology, The Netherlands
+  - family-names: Lauber
+    given-names: Marin
+    affiliation: Delft University of Technology, The Netherlands
+  - family-names: Huang
+    given-names: Tzu-Yao
+    affiliation: Delft University of Technology, The Netherlands
+preferred-citation:
+  type: article
+  title: "WaterLily.jl: A differentiable and backend-agnostic Julia solver for incompressible viscous flow around dynamic bodies"
+  authors:
+    - family-names: Weymouth
+      given-names: Gabriel D.
+    - family-names: Font
+      given-names: Bernat
+  journal: Computer Physics Communications
+  volume: 315
+  start: 109748
+  year: 2025
+  doi: 10.1016/j.cpc.2025.109748
