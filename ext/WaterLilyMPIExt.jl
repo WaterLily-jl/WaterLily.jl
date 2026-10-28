@@ -231,10 +231,10 @@ function _halo!(work, a, h)
     WaterLily.pack!(h.s, a, h.S)
     _sync(a)  # the pack is done, and so is the last unpack from h.r, which MPI.Irecv! may now overwrite
     for (i, p) in enumerate(h.peers)
-        MPI.Irecv!(view(h.rh, h.ranges[i]), _comm(), h.rreq[i]; source=p)
+        MPI.Irecv!(view(h.rh, h.ranges[i]), _comm(), h.rreq[i]; source=p, tag=0)
     end
     for (i, p) in enumerate(h.peers)
-        MPI.Isend(view(h.sh, h.ranges[i]), _comm(), h.sreq[i]; dest=p)
+        MPI.Isend(view(h.sh, h.ranges[i]), _comm(), h.sreq[i]; dest=p, tag=0)
     end
     work()
     MPI.Waitall(h.rreq)
