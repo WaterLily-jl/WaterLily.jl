@@ -192,10 +192,10 @@ No-op in serial.
 velocity_halo!(u) = _velocity_halo!(u, par_mode[])
 _scalar_halo!(x, ::Serial) = nothing
 _velocity_halo!(u, ::Serial) = nothing
-# Halo buffers of `n` elements of type `T` for `a`: what the pack and unpack kernels use, and
-# what MPI sends and receives (the same array, unless a GPU extension maps host memory into
-# the device for it, as WaterLilyCUDAExt does)
-_halo_buffers(a, T, n) = (b = similar(a, T, n); (b, b))
+# Halo buffers of `n` elements of type `T` in host memory, for kernels on `a`'s backend: the
+# array they use, and the one MPI sends and receives (the same, unless a GPU extension maps
+# page-locked host memory into the device: WaterLilyCUDAExt, WaterLilyAMDGPUExt)
+_host_buffers(a, T, n) = (b = similar(a, T, n); (b, b))
 
 """
     phys_left(j), phys_right(j)

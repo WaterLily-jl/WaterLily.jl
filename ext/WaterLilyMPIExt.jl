@@ -159,6 +159,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
     WaterLily.par_mode[] = Parallel(comm, Int(me))
     empty!(_halos)  # the plans of any previous grid (re-init in the same session)
     _overlap_min[] = parse(Int, get(ENV, "WATERLILY_OVERLAP_MIN", string(2^20)))
+    _aware_min[] = (n = parse(Int, get(ENV, "WATERLILY_GPU_AWARE_MPI", "0")); n == 0 ? typemax(Int) : n)
 
     if me == 0
         topo = join(string.(dims[1:N]), "×")
@@ -184,10 +185,13 @@ end
 # kernel packs every region into a flat send buffer, the messages all go at once,
 # and one kernel unpacks the flat receive buffer. A plan (regions, buffers,
 # requests) is cached per array type and size: scalar, velocity, coarse-level,
-# Dual and Bool arrays all take this path, on every backend.
+# Dual and Bool arrays all take this path, on every backend. GPU halos go through
+# host memory, or device to device with GPU-aware MPI: WATERLILY_GPU_AWARE_MPI=0
+# (or unset) never, 1 always, N > 1 for the halos of at least N bytes.
 
 const _halos = Dict{Tuple, Any}()
-const _overlap_min = Ref(2^20)  # the fewest cells of a loop that `comm!(f, ...)` splits
+const _overlap_min = Ref(2^20)         # the fewest cells of a loop that `comm!(f, ...)` splits
+const _aware_min   = Ref(typemax(Int))  # the fewest bytes of a halo passed to MPI in device memory
 
 # The rank in direction `d` (-1, 0 or 1 per spatial dim), or -1 past a physical boundary
 function _peer(d)
@@ -216,7 +220,8 @@ function _halo_plan(a::AbstractArray{T}) where T
     S = Tuple(_halo_cells(a, d, true) for m in msgs for d in sort(m, by=_dirkey))
     R = Tuple(_halo_cells(a, d, false) for m in msgs for d in sort(m, by=d -> _dirkey(.-d)))
     lens = [sum(d -> length(_halo_cells(a, d, true)), m) for m in msgs]; ends = cumsum(lens)
-    (s, sh), (r, rh) = WaterLily._halo_buffers(a, T, ends[end]), WaterLily._halo_buffers(a, T, ends[end])
+    buffers(n) = n * sizeof(T) >= _aware_min[] ? (b = similar(a, T, n); (b, b)) : WaterLily._host_buffers(a, T, n)
+    (s, sh), (r, rh) = buffers(ends[end]), buffers(ends[end])
     (; S=WaterLily.chain(S), R=WaterLily.chain(R), s, sh, r, rh, peers, ranges=UnitRange.(ends .- lens .+ 1, ends),
        sreq=MPI.UnsafeMultiRequest(length(peers)), rreq=MPI.UnsafeMultiRequest(length(peers)))
 end
