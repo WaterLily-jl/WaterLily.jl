@@ -256,6 +256,8 @@ preconditioned conjugate gradients (`pcg!`).
 
 Ends with `pin_pressure!` (remove null-space mean) and `comm!`
 (halo sync) so the solution is ready for use in `project!`.
+`solver!(f, A)` then runs the loop `f(inside(A.x))`, while the halo travels
+for solvers that support it (`MultiLevelPoisson`).
 """
 function solver!(p::Poisson;tol=2e-3,itmx=1e3)
     r₁tol = l1n_tol(p, tol); r∞tol = tol
@@ -269,6 +271,7 @@ function solver!(p::Poisson;tol=2e-3,itmx=1e3)
     pin_pressure!(p); comm!(p.x,p.perdir)
     push!(p.n,nᵖ)
 end
+solver!(f, p::AbstractPoisson; kwargs...) = (solver!(p; kwargs...); f(inside(p.x)))
 
 """
     pin_pressure!(p::Poisson)

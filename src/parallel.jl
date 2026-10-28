@@ -257,6 +257,14 @@ Velocity communication: periodic BC copy + MPI halo exchange.
 In serial, copies periodic ghost cells for all velocity components.
 """
 velocity_comm!(a, perdir) = _velocity_comm!(a, perdir, par_mode[])
+"""
+    velocity_comm!(f, a, perdir, R)
+
+`velocity_comm!(a, perdir); f(R)`, with `f` looping over `inner(R)` while the
+halo messages travel and over `shell(R)` after, as `comm!(f, a, perdir, R)`.
+"""
+velocity_comm!(f, a, perdir, R) = _velocity_comm!(f, a, perdir, R, par_mode[])
+_velocity_comm!(f, a, perdir, R, ::Serial) = (_velocity_comm!(a, perdir, Serial()); f(R))
 function _velocity_comm!(a, perdir, ::Serial)
     _, n = size_u(a)
     for i ∈ 1:n

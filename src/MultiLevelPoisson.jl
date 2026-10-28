@@ -123,13 +123,16 @@ const smooth! = GaussSeidelRB!
 
 """
     solver!(ml::MultiLevelPoisson; tol=2e-3, itmx=32)
+    solver!(f, ml::MultiLevelPoisson; tol=2e-3, itmx=32)
 
 Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until BOTH the
 grid-independent max-norm `max|r| < tol` and the mean residual `Σ|r|/N < tol/10`
 hold. Ends with `pin_pressure!` + `comm!` to remove the null-space mode and
-synchronize halos.
+synchronize halos, with `f` looping over `inside(x)` while the halo travels
+(`comm!(f, x, perdir)`).
 """
-function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
+solver!(ml::MultiLevelPoisson; kwargs...) = solver!(Returns(nothing), ml; kwargs...)
+function solver!(f, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
     residual!(p); r₁ = L₁(p); r∞ = L∞(p); ω = T(1)
@@ -147,6 +150,6 @@ function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
         r₁ = rnew
         (r₁<r₁tol && r∞<r∞tol) && break
     end
-    pin_pressure!(p); comm!(p.x,p.perdir)
+    pin_pressure!(p); comm!(f,p.x,p.perdir)
     push!(ml.n,nᵖ);
 end

@@ -264,14 +264,14 @@ so a convective outflow set by `exitBC!` is kept and every other face is always 
 `perdir` lists the dimensions using periodic BCs instead.
 `t` is passed to `U` when it is a function `(i,x,t)->...`.
 
-Periodic directions are handled by `velocity_comm!` (called at the end),
-separating domain BCs from communication BCs.  Under MPI the `phys_left`/
+Periodic directions are handled by `velocity_comm!` (called at the end, unless
+`comm=false`), separating domain BCs from communication BCs.  Under MPI the `phys_left`/
 `phys_right` gates skip physical writes at rank-internal faces (the halo
 exchange supplies neighbor data there instead).
 """
-BC!(a,U,saveexit=false,perdir=(),t=0) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t)
-BC!(a,uBC::Function,saveexit=false,perdir=(),t=0) = _BC!(a, uBC, saveexit, perdir, t, par_mode[])
-function _BC!(a, uBC::Function, saveexit, perdir, t, ::AbstractParMode)
+BC!(a,U,saveexit=false,perdir=(),t=0;comm=true) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t;comm)
+BC!(a,uBC::Function,saveexit=false,perdir=(),t=0;comm=true) = _BC!(a, uBC, saveexit, perdir, t, comm, par_mode[])
+function _BC!(a, uBC::Function, saveexit, perdir, t, comm, ::AbstractParMode)
     N,n = size_u(a)
     for j ∈ 1:n
         j in perdir && continue  # periodic handled by velocity_comm!
@@ -290,16 +290,17 @@ function _BC!(a, uBC::Function, saveexit, perdir, t, ::AbstractParMode)
             end
         end
     end
-    velocity_comm!(a, perdir)
+    comm && velocity_comm!(a, perdir)
 end
 
 """
-    exitBC!(u,u⁰,Δt)
+    exitBC!(u,u⁰,Δt;comm=true)
 
-Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
+Apply a 1D convection scheme to fill the ghost cell on the exit of the domain,
+then exchange the halo (`comm=false`: left to a later `velocity_comm!`).
 """
-exitBC!(u,u⁰,Δt) = _exitBC!(u,u⁰,Δt,par_mode[])
-function _exitBC!(u,u⁰,Δt,::AbstractParMode)
+exitBC!(u,u⁰,Δt;comm=true) = _exitBC!(u,u⁰,Δt,comm,par_mode[])
+function _exitBC!(u,u⁰,Δt,comm,::AbstractParMode)
     N,_ = size_u(u)
     inflowL = slice(N.-1,2,1,2)              # inflow face (left wall face)
     exitR   = slice(N.-1,N[1],1,2)           # exit slice excluding ghosts (right wall face)
@@ -309,7 +310,7 @@ function _exitBC!(u,u⁰,Δt,::AbstractParMode)
     R && @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ face(exitR,1)
     ∮u = global_allreduce(R ? sum(@view u[exitR,1]) : zero(eltype(u)))/glen - U  # mass flux imbalance
     R && @loop u[I,1] -= ∮u over I ∈ face(exitR,1)     # correct flux
-    velocity_halo!(u)                        # no-op serial; MPI exchange parallel
+    comm && velocity_halo!(u)                # no-op serial; MPI exchange parallel
 end
 """
     perBC!(a,perdir)

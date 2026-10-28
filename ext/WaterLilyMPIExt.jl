@@ -306,20 +306,21 @@ function WaterLily._comm!(a, perdir, ::Parallel)
     WaterLily.perBC!(a, _local_perdir(perdir))
     _halo!(a)
 end
-function WaterLily._comm!(f, a, perdir, R, ::Parallel)
-    WaterLily.perBC!(a, _local_perdir(perdir))
-    _any_decomposed() && length(R) >= _overlap_min[] || return (_halo!(a); f(R))  # too short to hide the halo behind
+WaterLily._comm!(f, a, perdir, R, ::Parallel) = (WaterLily.perBC!(a, _local_perdir(perdir)); _overlap!(f, a, R))
+function _velocity_perBC!(a, perdir)
+    lp = _local_perdir(perdir)
+    isempty(lp) || for i in 1:size(a, ndims(a))
+        WaterLily.perBC!(selectdim(a, ndims(a), i), lp)
+    end
+end
+WaterLily._velocity_comm!(a, perdir, ::Parallel) = (_velocity_perBC!(a, perdir); _halo!(a))
+WaterLily._velocity_comm!(f, a, perdir, R, ::Parallel) = (_velocity_perBC!(a, perdir); _overlap!(f, a, R))
+
+# `f(R)` with the halo of `a` travelling during `f(inner(R))`, for loops long enough to hide it behind
+function _overlap!(f, a, R)
+    _any_decomposed() && length(R) >= _overlap_min[] || return (_halo!(a); f(R))
     _halo!(() -> f(WaterLily.inner(R)), a)
     f(WaterLily.shell(R))
-end
-function WaterLily._velocity_comm!(a, perdir, ::Parallel)
-    lp = _local_perdir(perdir)
-    if !isempty(lp)
-        for i in 1:size(a, ndims(a))
-            WaterLily.perBC!(selectdim(a, ndims(a), i), lp)
-        end
-    end
-    _halo!(a)
 end
 
 # Rank-internal faces are non-physical: `_BC!`/`_exitBC!` skip writes there
