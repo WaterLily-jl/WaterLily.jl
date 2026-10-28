@@ -16,20 +16,21 @@ pvd_collection(fname;append=false) = paraview_collection(fname;append=append)
 
 Generates a `VTKWriter` that hold the collection name to which the `vtk` files are written.
 The default attributes that are saved are the `Velocity` and the `Pressure` fields.
-Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword.
+Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword. Fields are written as cell data,
+or as point data for an attribute `func=>:corner` at the cell corners (see `WaterLily.stagger`).
 """
 struct VTKWriter
     fname         :: String
     dir_name      :: String
     collection    :: WriteVTK.CollectionFile
-    output_attrib :: Dict{String,Function}
+    output_attrib :: Dict{String}
     count         :: Vector{Int}
 end
 function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32)
     !isdir(dir) && mkdir(dir)
     VTKWriter(fname,dir,pvd_collection(fname),attrib,[0])
 end
-function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k)
+function vtkWriter(fname,dir::String,collection,attrib::Dict{String},k)
     VTKWriter(fname,dir,collection,attrib,[k])
 end
 """
@@ -38,6 +39,7 @@ end
 Returns a `Dict` containing the `name` and `bound_function` for the default attributes.
 The `name` is used as the key in the `vtk` file and the `bound_function` generates the data
 to put in the file. With this approach, any variable can be save to the vtk file.
+`Velocity` holds the staggered components for `load!`, written at the cell centers.
 """
 _velocity(a::AbstractSimulation) = a.flow.u |> Array;
 _pressure(a::AbstractSimulation) = a.flow.p |> Array;
@@ -50,13 +52,27 @@ to the collection file.
 """
 function save!(w::VTKWriter, a::AbstractSimulation)
     k = w.count[1]; N=size(a.flow.p)
-    vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [1:n for n in N]...)
-    for (name,func) in w.output_attrib
-        # this seems bad, but I @benchmark it and it's the same as just calling func()
-        vtk[name] = size(func(a))==N ? func(a) : components_first(func(a))
+    vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [0.5:n+0.5 for n in N]...) # cell I centered at I
+    for (name,attr) in w.output_attrib
+        func,at = attr isa Pair ? attr : (attr,:center)
+        loc,data = vtk_data(func(a),at,N); vtk[name,loc] = data
     end
     vtk_save(vtk); w.count[1]=k+1
     w.collection[round(sim_time(a),digits=4)]=vtk
+end
+"""
+    vtk_data(a,at,N)
+
+Cell data for a field `a` at the cell centers, or point data padded to the `N.+1` points for a field at the cell
+corners, the only locations `at` in a `vti` image. Vector components go first.
+"""
+function vtk_data(a,at,N)
+    ndims(a)>length(N) && (a = components_first(a))
+    s = WaterLily.stagger(at,length(N))
+    all(iszero,s) && return VTKCellData(),a
+    all(!iszero,s) || throw(ArgumentError("no $at location in a vti image"))
+    b = zeros(eltype(a), size(a)[1:end-length(N)]..., (N.+1)...); b[CartesianIndices(a)] .= a
+    return VTKPointData(),b
 end
 """
     close(w::VTKWriter)
