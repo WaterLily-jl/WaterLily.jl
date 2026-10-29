@@ -243,12 +243,12 @@ face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
     chain(s::Tuple)
 
 The cells of the ranges in `s`, one range after the other, as one `MappedArr` over `1:n`, so that one `@loop`
-launch covers them all (the `shell` of a range, the regions of an MPI halo).
+launch covers them all (the `shell` of a range).
 """
 chain(s::Tuple) = MappedArr(n -> _chain(s, n), 1:sum(length, s))
 @inline _chain(s::Tuple{Any}, n) = @inbounds first(s)[n]
 @inline _chain(s::Tuple, n) = (l = length(first(s)); n <= l ? @inbounds(first(s)[n]) : _chain(Base.tail(s), n - l))
-# copy the cells `S` of `a` into the flat buffer `b`, and back
+# copy the cells of `a` at the indices `S` into the flat buffer `b`, and back
 pack!(b, a, S) = @loop b[n] = a[S[n]] over n ∈ 1:length(S)
 unpack!(a, b, S) = @loop a[S[n]] = b[n] over n ∈ 1:length(S)
 

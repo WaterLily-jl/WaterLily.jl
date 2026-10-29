@@ -206,13 +206,15 @@ function _halo_plan(a::AbstractArray{T}) where T
     sort!(dirs, by=d -> count(!=(0), d))  # faces first: most threads of the kernels find their region at once
     peers = unique(_peer.(dirs))
     msgs = [filter(d -> _peer(d) == p, dirs) for p in peers]  # the directions of the message to/from each peer
-    # a message holds its regions in the order of the sender's directions
-    S = Tuple(_halo_cells(a, d, true) for m in msgs for d in sort(m, by=_dirkey))
-    R = Tuple(_halo_cells(a, d, false) for m in msgs for d in sort(m, by=d -> _dirkey(.-d)))
+    # a message holds its regions in the order of the sender's directions; the kernels read the index in `a` of
+    # each buffer element (a `chain` of the regions, searched per element, was 20 to 250 times slower on a GPU)
+    L = LinearIndices(a); index(cells) = copyto!(similar(a, Int, length(cells)), cells)
+    S = index([L[I] for m in msgs for d in sort(m, by=_dirkey) for I in _halo_cells(a, d, true)])
+    R = index([L[I] for m in msgs for d in sort(m, by=d -> _dirkey(.-d)) for I in _halo_cells(a, d, false)])
     lens = [sum(d -> length(_halo_cells(a, d, true)), m) for m in msgs]; ends = cumsum(lens)
     buffers(n) = n * sizeof(T) >= _aware_min[] ? (b = similar(a, T, n); (b, b)) : WaterLily._host_buffers(a, T, n)
     (s, sh), (r, rh) = buffers(ends[end]), buffers(ends[end])
-    (; S=WaterLily.chain(S), R=WaterLily.chain(R), s, sh, r, rh, peers, ranges=UnitRange.(ends .- lens .+ 1, ends),
+    (; S, R, s, sh, r, rh, peers, ranges=UnitRange.(ends .- lens .+ 1, ends),
        sreq=MPI.UnsafeMultiRequest(length(peers)), rreq=MPI.UnsafeMultiRequest(length(peers)))
 end
 
