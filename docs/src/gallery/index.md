@@ -74,4 +74,4 @@ What it does, and why it needs the packages it needs.
 ````
 
 The links stay ordinary markdown so that Documenter rewrites them correctly; only the wrapper is
-raw HTML. The styling lives in `docs/src/assets/custom.css`.
+raw HTML. The styling lives in `docs/src/.vitepress/theme/overrides.css`.

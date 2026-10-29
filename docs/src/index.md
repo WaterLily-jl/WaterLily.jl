@@ -1,4 +1,30 @@
-# WaterLily.jl
+```@raw html
+---
+# The Vitepress hero. DocumenterVitepress merges a leading `---` block into this page's
+# frontmatter and drops it from the body; its `@frontmatter` block is merged but *also* left
+# behind as a visible code block, which is why this is a raw block. Delete the whole fence to
+# get an ordinary documentation page back. These `#` lines are YAML comments, so they do not
+# appear anywhere in the rendered page.
+layout: home
+hero:
+  name: WaterLily.jl
+  text: Fluid simulation in pure Julia
+  tagline: A simple, fast and backend-agnostic solver for incompressible viscous flow around dynamic bodies
+  image:
+    src: /logo.png
+    alt: WaterLily.jl
+  actions:
+    - theme: brand
+      text: Get started
+      link: /examples/
+    - theme: alt
+      text: API reference
+      link: /reference/
+    - theme: alt
+      text: View on GitHub
+      link: https://github.com/WaterLily-jl/WaterLily.jl
+---
+```
 
 Welcome to the documentation for WaterLily.jl! WaterLily is a simple and fast fluid simulator
 written in pure [Julia](https://github.com/JuliaLang/julia). It solves the unsteady

@@ -15,6 +15,11 @@ append!(
     end,
 )
 
+# npm dependencies installed by DocumenterVitepress to render the site
+let node_modules = joinpath(DIR, "node_modules")
+    isdir(node_modules) && push!(ARTIFACTS, node_modules)
+end
+
 for artifact in ARTIFACTS
     @info "Removing $artifact"
     rm(artifact; recursive = true, force = true)

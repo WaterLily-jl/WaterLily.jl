@@ -4,6 +4,7 @@
 Manifest.toml
 LocalPreferences.toml
 /docs/build/
+/docs/node_modules/
 
 # Literate.jl output and assets copied in by docs/make.jl
 /docs/src/examples/*
@@ -34,7 +35,6 @@ LocalPreferences.toml
 *.pvd
 
 # exceptions
-!/docs/src/assets/custom.css
 !/docs/src/literate-gallery/*.gif
 !/docs/src/literate-gallery/*.png
 !/docs/src/assets/logo.png
