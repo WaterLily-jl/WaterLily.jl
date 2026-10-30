@@ -110,6 +110,18 @@ workgroup(::Backend) = (64,)
 end
 
 """
+    zeros_on(b,T,dims), ones_on(b,T,dims)
+
+Arrays of zeros or ones of type `T` and size `dims` on the KernelAbstractions backend `b`, such as
+`get_backend(a)` for an array `a` on that device. With the KernelAbstractions backend they are
+filled by KernelAbstractions, which on the CPU uses a kernel (KernelAbstractions 0.9, and 0.10.3 or
+later for arrays of 1 MiB or more): each page is first touched by a thread that later computes on
+it, and so lies in that thread's NUMA domain. With the SIMD backend they are filled from the host.
+"""
+zeros_on(b,T,dims) = backend=="SIMD" ? fill!(KernelAbstractions.allocate(b,T,dims),zero(T)) : KernelAbstractions.zeros(b,T,dims)
+ones_on(b,T,dims) = backend=="SIMD" ? fill!(KernelAbstractions.allocate(b,T,dims),one(T)) : KernelAbstractions.ones(b,T,dims)
+
+"""
     @loop <expr> over <I ∈ R>
 
 Macro to automate fast loops using @simd when running in serial,

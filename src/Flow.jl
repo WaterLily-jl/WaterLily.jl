@@ -134,12 +134,13 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(u0) && (u0 = ic_function(uBC))
-        u = Array{T}(undef, Nd...) |> mem
+        b = get_backend(mem([zero(T)])) # the device of `mem`; the fields are allocated with `zeros_on`
+        u = zeros_on(b,T,Nd)
         isa(u0, Function) ? apply!(u0, u) : apply!(ic_function(T.(u0)), u)
         BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
-        u⁰ = copy(u)
-        fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
-        V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
+        u⁰ = copyto!(zeros_on(b,T,Nd),u)
+        fv, p, σ = zeros_on(b,T,Nd), zeros_on(b,T,Ng), zeros_on(b,T,Ng)
+        V, μ₀, μ₁ = zeros_on(b,T,Nd), ones_on(b,T,Nd), zeros_on(b,T,(Ng...,D,D))
         BC!(μ₀,ntuple(zero, D),false,perdir)
         new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end

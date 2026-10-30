@@ -263,17 +263,17 @@ struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf}
     t :: Vector{T} # time steps vector
     uu_stats :: Bool # flag to compute UU on-the-fly temporal averages
     function MeanFlow(flow::AbstractFlow{D,T}; t_init=time(flow), uu_stats=false) where {D,T}
-        mem = typeof(flow.u).name.wrapper
-        P = zeros(T, size(flow.p)) |> mem
-        U = zeros(T, size(flow.u)) |> mem
-        UU = uu_stats ? zeros(T, size(flow.p)..., D, D) |> mem : nothing
+        b = get_backend(flow.u)
+        P = zeros_on(b, T, size(flow.p))
+        U = zeros_on(b, T, size(flow.u))
+        UU = uu_stats ? zeros_on(b, T, (size(flow.p)..., D, D)) : nothing
         new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
     end
     function MeanFlow(N::NTuple{D}; mem=Array, T=Float32, t_init=0, uu_stats=false) where {D}
-        Ng = N .+ 2
-        P = zeros(T, Ng) |> mem
-        U = zeros(T, Ng..., D) |> mem
-        UU = uu_stats ? zeros(T, Ng..., D, D) |> mem : nothing
+        Ng, b = N .+ 2, get_backend(mem([zero(T)]))
+        P = zeros_on(b, T, Ng)
+        U = zeros_on(b, T, (Ng..., D))
+        UU = uu_stats ? zeros_on(b, T, (Ng..., D, D)) : nothing
         new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,T[t_init],uu_stats)
     end
 end
@@ -305,7 +305,7 @@ uu!(τ,a::MeanFlow) = for i in 1:ndims(a.P), j in 1:ndims(a.P)
     @loop τ[I,i,j] = a.UU[I,i,j] - a.U[I,i] * a.U[I,j] over I in CartesianIndices(a.P)
 end
 function uu(a::MeanFlow)
-    τ = zeros(eltype(a.UU), size(a.UU)...) |> typeof(a.UU).name.wrapper
+    τ = zeros_on(get_backend(a.UU), eltype(a.UU), size(a.UU))
     uu!(τ,a)
     return τ
 end

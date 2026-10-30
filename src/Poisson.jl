@@ -31,8 +31,7 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     perdir :: NTuple # direction of periodic boundary condition
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
-        r = similar(x); fill!(r,0)
-        ϵ,D,iD = copy(r),copy(r),copy(r)
+        r,ϵ,D,iD = ntuple(_->zeros_on(get_backend(x),T,size(x)),4)
         set_diag!(D,iD,L)
         new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
     end

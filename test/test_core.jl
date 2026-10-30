@@ -24,6 +24,8 @@
     for f ∈ arrays # @loop workgroup: 64 work-items, chosen by KernelAbstractions on its PoCL CPU backend (≥ 0.10)
         b = get_backend(zeros(Float32,2) |> f)
         @test WaterLily.workgroup(b) == (f==Array && pkgversion(WaterLily.KernelAbstractions) ≥ v"0.10" ? () : (64,))
+        z, o = WaterLily.zeros_on(b,Float32,(300,300,3)), WaterLily.ones_on(b,Float32,(5,4)) # z above KA's 1 MiB kernel-fill threshold
+        @test typeof(z) == typeof(zeros(Float32,300,300,3) |> f) && Array(z) == zeros(Float32,300,300,3) && Array(o) == ones(Float32,5,4)
     end
     for dims ∈ ((7,9),(5,6,8)), j ∈ 1:length(dims)
         D = length(dims); sl(i,low=1) = WaterLily.slice(dims,i,j,low)
