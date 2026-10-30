@@ -10,11 +10,17 @@ liveserver:
 build:
 	julia --project=${SRCDIR} --threads=auto ${SRCDIR}/make.jl
 
-# Serve a finished full build
-serve: build
-	julia --project=${SRCDIR} -e 'import LiveServer; LiveServer.serve(dir = "${SRCDIR}/build/1")'
+# Serve the last full build. Uses `vitepress preview` rather than a plain file server
+# because the site is built with `cleanUrls`, so pages are linked without the `.html`
+# suffix and a static server would 404 on a direct link or a reload.
+preview:
+	julia --project=${SRCDIR} -e 'import DocumenterVitepress; \
+	  DocumenterVitepress.run_vitepress_command("${SRCDIR}/build", "preview")'
+
+# Full build, then serve it
+serve: build preview
 
 clean:
 	julia ${SRCDIR}/clean.jl
 
-.PHONY: default liveserver build serve clean
+.PHONY: default liveserver build preview serve clean

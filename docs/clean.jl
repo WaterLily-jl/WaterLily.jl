@@ -15,9 +15,9 @@ append!(
     end,
 )
 
-# npm dependencies installed by DocumenterVitepress to render the site
-let node_modules = joinpath(DIR, "node_modules")
-    isdir(node_modules) && push!(ARTIFACTS, node_modules)
+# npm files, installed or substituted by DocumenterVitepress to render the site
+for npm_artifact in joinpath.(DIR, ["node_modules", "package.json", "package-lock.json"])
+    ispath(npm_artifact) && push!(ARTIFACTS, npm_artifact)
 end
 
 for artifact in ARTIFACTS

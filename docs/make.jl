@@ -47,6 +47,23 @@ function DocumenterVitepress.render(
     print(io, "]($(replace(path, " " => "%20")))")
 end
 
+# DocumenterVitepress copies its own `package.json` into `docs/` for the Vitepress step and
+# deletes it again afterwards. That file comes out of the read-only package directory, so it is
+# read-only too, and a build interrupted during the Vitepress step leaves it behind: the next
+# build then fails with "Permission denied" when it tries to update it. Clear out an unwritable
+# leftover before starting.
+let package_json = joinpath(@__DIR__, "package.json")
+    if isfile(package_json)
+        writable = try
+            open(io -> true, package_json, "a")
+        catch
+            false
+        end
+        writable || (@info "Removing read-only docs/package.json left by an interrupted build";
+                     rm(package_json; force = true))
+    end
+end
+
 # Copy the images referenced from the README (which is spliced into the WaterLily
 # docstring, and therefore into the front page) next to the generated pages
 include("copy_assets.jl")
