@@ -13,7 +13,7 @@ The resulting linear system is
 
 where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
-ect can be easily implemented and optimized without external libraries.
+etc. can be easily implemented and optimized without external libraries.
 
 To help iteratively solve the system above, the Poisson structure holds
 helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
@@ -69,9 +69,9 @@ function mult!(p::Poisson,x)
     return p.z
 end
 @fastmath @inline function mult(I::CartesianIndex{d},L,D,x) where {d}
-    s = @inbounds(x[I]*D[I])
+    s = zero(eltype(L))
     for i in 1:d
-        s += @inbounds(x[I-δ(i,I)]*L[I,i]+x[I+δ(i,I)]*L[I+δ(i,I),i])
+        s += @inbounds(L[I,i]*(x[I-δ(i,I)]-x[I])+L[I+δ(i,I),i]*(x[I+δ(i,I)]-x[I]))
     end
     return s
 end
@@ -136,7 +136,7 @@ end
     GaussSeidelRB!(p::Poisson;it=4, ω=1)
 
 Red-black Gauss-Seidel smoother. Runs `it` iterations; a complete red-black cycle requires `it` to be even.
-`ω` under-/over-relaxs the solution through scaling the deferred corrections in `increment!`.
+`ω` under-/over-relaxes the solution through scaling the deferred corrections in `increment!`.
 Note: This performs best on GPU configurations and is the default smoother.
 """
 function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
