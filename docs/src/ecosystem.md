@@ -1,4 +1,3 @@
-
 ## The wider ecosystem
 
 These are the packages a gallery program is most likely to reach for:

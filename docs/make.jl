@@ -96,6 +96,7 @@ include("generate.jl")
     warnonly = is_ci ? false : [:cross_references],
     pages = Any[
         "Home" => "index.md",
+        "About" => "about.md",
         "Examples" => [
             "Examples overview" => "examples/index.md",
             "examples/TwoD_Circle.md",

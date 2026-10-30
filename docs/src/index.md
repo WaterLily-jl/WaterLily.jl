@@ -1,11 +1,7 @@
 ```@raw html
 ---
-# The Vitepress hero. DocumenterVitepress merges a leading `---` block into this page's
-# frontmatter and drops it from the body; its `@frontmatter` block is merged but *also* left
-# behind as a visible code block, which is why this is a raw block. Delete the whole fence to
-# get an ordinary documentation page back. These `#` lines are YAML comments, so they do not
-# appear anywhere in the rendered page.
 layout: home
+
 hero:
   name: WaterLily.jl
   text: Fluid simulation in pure Julia
@@ -18,64 +14,43 @@ hero:
       text: Get started
       link: /examples/
     - theme: alt
-      text: API reference
-      link: /reference/
+      text: About
+      link: /about
     - theme: alt
       text: View on GitHub
       link: https://github.com/WaterLily-jl/WaterLily.jl
+
+features:
+  - title: Examples
+    details: Tutorial-style examples that guide you through the process of simulating a flow with WaterLily.
+    link: /examples/
+  - title: API reference
+    details: The technical API reference of types, functions and macros (i.e. the documentation strings), organized by the layer of the solver each one belongs to.
+    link: /reference/
+  - title: Gallery
+    details: Some examples of flows simulated with WaterLily.
+    link: /gallery/
+  - title: Paper
+    details: The 2025 paper in *Computer Physics Communications* describes the main features of the solver and provides benchmarking, validation and profiling results.
+    link: https://doi.org/10.1016/j.cpc.2025.109748
+  - title: WaterLily-Examples
+    details: A much larger collection of example programs and notebooks, including ones that need packages WaterLily itself does not depend on, such as parametric bodies, Biot-Savart boundary conditions and optimisation.
+    link: https://github.com/WaterLily-jl/WaterLily-Examples
+  - title: JuliaCon2024 talk
+    details: A 25-minute introduction to the solver and what it is for.
+    link: https://www.youtube.com/watch?v=FwMh2rq9kOU
 ---
 ```
-
-Welcome to the documentation for WaterLily.jl! WaterLily is a simple and fast fluid simulator
-written in pure [Julia](https://github.com/JuliaLang/julia). It solves the unsteady
-incompressible Navier-Stokes equations on a Cartesian grid, immerses solid boundaries using the
-Boundary Data Immersion Method, and runs on serial CPU, multi-threaded CPU, and GPU backends.
-The aim is to be i) simple to read and extend, ii) fast, and iii) backend-agnostic.
-
-!!! note "Citing WaterLily"
-    If you have used WaterLily for research, please **cite us**! The [2025 paper](https://doi.org/10.1016/j.cpc.2025.109748) in *Computer Physics Communications* describes the main features of the solver and provides benchmarking, validation and profiling results.
-
-    ```
-    @article{WeymouthFont2025,
-        author  = {G.D. Weymouth and B. Font},
-        title   = {WaterLily.jl: A differentiable and backend-agnostic Julia solver
-                   for incompressible viscous flow around dynamic bodies},
-        doi     = {10.1016/j.cpc.2025.109748},
-        journal = {Computer Physics Communications},
-        year    = {2025},
-        volume  = {315},
-        pages   = {109748},
-    }
-    ```
-
-## How the documentation is organized
-
-This high level view of the documentation structure will help you find what you are looking
-for. The document is organized as follows[^1]:
-
- - [**Examples**](examples/index.md) are thoroughly documented programs which guide you through the process of simulating a flow with WaterLily. Each one introduces one new capability -- a geometry, a boundary condition, a way of measuring the flow -- and builds on the ones before it.
- - [**Reference**](reference/index.md) contains the technical API reference of types, functions and macros (i.e. the documentation strings), organized by the layer of the solver each one belongs to.
-
-[^1]: The organization of the document follows the [Diátaxis Framework](https://diataxis.fr).
-
-Those two sections form the main user-facing parts of the documentation. In addition, the following material lives outside this document:
-
- - The [**WaterLily-Examples**](https://github.com/WaterLily-jl/WaterLily-Examples) repository contains a much larger collection of example programs and notebooks, including ones that need packages WaterLily itself does not depend on, such as parametric bodies, Biot-Savart boundary conditions and optimisation.
- - The [**2025 paper**](https://doi.org/10.1016/j.cpc.2025.109748) documents the numerical method, validation and performance, and the [**JuliaCon2024 talk**](https://www.youtube.com/watch?v=FwMh2rq9kOU) is a 25-minute introduction to the solver and what it is for.
 
 ## Getting started
 
 As a new user of WaterLily it is suggested to start working with the examples before using WaterLily to tackle the specific flow you ultimately want to simulate. The examples start with explaining the basic concepts and then increase in complexity. Understanding the first example program, [the flow over a circle](@ref examples-TwoD_Circle), is essential in order to understand how WaterLily works: already this rather simple program introduces the three pieces every simulation is built from -- an implicitly defined geometry, a `Simulation`, and a time loop you measure from. See the [examples overview](@ref Examples) for a suggestion on how to progress to more advanced usage.
 
-### Getting help
-
-If you have questions about WaterLily, or ideas and suggestions for it, you are encouraged to [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) on the GitHub repository. Bug reports are most useful when they come with a short program that reproduces the problem.
-
 ### Installation
 
 To use WaterLily you first need to install Julia, see <https://julialang.org/> for details. Installing WaterLily can then be done from the Pkg REPL; press `]` at the `julia>` prompt to enter `pkg>` mode:
 
-```
+```julia
 pkg> add WaterLily
 ```
 
@@ -83,7 +58,7 @@ This will install WaterLily and all necessary dependencies. Press backspace to g
 
 WaterLily is written entirely in Julia and depends only on registered Julia packages, so it runs on Linux, macOS and Windows. Some capabilities live in package extensions and switch on when you load the relevant package, none of which is required to run a simulation:
 
-```
+```julia
 pkg> add Plots      # the plotting helpers used throughout the Examples
 pkg> add CUDA       # to run on an NVIDIA GPU (or AMDGPU, for a ROCm device)
 pkg> add WriteVTK   # to write ParaView output
@@ -110,3 +85,25 @@ julia --project compare.jl
 This will run benchmarks for CPU and GPU backends. If you do not have a GPU, simply pass `-b "Array"` when runnning `benchmark.sh`. More information on the benchmark suite is available in that [README](https://github.com/WaterLily-jl/WaterLily-Benchmarks/blob/main/README.md).
 
 Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
+
+### Getting help
+
+If you have questions about WaterLily, or ideas and suggestions for it, you are encouraged to [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) on the GitHub repository. Bug reports are most useful when they come with a short program that reproduces the problem.
+
+
+## Citing WaterLily
+
+If you have used WaterLily for research, please **cite us**! The [2025 paper](https://doi.org/10.1016/j.cpc.2025.109748) in *Computer Physics Communications* describes the main features of the solver and provides benchmarking, validation and profiling results.
+
+```tex
+@article{WeymouthFont2025,
+    author  = {G.D. Weymouth and B. Font},
+    title   = {WaterLily.jl: A differentiable and backend-agnostic Julia solver
+                for incompressible viscous flow around dynamic bodies},
+    doi     = {10.1016/j.cpc.2025.109748},
+    journal = {Computer Physics Communications},
+    year    = {2025},
+    volume  = {315},
+    pages   = {109748},
+}
+```
