@@ -233,6 +233,7 @@ elseif ROLE == "unit"
             @test WaterLily.global_allreduce!(v) === v && v == w      # in place
             @test WaterLily.global_min(T(me), T(me)) == T(0)
             @test WaterLily.global_max(T(me)) == T(np-1)
+            @test WaterLily.global_sum_max(T(me), T(2me)) === (T(np*(np-1)÷2), T(2np-2)) # one Allgather
             # Σ ones (one per rank) over a length-Nloc[1] vector
             a = ones(T, Nloc[1])
             @test WaterLily.global_sum(a) ≈ T(np * Nloc[1])
@@ -372,6 +373,10 @@ elseif ROLE == "unit"
             @test value(mx) ≈ Float64(np)
             @test partials(mx)[1] ≈ 1.0
             @test partials(mx)[2] ≈ Float64(np - 1)
+
+            # SUM and MAX together: the two reductions above
+            sm = WaterLily.global_sum_max(x, x)
+            @test sm[1] == s && sm[2] == mx
 
             # Array SUM (via the flat-V alias), into a copy or in place.
             a = fill(mkdual2(Float64(me), Float64(me), 1.0), 3)

@@ -288,6 +288,13 @@ WaterLily._global_min(a, b, ::Parallel) = MPI.Allreduce(min(a, b), MPI.MIN, _com
 WaterLily._global_min(a::Dual, b::Dual, ::Parallel) = _dual_extremum(min(a, b), MPI.MIN)
 WaterLily._global_max(x, ::Parallel) = MPI.Allreduce(x, MPI.MAX, _comm())
 WaterLily._global_max(x::Dual, ::Parallel) = _dual_extremum(x, MPI.MAX)
+# One Allgather of the pairs (MPI.jl has no user-defined reductions on ARM), summed in rank order
+# on every rank: the same bits everywhere, which the solver's stopping test needs
+function WaterLily._global_sum_max(s::T, m::T, ::Parallel) where T<:AbstractFloat
+    v = MPI.Allgather((s, m), _comm())
+    (foldl((a, x) -> a + x[1], v; init=zero(T)), maximum(last, v))
+end
+WaterLily._global_sum_max(s, m, p::Parallel) = (WaterLily._global_allreduce(s, p), WaterLily._global_max(m, p))
 WaterLily._scalar_halo!(x, ::Parallel) = _halo!(x)
 WaterLily._velocity_halo!(u, ::Parallel) = _halo!(u)
 

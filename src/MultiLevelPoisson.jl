@@ -109,7 +109,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fill!(coarse.x,0)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
-    smooth!(coarse;ω)
+    smooth!(coarse;ω,residual=false) # restrict! overwrites coarse.r before it is read again
     # correct fine
     prolongate!(fine.ϵ,coarse.x,c)
     increment!(fine; ω)
@@ -122,25 +122,27 @@ diagonal(ml::MultiLevelPoisson) = diagonal(ml.levels[1])
 const smooth! = GaussSeidelRB!
 
 """
-    solver!(ml::MultiLevelPoisson; tol=2e-3, itmx=32)
-    solver!(f, ml::MultiLevelPoisson; tol=2e-3, itmx=32)
+    solver!(ml::MultiLevelPoisson; tol=2e-3, itmx=32, synced=false)
+    solver!(f, ml::MultiLevelPoisson; tol=2e-3, itmx=32, synced=false)
 
 Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until BOTH the
 grid-independent max-norm `max|r| < tol` and the mean residual `Σ|r|/N < tol/10`
 hold. Ends with `pin_pressure!` + `comm!` to remove the null-space mode and
 synchronize halos, with `f` looping over `inside(x)` while the halo travels
-(`comm!(f, x, perdir)`).
+(`comm!(f, x, perdir)`). `synced=true` skips the halo of `x` before the first
+residual, for an `x` whose ghosts still hold their neighbours' values (or the
+periodic wrap), as this `comm!` leaves them (see `mom_project!`).
 """
 solver!(ml::MultiLevelPoisson; kwargs...) = solver!(Returns(nothing), ml; kwargs...)
-function solver!(f, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
+function solver!(f, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where T
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
-    residual!(p); r₁ = L₁(p); r∞ = L∞(p); ω = T(1)
+    residual!(p; comm=!synced); r₁, r∞ = L₁L∞(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
         smooth!(p; ω)
-        rnew = L₁(p); r∞ = L∞(p); nᵖ+=1
+        rnew, r∞ = L₁L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $rnew, $ω\n"
         if     rnew ≥ r₁
             ω = max(0.2, 0.9ω) |> T

@@ -41,6 +41,7 @@ function load!(flow::AbstractFlow; kwargs...)
     obj = jldopen(joinpath(dir, fname))
     @assert size(flow.p) == size(obj["p"]) "Simulation size does not match the size of the JLD2-stored simulation."
     copyto!(flow.p, obj["p"])
+    WaterLily.comm!(flow.p, flow.perdir)  # the pressure solve starts from these ghosts (see mom_project!)
     copyto!(flow.u, obj["u"])
     empty!(flow.Δt)
     push!(flow.Δt, obj["Δt"]...)

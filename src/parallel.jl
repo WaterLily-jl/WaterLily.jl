@@ -157,6 +157,16 @@ global_max(x) = _global_max(x, par_mode[])
 _global_max(x, ::Serial) = x
 
 """
+    global_sum_max(s, m)
+
+`(global_allreduce(s), global_max(m))` in one reduction across ranks.
+MPI-aware via dispatch on `par_mode[]`.
+"""
+global_sum_max(s, m) = _global_sum_max(s, m, par_mode[])
+
+_global_sum_max(s, m, ::Serial) = (s, m)
+
+"""
     global_allreduce(x)
 
 Reduce a pre-computed value `x` (scalar or vector) across all MPI ranks

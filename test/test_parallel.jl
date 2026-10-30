@@ -6,6 +6,7 @@
     @test global_allreduce(3) === 3 && global_sum([1,2,3]) == 6 && global_dot([1,2],[3,4]) == 11
     x = [1,2]; @test global_allreduce!(x) === x && x == [1,2]
     @test global_min(1,2) == 1 && global_max(5) == 5 && global_length(1:4) == 4
+    @test WaterLily.global_sum_max(1.5,2) === (1.5,2)
     @test WaterLily.phys_left(1) && WaterLily.phys_right(2)
     @test !WaterLily.decomposed(1) && WaterLily.effective_perdir((1,2)) == (1,2)
     @test global_offset(Val(2)) == zeros(SVector{2,Float32}) && WaterLily._loop_offset(Float64) === nothing

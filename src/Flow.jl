@@ -236,6 +236,9 @@ scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
 in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
+The solve starts from `b.x` without a halo of it (`synced=true`): its ghosts are those the previous solve
+left, scaled with it. Code that writes `flow.p` between steps must refresh them (`comm!(flow.p, flow.perdir)`),
+as `load!` does and as `udf!` does after a `udf`.
 """
 function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
@@ -245,7 +248,7 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     velocity_comm!(a.u,a.perdir,inside(b.z)) do R   # one halo for both, while the divergence runs
         @loop b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) over I ∈ R # flow divergence, not BDIM-ϵ stretching
     end
-    solver!(b; kwargs...) do R  # apply solution while the pressure halo travels
+    solver!(b; synced=true, kwargs...) do R  # apply solution while the pressure halo travels
         for i ∈ 1:ndims(a.p)
             @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ R
         end
@@ -281,7 +284,11 @@ predictor and corrector step, in sync with time `t`. `u` is the velocity field t
 flux is evaluated on in that phase (`a.u⁰` in the predictor, `a.u` in the corrector).
 A `udf` that needs the advecting velocity (eg. SGS) should use `force!(flow,u,t; kwargs...)`.
 Keyword arguments must be passed to `sim_step!` for them to be carried over the actual call.
+The `udf` may write any field of `flow`: the ghosts of `flow.p`, which the next pressure solve
+starts from (see `mom_project!`), are refreshed after it.
 """
 udf!(flow,::Nothing,u,t; kwargs...) = nothing
-udf!(flow,force!::Function,u,t; kwargs...) =
+function udf!(flow,force!::Function,u,t; kwargs...)
     applicable(force!,flow,u,t) ? force!(flow,u,t; kwargs...) : force!(flow,t; kwargs...)
+    comm!(flow.p,flow.perdir)
+end
