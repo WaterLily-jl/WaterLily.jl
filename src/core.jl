@@ -98,24 +98,17 @@ end
 """
     workgroup(backend)
 
-Workgroup size of the `@loop` kernels, as the trailing arguments of the kernel constructor:
-64 work-items on GPUs and on the task-based CPU backend of KernelAbstractions 0.9. From
-KernelAbstractions 0.10 the CPU backend runs on PoCL, where none is given, so that
-KernelAbstractions shapes the workgroups to each range. This needs 0.10.2, which launches the
-ranges with more than three dimensions, such as the loops over vector fields, on the N-d grid.
+Workgroup size of the `@loop` kernels: 64 work-items on GPUs and on the CPU with KA 0.9.
+On KA 0.10 the PoCL CPU backend chooses the shape itself.
 """
 workgroup(::Backend) = (64,)
-@static if pkgversion(KernelAbstractions) >= v"0.10"
-    workgroup(::CPU) = ()
-end
+@static pkgversion(KernelAbstractions) >= v"0.10" && (workgroup(::CPU) = ())
 
 """
     zeros_on(b,T,dims), ones_on(b,T,dims)
 
-Arrays of zeros or ones of type `T` and size `dims` on the KernelAbstractions backend `b`, such as
-`get_backend(a)` for an array `a` on that device. On the CPU, KernelAbstractions fills them in
-parallel, so on multi-socket nodes each part is stored in the memory of the socket that computes on
-it. With the SIMD backend they are filled serially.
+Arrays of zeros or ones of type `T` and size `dims` on the KA backend `b`, filled by KA with the
+KA backend or serially with the SIMD backend.
 """
 zeros_on(b,T,dims) = backend=="SIMD" ? zeros(T,dims) : KernelAbstractions.zeros(b,T,dims)
 ones_on(b,T,dims) = backend=="SIMD" ? ones(T,dims) : KernelAbstractions.ones(b,T,dims)
