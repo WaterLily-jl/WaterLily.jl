@@ -113,13 +113,12 @@ end
     zeros_on(b,T,dims), ones_on(b,T,dims)
 
 Arrays of zeros or ones of type `T` and size `dims` on the KernelAbstractions backend `b`, such as
-`get_backend(a)` for an array `a` on that device. With the KernelAbstractions backend they are
-filled by KernelAbstractions, which on the CPU uses a kernel (KernelAbstractions 0.9, and 0.10.3 or
-later for arrays of 1 MiB or more): each page is first touched by a thread that later computes on
-it, and so lies in that thread's NUMA domain. With the SIMD backend they are filled from the host.
+`get_backend(a)` for an array `a` on that device. On the CPU, KernelAbstractions fills them in
+parallel, so on multi-socket nodes each part is stored in the memory of the socket that computes on
+it. With the SIMD backend they are filled serially.
 """
-zeros_on(b,T,dims) = backend=="SIMD" ? fill!(KernelAbstractions.allocate(b,T,dims),zero(T)) : KernelAbstractions.zeros(b,T,dims)
-ones_on(b,T,dims) = backend=="SIMD" ? fill!(KernelAbstractions.allocate(b,T,dims),one(T)) : KernelAbstractions.ones(b,T,dims)
+zeros_on(b,T,dims) = backend=="SIMD" ? zeros(T,dims) : KernelAbstractions.zeros(b,T,dims)
+ones_on(b,T,dims) = backend=="SIMD" ? ones(T,dims) : KernelAbstractions.ones(b,T,dims)
 
 """
     @loop <expr> over <I ∈ R>
