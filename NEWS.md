@@ -1,6 +1,6 @@
 # WaterLily.jl release notes
 
-## v1.10
+## v1.10.0
 
 WaterLily v1.10 is out. It follows v1.9 by only two weeks, so this note covers everything since **v1.8** (June 2026): 42 pull requests from 6 contributors.
 
@@ -26,7 +26,6 @@ How these were measured:
 
 ### Highlights
 
-- **Multithreading on PoCL** ([#365](https://github.com/WaterLily-jl/WaterLily.jl/pull/365), v1.10.1). WaterLily now supports KernelAbstractions 0.10, which runs CPU kernels on [PoCL](https://portablecl.org) threads instead of Julia tasks, compiling them like GPU kernels. ⚠️ Functions used inside kernels (`u0`, `uBC`, body `sdf` and `map`, ...) must now be GPU-compatible on the CPU too.
 - **A faster core solver.** Each step now makes fewer passes over memory, because `conv_diff!`, `BDIM!` and `residual!` are fused and vectorized ([#354](https://github.com/WaterLily-jl/WaterLily.jl/pull/354)). The QUICK limiter no longer branches ([#326](https://github.com/WaterLily-jl/WaterLily.jl/pull/326)), which matters on GPUs. Together with the solver changes below, this gives the speedups above.
 - **Grid-independent pressure convergence** ([#307](https://github.com/WaterLily-jl/WaterLily.jl/pull/307)). The Poisson solver now stops when both the mean residual (L₁/N) and the maximum residual (L∞) pass `tol`, so convergence no longer depends on grid size. The default `tol` changed from `1e-4` to `2e-3` to match. ⚠️ If you pass `tol` yourself, check the value.
 - **Bodies can limit their own work** ([#361](https://github.com/WaterLily-jl/WaterLily.jl/pull/361), [#363](https://github.com/WaterLily-jl/WaterLily.jl/pull/363)). A body can overload `WaterLily.bbox(body, R)` to return the region where it needs measuring. `measure!` and the force and moment integrals then only loop over that region. The default is the whole domain, so nothing changes unless a body opts in.
