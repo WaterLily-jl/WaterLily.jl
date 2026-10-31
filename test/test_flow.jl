@@ -128,7 +128,8 @@ end
     for f ∈ arrays
         sim,TGV = TGVsim(f,T=Float32); ue=copy(sim.flow.u) |> Array
         sim_step!(sim,π/100)
-        apply!((i,x)->TGV(i,x,WaterLily.time(sim),2π/sim.L,sim.flow.ν),ue)
+        t,κ,ν = WaterLily.time(sim),2π/sim.L,sim.flow.ν # capture scalars, not `sim`: CPU kernels are compiled from KernelAbstractions 0.10 and need isbits closures
+        apply!((i,x)->TGV(i,x,t,κ,ν),ue)
         u = sim.flow.u |> Array
         @test WaterLily.L₂(u[:,:,1].-ue[:,:,1]) < 1e-4 &&
               WaterLily.L₂(u[:,:,2].-ue[:,:,2]) < 1e-4

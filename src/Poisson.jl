@@ -31,8 +31,7 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     perdir :: NTuple # direction of periodic boundary condition
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
-        r = similar(x); fill!(r,0)
-        ϵ,D,iD = copy(r),copy(r),copy(r)
+        r,ϵ,D,iD = ntuple(_->zeros_on(get_backend(x),T,size(x)),4)
         set_diag!(D,iD,L)
         new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
     end
@@ -150,7 +149,6 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
 end
 
 using LinearAlgebra: ⋅
-using KernelAbstractions: Backend, GPU
 """
     perdot(a,b,perdir)
 
@@ -158,8 +156,8 @@ Apply dot product to the inner cells of two _scalar_ fields, assuming zero value
 """
 perdot(a,b,::Tuple{}) = a⋅b
 perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
-perdot(::Backend,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
-perdot(::GPU,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...))
+perdot(::CPU,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
+perdot(::Backend,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...))
 
 """
     pcg!(p::Poisson; it=6)
@@ -196,8 +194,8 @@ end
 Squared L₂ norm of array `a` over `R`, which excludes the ghost cells by default.
 """
 L₂(a,R::CartesianIndices=inside(a)) = L₂(get_backend(a),a,R)
-L₂(backend,a,R) = sum(abs2,@inbounds(a[I]) for I ∈ R)
-L₂(::GPU,a,R) = mapreduce(abs2,+,view(a,R.indices...))
+L₂(::CPU,a,R) = sum(abs2,@inbounds(a[I]) for I ∈ R)
+L₂(::Backend,a,R) = mapreduce(abs2,+,view(a,R.indices...))
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L₁(p::Poisson) = sum(abs,p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
