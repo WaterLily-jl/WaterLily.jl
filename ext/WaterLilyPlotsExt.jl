@@ -13,8 +13,8 @@ Plot a filled contour plot of the 2D array `f`, which must be a CPU array (host 
 
 Keyword arguments:
     - `shift::Tuple`: Offset of the plotted coordinates relative to the array indices, in units of
-        cells. Defaults to `(-0.5,-0.5)` since `f` is assumed to live on cell edges (e.g. vorticity);
-        pass `(0.,0.)` for cell-centered data (e.g. pressure).
+        cells. Defaults to `(-0.5,-0.5)` since `f` is assumed to live on cell edges (e.g. `curl`);
+        pass `(0.,0.)` for cell-centered data (e.g. pressure or `ω`).
     - `cfill`: Colormap passed to `Plots.contourf` as `color`.
     - `clims::Tuple`: `(min,max)` values to clamp `f` to before plotting. Defaults to (-5,5).
     - `levels::Int`: Number of contour levels.
@@ -66,14 +66,14 @@ restrict_plot!(dat_plot,dat,CIs) = (dat_plot .= value.(@view dat[CIs]); dat_plot
 
 function vorticity!(dat, sim)
     a = sim.flow.σ
-    @WaterLily.inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+    @WaterLily.inside a[I] = last(WaterLily.ω(I,sim.flow.u))*sim.L/sim.U # ω₃, also in 3D
     copyto!(dat, a)
 end
 
 """
     sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
                     remeasure=false,plotbody=false,f=vorticity!,video=nothing,framerate=20,
-                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
+                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,at=:center,kv...)
 
 Make a gif of 2D field of the simulation `sim`, stepping the flow forward and plotting `f(sim)` with `flood` at each frame.
 Users can pass a function `f` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
@@ -81,7 +81,7 @@ The default visualization function returns the z-vorticity scaled by `L/U`:
 ```julia
 function vorticity!(dat, sim)
     a = sim.flow.σ
-    @WaterLily.inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+    @WaterLily.inside a[I] = last(WaterLily.ω(I,sim.flow.u))*sim.L/sim.U # ω₃, also in 3D
     copyto!(dat, a)
 end
 ```
@@ -97,6 +97,7 @@ Keyword arguments:
     - `f::Function`: Visualization function with interface `f(dat, sim)`, transferring the plotted data
         (device-to-host) into the preallocated buffer `dat` (allocated once, full domain
         size, and reused every frame). Defaults to the z-vorticity scaled by `L/U`.
+    - `at`: Location of `f` in the cell, passed to `flood` as `shift` (see `WaterLily.stagger`). Defaults to `:center`.
     - `video::String`: Path to save the animation. Saved as an mp4 if the path ends in `.mp4`, otherwise as a gif.
         Defaults to a temporary gif file.
     - `framerate::Int`: Gif framerate.
@@ -108,17 +109,18 @@ Keyword arguments:
 """
 function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
                     remeasure=false,plotbody=false,f=vorticity!,video=nothing,framerate=20,
-                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
+                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,at=:center,kv...)
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     dat = Array(sim.flow.σ)
     ndims(dat)==3 && @assert any(==(1), size(CIs)) "3D CIs must include a singleton dimension (e.g. a cut plane) to reduce the data to a 2D slice for plotting, got size $(size(CIs))."
     dat_plot = dropdims(value.(dat[CIs]), dims=Tuple(findall(==(1), size(CIs))))
+    shift = WaterLily.stagger(at,ndims(dat))[findall(>(1),size(CIs))]
     t₀ = round(WaterLily.sim_time(sim))
     anim = @time @animate for tᵢ in range(t₀,t₀+duration;step)
         WaterLily.sim_step!(sim,tᵢ;remeasure,udf,udf_kwargs...)
         f(dat,sim); restrict_plot!(dat_plot,dat,CIs)
-        flood(dat_plot; kv...)
+        flood(dat_plot; shift, kv...)
         plotbody && body_plot!(sim,dat,dat_plot;CIs)
         hidedecorations && Plots.plot!(showaxis=false,ticks=false,grid=false,colorbar=false,margin=0mm)
         verbose && println("tU/L=",round(tᵢ,digits=4),

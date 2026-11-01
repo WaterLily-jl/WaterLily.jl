@@ -37,6 +37,13 @@ import WaterLily: ×
             @inside p3[I] = WaterLily.ω(I,u3)[i]; apply!(x->2x[i%3+1], r3)
             Array(p3)[2:7,2:7,2:7] ≈ Array(r3)[2:7,2:7,2:7]
         end
+        # curl on the cell edges (corners in 2D) given by `stagger`
+        s2 = WaterLily.stagger((:edge,3),2); @inside p2[I] = WaterLily.curl(3,I,u2); apply!(x->2sum(x .+ s2), r2)
+        @test Array(p2)[2:7,2:7] ≈ Array(r2)[2:7,2:7]
+        @test all(1:3) do i
+            s3 = WaterLily.stagger((:edge,i),3); @inside p3[I] = WaterLily.curl(i,I,u3); apply!(x->2(x .+ s3)[i%3+1], r3)
+            Array(p3)[2:7,2:7,2:7] ≈ Array(r3)[2:7,2:7,2:7]
+        end
         # test helicity
         u_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[1] : 0.0, u_h)
         ω_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[2]-0.5 + 1 : 0.0, ω_h)
