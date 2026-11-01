@@ -49,7 +49,7 @@ end
         p = Poisson(f(zeros(dims)),f(L),f(rand(dims...))); copyto!(p.r,rand(dims...)); copyto!(p.ϵ,rand(dims...))
         ϵ,r,iD = Array(p.ϵ),Array(p.r),Array(p.iD)
         for k₀ ∈ 1:4
-            WaterLily.@loop WaterLily.gauss_rb(p.ϵ,p.r,p.L,p.iD,k₀,I) over I ∈ WaterLily.half_rangek(p.ϵ)
+            WaterLily.@loop WaterLily.gauss_rb(p.ϵ,p.r,p.L,p.iD,k₀,I) over I ∈ WaterLily.half_range(p.ϵ)
             sweep_ref!(ϵ,r,L,iD,k₀)
         end
         @test Array(p.ϵ) ≈ ϵ
