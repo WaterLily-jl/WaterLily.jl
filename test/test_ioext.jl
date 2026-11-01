@@ -49,7 +49,7 @@ end
         meanflow1 = MeanFlow(sim.flow; uu_stats=true)
         for t in range(0,10;step=0.1)
             sim_step!(sim, t)
-            update!(meanflow1, sim.flow)
+            WaterLily.update!(meanflow1, sim.flow) # CUDA 6.5 also exports an update!
         end
         save!("meanflow.jld2", meanflow1; dir=test_dir)
         meanflow2 = MeanFlow(sim.flow; uu_stats=true)
