@@ -1,0 +1,22 @@
+name: Add review checklist
+
+# Posts .github/review-checklist.md as a comment on every new pull request, unless the
+# description contains "[no checklist]". The file is taken from the base branch.
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  add-review-checklist:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.body, '[no checklist]') }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: gh pr comment "$PR" --body-file .github/review-checklist.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}

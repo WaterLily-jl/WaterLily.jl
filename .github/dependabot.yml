@@ -4,4 +4,12 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/" # Location of package manifests
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+  - package-ecosystem: "julia"
+    directories:
+      - "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Ignore itself so `path = ".."` in subdir/Project.toml doesn't trigger it
+      - dependency-name: "WaterLily"
