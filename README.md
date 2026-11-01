@@ -36,12 +36,12 @@ WaterLily solves the unsteady incompressible 2D or 3D [Navier-Stokes equations](
 
 WaterLily lets the user set the domain size and boundary conditions, the fluid viscosity (which determines the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number)), and immerse solid obstacles. A large selection of examples, notebooks, and tutorials are found in the [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) repository. Here, we will illustrate the basics by simulating and plotting the flow over a circle.
 
-We define the size of the simulation domain as `n` by `m` cells. The circle has radius `m/8` and is centered at `(m/2 - 1, m/2 - 1)`. The flow boundary conditions are `(U,0)`, where we set `U=1`, and the Reynolds number is `Re=U*(2*radius)/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid and `2 radius` is the circle diameter.
+We define the size of the simulation domain as `n` by `m` cells. The circle has radius `m/8` and is centered at `(m/2, m/2)`. The flow boundary conditions are `(U,0)`, where we set `U=1`, and the Reynolds number is `Re=U*(2*radius)/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid and `2 radius` is the circle diameter.
 ```julia
 using WaterLily
 function circle(n,m;Re=100,U=1)
     # signed distance function to circle
-    radius, center = m/8, m/2-1
+    radius, center = m/8, m/2
     sdf(x,t) = √sum(abs2, x .- center) - radius
 
     Simulation((n,m),   # domain size
