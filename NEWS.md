@@ -1,6 +1,24 @@
 # WaterLily.jl release notes
 
-## v1.10.0
+## v1.11
+
+### Highlights
+
+- **Multithreading on PoCL** ([#365](https://github.com/WaterLily-jl/WaterLily.jl/pull/365)). WaterLily now supports KernelAbstractions 0.10, which runs CPU kernels on [PoCL](https://portablecl.org) threads instead of Julia tasks, compiling them like GPU kernels. KA 0.9 is still supported. Functions used inside kernels (`u0`, `uBC`, body `sdf` and `map`, ...) must now be GPU-compatible on the CPU too.
+- **Faster steps.** With KA 0.10 the multithreaded CPU backend is 4 to 17% faster on large grids, and with CUDA.jl 6.5 the GPU is 9 to 26% faster. Small grids can be slower on few threads, where the PoCL launch cost dominates. On Julia 1.13 the kernel launches no longer allocate. The serial SIMD backend is unchanged.
+- **Pressure solver control** ([#245](https://github.com/WaterLily-jl/WaterLily.jl/pull/245), [@marinlauber](https://github.com/marinlauber)). `sim_step!(sim; poisson_kwargs=(;tol=1e-4, itmx=10))` sets the tolerance and iteration limit of the pressure solve.
+- **Exact pressure operator for large coefficient ratios** ([#375](https://github.com/WaterLily-jl/WaterLily.jl/pull/375), [@TzuYaoHuang](https://github.com/TzuYaoHuang)). `mult` now maps a constant field exactly to zero, so multiphase runs with large density ratios no longer lose volume of the light fluid.
+
+### API changes across the ecosystem
+
+- **KernelAbstractions 0.10** [1.11.0] ([#365](https://github.com/WaterLily-jl/WaterLily.jl/pull/365)): compat is `0.9.1, 0.10.2`. KA 0.10 makes `GPU` an alias of `Backend`, so backend-specific methods should dispatch on `::CPU` and `::Backend`. New internal helpers: `workgroup(backend)` sets the `@loop` workgroup size, and `zeros_on`/`ones_on` allocate on a KA backend.
+- **`update!` and CUDA.jl 6.5**: CUDA.jl 6.5 exports an `update!` too, so code with `using WaterLily, CUDA` must call `WaterLily.update!`.
+
+**Companion packages**
+
+- All downstream packages have received and update to accomodate for KA 0.10 compatibility as well.
+
+## v1.10
 
 WaterLily v1.10 is out. It follows v1.9 by only two weeks, so this note covers everything since **v1.8** (June 2026): 42 pull requests from 6 contributors.
 

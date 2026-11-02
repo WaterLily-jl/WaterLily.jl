@@ -33,6 +33,13 @@ end
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
     end
+    for f ∈ arrays # A maps a constant to exactly 0, even where the Float32 D ≠ -ΣL (L=1/ρ with ρ=1e-3)
+        N = (10,10,10); L = fill(1f0/1f-3,N...,3); BC!(L,ntuple(zero,3))
+        pois = Poisson(f(zeros(Float32,N)),f(L),f(zeros(Float32,N)))
+        for c ∈ (-0.1f0,-0.45f0)
+            @test all(iszero,Array(mult!(pois,f(fill(c,N)))))
+        end
+    end
 end
 
 @testset "Red-black Gauss-Seidel sweeps" begin # every interior cell of the swept colour, also with odd sizes

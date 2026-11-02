@@ -41,10 +41,10 @@ function restrictML(b::Poisson)
     N,n = size_u(b.L)
     c = coarsen_mask(N)
     Na = ntuple(j-> c[j] ? 1+N[j]÷2 : N[j], n)
-    aL = similar(b.L,(Na...,n)); fill!(aL,0)
-    ax = similar(b.x,Na); fill!(ax,0)
+    dev,T = get_backend(b.x),eltype(b.x)
+    aL = zeros_on(dev,T,(Na...,n))
     restrictL!(aL,b.L,c,perdir=b.perdir)
-    Poisson(ax,aL,copy(ax);b.perdir)
+    Poisson(zeros_on(dev,T,Na),aL,zeros_on(dev,T,Na);b.perdir)
 end
 """
     restrictL!(a, b, c; perdir=())
