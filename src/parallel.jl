@@ -200,6 +200,26 @@ No-op in serial.
 velocity_halo!(u) = _velocity_halo!(u, par_mode[])
 _scalar_halo!(x, ::Serial) = nothing
 _velocity_halo!(u, ::Serial) = nothing
+"""
+    HaloBackend
+
+What moves the halo bytes under MPI, picked by `init_waterlily_mpi(...; halo)`: `:native` (`NativeHalo`,
+WaterLilyMPIExt: one message per neighbour rank, any eltype, `comm!(f, ...)`'s work while the messages
+travel) or a backend an extension registers in `_halo_backends` (WaterLilyIGGExt: `:igg`).
+`_halo!(work, a, backend)` exchanges the ghosts of `a` and runs `work()` while its messages travel or after;
+`_init_halo!(backend, comm, dims, periods, nlocal)` sets the backend up for the rank layout of the Cartesian
+communicator `comm`.
+"""
+abstract type HaloBackend end
+struct NativeHalo <: HaloBackend end
+function _halo! end
+function _init_halo! end
+const _halo_backends = Dict{Symbol,HaloBackend}(:native => NativeHalo())
+# Kernels may still be writing an array that MPI is about to read: wait for them.
+_sync(a) = KernelAbstractions.synchronize(KernelAbstractions.get_backend(a))
+# Halo arrays opt out of the GPU package's implicit synchronization between streams (WaterLilyCUDAExt): a
+# backend that packs and unpacks on streams of its own waits for the backend's queue itself (`_sync`)
+_no_stream_sync!(a) = a
 # Halo buffers of `n` elements of type `T` in host memory, for kernels on `a`'s backend: the
 # array they use, and the one MPI sends and receives (the same, unless a GPU extension maps
 # page-locked host memory into the device: WaterLilyCUDAExt, WaterLilyAMDGPUExt)
@@ -319,8 +339,9 @@ global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
 _global_offset(::Val{N}, ::Type{T}, ::Serial) where {N,T} = zero(SVector{N,T})
 
 """
-    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound()) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound(), halo=:native) → (local_dims, rank, comm)
 
 Initialize MPI domain decomposition for WaterLily.  Implemented by `WaterLilyMPIExt`.
+`halo` (default from `WATERLILY_HALO`) picks the halo backend (`HaloBackend`).
 """
 function init_waterlily_mpi end

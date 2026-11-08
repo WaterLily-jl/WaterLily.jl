@@ -11,6 +11,10 @@ using StaticArrays
 const ROLE   = ARGS[1]
 const OUTDIR = ARGS[2]      # writable temp dir shared with parent
 const T      = Float32
+const HALO   = Symbol(get(ENV, "WATERLILY_HALO", "native"))  # the halo backend of the MPI roles
+if HALO == :igg
+    using ImplicitGlobalGrid
+end
 
 # ── Parity simulations (deterministic, low-res, run identically in serial / MPI) ─
 
@@ -189,6 +193,8 @@ elseif ROLE == "unit"
         @testset "par_mode + accessors" begin
             @test ext !== nothing
             @test WaterLily.par_mode[] isa ext.Parallel
+            @test ext._par().halo === WaterLily._halo_backends[HALO]
+            @test_throws ErrorException init_waterlily_mpi((64, 32); halo=:nope)
             @test mpi_nprocs() == np
             @test 0 <= mpi_rank() < np
             @test mpi_comm() == comm

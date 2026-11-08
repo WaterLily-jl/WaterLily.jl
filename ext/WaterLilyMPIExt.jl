@@ -5,16 +5,17 @@ WaterLilyMPIExt — activated when MPI is loaded with WaterLily. Adds
 precompilation works.
 
 The topology (a Cartesian communicator, this rank's coordinates and neighbours)
-lives in `par_mode[]` itself. The only other stored state is a genuine cache:
-the halo plans (regions, buffers, requests) per array type and size.
+lives in `par_mode[]` itself, with the halo backend `init_waterlily_mpi` picked
+(`NativeHalo`, defined here, or one an extension registers). The only other
+stored state is a genuine cache: the native halo plans (regions, buffers,
+requests) per array type and size.
 """
 module WaterLilyMPIExt
 
 using WaterLily
-import WaterLily: @loop
+import WaterLily: @loop, _halo!, _sync
 using MPI
 using StaticArrays
-import KernelAbstractions
 using ForwardDiff: Dual, Partials, value, partials
 
 # ── MPI parallel mode ────────────────────────────────────────────────────────
@@ -27,6 +28,7 @@ struct Parallel <: WaterLily.AbstractParMode
     periods::Vector{Bool}
     neighbors::Matrix{Int}   # left and right rank per dim, negative (MPI.PROC_NULL) past a physical boundary
     nlocal::Vector{Int}      # interior cells of this rank per dim
+    halo::WaterLily.HaloBackend
 end
 
 _par() = WaterLily.par_mode[]::Parallel
@@ -119,16 +121,23 @@ end
 end
 
 """
-    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound()) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound(), halo=:native) → (local_dims, rank, comm)
 
 Initialize MPI domain decomposition: picks the rank topology
 (`_shape_aware_topology`), creates its Cartesian communicator, and sets
 `par_mode[] = Parallel(...)`. With CUDA or AMDGPU loaded, `select_device=true`
 gives each node-local rank its own GPU, and stops when a node has more ranks
 than GPUs; when the launcher already binds one GPU per rank (e.g. Slurm
-`--gpus-per-task=1`), each rank keeps the GPU it sees.
+`--gpus-per-task=1`), each rank keeps the GPU it sees. `halo` (default from
+`WATERLILY_HALO`) picks the halo backend: `:native`, or `:igg` with
+ImplicitGlobalGrid loaded (WaterLilyIGGExt).
 """
-function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_device=!_gpu_bound()) where N
+function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_device=!_gpu_bound(),
+                                      halo=Symbol(get(ENV, "WATERLILY_HALO", "native"))) where N
+    backend = get(WaterLily._halo_backends, Symbol(halo)) do
+        error("no halo backend :$halo (have $(join(repr.(keys(WaterLily._halo_backends)), ", "))): " *
+              "load ImplicitGlobalGrid for halo=:igg")
+    end
     MPI.Initialized() || MPI.Init()
     nprocs = MPI.Comm_size(MPI.COMM_WORLD)
 
@@ -142,13 +151,15 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
     comm = MPI.Cart_create(MPI.COMM_WORLD, collect(mpi_dims); periodic=periods, reorder=true)
     me = MPI.Comm_rank(comm)
     neighbors = [MPI.Cart_shift(comm, d-1, 1)[s] for s in 1:2, d in 1:N]
-    WaterLily.par_mode[] = Parallel(comm, me, collect(mpi_dims), MPI.Cart_coords(comm), periods, neighbors, collect(local_dims))
+    WaterLily.par_mode[] = Parallel(comm, me, collect(mpi_dims), MPI.Cart_coords(comm), periods, neighbors, collect(local_dims), backend)
     if select_device  # the node-local rank picks a GPU of each GPU package loaded
         node = MPI.Comm_split_type(comm, MPI.COMM_TYPE_SHARED, me)
         foreach(f -> f(MPI.Comm_rank(node), MPI.Comm_size(node)), WaterLily._device_selectors)
     end
     empty!(_halos)  # the plans of any previous grid (re-init in the same session)
-    _overlap_min[] = parse(Int, get(ENV, "WATERLILY_OVERLAP_MIN", string(2^20)))
+    WaterLily._init_halo!(backend, comm, mpi_dims, Tuple(periods), local_dims)
+    # a backend other than the native one runs `comm!(f, ...)`'s work after the halo: no loop to split
+    _overlap_min[] = parse(Int, get(ENV, "WATERLILY_OVERLAP_MIN", backend isa WaterLily.NativeHalo ? string(2^20) : string(typemax(Int))))
     _aware_min[] = (n = parse(Int, get(ENV, "WATERLILY_GPU_AWARE_MPI", "0")); n == 0 ? typemax(Int) : n)
 
     if me == 0
@@ -156,7 +167,7 @@ function WaterLily.init_waterlily_mpi(global_dims::NTuple{N}; perdir=(), select_
         loc  = join(string.(local_dims), "×")
         glob = join(string.(global_dims), "×")
         @info "WaterLily MPI: $(nprocs) ranks, topology=$(topo), " *
-              "local=$(loc), global=$(glob)"
+              "local=$(loc), global=$(glob), halo=$(halo)"
     end
 
     return local_dims, me, comm
@@ -218,13 +229,14 @@ function _halo_plan(a::AbstractArray{T}) where T
        sreq=MPI.UnsafeMultiRequest(length(peers)), rreq=MPI.UnsafeMultiRequest(length(peers)))
 end
 
-# The halo of `a`, with `work()` run while its messages travel. One halo at a time:
-# a plan's buffers serve every array of its type and size.
-function _halo!(work, a)
-    _any_decomposed() || return work()
-    _halo!(work, a, get!(() -> _halo_plan(a), _halos, (typeof(a), size(a))))
-end
-function _halo!(work, a, h)
+# The halo of `a`, with `work()` run while its messages travel, by the backend `init_waterlily_mpi` picked
+_halo!(work, a) = _any_decomposed() ? _halo!(work, a, _par().halo) : work()
+_halo!(a) = _halo!(Returns(nothing), a)
+WaterLily._init_halo!(::WaterLily.HaloBackend, comm, dims, periods, nlocal) = nothing
+
+# One halo at a time: a plan's buffers serve every array of its type and size.
+_halo!(work, a, ::WaterLily.NativeHalo) = _exchange!(work, a, get!(() -> _halo_plan(a), _halos, (typeof(a), size(a))))
+function _exchange!(work, a, h)
     WaterLily.pack!(h.s, a, h.S)
     _sync(a)  # the pack is done, and so is the last unpack from h.r, which MPI.Irecv! may now overwrite
     for (i, p) in enumerate(h.peers)
@@ -238,10 +250,6 @@ function _halo!(work, a, h)
     WaterLily.unpack!(a, h.r, h.R)  # not waited for: later kernels on the backend's queue run after it
     MPI.Waitall(h.sreq)
 end
-_halo!(a) = _halo!(Returns(nothing), a)
-
-# Kernels may still be writing an array that MPI is about to read: wait for them.
-_sync(a) = KernelAbstractions.synchronize(KernelAbstractions.get_backend(a))
 
 # ── ForwardDiff.Dual support ─────────────────────────────────────────────────
 # `Dual{T,V,N}` is `isbits` with layout [value, partial₁, …, partialₙ] of `V`.

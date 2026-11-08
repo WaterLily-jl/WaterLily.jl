@@ -22,6 +22,8 @@ end
 # Default rank counts. Override via env vars for resource-constrained CI.
 const NP_2D   = parse(Int, get(ENV, "WATERLILY_MPI_NP_2D", "4"))
 const NP_3D   = parse(Int, get(ENV, "WATERLILY_MPI_NP_3D", "8"))
+# Halo backends: the unit tests run on each, the parity cases on each must give the native results bit for bit
+const HALOS   = split(get(ENV, "WATERLILY_MPI_HALOS", "native,igg"), ',')
 const TESTDIR = @__DIR__
 const WORKER  = joinpath(TESTDIR, "mpitests_workers.jl")
 const OUTDIR  = mktempdir()
@@ -37,12 +39,12 @@ const OVERSUB_ENV = ("OMPI_MCA_rmaps_base_oversubscribe"   => "1",
 
 # Run the worker under `MPI.mpiexec()` (returns the launcher Cmd directly —
 # the do-block form is deprecated since MPI.jl 0.20).
-function mpi_run(np::Int, role::AbstractString)
+function mpi_run(np::Int, role::AbstractString; halo="native", outdir=OUTDIR)
     cmd = addenv(
         `$(MPI.mpiexec()) -n $(np) $(JULIA) $(PROJECT) --startup-file=no
          --threads=1 --check-bounds=yes --heap-size-hint=0.5G
-         $(WORKER) $(role) $(OUTDIR)`,
-        OVERSUB_ENV...)
+         $(WORKER) $(role) $(outdir)`,
+        OVERSUB_ENV..., "WATERLILY_HALO" => halo)
     return Base.success(run(ignorestatus(cmd)))
 end
 
@@ -88,9 +90,9 @@ end
 
 @testset "MPI" begin
     # ── unit tests (2D grid, NP_2D ranks) ────────────────────────────────────
-    @testset "unit (np=$(NP_2D))" begin
+    @testset "unit (np=$(NP_2D), halo=$(halo))" for halo in HALOS
         @test true                                # MPI.jl#391 canary
-        @test mpi_run(NP_2D, "unit")
+        @test mpi_run(NP_2D, "unit"; halo)
     end
 
     # ── parity tests ──────────────────────────────────────────────────────────
@@ -117,6 +119,14 @@ end
                 @test isfile(pfile)
                 if isfile(sfile) && isfile(pfile)
                     compare_metrics(read_toml(sfile), read_toml(pfile), key)
+                end
+                @testset "halo=$(halo) ≡ native" for halo in filter(!=("native"), HALOS)
+                    outdir = mkpath(joinpath(OUTDIR, halo))
+                    hfile = joinpath(outdir, "parallel_$(case).toml")
+                    isfile(hfile) && rm(hfile)
+                    @test true                    # MPI.jl#391 canary
+                    @test mpi_run(np, "parity_parallel_$(case)"; halo, outdir)
+                    @test isfile(hfile) && isfile(pfile) && read_toml(hfile) == read_toml(pfile)
                 end
             end
         end
