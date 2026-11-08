@@ -1,48 +1,135 @@
 module WaterLilyPlotsExt
 
 using Plots, WaterLily
+using ForwardDiff: value
+import Plots: mm
 import WaterLily: flood,addbody,body_plot!,sim_gif!,plot_logger
 gr()
 
 """
-    flood(f)
+    flood(f;shift=(-.5,-.5),cfill=:RdBu_11,clims=(),levels=10,xlim=(0,size(f,1)),ylim=(0,size(f,2)),kv...)
 
-Plot a filled contour plot of the 2D array `f`. The keyword arguments are passed to `Plots.contourf`.
+Plot a filled contour plot of the 2D array `f`, which must be a CPU array (host memory).
+
+Keyword arguments:
+    - `shift::Tuple`: Offset of the plotted coordinates relative to the array indices, in units of
+        cells. Defaults to `(-0.5,-0.5)` since `f` is assumed to live on cell edges (e.g. vorticity);
+        pass `(0.,0.)` for cell-centered data (e.g. pressure).
+    - `cfill`: Colormap passed to `Plots.contourf` as `color`.
+    - `clims::Tuple`: `(min,max)` values to clamp `f` to before plotting. Defaults to (-5,5).
+    - `levels::Int`: Number of contour levels.
+    - `xlim::Tuple`, `ylim::Tuple`: Axis limits, in the same shifted coordinates as `shift`. Default
+        to the full extent of `f`.
+    - `kv...`: Additional keyword arguments passed to `Plots.contourf`.
 """
-function flood(f::AbstractArray;shift=(0.,0.),cfill=:RdBu_11,clims=(),levels=10,kv...)
+function flood(f::AbstractArray;shift=(-.5,-.5),cfill=:seismic,clims=(-5,5),levels=10, xlim=(0,size(f)[1]), ylim=(0,size(f)[2]),kv...)
     if length(clims)==2
         @assert clims[1]<clims[2]
         @. f=min(clims[2],max(clims[1],f))
     else
-        clims = (minimum(f),maximum(f))
+        minf,maxf = minimum(f),maximum(f)
+        clims = ifelse(maxf-minf<0.001, (-1,1), (minf,maxf))
     end
-    Plots.contourf(axes(f,1).+shift[1],axes(f,2).+shift[2],f'|>Array,
+    Plots.contourf(axes(f,1).-0.5.+shift[1],axes(f,2).-0.5.+shift[2],f'|>Array,
                    linewidth=0, levels=levels, color=cfill, clims = clims,
-                   aspect_ratio=:equal; kv...)
+                   aspect_ratio=:equal, xlim=xlim, ylim=ylim; kv...)
 end
 
 addbody(x,y;c=:black) = Plots.plot!(Shape(x,y), c=c, legend=false)
-function body_plot!(sim;levels=[0],lines=:black,R=inside(sim.flow.p))
+"""
+    body_plot!(sim,dat,dat_plot;levels=[0],lines=:black,CIs=inside(sim.flow.p))
+
+Non-allocating: overlay the body's zero level-set contour, reusing the `dat`/`dat_plot` buffers
+preallocated by the caller (e.g. `sim_gif!`).
+"""
+function body_plot!(sim,dat,dat_plot;levels=[0],lines=:black,CIs=inside(sim.flow.p))
     WaterLily.measure_sdf!(sim.flow.σ,sim.body,WaterLily.time(sim))
-    contour!(sim.flow.σ[R]'|>Array;levels,lines)
+    copyto!(dat,sim.flow.σ)
+    restrict_plot!(dat_plot,dat,CIs)
+    contour!(axes(dat_plot,1).-0.5,axes(dat_plot,2).-0.5,dat_plot';levels,lines)
+end
+"""
+    body_plot!(sim;levels=[0],lines=:black,CIs=inside(sim.flow.p))
+
+Allocating convenience method: overlay the body's zero level-set contour on the current plot.
+Intended for one-off/manual plotting (see `flood`); allocates fresh buffers on every call,
+unlike the non-allocating `body_plot!(sim,dat,dat_plot;kv...)` used internally by `sim_gif!`.
+"""
+function body_plot!(sim;levels=[0],lines=:black,CIs=inside(sim.flow.p))
+    dat = Array(sim.flow.σ)
+    ndims(dat)==3 && @assert any(==(1), size(CIs)) "3D CIs must include a singleton dimension (e.g. a cut plane) to reduce the data to a 2D slice for plotting, got size $(size(CIs))."
+    dat_plot = dropdims(value.(dat[CIs]), dims=Tuple(findall(==(1), size(CIs))))
+    body_plot!(sim,dat,dat_plot;levels,lines,CIs)
+end
+
+restrict_plot!(dat_plot,dat,CIs) = (dat_plot .= value.(@view dat[CIs]); dat_plot)
+
+function vorticity!(dat, sim)
+    a = sim.flow.σ
+    @WaterLily.inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+    copyto!(dat, a)
 end
 
 """
-    sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,kv...)
+    sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
+                    remeasure=false,plotbody=false,f=vorticity!,video=nothing,framerate=20,
+                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
 
-Make a gif of the simulation `sim` for `duration` seconds with `step` time steps. The keyword arguments are passed to `flood` and `body_plot!`.
+Make a gif of 2D field of the simulation `sim`, stepping the flow forward and plotting `f(sim)` with `flood` at each frame.
+Users can pass a function `f` used to post-process the flow field data and copy the scalar field into a CPU buffer array.
+The default visualization function returns the z-vorticity scaled by `L/U`:
+```julia
+function vorticity!(dat, sim)
+    a = sim.flow.σ
+    @WaterLily.inside a[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
+    copyto!(dat, a)
+end
+```
+
+Keyword arguments:
+
+    - `duration::Number`: Simulation duration (in convective time units) to animate.
+    - `step::Number`: Time step between animation frames.
+    - `verbose::Bool`: Print simulation information at each frame.
+    - `CIs::CartesianIndices`: Region to plot, and to outline the body within if `plotbody=true`. Defaults to `inside(sim.flow.p)`.
+    - `remeasure::Bool`: Update the body position at each step.
+    - `plotbody::Bool`: Overlay the body's zero level-set contour.
+    - `f::Function`: Visualization function with interface `f(dat, sim)`, transferring the plotted data
+        (device-to-host) into the preallocated buffer `dat` (allocated once, full domain
+        size, and reused every frame). Defaults to the z-vorticity scaled by `L/U`.
+    - `video::String`: Path to save the animation. Saved as an mp4 if the path ends in `.mp4`, otherwise as a gif.
+        Defaults to a temporary gif file.
+    - `framerate::Int`: Gif framerate.
+    - `udf::Function`: User-defined function passed into `sim_step!`.
+    - `udf_kwargs::Dict{Symbol}`: User-defined function keyword arguments passed into `sim_step!`. Needs to be a `Dict{Symbol}` or any
+        `Pair{Symbol,Any}` iterator.
+    - `hidedecorations::Bool`: Hide the axis ticks, labels, grid and colorbar, and shrink the plot margins to zero.
+    - `kv...`: Additional keyword arguments passed to `flood`.
 """
-function sim_gif!(sim;duration=1,step=0.1,verbose=true,R=inside(sim.flow.p),
-                    remeasure=false,plotbody=false,kv...)
+function sim_gif!(sim;duration=1,step=0.1,verbose=true,CIs=inside(sim.flow.p),
+                    remeasure=false,plotbody=false,f=vorticity!,video=nothing,framerate=20,
+                    udf=nothing,udf_kwargs=nothing,hidedecorations=false,kv...)
+    !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
+    isnothing(udf) && (udf_kwargs=[])
+    dat = Array(sim.flow.σ)
+    ndims(dat)==3 && @assert any(==(1), size(CIs)) "3D CIs must include a singleton dimension (e.g. a cut plane) to reduce the data to a 2D slice for plotting, got size $(size(CIs))."
+    dat_plot = dropdims(value.(dat[CIs]), dims=Tuple(findall(==(1), size(CIs))))
     t₀ = round(WaterLily.sim_time(sim))
-    @time @gif for tᵢ in range(t₀,t₀+duration;step)
-        WaterLily.sim_step!(sim,tᵢ;remeasure)
-        @WaterLily.inside sim.flow.σ[I] = WaterLily.curl(3,I,sim.flow.u)*sim.L/sim.U
-        flood(sim.flow.σ[R]; kv...)
-        plotbody && body_plot!(sim)
+    anim = @time @animate for tᵢ in range(t₀,t₀+duration;step)
+        WaterLily.sim_step!(sim,tᵢ;remeasure,udf,udf_kwargs...)
+        f(dat,sim); restrict_plot!(dat_plot,dat,CIs)
+        flood(dat_plot; kv...)
+        plotbody && body_plot!(sim,dat,dat_plot;CIs)
+        hidedecorations && Plots.plot!(showaxis=false,ticks=false,grid=false,colorbar=false,margin=0mm)
         verbose && println("tU/L=",round(tᵢ,digits=4),
                            ", Δt=",round(sim.flow.Δt[end],digits=3))
+    end
+    if isnothing(video)
+        gif(anim;fps=framerate)
+    elseif endswith(video,".mp4")
+        mp4(anim,video;fps=framerate)
+    else
+        gif(anim,video;fps=framerate)
     end
 end
 

@@ -34,10 +34,10 @@ function restrictML(b::Poisson)
     N,n = size_u(b.L)
     c = coarsen_mask(N)
     Na = ntuple(j-> c[j] ? 1+N[j]÷2 : N[j], n)
-    aL = similar(b.L,(Na...,n)); fill!(aL,0)
-    ax = similar(b.x,Na); fill!(ax,0)
+    dev,T = get_backend(b.x),eltype(b.x)
+    aL = zeros_on(dev,T,(Na...,n))
     restrictL!(aL,b.L,c,perdir=b.perdir)
-    Poisson(ax,aL,copy(ax);b.perdir)
+    Poisson(zeros_on(dev,T,Na),aL,zeros_on(dev,T,Na);b.perdir)
 end
 function restrictL!(a::AbstractArray{T,M},b,c;perdir=()) where {T,M}
     Na,n = size_u(a)
@@ -53,10 +53,10 @@ prolongate!(a,b,c) = @inside a[I] = b[down(I,c)]
 # keep coarsening while ANY direction is still divisible (semi-coarsening)
 @inline divisible(l::Poisson) = any(size(l.x) .|> divisible)
 """
-    MultiLevelPoisson{N,M}
+    MultiLevelPoisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
-The only variable is `levels`, a vector of nested `Poisson` systems.
+The main field is `levels`, a vector of nested `Poisson` systems from fine to coarse.
 """
 struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
     x::S
@@ -102,6 +102,7 @@ end
 
 mult!(ml::MultiLevelPoisson,x) = mult!(ml.levels[1],x)
 residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
+diagonal(ml::MultiLevelPoisson) = diagonal(ml.levels[1])
 
 const smooth! = GaussSeidelRB!
 
@@ -112,7 +113,7 @@ function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω);
+        smooth!(p; ω)
         rnew = L₁(p); r∞ = L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $rnew, $ω\n"
         if     rnew ≥ r₁

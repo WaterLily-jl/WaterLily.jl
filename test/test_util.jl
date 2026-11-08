@@ -12,6 +12,10 @@
         @test_throws MethodError GPUArrays.@allowscalar WaterLily.interp(SVector(2.5f0,1.f0),b)
         @test GPUArrays.@allowscalar all(WaterLily.interp(SVector(-1.f0,4.f0),a) .≈ Float32[-0.5, 4])
         @test GPUArrays.@allowscalar WaterLily.interp(SVector(10.,10.),b) ≈ 6.0
+        lin(i,x) = x[i]+2x[mod1(i+1,3)]; R = CartesianIndices((2:8,2:8,2:8,1:3))
+        u = zeros(Float32,10,10,10,3) |> f; apply!(lin,u); out = zero(u)
+        WaterLily.@loop out[Ii] = WaterLily.interp(WaterLily.loc(0,Base.front(Ii),eltype(u)) .+ 0.3f0,u)[last(Ii)] over Ii ∈ R
+        @test all(Array(out)[Ii] ≈ lin(last(Ii),WaterLily.loc(0,Base.front(Ii),Float32) .+ 0.3f0) for Ii ∈ R)
 
         src2 = rand(2,3) |> f
         dest3 = zeros(2,3,4) |> f
