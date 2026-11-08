@@ -63,6 +63,7 @@ jobs:
           # (--jobs is auto-sized in runtests.jl from Sys.CPU_THREADS / WATERLILY_NTHREADS)
           WATERLILY_NTHREADS: ${{ matrix.backend == 'KernelAbstractions' && '2' || '1' }}
           WATERLILY_BACKENDS: 'cpu'
+          WATERLILY_SKIP_MPI: ${{ runner.os == 'Windows' && '1' || '0' }}
         shell: bash
         run: |
           printf "[WaterLily]\nbackend = \"${{ matrix.backend }}\"" > LocalPreferences.toml

@@ -56,6 +56,11 @@
     @test sim.pois isa MultiLevelPoisson
     sim_step!(sim,0.5,remeasure=false)
     @test all(isfinite, sim.flow.u)
+    # a solver without multigrid levels, remeasured every step (`measure!` only calls `update!`)
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T,
+                     pois_ctor=flow->Poisson(flow.p,flow.μ₀,flow.σ))
+    sim_step!(sim,0.1)
+    @test all(isfinite, sim.flow.u)
 
     # `poisson_kwargs` reaches both projections and not `udf`; the impulsive start needs more than one V-cycle
     sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)

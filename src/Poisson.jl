@@ -1,7 +1,7 @@
 abstract type AbstractPoisson{T,S,V} end
 
 """
-    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
+    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}, P<:NTuple}
 
 Composite type for conservative variable coefficient Poisson equations:
 
@@ -15,11 +15,21 @@ where A is symmetric, block-tridiagonal and extremely sparse. Moreover,
 `D[I]=-∑ᵢ(L[I,i]+L'[I,i])`. This means matrix storage, multiplication,
 etc. can be easily implemented and optimized without external libraries.
 
-To help iteratively solve the system above, the Poisson structure holds
-helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
-solution method then estimates the error `ϵ=̃A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
+The lower diagonal `L` is aliased to `flow.μ₀`; `BC!` on μ₀ already
+zeros normal-direction values at wall faces, giving `L[wall_face]=0` for
+an implicit Neumann BC.  Ghost-cell synchronization uses `comm!`
+(= `perBC!` + `scalar_halo!`) rather than bare `perBC!`, so that MPI
+rank-internal boundaries are handled correctly; inside the iterations, the
+stencil loops run on the cells that read no ghost while the halo messages
+travel (`comm!(f, a, perdir)`).
+
+To help iteratively solve the system, the structure holds helper arrays
+for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative solution
+method estimates the error `ϵ≈A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
+The solver ends with `pin_pressure!` + `comm!` to remove the null-space
+mode and synchronize halos.
 """
-struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T},P<:NTuple} <: AbstractPoisson{T,S,V}
     L :: V # Lower diagonal coefficients
     D :: S # Diagonal coefficients
     iD :: S # 1/Diagonal
@@ -28,12 +38,14 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     r :: S # residual
     z :: S # source
     n :: Vector{Int16} # pressure solver iterations
-    perdir :: NTuple # direction of periodic boundary condition
+    perdir :: P # direction of periodic boundary condition
+    inslen :: Int # global number of inside cells (precomputed to avoid Allreduce)
+    nsolved :: Base.RefValue{Int} # global number of solved rows (iD≠0), counted by `residual!` after `update!` (-1)
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r,ϵ,D,iD = ntuple(_->zeros_on(get_backend(x),T,size(x)),4)
         set_diag!(D,iD,L)
-        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
+        new{T,typeof(x),typeof(L),typeof(perdir)}(L,D,iD,x,ϵ,r,z,[],perdir,global_length(inside(x)),Ref(-1))
     end
 end
 
@@ -41,9 +53,9 @@ using ForwardDiff: Dual,Tag
 Base.eps(::Type{D}) where D<:Dual{Tag{G,T}} where {G,T} = eps(T)
 function set_diag!(D,iD,L)
     @inside D[I] = diag(I,L)
-    @inside iD[I] = iszero(D[I]) ? D[I] : inv(D[I])
+    @inside iD[I] = iszero(D[I]) ? D[I] : inv(D[I]) # alternatively: abs2(D[I])<2eps(Float32) ? zero(D[I]) : inv(D[I])
 end
-update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
+update!(p::Poisson) = (p.nsolved[] = -1; set_diag!(p.D,p.iD,p.L))
 
 @fastmath @inline function diag(I::CartesianIndex{d},L) where {d}
     s = zero(eltype(L))
@@ -59,11 +71,11 @@ diagonal(p::Poisson) = p.D
     mult!(p::Poisson,x)
 
 Efficient function for Poisson matrix-vector multiplication.
-Fills `p.z = p.A x` with 0 in the ghost cells.
+Fills `p.z = Ax` with 0 in the ghost cells, where `A` is the Poisson matrix implied by `L` and `D`.
 """
 function mult!(p::Poisson,x)
     @assert axes(p.z)==axes(x)
-    perBC!(x,p.perdir)
+    comm!(x,p.perdir)
     fill!(p.z,0)
     @inside p.z[I] = mult(I,p.L,p.D,x)
     return p.z
@@ -77,7 +89,7 @@ end
 end
 
 """
-    residual!(p::Poisson)
+    residual!(p::Poisson; comm=true)
 
 Computes the residual `r = z-Ax` and corrects it such that
 `r = 0` if `iD==0` which ensures local satisfiability
@@ -86,22 +98,33 @@ Computes the residual `r = z-Ax` and corrects it such that
 
 The global correction is done by adjusting all points uniformly,
 minimizing the local effect. Other approaches are possible.
+`comm=false` skips the halo of `x`, for an `x` whose ghosts already hold
+their neighbours' values (as `solver!` leaves them).
 
 Note: These corrections mean `x` is not strictly solving `Ax=z`, but
 without the corrections, no solution exists.
 """
-function residual!(p::Poisson)
-    perBC!(p.x,p.perdir)
-    @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x))
-    s = sum(p.r)/count(!iszero,p.iD) # only solved rows absorb the imbalance
+function residual!(p::Poisson; comm=true)
+    res!(R) = @loop p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.z[I]-mult(I,p.L,p.D,p.x)) over I ∈ R
+    comm ? comm!(res!,p.x,p.perdir) : res!(inside(p.x))
+    p.nsolved[] < 0 && (p.nsolved[] = global_allreduce(count(!iszero,p.iD)))
+    s = global_sum(p.r)/p.nsolved[] # only solved rows absorb the imbalance
     abs(s) <= 2eps(eltype(s)) && return
     @inside p.r[I] = ifelse(p.iD[I]==0,zero(eltype(p.r)),p.r[I]-s)
 end
 
-function increment!(p::Poisson{T};ω=1) where {T}
-    perBC!(p.ϵ,p.perdir)
-    @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
-           p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ inside(p.x)
+"""
+    increment!(p::Poisson; ω=1, residual=true)
+
+Increment the solution `x += ωϵ` and the residual `r -= ωAϵ`. `residual=false`
+only increments `x`, which reads no ghost: no halo.
+"""
+function increment!(p::Poisson{T};ω=1,residual=true) where {T}
+    residual || return @inside p.x[I] = p.x[I]+ω*p.ϵ[I]
+    comm!(p.ϵ,p.perdir) do R
+        @loop (p.r[I] = p.r[I]-ω*mult(I,p.L,p.D,p.ϵ);
+               p.x[I] = p.x[I]+ω*p.ϵ[I]) over I ∈ R
+    end
 end
 """
     Jacobi!(p::Poisson; it=1)
@@ -125,7 +148,8 @@ end
 @inline function gauss_rb(x,r,L,iD,k₀,Iv::CartesianIndex{d}) where {d}
     k = 2*Iv.I[end] - 1 - (sum(Base.front(Iv.I)) + k₀) % 2 # double the k-index and shift for red-black indexing
     I = CartesianIndex(ntuple( i-> i==d ? k : Iv.I[i], d))
-    k < size(x,d) && (x[I] = gauss(I,r,L,iD,x)) # with an odd size, the last k is a ghost for one colour
+    iD[I]==0 && return # skip ghost/body cells (with an odd size, the last k is a ghost for one colour); preserves MPI halo values at rank-internal boundaries
+    x[I] = gauss(I,r,L,iD,x)
 end
 
 @inline function half_rangek(x::AbstractArray{T,N}) where{T,N}
@@ -133,19 +157,30 @@ end
 end
 
 """
-    GaussSeidelRB!(p::Poisson;it=4, ω=1)
+    GaussSeidelRB!(p::Poisson;it=4, ω=1, residual=true)
 
 Red-black Gauss-Seidel smoother. Runs `it` iterations; a complete red-black cycle requires `it` to be even.
 `ω` under-/over-relaxes the solution through scaling the deferred corrections in `increment!`.
+`residual=false` leaves the residual as it was (see `increment!`), for a level whose residual is not read again.
 Note: This performs best on GPU configurations and is the default smoother.
 """
-function GaussSeidelRB!(p::Poisson{T};it=4, ω=1) where {T}
+function GaussSeidelRB!(p::Poisson{T};it=4, ω=1, residual=true) where {T}
     @inside p.ϵ[I] = p.r[I]*p.iD[I]  # initialize ϵ
-    perBC!(p.ϵ,p.perdir)
-    for i ∈ 1:it
+    # One halo up-front; inner RB sweeps run against it. After sweep 1, ghost
+    # values lag by one neighbor-iteration (mild Jacobi drift), but the system
+    # is diagonally-dominant (Poisson) and `mean_iters` stays at 1.0 — the
+    # extra halos per sweep contribute only synchronization, not convergence.
+    # This matches the old N+4/halowidth=2 pattern (reverse-engineered from
+    # commit 391b999); the halowidth-2 layout wasn't necessary, the frequency
+    # was. The first sweep runs while the halo travels: its colour reads only
+    # the other one, so the inner cells and then the shell give the same ϵ.
+    comm!(p.ϵ,p.perdir,half_rangek(p.ϵ)) do R
+        @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,1,I) over I ∈ R
+    end
+    for i ∈ 2:it
         @loop gauss_rb(p.ϵ,p.r,p.L,p.iD,i,I) over I ∈ half_rangek(p.ϵ)
     end
-    increment!(p;ω) # increment solution and residual
+    increment!(p;ω,residual) # increment solution and, unless residual=false, residual
 end
 
 using LinearAlgebra: ⋅
@@ -158,29 +193,37 @@ perdot(a,b,::Tuple{}) = a⋅b
 perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
 perdot(::CPU,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
 perdot(::Backend,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...))
+"""
+    global_perdot(a,b,perdir)
+
+MPI-global `perdot`: the rank-local dot product reduced across ranks.
+Equivalent to `perdot` in serial.
+"""
+global_perdot(a,b,perdir,R...) = global_allreduce(perdot(a,b,perdir,R...))
 
 """
     pcg!(p::Poisson; it=6)
 
-Conjugate-Gradient smoother with Jacobi predictioning. Runs at most `it` iterations,
+Conjugate-Gradient smoother with Jacobi preconditioning. Runs at most `it` iterations,
 but will exit early if the Gram-Schmidt update parameter `|α| < 1%` or `|r D⁻¹ r| < 1e-8`.
 Note: This runs for general backends.
 """
 function pcg!(p::Poisson{T};it=6,kwargs...) where T
     x,r,ϵ,z = p.x,p.r,p.ϵ,p.z
     @inside z[I] = ϵ[I] = r[I]*p.iD[I]
-    rho = r⋅z
+    rho = global_dot(r,z)
     abs(rho)<10eps(T) && return
     for i in 1:it
-        perBC!(ϵ,p.perdir)
-        @inside z[I] = mult(I,p.L,p.D,ϵ)
-        alpha = rho/perdot(z,ϵ,p.perdir)
+        comm!(ϵ,p.perdir) do R
+            @loop z[I] = mult(I,p.L,p.D,ϵ) over I ∈ R
+        end
+        alpha = rho/global_perdot(z,ϵ,p.perdir)
         (abs(alpha)<1e-2 || abs(alpha)>1e2) && return # alpha should be O(1)
         @loop (x[I] += alpha*ϵ[I];
                r[I] -= alpha*z[I]) over I ∈ inside(x)
         i==it && return
         @inside z[I] = r[I]*p.iD[I]
-        rho2 = r⋅z
+        rho2 = global_dot(r,z)
         abs(rho2)<10eps(T) && return
         beta = rho2/rho
         @inside ϵ[I] = beta*ϵ[I]+z[I]
@@ -196,38 +239,63 @@ Squared L₂ norm of array `a` over `R`, which excludes the ghost cells by defau
 L₂(a,R::CartesianIndices=inside(a)) = L₂(get_backend(a),a,R)
 L₂(::CPU,a,R) = sum(abs2,@inbounds(a[I]) for I ∈ R)
 L₂(::Backend,a,R) = mapreduce(abs2,+,view(a,R.indices...))
-L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
-L₁(p::Poisson) = sum(abs,p.r) # special method since outside(p.r)≡0
-L∞(p::Poisson) = maximum(abs,p.r)
+L₂(p::Poisson) = global_dot(p.r, p.r)               # Σr² across ranks (outside(p.r)≡0)
+L₁(p::Poisson) = global_allreduce(local_sumabs(p.r)) # Σ|r| across ranks (outside(p.r)≡0)
+L∞(p::Poisson) = global_max(maximum(abs,p.r))       # max|r| across ranks (outside(p.r)≡0)
+L₁L∞(p::Poisson) = global_sum_max(local_sumabs(p.r), maximum(abs,p.r)) # (L₁, L∞) in one reduction across ranks
 
-# mean residual  Σ|r|/N < tol/10   ⟺   L₁(p)=Σ|r| < (tol/10)·N
-l1n_tol(p::AbstractPoisson, tol) = (Float64(tol)/10) * length(inside(p.r))
+# mean residual  Σ|r|/N < tol/10   ⟺   L₁(p)=Σ|r| < (tol/10)·N.
+# N = p.inslen: global interior-cell count (mode-aware, so serial≡parallel).
+l1n_tol(p::Poisson, tol) = (Float64(tol)/10) * p.inslen
 
 """
-    solver!(A::Poisson;tol=2e-3,itmx=1e3)
+    solver!(A::Poisson; tol=2e-3, itmx=1e3)
 
-Approximate iterative solver for the Poisson matrix equation `Ax=b`.
+Iterative solver for the Poisson matrix equation `Ax=b` using
+preconditioned conjugate gradients (`pcg!`).
 
-  - `A`: Poisson matrix with working arrays.
-  - `A.x`: Solution vector. Can start with an initial guess.
-  - `A.z`: Right-Hand-Side vector. Will be overwritten!
-  - `A.n[end]`: stores the number of iterations performed.
+  - `A.x`: Solution vector (can start with an initial guess).
+  - `A.z`: Right-hand-side vector (overwritten).
+  - `A.n[end]`: Number of iterations performed.
   - `tol`: Grid-independent max-norm (worst-cell) tolerance `max|r| < tol`. This is the
         knob to tune: on refined grids the mean residual clears `tol/10` with margin, so
         the max-norm is the binding constraint — lower `tol` for tighter divergence.
         Convergence also requires the mean residual `Σ|r|/N < tol/10` (same units as the
         max-norm, no hidden exponents: the bulk sits 10× below the cap).
   - `itmx`: Maximum number of iterations.
+
+Ends with `pin_pressure!` (remove null-space mean) and `comm!`
+(halo sync) so the solution is ready for use in `project!`.
+`solver!(f, A)` then runs the loop `f(inside(A.x))`, while the halo travels
+for solvers that support it (`MultiLevelPoisson`), and ignores the `synced`
+of `MultiLevelPoisson`'s `solver!` for those that do not.
 """
 function solver!(p::Poisson;tol=2e-3,itmx=1e3)
     r₁tol = l1n_tol(p, tol); r∞tol = tol
-    residual!(p); r₁ = L₁(p); r∞ = L∞(p)
+    residual!(p); r₁, r∞ = L₁L∞(p)
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁\n"
     while nᵖ<itmx
-        pcg!(p); r₁ = L₁(p); r∞ = L∞(p); nᵖ+=1
+        pcg!(p); r₁, r∞ = L₁L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $r₁\n"
         (r₁<r₁tol && r∞<r∞tol) && break
     end
-    perBC!(p.x,p.perdir)
+    pin_pressure!(p); comm!(p.x,p.perdir)
     push!(p.n,nᵖ)
+end
+solver!(f, p::AbstractPoisson; synced=false, kwargs...) = (solver!(p; kwargs...); f(inside(p.x)))
+
+"""
+    pin_pressure!(p::Poisson)
+
+Remove the null-space (constant) mode by subtracting the global mean of
+the interior pressure from every cell. The uniform shift is in the
+operator's null space, so it leaves the residual invariant and keeps
+serial and parallel solves consistent. Only interior cells enter the
+mean: after `comm!` the ghost cells hold periodic-wrap or halo copies
+of neighbor interiors, and summing them would double count and bias
+the pin (interior mean not exactly zero).
+"""
+function pin_pressure!(p::Poisson{T}) where T
+    s = T(global_sum(@view p.x[inside(p.x)]) / p.inslen)
+    @inside p.x[I] = p.x[I] - s
 end
