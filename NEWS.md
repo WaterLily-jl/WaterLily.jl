@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **Fused residual norms on GPUs**: both `solver!` methods get the mean and maximum residual from the new internal `L₁L∞(p::Poisson)`, which is one [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) reduction on GPUs instead of two (one host sync per iteration instead of two). The norms are 1.4 to 1.6× faster on an RTX 4060 laptop GPU, which is within the noise of a 3D `sim_step!` when the multigrid converges in one V-cycle. The CPU keeps the two Base reductions. `L₁` and `L∞` are unchanged, and AcceleratedKernels.jl is now a dependency.
+- **AcceleratedKernels.jl reductions on GPUs**: [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) is now a dependency (compat 0.5.6, about 7 ms of load time). The GPU methods of `perdot` and `L₂` reduce over the interior indices with `AK.mapreduce` instead of over views, one method for every GPU backend. The CUDA extension no longer overrides `perdot`: on an RTX 4060 laptop GPU the AK method is 1.3 to 1.5× faster than the CUDA.jl dot of views it replaces, and up to 1.8× faster than the generic method AMDGPU and Metal used. `perdot` only runs in `pcg!` with periodic boundaries, so the default multigrid solver is unaffected. The CPU methods are unchanged.
+- **Fused residual norms on GPUs**: both `solver!` methods get the mean and maximum residual from the new internal `L₁L∞(p::Poisson)`, which is one AcceleratedKernels.jl reduction on GPUs instead of two (one host sync per iteration instead of two). The norms are 1.4 to 1.6× faster on an RTX 4060 laptop GPU, which is within the noise of a 3D `sim_step!` when the multigrid converges in one V-cycle. The CPU keeps the two Base reductions. `L₁` and `L∞` are unchanged.
 
 ## v1.11
 
