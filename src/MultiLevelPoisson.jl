@@ -134,7 +134,7 @@ residual, for an `x` whose ghosts still hold their neighbours' values (or the
 periodic wrap), as this `comm!` leaves them (see `mom_project!`).
 """
 solver!(ml::MultiLevelPoisson; kwargs...) = solver!(Returns(nothing), ml; kwargs...)
-function solver!(f, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where T
+function solver!(f::F, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where {F,T} # F: see comm!(f, ...)
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
     residual!(p; comm=!synced); r₁, r∞ = L₁L∞(p); ω = T(1)
