@@ -33,6 +33,13 @@ end
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,))  ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
         @test GPUArrays.@allowscalar WaterLily.perdot(σ1,σ2,(1,2)) ≈ sum(σ1[I]*σ2[I] for I∈inside(σ1))
     end
+    for f ∈ arrays # fused residual norms match the separate ones and keep the eltype
+        N = (10,12,8); pois = Poisson(f(zeros(Float32,N)),f(ones(Float32,N...,3)),f(zeros(Float32,N)))
+        copyto!(pois.r,rand(Float32,N...) .- 0.5f0)
+        r₁,r∞ = WaterLily.L₁L∞(pois)
+        @test WaterLily.L₁L∞(pois) isa Tuple{Float32,Float32}
+        @test r₁ ≈ WaterLily.L₁(pois) && r∞ == WaterLily.L∞(pois)
+    end
     for f ∈ arrays # A maps a constant to exactly 0, even where the Float32 D ≠ -ΣL (L=1/ρ with ρ=1e-3)
         N = (10,10,10); L = fill(1f0/1f-3,N...,3); BC!(L,ntuple(zero,3))
         pois = Poisson(f(zeros(Float32,N)),f(L),f(zeros(Float32,N)))

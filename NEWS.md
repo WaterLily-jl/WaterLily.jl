@@ -1,5 +1,9 @@
 # WaterLily.jl release notes
 
+## Unreleased
+
+- **Fused residual norms on GPUs**: both `solver!` methods get the mean and maximum residual from the new internal `L₁L∞(p::Poisson)`, which is one [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) reduction on GPUs instead of two (one host sync per iteration instead of two). The norms are 1.4 to 1.6× faster on an RTX 4060 laptop GPU, which is within the noise of a 3D `sim_step!` when the multigrid converges in one V-cycle. The CPU keeps the two Base reductions. `L₁` and `L∞` are unchanged, and AcceleratedKernels.jl is now a dependency.
+
 ## v1.11
 
 ### Highlights

@@ -200,6 +200,14 @@ L₂(B::Backend,a,R) = AK.mapreduce(I->abs2(@inbounds(a[I])),+,R;backend=B)
 L₂(p::Poisson) = p.r ⋅ p.r # special method since outside(p.r)≡0
 L₁(p::Poisson) = sum(abs,p.r) # special method since outside(p.r)≡0
 L∞(p::Poisson) = maximum(abs,p.r)
+"""
+    L₁L∞(p::Poisson)
+
+`(L₁(p),L∞(p))`, fused into one AcceleratedKernels reduction on GPUs. The CPU keeps the two Base reductions, which are faster there and do not allocate.
+"""
+L₁L∞(p::Poisson) = L₁L∞(get_backend(p.r),p.r)
+L₁L∞(::CPU,r) = (sum(abs,r),maximum(abs,r))
+L₁L∞(::Backend,r) = AK.mapreduce(x->(abs(x),abs(x)),(a,b)->(a[1]+b[1],max(a[2],b[2])),r;init=(zero(eltype(r)),zero(eltype(r))))
 
 # mean residual  Σ|r|/N < tol/10   ⟺   L₁(p)=Σ|r| < (tol/10)·N
 l1n_tol(p::AbstractPoisson, tol) = (Float64(tol)/10) * length(inside(p.r))
@@ -222,10 +230,10 @@ Approximate iterative solver for the Poisson matrix equation `Ax=b`.
 """
 function solver!(p::Poisson;tol=2e-3,itmx=1e3)
     r₁tol = l1n_tol(p, tol); r∞tol = tol
-    residual!(p); r₁ = L₁(p); r∞ = L∞(p)
+    residual!(p); r₁, r∞ = L₁L∞(p)
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁\n"
     while nᵖ<itmx
-        pcg!(p); r₁ = L₁(p); r∞ = L∞(p); nᵖ+=1
+        pcg!(p); r₁, r∞ = L₁L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $r₁\n"
         (r₁<r₁tol && r∞<r∞tol) && break
     end
