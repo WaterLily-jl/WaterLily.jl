@@ -1,7 +1,7 @@
 abstract type AbstractPoisson{T,S,V} end
 
 """
-    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
+    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}, P<:NTuple}
 
 Composite type for conservative variable coefficient Poisson equations:
 
@@ -29,7 +29,7 @@ method estimates the error `ϵ≈A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
 The solver ends with `pin_pressure!` + `comm!` to remove the null-space
 mode and synchronize halos.
 """
-struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T},P<:NTuple} <: AbstractPoisson{T,S,V}
     L :: V # Lower diagonal coefficients
     D :: S # Diagonal coefficients
     iD :: S # 1/Diagonal
@@ -38,14 +38,14 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     r :: S # residual
     z :: S # source
     n :: Vector{Int16} # pressure solver iterations
-    perdir :: NTuple # direction of periodic boundary condition
+    perdir :: P # direction of periodic boundary condition
     inslen :: Int # global number of inside cells (precomputed to avoid Allreduce)
     nsolved :: Base.RefValue{Int} # global number of solved rows (iD≠0), counted by `residual!` after `update!` (-1)
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r,ϵ,D,iD = ntuple(_->zeros_on(get_backend(x),T,size(x)),4)
         set_diag!(D,iD,L)
-        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir,global_length(inside(x)),Ref(-1))
+        new{T,typeof(x),typeof(L),typeof(perdir)}(L,D,iD,x,ϵ,r,z,[],perdir,global_length(inside(x)),Ref(-1))
     end
 end
 

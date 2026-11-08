@@ -107,7 +107,7 @@ end
 
 abstract type AbstractFlow{D,T} end
 """
-    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, Lf}
+    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, Lf, P<:NTuple}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
@@ -119,7 +119,7 @@ and the velocity vector field `u` (an array of dimension `D+1`).
 All arrays use the N+2 staggered layout: `N` interior cells plus 1 ghost/boundary
 cell per side, giving total size `M = N + 2` per spatial dimension.
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf} <: AbstractFlow{D,T}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf, P<:NTuple} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -136,7 +136,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     ν :: T # kinematic viscosity
     g :: Union{Function,Nothing} # acceleration field function
     exitBC :: Bool # Convection exit
-    perdir :: NTuple # tuple of periodic direction
+    perdir :: P # tuple of periodic direction
     λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
             u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
@@ -153,12 +153,12 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         fv, p, σ = zeros_on(b,T,Nd), zeros_on(b,T,Ng), zeros_on(b,T,Ng)
         V, μ₀, μ₁ = zeros_on(b,T,Nd), ones_on(b,T,Nd), zeros_on(b,T,(Ng...,D,D))
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ),typeof(perdir)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end
     # field-wise constructor: lets `setproperties(flow; uBC)` swap non-field values without reallocating the fields
     function Flow(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
         uBC isa Tuple && (uBC = eltype(p).(uBC)) # same type-stability requirement as above
-        new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
+        new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ),typeof(perdir)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
     end
 end
 

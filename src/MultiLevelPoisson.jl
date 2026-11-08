@@ -67,18 +67,18 @@ prolongate!(a,b,c) = @inside a[I] = b[down(I,c)]
 # keep coarsening while ANY direction is still divisible (semi-coarsening)
 @inline divisible(l::Poisson) = any(size(l.x) .|> divisible)
 """
-    MultiLevelPoisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
+    MultiLevelPoisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}, P<:NTuple}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
 The main field is `levels`, a vector of nested `Poisson` systems from fine to coarse.
 """
-struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T},P<:NTuple} <: AbstractPoisson{T,S,V}
     x::S
     L::V
     z::S
-    levels :: Vector{Poisson{T,S,V}}
+    levels :: Vector{Poisson{T,S,V,P}}
     n :: Vector{Int16}
-    perdir :: NTuple # direction of periodic boundary condition
+    perdir :: P # direction of periodic boundary condition
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=10,perdir=()) where T
         levels = Poisson[Poisson(x,L,z;perdir)]
         while divisible(levels[end]) && length(levels) <= maxlevels
@@ -87,7 +87,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
         # N>6 divisibility keeps coarsest interior ≥ 2x2 — no perturbation needed
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
+        new{T,typeof(x),typeof(L),typeof(perdir)}(x,L,z,levels,[],perdir)
     end
 end
 
@@ -134,7 +134,7 @@ residual, for an `x` whose ghosts still hold their neighbours' values (or the
 periodic wrap), as this `comm!` leaves them (see `mom_project!`).
 """
 solver!(ml::MultiLevelPoisson; kwargs...) = solver!(Returns(nothing), ml; kwargs...)
-function solver!(f::F, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where {F,T} # F: see comm!(f, ...)
+function solver!(f::F, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where {F,T} # f::F: see comm!(f, ...)
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
     residual!(p; comm=!synced); r₁, r∞ = L₁L∞(p); ω = T(1)

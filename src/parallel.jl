@@ -260,11 +260,9 @@ _comm!(a, perdir, ::Serial) = perBC!(a, perdir)
 write the cells of `a` it loops over, not its ghosts): first over `inner(R)`
 while the messages travel, then over `shell(R)` once the halo is in.
 """
-# Static calls, so the closure `f` is not allocated: `f::F` specializes on it (Julia does not for an argument it only
-# passes on), `perdir` (an `NTuple` field of the solvers and `Flow`, abstract) takes no part, and serial takes its own
-# branch, still static when the MPI extension adds `Parallel` methods
-comm!(f::F, a, @nospecialize(perdir), R=inside(a)) where F = (m = par_mode[]; m isa Serial ? _comm!(f, a, perdir, R, m) : _comm!(f, a, perdir, R, m))
-_comm!(f::F, a, @nospecialize(perdir), R, ::Serial) where F = (perBC!(a, perdir); f(R))
+# `f::F`: Julia does not specialize on an argument it only passes on, and the closure would be allocated
+comm!(f::F, a, perdir, R=inside(a)) where F = _comm!(f, a, perdir, R, par_mode[])
+_comm!(f, a, perdir, R, ::Serial) = (perBC!(a, perdir); f(R))
 
 """
     inner(R), shell(R)
@@ -299,8 +297,8 @@ velocity_comm!(a, perdir) = _velocity_comm!(a, perdir, par_mode[])
 `velocity_comm!(a, perdir); f(R)`, with `f` looping over `inner(R)` while the
 halo messages travel and over `shell(R)` after, as `comm!(f, a, perdir, R)`.
 """
-velocity_comm!(f::F, a, @nospecialize(perdir), R) where F = (m = par_mode[]; m isa Serial ? _velocity_comm!(f, a, perdir, R, m) : _velocity_comm!(f, a, perdir, R, m))
-_velocity_comm!(f::F, a, @nospecialize(perdir), R, ::Serial) where F = (_velocity_comm!(a, perdir, Serial()); f(R))
+velocity_comm!(f::F, a, perdir, R) where F = _velocity_comm!(f, a, perdir, R, par_mode[])
+_velocity_comm!(f, a, perdir, R, ::Serial) = (_velocity_comm!(a, perdir, Serial()); f(R))
 function _velocity_comm!(a, perdir, ::Serial)
     _, n = size_u(a)
     for i ∈ 1:n
