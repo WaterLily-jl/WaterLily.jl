@@ -39,7 +39,9 @@ end
 _grid(sz) = get!(() -> create_global_grid(sz...; _kw[]...), _grids, sz)
 
 # A scalar array as itself, a velocity-shaped array as its components, each as
-# a 3D array on the same memory: one `update_halo!` call for all of them
+# a 3D array on the same memory: one `update_halo!` call for all of them. On GPUs
+# a component, a contiguous view, is itself a device array (CuArray, ROCArray),
+# which IGG takes; a package returning a SubArray would make IGG reject it.
 _fields(a::Array, sz, nc) = [unsafe_wrap(Array, pointer(a, (c-1)*prod(sz) + 1), sz) for c in 1:nc]
 _fields(a::DenseArray, sz, nc) = [reshape(selectdim(reshape(a, sz..., nc), 4, c), sz) for c in 1:nc]
 
