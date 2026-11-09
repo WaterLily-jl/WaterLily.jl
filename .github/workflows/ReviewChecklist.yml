@@ -1,7 +1,8 @@
 name: Add review checklist
 
 # Posts .github/review-checklist.md as a comment on every new pull request, unless the
-# description contains "[no checklist]". The file is taken from the base branch.
+# description contains "[no checklist]" or a bot or the Copier workflow opened it. The
+# file is taken from the base branch.
 
 on:
   pull_request_target:
@@ -13,7 +14,7 @@ permissions:
 jobs:
   add-review-checklist:
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.event.pull_request.body, '[no checklist]') }}
+    if: ${{ !contains(github.event.pull_request.body, '[no checklist]') && github.event.pull_request.user.type != 'Bot' && github.event.pull_request.head.ref != 'auto-copier-template-update' }}
     steps:
       - uses: actions/checkout@v7
       - run: gh pr comment "$PR" --body-file .github/review-checklist.md
