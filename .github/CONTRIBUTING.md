@@ -16,5 +16,3 @@ WaterLily.jl and its contributions are licensed under the MIT license (see [LICE
 Pull requests made with the help of LLMs and other AI tools are allowed. Because an LLM-assisted pull request can have different problems than a human-only one, and may need a different kind of review, please say in the description which parts an LLM contributed.
 
 As for any pull request, we expect high quality, and the developers will work with you to get there. You are responsible for the code you submit, whether you wrote it or an AI tool generated it: you should understand and be able to explain it, and the existing code it relates to. [AGENTS.md](../AGENTS.md) describes the conventions of this repository for AI coding agents.
-
-This section is adapted from the [Trixi.jl contributing guide](https://github.com/trixi-framework/Trixi.jl/blob/main/CONTRIBUTING.md).
