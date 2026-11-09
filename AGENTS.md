@@ -102,7 +102,7 @@ Every contribution comes with benchmark results (see the README): run [WaterLily
 
 ## Extension points and downstream packages
 
-- `Simulation(...; flow_ctor, pois_ctor)` injects a custom `AbstractFlow` or `AbstractPoisson`. `flow_ctor` receives `u0, Δt, ν, g, λ, T, mem, perdir, exitBC`.
+- `Simulation(...; flow_ctor, pois_ctor)` injects a custom `AbstractFlow` or `AbstractPoisson`. `flow_ctor` receives `(dims, uBC; u0, Δt, ν, g, λ, T, mem, perdir, exitBC)`.
 - Dispatch on your own subtype: the `mom_step!` phases and `CFL` for an `AbstractFlow`; `solver!`, `update!`, `diagonal` (or all of `mom_project!`) for an `AbstractPoisson`; `measure`, `measure_sdf!`, `bbox` for an `AbstractBody`; `sim_step!` for an `AbstractSimulation`.
 
 These packages use internal functions, so internals are API for them. Search them before renaming a function or changing its arguments or meaning. The Downstream workflow runs the tests of the first three, and of ParametricBodies.jl and WaterLilyMeshBodies.jl, on every PR that changes `src/`, `ext/` or `Project.toml`:
@@ -119,7 +119,7 @@ A signature change that still dispatches is the dangerous case. For example, a p
 ## Pull requests
 
 - Keep each PR to one goal, with tests and benchmark results.
-- There is no Julia formatter. The Lint workflow runs the pre-commit hooks in `.pre-commit-config.yaml` (final newlines, trailing whitespace, Markdown and YAML style) and a link checker (lychee, whose exclusions are in the workflow file). Run the hooks before pushing: `SKIP=no-commit-to-branch pre-commit run -a` (or `pipx run pre-commit run -a` without installing it). They fix most problems in place.
+- There is no Julia formatter. The Lint workflow runs the pre-commit hooks in `.pre-commit-config.yaml` (final newlines, trailing whitespace, Markdown and YAML style) and a link checker (lychee, whose exclusions are in the workflow file). Run the hooks before pushing: `SKIP=no-commit-to-branch pre-commit run -a` (or `SKIP=no-commit-to-branch pipx run pre-commit run -a` without installing it). They fix most problems in place.
 - Note user-visible changes, and changes to internals that packages use, in `NEWS.md`.
 - Say in the PR description which parts an AI tool contributed (`.github/CONTRIBUTING.md`).
 - Do not commit local settings or output (`Manifest.toml`, `LocalPreferences.toml`, simulation files, images, logs).
