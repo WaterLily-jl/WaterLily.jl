@@ -99,7 +99,7 @@ function measure!(::AbstractFlow,::NoBody;kwargs...) end # skip measure! entirel
     SetBody
 
 Body defined as a lazy set operation on two `AbstractBody`s.
-The operations are only evaluated when `measure`d.
+The operations are only evaluated when `measure`d. `body.map` is the map shared by both parts.
 """
 struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
     op::O
@@ -113,6 +113,11 @@ Base.:+(a::AbstractBody, b::AbstractBody) = a ∪ b
 Base.:∩(a::AbstractBody, b::AbstractBody) = SetBody(max,a,b)
 Base.:-(a::AbstractBody) = SetBody(-,a,NoBody())
 Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
+
+Base.getproperty(b::SetBody,s::Symbol) = s===:map ? sharedmap(b.a.map,b.b.map) : getfield(b,s)
+Base.getproperty(b::NoBody,s::Symbol) = s===:map ? nothing : getfield(b,s)
+sharedmap(a,::Nothing) = a
+sharedmap(a,b) = a==b ? a : throw(ArgumentError("SetBody parts have different maps"))
 
 # Measurements
 function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T

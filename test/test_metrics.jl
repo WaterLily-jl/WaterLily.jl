@@ -93,7 +93,7 @@ import WaterLily: ×
         meanflow = MeanFlow(sim.flow; uu_stats=true)
         for t in range(0,10;step=0.1)
             sim_step!(sim, t)
-            update!(meanflow, sim.flow)
+            WaterLily.update!(meanflow, sim.flow) # CUDA 6.5 also exports an update!
         end
         @test all(isapprox.(Array(sim.flow.u), Array(meanflow.U); atol=√eps(T))) # can't broadcast isapprox for GPUArrays...
         @test all(isapprox.(Array(sim.flow.p), Array(meanflow.P); atol=√eps(T)))

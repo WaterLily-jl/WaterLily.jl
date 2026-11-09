@@ -1,12 +1,12 @@
 name = "WaterLily"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
-version = "1.10.0"
+version = "1.11.1"
 
 [deps]
+AcceleratedKernels = "6a4ca0a5-0e36-4168-a932-d9be78d558f1"
 ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
-EllipsisNotation = "da5c29d0-fa7d-589e-88eb-ea29b0a81949"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -14,7 +14,6 @@ LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
-Requires = "ae029012-a4dd-5104-9daa-d747884805df"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
@@ -39,16 +38,15 @@ WaterLilyReadVTKExt = "ReadVTK"
 WaterLilyWriteVTKExt = "WriteVTK"
 
 [compat]
+AcceleratedKernels = "0.5.6"
 ConstructionBase = "1.6.0"
-DocStringExtensions = "0.9"
-EllipsisNotation = "1.8"
+DocStringExtensions = "0.9, 0.10"
 ForwardDiff = "0.10.18, 1"
-KernelAbstractions = "0.9.1"
+KernelAbstractions = "0.9.1, 0.10.2"
 LoggingExtras = "1.1"
 Makie = "0.24"
 Preferences = "1.4"
 Reexport = "^1.2.2"
-Requires = "1.3"
 StaticArrays = "^1.1.0"
 julia = "1.11"
 
