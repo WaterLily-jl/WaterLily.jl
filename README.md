@@ -36,7 +36,7 @@ WaterLily solves the unsteady incompressible 2D or 3D [Navier-Stokes equations](
 
 WaterLily lets the user set the domain size and boundary conditions, the fluid viscosity (which determines the [Reynolds number](https://en.wikipedia.org/wiki/Reynolds_number)), and immerse solid obstacles. A large selection of examples, notebooks, and tutorials are found in the [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) repository. Here, we will illustrate the basics by simulating and plotting the flow over a circle.
 
-We define the size of the simulation domain as `n` by `m` cells. The circle has radius `m/8` and is centered at `(m/2, m/2)`. The flow boundary conditions are `(U,0)`, where we set `U=1`, and the Reynolds number is `Re=U*(2*radius)/ν` where `ν` (Greek "nu" U+03BD, not Latin lowercase "v") is the kinematic viscosity of the fluid and `2 radius` is the circle diameter.
+We define the size of the simulation domain as `n` by `m` cells. The circle has radius `m/8` and is centered at `(m/2,m/2)`. The flow boundary conditions are `(U,0)`, where we set `U=1`. The Reynolds number `Re=U*(2*radius)/ν` is based on the diameter `2*radius` and the fluid kinematic viscosity `ν` (Greek "nu" U+03BD)
 ```julia
 using WaterLily
 function circle(n,m;Re=100,U=1)
@@ -70,7 +70,7 @@ contourf(u') # transpose the array for the plot
 
 As you can see, the velocity within the circle is zero, the velocity far from the circle is one, and there are accelerated and decelerated regions around the circle. The `sim_step!` has only taken a single time step, and this initial flow around our circle looks similar to the potential flow because the viscous boundary layer has not separated yet.
 
-A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the force on the immersed body. The function is applied over a time range, and the forces are plotted.
+A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the pressure force on the immersed body. Note that `pressure_force` returns the integral of `p n` with the normal `n` pointing out of the body, which is the negative of the force acting on the body, so the drag below comes out negative. The function is applied over a time range, and the forces are plotted.
 ```Julia
 function get_forces!(sim,t)
     sim_step!(sim,t,remeasure=false)
@@ -154,5 +154,4 @@ This will run benchmarks for CPU and GPU backends. If you do not have a GPU, sim
 Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
 
 ## Development goals
- - Multi-CPU/GPU simulations (https://github.com/WaterLily-jl/WaterLily.jl/pull/141)
- - Free-surface physics with ([Volume-of-Fluid](https://github.com/TzuYaoHuang/WaterLily.jl/blob/master/src/Multiphase.jl)) or other methods.
+ - Multi-CPU/GPU simulations (https://github.com/WaterLily-jl/WaterLily.jl/pull/281)
