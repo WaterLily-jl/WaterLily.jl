@@ -1,7 +1,7 @@
 name = "WaterLily"
 uuid = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 authors = ["Gabriel Weymouth <gabriel.weymouth@gmail.com>"]
-version = "1.11.0"
+version = "1.11.1"
 
 [deps]
 AcceleratedKernels = "6a4ca0a5-0e36-4168-a932-d9be78d558f1"
