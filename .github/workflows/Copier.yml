@@ -1,0 +1,80 @@
+name: Copier Update
+
+# Opens a pull request when a new BestieTemplate release changes the files this
+# repository takes from the template. Nothing happens without a new release, or while an
+# earlier update pull request is open, since a new run would overwrite its branch.
+# Files where the release conflicts with WaterLily's own changes keep WaterLily's version
+# and are listed in the pull request, so the template's changes to them are ported by hand.
+# The COPIER_PAT secret (a token with write access to contents, pull requests and
+# workflows) pushes the branch, so the usual checks run on the pull request. The default
+# token cannot push changes to workflow files, so without the secret only releases that
+# leave .github/workflows alone get through.
+
+on:
+  schedule:
+    - cron: 0 7 * * 1 # Mondays at 7:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the update branch
+  pull-requests: write # open the pull request
+
+jobs:
+  open:
+    name: Look for an open update pull request
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.prs.outputs.count }}
+    steps:
+      - id: prs
+        run: | # a failed query fails the job instead of skipping the update
+          count=$(gh pr list -R "$REPO" --head auto-copier-template-update --state open --json number --jq length)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+  copier:
+    needs: open
+    if: needs.open.outputs.count == '0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.COPIER_PAT || github.token }}
+      - name: Hack for setup-python cache # https://github.com/actions/setup-python/issues/807
+        run: touch requirements.txt
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          cache: pip
+          python-version: "3.11"
+      - name: Hack for setup-python cache # https://github.com/actions/setup-python/issues/807
+        run: rm requirements.txt
+      - name: Update from the template
+        run: |
+          pip install copier pre-commit
+          old=$(sed -n 's/^_commit: //p' .github/copier-answers.yml)
+          copier update -a .github/copier-answers.yml --defaults -o rej --exclude README.md --exclude .lychee.toml --exclude test/runtests.jl
+          new=$(sed -n 's/^_commit: //p' .github/copier-answers.yml)
+          echo "Automated update from BestieTemplate $old to $new by the Copier workflow." > /tmp/body.md
+          rejected=$(find . -name '*.rej' -not -path './.git/*' | sed 's|^\./||; s|\.rej$||' | sort)
+          if [ -n "$rejected" ]; then
+            echo -e "\nThe release conflicts with WaterLily's own changes in these files, so they keep WaterLily's version. Port the [template's changes](https://github.com/JuliaBesties/BestieTemplate.jl/compare/$old...$new) to them by hand in this pull request, since later updates will not bring them again:\n" >> /tmp/body.md
+            for f in $rejected; do
+              echo "- \`$f\`" >> /tmp/body.md
+              git checkout HEAD -- "$f"
+              rm "$f.rej"
+            done
+          fi
+          SKIP=no-commit-to-branch pre-commit run -a || true # the hooks format the updated files
+          git diff
+      - name: Create the pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.COPIER_PAT || github.token }}
+          commit-message: Update from BestieTemplate
+          title: "[AUTO] BestieTemplate update"
+          body-path: /tmp/body.md
+          branch: auto-copier-template-update
+          delete-branch: true
+          labels: configuration, automated pr
