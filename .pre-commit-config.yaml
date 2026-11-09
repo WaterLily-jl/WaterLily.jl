@@ -26,7 +26,7 @@ repos:
     rev: v0.43.0
     hooks:
       - id: markdownlint-fix
-        args: [--disable, MD013, MD033, MD041, '--']
+        args: [--disable, MD013, MD024, MD033, MD036, MD041, '--'] # NEWS.md repeats headings per release and uses bold titles
   - repo: https://github.com/citation-file-format/cffconvert
     rev: 054bda51dbe278b3e86f27c890e3f3ac877d616c
     hooks:
