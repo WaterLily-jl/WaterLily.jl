@@ -19,7 +19,8 @@ AddTagBotCI: false
 AddTestCI: false
 AddVSCodeRecommendations: false
 AddWinToCI: false
-Authors: Gabriel Weymouth <gabriel.weymouth@gmail.com>
+Authors: Gabriel Weymouth <gabriel.weymouth@gmail.com>, Bernat Font <bernatfontgarcia@gmail.com>,
+    Marin Lauber <marinlauber@gmail.com>, Tzu-Yao Huang <tzuyao.jason.huang@gmail.com>
 CheckExplicitImports: false
 GitHubActionVersionAutoUpdate: dependabot
 JuliaCompatAutoUpdate: dependabot
