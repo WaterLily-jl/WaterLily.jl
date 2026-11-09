@@ -27,7 +27,9 @@ jobs:
       count: ${{ steps.prs.outputs.count }}
     steps:
       - id: prs
-        run: echo "count=$(gh pr list -R "$REPO" --head auto-copier-template-update --state open --json number --jq length)" >> "$GITHUB_OUTPUT"
+        run: | # a failed query fails the job instead of skipping the update
+          count=$(gh pr list -R "$REPO" --head auto-copier-template-update --state open --json number --jq length)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
