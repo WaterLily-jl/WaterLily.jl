@@ -37,6 +37,5 @@ LocalPreferences.toml
 *.jl.cov
 *.jl.*.cov
 *.jl.mem
-*.rej
-coverage
+/coverage/
 node_modules
