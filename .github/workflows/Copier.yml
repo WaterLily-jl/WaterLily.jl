@@ -1,10 +1,14 @@
 name: Copier Update
 
 # Opens a pull request when a new BestieTemplate release changes the files this
-# repository takes from the template. Nothing happens without a new release.
-# With the COPIER_PAT secret (a token that can push branches and open pull requests)
-# the usual checks run on that pull request; with the default token they do not, and the
-# permissions below are what it needs to push the branch and open the pull request.
+# repository takes from the template. Nothing happens without a new release, or while an
+# earlier update pull request is open, since a new run would overwrite its branch.
+# Files where the release conflicts with WaterLily's own changes keep WaterLily's version
+# and are listed in the pull request, so the template's changes to them are ported by hand.
+# The COPIER_PAT secret (a token with write access to contents, pull requests and
+# workflows) pushes the branch, so the usual checks run on the pull request. The default
+# token cannot push changes to workflow files, so without the secret only releases that
+# leave .github/workflows alone get through.
 
 on:
   schedule:
@@ -16,7 +20,20 @@ permissions:
   pull-requests: write # open the pull request
 
 jobs:
+  open:
+    name: Look for an open update pull request
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.prs.outputs.count }}
+    steps:
+      - id: prs
+        run: echo "count=$(gh pr list -R "$REPO" --head auto-copier-template-update --state open --json number --jq length)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
   copier:
+    needs: open
+    if: needs.open.outputs.count == '0'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -34,12 +51,19 @@ jobs:
       - name: Update from the template
         run: |
           pip install copier pre-commit
-          copier update -a .github/copier-answers.yml --defaults --exclude README.md --exclude .lychee.toml -o rej
-          echo -e "Automated update from BestieTemplate by the Copier workflow.\n" > /tmp/body.md
-          echo -e 'Rejected changes (if any):\n```diff' >> /tmp/body.md
-          find . -name "*.rej" -exec cat {} + >> /tmp/body.md
-          find . -name "*.rej" -delete
-          echo '```' >> /tmp/body.md
+          old=$(sed -n 's/^_commit: //p' .github/copier-answers.yml)
+          copier update -a .github/copier-answers.yml --defaults -o rej --exclude README.md --exclude .lychee.toml --exclude test/runtests.jl
+          new=$(sed -n 's/^_commit: //p' .github/copier-answers.yml)
+          echo "Automated update from BestieTemplate $old to $new by the Copier workflow." > /tmp/body.md
+          rejected=$(find . -name '*.rej' -not -path './.git/*' | sed 's|^\./||; s|\.rej$||' | sort)
+          if [ -n "$rejected" ]; then
+            echo -e "\nThe release conflicts with WaterLily's own changes in these files, so they keep WaterLily's version. Port the [template's changes](https://github.com/JuliaBesties/BestieTemplate.jl/compare/$old...$new) to them by hand in this pull request, since later updates will not bring them again:\n" >> /tmp/body.md
+            for f in $rejected; do
+              echo "- \`$f\`" >> /tmp/body.md
+              git checkout HEAD -- "$f"
+              rm "$f.rej"
+            done
+          fi
           SKIP=no-commit-to-branch pre-commit run -a || true # the hooks format the updated files
           git diff
       - name: Create the pull request
