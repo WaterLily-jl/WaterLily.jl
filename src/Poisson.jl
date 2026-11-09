@@ -203,7 +203,7 @@ L∞(p::Poisson) = maximum(abs,p.r)
 """
     L₁L∞(p::Poisson)
 
-`(L₁(p),L∞(p))`, fused into one AcceleratedKernels reduction on GPUs. The CPU keeps the two Base reductions, which are faster there and do not allocate.
+Returns the L₁(p) and L∞(p) norms of the `p::Poisson` residual `r`.
 """
 L₁L∞(p::Poisson) = L₁L∞(get_backend(p.r),p.r)
 L₁L∞(::CPU,r) = (sum(abs,r),maximum(abs,r))
