@@ -26,7 +26,7 @@ asked.
 | Path | Contents |
 |------|----------|
 | `src/WaterLily.jl` | module, exports, `Simulation`, `sim_step!`, `measure!(sim)`, stubs for extension functions |
-| `src/core.jl` | `@loop`/`@inside`, `loc`, `δ`/`CI`/`CIj`, `inside`/`inside_u`/`slice`/`face`, `BC!`/`perBC!`/`exitBC!`, backend preference, GPU-safe `gradient`/`jacobian`/`derivative` |
+| `src/core.jl` | `@loop`/`@inside`, `loc`, `δ`/`CI`/`CIj`, `inside`/`inside_u`/`slice`/`face`, `BC!`/`perBC!`/`exitBC!`, backend preference, `workgroup`, `zeros_on`/`ones_on`, GPU-safe `gradient`/`jacobian`/`derivative` |
 | `src/Flow.jl` | `Flow`, `mom_step!` and its phases, `conv_diff!`, `BDIM!`, `CFL`, convection schemes, `accelerate!`, `udf!` |
 | `src/Poisson.jl`, `src/MultiLevelPoisson.jl` | pressure solver: smoothers, `residual!`, `solver!`, geometric multigrid with semi-coarsening |
 | `src/Body.jl`, `src/AutoBody.jl`, `src/RigidMap.jl` | `AbstractBody`, `measure!`, `bbox`, `SetBody`, `NoBody`, `AutoBody`, `RigidMap`, `setmap` |
@@ -62,8 +62,10 @@ with the default `"KernelAbstractions"` preference, launched on the backend of t
 bodies must be allocation-free (use `SVector`/`SMatrix`), type-stable and work for any
 dimension (iterate with `for i in 1:n` or `ntuple`, never hard-code an axis). Fuse
 statements that share data into one `@loop` with `;`. Prefer one kernel for every
-backend; add a backend-specific method only where a library does better (e.g. the CUDA
-`perdot` in `ext/WaterLilyCUDAExt.jl`).
+backend; add a backend-specific method only where a library does better (e.g. `perdot`
+and `L₂` in `src/Poisson.jl`: a plain sum on `::CPU`, an AcceleratedKernels `mapreduce` on
+any other `::Backend`). KernelAbstractions 0.10 makes `GPU` an alias of `Backend`, so
+dispatch on `::CPU` and `::Backend`.
 
 ## Types, GPUs and differentiation
 
@@ -77,6 +79,12 @@ backend; add a backend-specific method only where a library does better (e.g. th
 - Derivatives inside the solver use WaterLily's `gradient`, `jacobian` and `derivative`
   (`src/core.jl`) with `SVector` inputs, not raw ForwardDiff: they are safe in GPU kernels
   and when nested.
+- With KernelAbstractions 0.10 the CPU backend is PoCL, which compiles kernels as a GPU
+  does, so everything called inside a kernel (`u0`, `uBC`, body `sdf` and `map`) must be
+  GPU-compatible on the CPU too: isbits captures, no allocation. Allocate fields with
+  `zeros_on(backend,T,dims)` and `ones_on`, which fall back to `Base.zeros` under `"SIMD"`.
+- CUDA.jl 6.5 also exports `update!`: with `using WaterLily, CUDA`, write
+  `WaterLily.update!`.
 
 ## The time step
 
@@ -90,6 +98,9 @@ functions; these are the rules they rely on:
 | `mom_correct!(a,t₁)` | `conv_diff!` of the projected `u`, `udf!`, `accelerate!`, `BDIM!(a,2)` | interior averaged with the predictor, ghosts stale |
 | `mom_project!(a,b,2,t₁)` | as above with `Δt/2`, no `exitBC!` | `u` divergence-free, BCs at `t₁` |
 
+- `mom_step!(a,b;udf,poisson_kwargs,kwargs...)` passes `kwargs` to the `udf` in the
+  predictor and corrector, and `poisson_kwargs` to `solver!` through `mom_project!`; users
+  set them as `sim_step!(sim;poisson_kwargs=(;tol=1e-4,itmx=10))`.
 - Domain BCs are applied only inside `mom_project!`. Code that runs between `BDIM!` and the
   projection (a `udf`, an override) must not read the ghosts of `u`.
 - A `udf` runs before `BDIM!`. It receives the advecting velocity, `force!(flow,u,t)`
@@ -194,7 +205,9 @@ A signature change that still dispatches is the dangerous case. For example, a p
 method `BDIM!(a::MyFlow)` is no longer called by `mom_correct!`, which calls `BDIM!(a,2)`,
 and nothing errors. Keep a cheap compatibility method when it avoids such breaks (as
 `scale_u!` is kept, and tested, although `mom_step!` no longer uses it), and describe
-changes that affect packages in `NEWS.md`.
+changes that affect packages in `NEWS.md`. Likewise, a phase override without
+`kwargs...` still runs with the default empty `poisson_kwargs` and only fails once a user
+sets them, so overrides must accept `kwargs...` and pass them on.
 
 ## Pull requests
 
