@@ -19,7 +19,7 @@
 
 If you have used WaterLily for research, please **cite us**! The [2025 paper](https://doi.org/10.1016/j.cpc.2025.109748) describes the main features of the solver and provides benchmarking, validation, and profiling results.
 
-```
+```bibtex
 @article{WeymouthFont2025,
     author = {G.D. Weymouth and B. Font},
     title = {WaterLily.jl: A differentiable and backend-agnostic Julia solver for incompressible viscous flow around dynamic bodies},
