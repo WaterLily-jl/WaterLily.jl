@@ -192,7 +192,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     function update_data()
         if !pathlines
             f(dat, sim)
-            mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym, s)
+            mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym, shift)
             σ[] = σ_buf
         end
         if body && remeasure
@@ -223,7 +223,6 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     !isnothing(udf) && !isnothing(udf_kwargs) && (@assert all(isa(kw, Pair{Symbol}) for kw in udf_kwargs) "udf_kwargs needs to contain Pair{Symbol,Any} elements, eg. Dict{Symbol,Any}.")
     isnothing(udf) && (udf_kwargs=[])
     isnothing(f) && !pathlines && (f = ω_viz!(d))
-    symb = isnothing(sym) ? nothing : map(abs, sym) # the body SDF is even
 
     isnothing(CIs) && (CIs = CartesianIndices(Tuple(1:n for n in size(inside(sim.flow.σ)))))
     dat = sim.flow.σ[inside(sim.flow.σ)] |> ad_f(sim) |> Array
@@ -235,7 +234,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
             CIs = Tuple(i == cut_dim ? (cut[i]:cut[i]) : CIs.indices[i] for i in 1:D) |> CartesianIndices
         end
         pdims = findall(>(1), size(CIs)) # simulation dims on the plot axes
-        s = WaterLily.stagger(at, D)[pdims]
+        shift = WaterLily.stagger(at, D)[pdims]
         f === ω2D_viz! && !isnothing(sym) && (sym = ntuple(i -> pdims[i]<3 ? -abs(sym[i]) : abs(sym[i]), d)) # ω₃ is odd about x and y
         limits = Tuple((1,n) for n in size(CIs) if n > 1)
         !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (1, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
@@ -251,8 +250,8 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     else
         f(dat, sim)
         slice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
-        σ_buf = similar(dat, mirror_size(slice0, sym, s))
-        mirror_sym!(σ_buf, slice0, sym, s)
+        σ_buf = similar(dat, mirror_size(slice0, sym, shift))
+        mirror_sym!(σ_buf, slice0, sym, shift)
         σ = Observable(σ_buf)
 
         !isnothing(theme) && set_theme!(theme)
@@ -274,11 +273,12 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
             algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
         end
         p = plot_σ_obs!(ax, isnothing(isomesh) ? σ : lift(a -> isosurface_mesh(a, isomesh), σ); kwargs...)
-        translate!(p, (isnothing(sym) ? s : map((sᵢ,m) -> m==0 ? sᵢ : -sᵢ, s, sym))...) # mirrored axes start at the reflected end
+        translate!(p, (isnothing(sym) ? shift : map((sᵢ,m) -> m==0 ? sᵢ : -sᵢ, shift, sym))...) # a mirrored axis drops the sample on the plane, so its shift flips sign
         hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
         hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
     end
 
+    symb = isnothing(sym) ? nothing : map(abs, sym) # the body SDF is even
     if body
         update_body!(dat, sim)
         bslice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
@@ -345,13 +345,13 @@ remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(
 ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 
 """
-    mirror_size(arr, sym, s=0)
+    mirror_size(arr, sym[, shift])
 
 Size of the mirrored array: each dimension `i` with `sym[i] != 0` is doubled, less the sample on the symmetry plane
-if `s[i] != 0`. Returns `size(arr)` if `sym === nothing`.
+if `shift[i] != 0`. Returns `size(arr)` if `sym === nothing`.
 """
-mirror_size(arr::AbstractArray, ::Nothing, s=nothing) = size(arr)
-mirror_size(arr::AbstractArray{T,N}, sym, s=ntuple(_->0,N)) where {T,N} = ntuple(i -> sym[i] != 0 ? 2*size(arr,i) - (s[i] != 0) : size(arr,i), N)
+mirror_size(arr::AbstractArray, ::Nothing, shift=nothing) = size(arr)
+mirror_size(arr::AbstractArray{T,N}, sym, shift=ntuple(_->0,N)) where {T,N} = ntuple(i -> sym[i] != 0 ? 2*size(arr,i) - (shift[i] != 0) : size(arr,i), N)
 
 """
     mirror_sym(arr, sym)
@@ -366,15 +366,15 @@ function mirror_sym(arr::AbstractArray{T,N}, sym) where {T,N}
 end
 
 """
-    mirror_sym!(dst, src, sym, s=0)
+    mirror_sym!(dst, src, sym[, shift])
 
 In-place mirror: fills `dst` from `src` reflected along each dimension `i` where `sym[i] != 0`, and negated where
-`sym[i] < 0`. A sample on the symmetry plane (`s[i] = -1/2`, see [`WaterLily.stagger`](@ref)) is not repeated.
-`dst` must have size `mirror_size(src, sym, s)`. `sym === nothing` does a plain `copyto!`.
+`sym[i] < 0`. A sample on the symmetry plane (`shift[i] = -1/2`, see [`WaterLily.stagger`](@ref)) is not repeated.
+`dst` must have size `mirror_size(src, sym, shift)`. `sym === nothing` does a plain `copyto!`.
 """
-mirror_sym!(dst::AbstractArray, src::AbstractArray, ::Nothing, s=nothing) = copyto!(dst, src)
-function mirror_sym!(dst::AbstractArray{T,N}, src::AbstractArray{S,N}, sym, s=ntuple(_->0,N)) where {T,S,N}
-    Ns = size(src); M = mirror_size(src, sym, s) .- Ns # number of reflected samples along each dim
+mirror_sym!(dst::AbstractArray, src::AbstractArray, ::Nothing, shift=nothing) = copyto!(dst, src)
+function mirror_sym!(dst::AbstractArray{T,N}, src::AbstractArray{S,N}, sym, shift=ntuple(_->0,N)) where {T,S,N}
+    Ns = size(src); M = mirror_size(src, sym, shift) .- Ns # number of reflected samples along each dim
     @inbounds for I in CartesianIndices(dst)
         J = CartesianIndex(ntuple(i -> I[i] <= M[i] ? Ns[i] + 1 - I[i] : I[i] - M[i], N))
         dst[I] = prod(i -> I[i] <= M[i] ? sign(sym[i]) : 1, 1:N) * src[J]

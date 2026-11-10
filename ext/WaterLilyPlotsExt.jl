@@ -13,7 +13,7 @@ Plot a filled contour plot of the 2D array `f`, which must be a CPU array (host 
 
 Keyword arguments:
     - `shift::Tuple`: Offset of the plotted coordinates relative to the array indices, in units of
-        cells. Defaults to `(-0.5,-0.5)` since `f` is assumed to live on cell edges (e.g. `curl`);
+        cells. Defaults to `(-0.5,-0.5)` since `f` is assumed to live on cell corners (e.g. `curl` in 2D);
         pass `(0.,0.)` for cell-centered data (e.g. pressure or `ω`).
     - `cfill`: Colormap passed to `Plots.contourf` as `color`.
     - `clims::Tuple`: `(min,max)` values to clamp `f` to before plotting. Defaults to (-5,5).

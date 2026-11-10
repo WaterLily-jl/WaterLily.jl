@@ -16,8 +16,8 @@ pvd_collection(fname;append=false) = paraview_collection(fname;append=append)
 
 Generates a `VTKWriter` that hold the collection name to which the `vtk` files are written.
 The default attributes that are saved are the `Velocity` and the `Pressure` fields.
-Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword. Fields are written as cell data,
-or as point data for an attribute `func=>:corner` at the cell corners (see `WaterLily.stagger`).
+Custom attributes can be passed to the `attrib` keyword as a `Dict` of `name=>func`, written as cell data,
+or `name=>(func=>:corner)`, written as point data at the cell corners (see `WaterLily.stagger`).
 """
 struct VTKWriter
     fname         :: String
@@ -55,7 +55,7 @@ function save!(w::VTKWriter, a::AbstractSimulation)
     vtk = vtk_grid(w.dir_name*@sprintf("/%s_%06i", w.fname, k), [0.5:n+0.5 for n in N]...) # cell I centered at I
     for (name,attr) in w.output_attrib
         func,at = attr isa Pair ? attr : (attr,:center)
-        loc,data = vtk_data(func(a),at,N); vtk[name,loc] = data
+        kind,data = vtk_data(func(a),at,N); vtk[name,kind] = data
     end
     vtk_save(vtk); w.count[1]=k+1
     w.collection[round(sim_time(a),digits=4)]=vtk
@@ -68,9 +68,8 @@ corners, the only locations `at` in a `vti` image. Vector components go first.
 """
 function vtk_data(a,at,N)
     ndims(a)>length(N) && (a = components_first(a))
-    s = WaterLily.stagger(at,length(N))
-    all(iszero,s) && return VTKCellData(),a
-    all(!iszero,s) || throw(ArgumentError("no $at location in a vti image"))
+    at==:center && return VTKCellData(),a
+    all(!iszero,WaterLily.stagger(at,length(N))) || throw(ArgumentError("no $at location in a vti image"))
     b = zeros(eltype(a), size(a)[1:end-length(N)]..., (N.+1)...); b[CartesianIndices(a)] .= a
     return VTKPointData(),b
 end

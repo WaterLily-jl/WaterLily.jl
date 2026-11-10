@@ -2,23 +2,21 @@ using ReadVTK, WriteVTK, JLD2
 
 function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)
     body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
-    D==2 && return Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
-    Simulation(radius.*(6,4,1),(1,0,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
+    Simulation(radius.*(6,4,1)[1:D],(1,0,0)[1:D],radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
 @testset "VTKExt.jl" begin
     for D ∈ [2,3], mem ∈ arrays
         # make a simulation
         sim = sphere_sim(;D,mem);
-        # make a vtk writer, with the curl at the cell corners in 2D
-        curl3(sim) = (a = sim.flow.σ; @inside a[I] = WaterLily.curl(3,I,sim.flow.u); Array(a))
-        attrib = D==2 ? merge(default_attrib(), Dict("curl"=>curl3=>:corner)) : default_attrib()
-        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR",attrib)
+        # make a vtk writer, also writing the pressure at the cell corners to check the layout
+        pc(sim) = Array(sim.flow.p)
+        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR",attrib=merge(default_attrib(),Dict("pc"=>pc=>:corner)))
         sim_step!(sim,1); save!(wr, sim); close(wr)
         # fields are cell data, and point data padded to N+1 points at the corners
         vtk = VTKFile("TEST_DIR/test_vtk_reader_$(D)_000000.vti")
         @test issubset(("Pressure","Velocity"), keys(get_cell_data(vtk)))
-        D==2 && @test WaterLily.squeeze(get_data_reshaped(get_point_data(vtk)["curl"]))[1:end-1,1:end-1] == curl3(sim)
-        @test_throws ArgumentError save!(vtkWriter("test_vtk_bad";dir="TEST_DIR",attrib=Dict("u"=>curl3=>(:face,1))), sim)
+        @test WaterLily.squeeze(get_data_reshaped(get_point_data(vtk)["pc"]))[CartesianIndices(sim.flow.p)] == pc(sim)
+        @test_throws ArgumentError save!(vtkWriter("test_vtk_bad";dir="TEST_DIR",attrib=Dict("u"=>pc=>(:face,1))), sim)
 
         # re start the sim from a paraview file
         restart = sphere_sim(;D,mem);

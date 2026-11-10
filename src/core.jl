@@ -182,9 +182,8 @@ Using `i=0` returns the cell center s.t. `loc = I`. `T` sets the return number t
 Offset in cells from the cell center to the location `at`: `:center` (eg. `p`, `ω`),
 `(:face,i)` (eg. `u[I,i]`), `(:edge,i)` (eg. `curl(i,I,u)`, the corner in 2D) or `:corner`.
 """
-stagger(at,D) = ntuple(j->shifted(at,j) ? -0.5 : 0.,D)
-shifted(at::Symbol,j) = at==:corner ? true : at==:center ? false : throw(ArgumentError("unknown location $at"))
-shifted((at,i)::Tuple,j) = at==:face ? j==i : at==:edge ? j!=i : throw(ArgumentError("unknown location $at"))
+stagger(at::Symbol,D) = at==:center ? ntuple(_->0.,D) : at==:corner ? ntuple(_->-0.5,D) : throw(ArgumentError("unknown location $at"))
+stagger((at,i)::Tuple,D) = at==:face ? .-δ(i,Val(D)).I./2 : at==:edge ? (δ(i,Val(D)).I.-1)./2 : throw(ArgumentError("unknown location $at"))
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """
