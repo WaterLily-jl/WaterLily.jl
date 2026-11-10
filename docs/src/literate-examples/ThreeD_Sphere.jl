@@ -38,7 +38,7 @@ using WaterLily, CairoMakie
 
 # ### The geometry
 #
-# A sphere is the same one-line distance function as a circle — ``|x - c| - r`` does not care how
+# A sphere is the same one-line distance function as a circle: ``|x - c| - r`` does not care how
 # many components `x` has. This is the whole of the 2D-to-3D change in the setup.
 
 function sphere(L = 2^4; Re = 250, U = 1, mem = Array, T = Float32)
@@ -158,7 +158,7 @@ end
 coarse = run_drag(2^3)
 
 # The experimental drag coefficient of a sphere at ``Re=250`` is about ``0.7``. Both of these grids
-# are too coarse to get there, and the gap between them tells you so — that is the useful
+# are too coarse to get there, and the gap between them tells you so, and that is the useful
 # information. The resolution at which the two agree to within a percent or so is the resolution
 # you should be running, and for this flow it is nearer 32 cells per diameter than 16.
 #
@@ -167,7 +167,7 @@ coarse = run_drag(2^3)
 # 3D is where the grid cost bites: going from 16 to 32 cells across the sphere multiplies the work
 # by eight. WaterLily uses
 # [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl), so the same code runs
-# on a GPU with one keyword — every example on these pages takes a `mem` argument for exactly this
+# on a GPU with one keyword. Every example on these pages takes a `mem` argument for exactly this
 # reason.
 #
 # ```julia
@@ -176,7 +176,7 @@ coarse = run_drag(2^3)
 # sim_step!(sim, 10; remeasure = false)
 # ```
 #
-# That is a ``192 \times 128 \times 128`` grid — over three million cells, and a simulation that is
+# That is a ``192 \times 128 \times 128`` grid: over three million cells, and a simulation that is
 # still comfortable on a single GPU. Two things to keep in mind:
 #
 #  - the flow arrays now live in device memory. The metrics (`pressure_force` and friends) return

@@ -5,25 +5,20 @@ reset_timer!(dto)
 
 const liveserver = "liveserver" in ARGS
 
-if liveserver
-    using Revise
-    @timeit dto "Revise.revise()" Revise.revise()
-end
-
 # Headless GR: write plots to file without opening a window
 ENV["GKSwstype"] = "100"
 
 using Documenter, DocumenterVitepress, WaterLily, Plots, StaticArrays
 using JLD2, ReadVTK, WriteVTK
+import CairoMakie # `import`, so that its exports do not clash with those of Plots
 
 # Parts of the API live in package extensions, and only exist once the corresponding package
 # is loaded. Load them here so that their docstrings are documented and checked too.
 const EXTENSIONS = map(
     ext -> Base.get_extension(WaterLily, ext),
-    [:WaterLilyPlotsExt, :WaterLilyWriteVTKExt, :WaterLilyReadVTKExt, :WaterLilyJLD2Ext],
+    [:WaterLilyPlotsExt, :WaterLilyMakieExt, :WaterLilyWriteVTKExt, :WaterLilyReadVTKExt,
+     :WaterLilyJLD2Ext],
 )
-
-const is_ci = haskey(ENV, "GITHUB_ACTIONS")
 
 # DocumenterVitepress 0.3.9 renders a `LocalLink` -- a link to a file in the docs that is not
 # itself a page, such as the `.jl` script and `.ipynb` notebook Literate links at the top of
@@ -88,8 +83,9 @@ include("generate.jl")
     sitename = "WaterLily.jl",
     draft = liveserver,
     # In draft mode the examples are not executed and the scripts/notebooks are not written,
-    # so the links to them (and to the figures they produce) cannot resolve locally.
-    warnonly = is_ci ? false : [:cross_references],
+    # so the links to them (and to the figures they produce) cannot resolve. A full build,
+    # local or on CI, is strict.
+    warnonly = liveserver ? [:cross_references] : false,
     pages = Any[
         "Home" => "index.md",
         "About" => "about.md",
@@ -135,16 +131,19 @@ const MD_DIR = joinpath(@__DIR__, "build", ".documenter")
 const BASES_FILE = joinpath(@__DIR__, "build", "bases.txt")
 
 if !liveserver && isfile(BASES_FILE)
-    @timeit dto "copy scripts and notebooks" for (i, _) in enumerate(eachline(BASES_FILE)),
-            (root, _, files) in walkdir(MD_DIR),
-            file in files
-        endswith(file, ".jl") || endswith(file, ".ipynb") || continue
-        # the Literate sources themselves are not part of the site
-        contains(root, "literate-") && continue
-        src = joinpath(root, file)
-        dst = joinpath(@__DIR__, "build", string(i), relpath(src, MD_DIR))
-        mkpath(dirname(dst))
-        cp(src, dst; force = true)
+    @timeit dto "copy scripts and notebooks" begin
+        downloads = String[]
+        for (root, _, files) in walkdir(MD_DIR), file in files
+            endswith(file, ".jl") || endswith(file, ".ipynb") || continue
+            src = relpath(joinpath(root, file), MD_DIR)
+            # the Literate sources themselves are not part of the site
+            startswith(src, "literate-") || push!(downloads, src)
+        end
+        for (i, _) in enumerate(eachline(BASES_FILE)), src in downloads
+            dst = joinpath(@__DIR__, "build", string(i), src)
+            mkpath(dirname(dst))
+            cp(joinpath(MD_DIR, src), dst; force = true)
+        end
     end
 end
 

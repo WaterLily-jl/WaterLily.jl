@@ -43,7 +43,7 @@ using WaterLily, Plots
 # ### A time-varying inflow
 #
 # The profile below ramps the velocity up linearly at rate `a₀` and then smoothly levels it
-# off at ``u = U`` using a `tanh` blend — a constant-acceleration start followed by a
+# off at ``u = U`` using a `tanh` blend: a constant-acceleration start followed by a
 # constant-velocity tow, which is the classic experimental protocol. Only the streamwise
 # component is non-zero; every other component returns `zero(T)`.
 #
@@ -75,7 +75,7 @@ plot(ts, [sim.flow.uBC(1, (0.0f0, 0.0f0), Float32(t * sim.L / sim.U)) for t in t
 # ### Running it
 #
 # Because the boundary condition is time dependent the flow is never steady in the mean, and
-# the vorticity scale changes a lot between the start and the fully developed wake — hence the
+# the vorticity scale changes a lot between the start and the fully developed wake, hence the
 # wider colour limits.
 
 R = inside(sim.flow.p)
@@ -88,7 +88,7 @@ end
 gif(anim, "TwoD_SlowStartCircle.gif", fps = 24)
 nothing #hide
 
-# The early wake is a symmetric pair of counter-rotating vortices growing behind the body —
+# The early wake is a symmetric pair of counter-rotating vortices growing behind the body,
 # the "starting vortex" of classical aerodynamics. That state is unstable, and after a few
 # convective times it buckles into the familiar alternating street. Increasing `a₀` makes the
 # start more abrupt and the transition earlier; taking `a₀` small enough recovers the

@@ -4,8 +4,8 @@ CurrentModule = WaterLily
 
 # Flow and time stepping
 
-A [`Flow`](@ref) holds the primary variables — the face-centred velocity `u` and the
-cell-centred pressure `p` — along with the immersion kernel moments measured from the
+A [`Flow`](@ref) holds the primary variables (the face-centred velocity `u` and the
+cell-centred pressure `p`) along with the immersion kernel moments measured from the
 [body](bodies.md) and the time-step history `Δt`.
 
 [`mom_step!`](@ref) is the integrator: a two-stage fractional step, each stage computing

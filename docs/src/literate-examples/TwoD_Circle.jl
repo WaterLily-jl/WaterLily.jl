@@ -2,9 +2,9 @@
 #
 # ![](TwoD_Circle.gif)
 #
-# *Figure 1*: Vorticity ``\omega L/U`` behind a circular cylinder at ``Re=250``. Red is
-# counter-clockwise rotation, blue is clockwise, and the black line is the zero contour of
-# the body's signed distance function.
+# *Figure 1*: Vorticity ``\omega L/U`` behind a circular cylinder at ``Re=UR/\nu=250``, based
+# on the radius ``R`` (``Re_D=500`` on the diameter). Red is counter-clockwise rotation, blue
+# is clockwise, and the black line is the zero contour of the body's signed distance function.
 #
 #-
 #md # !!! tip
@@ -15,7 +15,7 @@
 # ## Introduction
 #
 # This is the "Hello, world!" of WaterLily: the flow over a circular cylinder, the problem
-# every immersed-boundary solver is measured against. Above ``Re \approx 50`` the wake
+# every immersed-boundary solver is measured against. Above ``Re_D \approx 50`` the wake
 # becomes unstable and sheds vortices alternately from each side, producing the von Kármán
 # vortex street in the figure and an oscillating side force on the body.
 #
@@ -49,12 +49,13 @@ using WaterLily, Plots
 # circle of radius `r` centred at `c` that is simply ``|x-c| - r``.
 #
 # `AutoBody` wraps the distance function and uses automatic differentiation to work out
-# everything else it needs — the surface normal and, if the body moves, its velocity. You
+# everything else it needs: the surface normal and, if the body moves, its velocity. You
 # never have to supply a mesh, a panel distribution or a normal vector.
 #
 # Note the length and velocity *scales* passed to `Simulation`: WaterLily is
 # non-dimensional, so the viscosity is set as `ν = U*L/Re` and all times reported by
-# [`sim_time`](@ref) are in units of ``L/U``.
+# [`sim_time`](@ref) are in units of ``L/U``. Here the length scale `L` is the *radius*, so
+# `Re=250` is ``Re_D=500`` based on the diameter, the convention most reference data uses.
 
 function circle(n, m; Re = 250, U = 1, mem = Array, T = Float32)
     radius, center = m / 8, m / 2
@@ -100,13 +101,13 @@ u_shoulder = sim.flow.u[c, c + round(Int, sim.L) + 1, 1] # just above the top of
 # ### Stepping the flow forward
 #
 # [`sim_step!`](@ref)`(sim, t)` advances the simulation until `sim_time(sim) ≥ t`, taking as
-# many internal time steps as the CFL condition requires — you control the *output* interval
+# many internal time steps as the CFL condition requires, so you control the *output* interval
 # and WaterLily controls the time step. Because this body never moves we pass
 # `remeasure=false`, which skips re-measuring the geometry each step.
 #
 # Between steps we compute the vorticity ``\omega = \nabla \times u`` into the scratch array
-# `sim.flow.σ` with the [`@inside`](@ref) macro — WaterLily's loop over the interior cells of
-# an array — and flood-plot it. `inside(sim.flow.p)` is the range of cells excluding the
+# `sim.flow.σ` with the [`@inside`](@ref) macro (WaterLily's loop over the interior cells of
+# an array) and flood-plot it. `inside(sim.flow.p)` is the range of cells excluding the
 # ghost cells at the domain edge.
 
 # We record the force at the same time, so one pass through the flow gives both the animation
@@ -150,13 +151,16 @@ plot(times, [first.(forces) last.(forces)], labels = ["drag" "lift"],
 # cylinder sideways once but fore-and-aft twice per cycle.
 #
 # The mean drag is the standard number to validate against. `sim.L` here is the cylinder
-# *radius*, so halving converts to the usual diameter-based coefficient:
+# *radius*, so halving converts to the usual diameter-based coefficient, to be compared at the
+# diameter-based ``Re_D=500``:
 
 settled = first.(forces)[length(forces) ÷ 2:end]
-"Cd (diameter-based) = $(round(sum(settled) / length(settled) / 2, digits = 3))   (measured at Re=250: about 1.2)"
+"Cd (diameter-based) = $(round(sum(settled) / length(settled) / 2, digits = 3))   (measured at Re_D=500: about 1.1 to 1.2)"
 
-# Within a few percent of the measured value, on a grid this coarse. Raising the resolution and
-# running longer tightens up both this and the Strouhal number.
+# That is in the range of the measured values, on a grid this coarse, although the agreement is
+# partly fortunate: this is the pressure drag alone, and a 2D simulation has none of the
+# three-dimensional wake that a real cylinder develops at this Reynolds number. Raising the
+# resolution and running longer tightens up both this and the Strouhal number.
 #
 # ### Where to go from here
 #

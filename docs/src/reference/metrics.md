@@ -9,7 +9,7 @@ These are the functions that turn a flow field into a number. Most are *cell-wis
 inside an [`@inside`](@ref) loop writing into a scratch array (usually `sim.flow.σ`), which is
 the pattern every example on these pages uses.
 
-The forces and moments are the exception — they integrate over the immersed surface and return a
+The forces and moments are the exception: they integrate over the immersed surface and return a
 vector directly.
 
 See [Flow over a circle](@ref examples-TwoD_Circle) for force measurement,
@@ -26,7 +26,8 @@ to apply the no-slip condition. `pressure_force(sim)` and friends take the force
 Modules = [WaterLily]
 Pages   = ["Metrics.jl"]
 Filter  = f -> nameof(f) in (:pressure_force, :viscous_force, :total_force,
-    :pressure_moment, :viscous_moment, :total_moment, :nds)
+    :pressure_moment, :viscous_moment, :total_moment, :total_force_and_moment, :nds, :τ,
+    :sumdims)
 Order   = [:function]
 ```
 
@@ -43,11 +44,15 @@ Order   = [:function]
 
 ## Time averaging
 
+A [`MeanFlow`](@ref) accumulates the running mean of the pressure and the velocity as the
+simulation steps and, with `uu_stats=true`, of the velocity products ``u_i u_j`` too, from which
+`uu` returns the Reynolds stresses.
+
 ```@autodocs
 Modules = [WaterLily]
 Pages   = ["Metrics.jl"]
 Filter  = f -> !(f isa Function) || !(nameof(f) in (:pressure_force, :viscous_force,
-    :total_force, :pressure_moment, :viscous_moment, :total_moment, :nds, :ke, :∂, :S,
-    :curl, :ω, :ω_mag, :ω_θ, :λ₂, :helicity, :shiftDir))
+    :total_force, :pressure_moment, :viscous_moment, :total_moment, :total_force_and_moment,
+    :nds, :τ, :sumdims, :ke, :∂, :S, :curl, :ω, :ω_mag, :ω_θ, :λ₂, :helicity, :shiftDir))
 Order   = [:type, :function, :macro, :constant]
 ```

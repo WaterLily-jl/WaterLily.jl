@@ -12,7 +12,7 @@ and [`inside`](@ref) gives the range of real (non-ghost) cells.
 
 Everything in the solver is written with [`@loop`](@ref) and [`@inside`](@ref), which expand to
 KernelAbstractions kernels. That is what makes the same source run serially, multi-threaded, or
-on a GPU — write your own metrics and body functions the same way and they will too.
+on a GPU. Write your own metrics and body functions the same way and they will too.
 
 [`BC!`](@ref) applies the domain boundary conditions each stage: a Dirichlet condition on the
 normal velocity and a Neumann condition on the tangential components, with periodic directions
@@ -23,7 +23,7 @@ and a convective exit handled by [`perBC!`](@ref) and [`exitBC!`](@ref).
 ```@autodocs
 Modules = [WaterLily]
 Pages   = ["core.jl"]
-Filter  = f -> nameof(f) in (:loc, :inside, :inside_u, :slice, :δ, :CIj)
+Filter  = f -> nameof(f) in (:loc, :inside, :inside_u, :slice, :face, :δ, :CIj)
 Order   = [:function]
 ```
 
@@ -44,12 +44,25 @@ Filter  = f -> nameof(f) in (:BC!, :perBC!, :exitBC!)
 Order   = [:function]
 ```
 
-## Logging
+## Backends
+
+The kernel launch configuration, and arrays allocated on the backend of a simulation.
 
 ```@autodocs
 Modules = [WaterLily]
 Pages   = ["core.jl"]
-Filter  = f -> !(f isa Function) || !(nameof(f) in (:loc, :inside, :inside_u, :slice, :δ,
-    :CIj, :BC!, :perBC!, :exitBC!))
+Filter  = f -> nameof(f) in (:workgroup, :zeros_on)
+Order   = [:function]
+```
+
+## Logging
+
+[`logger`](@ref) records the residuals and iteration counts of every pressure solve to a file.
+
+```@autodocs
+Modules = [WaterLily]
+Pages   = ["core.jl"]
+Filter  = f -> !(f isa Function) || !(nameof(f) in (:loc, :inside, :inside_u, :slice, :face,
+    :δ, :CIj, :BC!, :perBC!, :exitBC!, :workgroup, :zeros_on))
 Order   = [:type, :function, :constant]
 ```

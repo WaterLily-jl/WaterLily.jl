@@ -27,7 +27,7 @@
 #  - the **initial condition** `u0`, a function `u0(i, x)` giving the ``i``-th velocity
 #    component at position `x`. Until now every example started from a uniform stream, which is
 #    what WaterLily infers from the boundary condition when `u0` is not given.
-#  - going from 2D to 3D, which — as you will see — changes the code almost not at all. The
+#  - going from 2D to 3D, which (as you will see) changes the code almost not at all. The
 #    arrays grow a dimension, [`@inside`](@ref) loops over three indices instead of two, and
 #    vorticity becomes a vector rather than a scalar. Everything else is identical.
 #
@@ -54,7 +54,7 @@ using WaterLily, Plots
 # Notice that the normal velocity vanishes on all six faces of the cube: ``u_x = 0`` at
 # ``x = 0, L`` and so on. The free-slip, impermeable box WaterLily gives us with a `(0,0,0)`
 # boundary condition is therefore exactly equivalent, by symmetry, to the periodic problem the
-# reference data is computed for — no periodic directions needed.
+# reference data is computed for, with no periodic directions needed.
 
 function TGV(L; Re = 1600, U = 1, T = Float32, mem = Array)
     κ, U = T(π / L), T(U)
@@ -69,8 +69,8 @@ end
 
 sim = TGV(2^5);
 
-# A cube of ``32^3`` cells at ``Re=1600`` is under-resolved — the reference spectral solutions
-# use ``512^3`` — but it reproduces the qualitative behaviour and the position of the dissipation
+# A cube of ``32^3`` cells at ``Re=1600`` is under-resolved (the reference spectral solutions
+# use ``512^3``), but it reproduces the qualitative behaviour and the position of the dissipation
 # peak, and it keeps this page buildable. Increase to `2^6` or `2^7` and, since a 3D simulation
 # gets expensive quickly, move it to a GPU with `mem=CuArray`.
 #
@@ -111,7 +111,7 @@ end
 
 # ### Running it
 #
-# One pass through time produces both the animation and the history — there is no reason to run a
+# One pass through time produces both the animation and the history; there is no reason to run a
 # 3D simulation twice.
 
 times = range(0, 10; step = 0.1)
@@ -131,7 +131,7 @@ p2 = plot(times, last.(history), xlabel = "tU/L", ylabel = "Ω L²/U²", legend 
 plot(p1, p2, layout = (1, 2), size = (800, 350))
 
 # The enstrophy peaks around ``tU/L \approx 3``, which is where the vortex sheets have rolled up
-# into the finest structures the grid can carry and the dissipation is largest — the feature the
+# into the finest structures the grid can carry and the dissipation is largest. That is the feature the
 # reference data pins down. At this resolution the peak is too low and too late; refining the grid
 # moves it towards the published value, and that convergence is the actual test.
 

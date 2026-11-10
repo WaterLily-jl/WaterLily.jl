@@ -1,8 +1,5 @@
 #!/usr/bin/env julia
 
-# Root of the repository
-const repo_root = dirname(@__DIR__)
-
 # Make sure docs environment is active and instantiated. `resolve` makes an existing Manifest
 # pick up the `[sources]` entry in Project.toml, which points WaterLily at this checkout.
 import Pkg

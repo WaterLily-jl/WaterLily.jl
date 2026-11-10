@@ -16,7 +16,7 @@
 # machinery immerses many *separate* bodies: the union of a collection of distance functions
 # is their pointwise minimum, and `∪` (equivalently `+`) is exactly that. Because the
 # combination is a lazy binary tree of `SetBody`s, `sum` over a collection of bodies just
-# works, and there is no practical limit to how many you add — the cost is one distance
+# works, and there is no practical limit to how many you add: the cost is one distance
 # evaluation per body per near-surface cell.
 #
 # That raises a question the single-body examples did not: when the force on *one* of the
@@ -38,7 +38,7 @@ Random.seed!(1234) #hide
 #
 # Six circles with random centres and radii, summed into a single body. `sum` folds the
 # collection with `+`, which is `∪`, so the resulting distance function is the minimum over
-# all six — the distance to the *nearest* body, which is what the immersion kernel needs.
+# all six, that is the distance to the *nearest* body, which is what the immersion kernel needs.
 
 function cloud(n, m; Re = 550, U = 1, mem = Array, T = Float32)
     R, x₀ = m ÷ 18, m ÷ 2
@@ -93,7 +93,7 @@ each_force(flow, body::WaterLily.SetBody{typeof(min)}) =
 
 f_each = each_force(sim.flow, sim.body)
 
-# The columns sum back to the net force, as they must — the surface integral is additive:
+# The columns sum back to the net force, as they must, because the surface integral is additive:
 
 vec(sum(f_each, dims = 2)) ≈ f_total
 

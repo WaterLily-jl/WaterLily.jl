@@ -45,12 +45,12 @@ using WaterLily, StaticArrays, Plots
 # ### A square as an intersection of planes
 #
 # The signed distance to a plane through `center` with unit `normal` is just the projection
-# of the offset onto the normal — positive on the side the normal points to. The region where
+# of the offset onto the normal, positive on the side the normal points to. The region where
 # all four of our planes return a negative distance is the inside of the square, and the
 # distance function of an intersection is the `max` of the parts, which is what `∩` builds.
 #
 # The `map` subtracts a fixed offset, placing the square's own origin at ``(2L, 2L)`` in the
-# domain. Note it is applied to each plane separately — set operations compose bodies, so each
+# domain. Note it is applied to each plane separately: set operations compose bodies, so each
 # half can carry its own mapping.
 
 function make_sim(; L = 2^5, U = 1, Re = 250, mem = Array, T = Float32)
@@ -73,7 +73,7 @@ sim = make_sim();
 
 # ### Checking the geometry
 #
-# It is worth *looking* at a constructed distance function before running anything with it —
+# It is worth *looking* at a constructed distance function before running anything with it:
 # a wrong sign or a missing normalisation shows up immediately. `measure_sdf!` fills an array
 # with ``d(x)`` for the whole domain; the zero contour is the surface.
 
@@ -83,7 +83,7 @@ flood(sim.flow.σ[R]; clims = (-2sim.L, 2sim.L), levels = 20, legend = false)
 body_plot!(sim)
 
 # The distance field is exact outside the square and inside the four quadrant corners, and
-# only approximate in the corner regions where `max` picks the wrong plane — harmless here,
+# only approximate in the corner regions where `max` picks the wrong plane. That is harmless here,
 # since the immersion kernel only uses ``d`` within a couple of cells of the surface.
 #
 # ### Running it
@@ -104,7 +104,7 @@ nothing #hide
 
 WaterLily.pressure_force(sim) ./ (0.5 * sim.L * sim.U^2)
 
-# Try `-` instead of `∩` to cut one shape out of another, or `+` to glue shapes together —
+# Try `-` instead of `∩` to cut one shape out of another, or `+` to glue shapes together;
 # the [next example](@ref examples-TwoD_MultipleBodies) uses the latter to immerse a whole
 # cloud of bodies at once.
 

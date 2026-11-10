@@ -14,7 +14,7 @@
 # ## Introduction
 #
 # Oscillating flow over a cylinder is the canonical model problem for wave loading on a
-# structure, and it is governed by the Keulegan–Carpenter number ``KC = U T / D`` — how far the
+# structure, and it is governed by the Keulegan–Carpenter number ``KC = U T / D``, how far the
 # fluid travels in one period compared to the body size. For small ``KC`` the vorticity shed in
 # one half cycle never escapes and is re-ingested in the next, which is why the wake looks
 # nothing like a vortex street.
@@ -31,7 +31,7 @@
 # ```
 #
 # where `g(i, x, t)` returns the ``i``-th component of ``du_i/dt``. This example also
-# introduces `perdir`, which makes a domain direction **periodic** instead of inflow/outflow —
+# introduces `perdir`, which makes a domain direction **periodic** instead of inflow/outflow,
 # the natural choice when the mean flow is zero and there is no "upstream".
 #
 # ## Commented program
@@ -67,7 +67,7 @@ sim = circle(2^7, 2^7);
 
 # ### Running it
 #
-# Nothing about the time loop changes — a body force is part of the momentum equation, not
+# Nothing about the time loop changes: a body force is part of the momentum equation, not
 # something you have to drive by hand. We suppress the tiny residual vorticity before plotting
 # so that the quiescent fluid stays white rather than speckled.
 
@@ -86,7 +86,7 @@ nothing #hide
 #
 # The force on the body is the quantity of engineering interest, and in oscillating flow it
 # splits into a drag component in phase with the velocity and an inertia component in phase
-# with the acceleration — Morison's equation. Here we just record the in-line pressure force
+# with the acceleration (Morison's equation). Here we just record the in-line pressure force
 # over a couple of periods, against the driving acceleration.
 
 function inline_force!(sim, t)

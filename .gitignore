@@ -12,7 +12,6 @@ LocalPreferences.toml
 /docs/src/gallery/*
 !/docs/src/gallery/index.md
 /docs/src/assets/*
-!/docs/src/assets/README.md
 
 # gfx
 *.png

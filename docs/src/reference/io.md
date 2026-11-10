@@ -9,7 +9,7 @@ corresponding package is loaded.
 
 - **ParaView** (`using WriteVTK`): `vtkWriter` opens a `.pvd` collection and `save!` appends the
   current state as a time step, giving a file ParaView can animate. Which fields are written is
-  controlled by the `attrib` dictionary — see `default_attrib`. `using ReadVTK` adds the matching
+  controlled by the `attrib` dictionary (see `default_attrib`). `using ReadVTK` adds the matching
   `load!`, for restarting from a written collection.
 - **Checkpoints** (`using JLD2`): `save!` and `load!` on a `Flow` or a `MeanFlow` write and read
   the raw arrays, which is the cheaper way to restart a run that you do not need to visualise.
