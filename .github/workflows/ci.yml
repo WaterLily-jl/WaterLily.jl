@@ -81,6 +81,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        # DocumenterVitepress reads the git tags to decide whether a release is the newest one,
+        # and therefore also gets the `stable` alias. A shallow clone has no tags, so a backport
+        # release (e.g. v1.10.1 after v2.0.0) would otherwise overwrite `stable`.
+        with:
+          fetch-depth: 0
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
