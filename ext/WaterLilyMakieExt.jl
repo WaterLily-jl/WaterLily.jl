@@ -236,8 +236,9 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         pdims = findall(>(1), size(CIs)) # simulation dims on the plot axes
         shift = WaterLily.stagger(at, D)[pdims]
         f === ω2D_viz! && !isnothing(sym) && (sym = ntuple(i -> pdims[i]<3 ? -abs(sym[i]) : abs(sym[i]), d)) # ω₃ is odd about x and y
-        limits = Tuple((1,n) for n in size(CIs) if n > 1)
-        !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (1, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
+        lo = d==3 ? 0 : 1 # a volume spans (0,n) with voxel k at k-0.5, a contourf spans (1,n)
+        limits = Tuple((lo,n) for n in size(CIs) if n > 1)
+        !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (lo, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
         if isnothing(fig_size)
             fig_size = (1200, 1200)
             d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))

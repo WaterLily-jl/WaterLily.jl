@@ -11,7 +11,7 @@ Triangulate the `level` set of the 3D array `a` with marching cubes and return i
 which can be rendered with Makie.mesh. The mesh is empty if `a` does not cross `level`.
 """
 function isosurface_mesh(a::Array{T,3}, level) where T
-    ranges = range.((0, 0, 0), size(a))
+    ranges = range.(0.5, size(a) .- 0.5) # sample k at k-0.5, the voxel centers of Makie.volume
     points, faces = Meshing.isosurface(a, Meshing.MarchingCubes(iso=T(level)), ranges...)
     GeometryBasics.Mesh(Point3.(points), GLTriangleFace.(faces))
 end
