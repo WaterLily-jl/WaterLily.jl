@@ -199,13 +199,14 @@ using StaticArrays
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`. `T` sets the return number type.
 """
-@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- T(1.5) .- δ(i,I).I ./T(2))
+@inline loc(i,I::CartesianIndex{N},T=Float32) where N = SVector{N,T}(I.I .- T(1.5) .+ stagger(i,N,T))
 @inline loc(Ii::CartesianIndex,T=Float32) = loc(last(Ii),Base.front(Ii),T)
 """
-    stagger(at,D)
+    stagger(at,D,T=Float64)
 
 Offset in cells from the cell center to the location `at`. Of the faces, edges or corners of cell `I`,
-it is the one at the lower end, where `a[I]` is stored (as in `loc`).
+it is the one at the lower end, where `a[I]` is stored (as in `loc`). `loc` and `interp` use the integer
+form `stagger(i,D,T)`, the face `i` or the center for `i=0`.
 
 | `at`        | eg.           | 2D            | 3D                 |
 |:------------|:--------------|:--------------|:-------------------|
@@ -215,8 +216,9 @@ it is the one at the lower end, where `a[I]` is stored (as in `loc`).
 | `(:edge,1)` | `curl(1,I,u)` |               | `(0,-0.5,-0.5)`    |
 | `:corner`   |               | `(-0.5,-0.5)` | `(-0.5,-0.5,-0.5)` |
 """
-stagger(at::Symbol,D) = at==:center ? ntuple(_->0.,D) : at==:corner ? ntuple(_->-0.5,D) : throw(ArgumentError("unknown location $at"))
-stagger((at,i)::Tuple,D) = at==:face ? .-δ(i,Val(D)).I./2 : at==:edge ? (δ(i,Val(D)).I.-1)./2 : throw(ArgumentError("unknown location $at"))
+@inline stagger(i::Integer,D,T=Float64) = ntuple(j -> ifelse(j==i, -T(0.5), zero(T)), D) # inlined to infer `D` in `loc`
+stagger(at::Symbol,D,T=Float64) = at==:center ? stagger(0,D,T) : at==:corner ? ntuple(_->-T(0.5),D) : throw(ArgumentError("unknown location $at"))
+stagger((at,i)::Tuple,D,T=Float64) = at==:face ? stagger(i,D,T) : at==:edge ? (δ(i,Val(D)).I.-1)./T(2) : throw(ArgumentError("unknown location $at"))
 Base.last(I::CartesianIndex) = last(I.I)
 Base.front(I::CartesianIndex) = CI(Base.front(I.I))
 """

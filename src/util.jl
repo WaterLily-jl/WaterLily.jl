@@ -17,10 +17,8 @@ WaterLily.interp.(x, Ref(u)) # Broadcast (x=[-0.5,2.5] is shifted to [0,2.5] bec
     SVector{D,T}(clamp(x[d], zero(T), T(sz[d] - 2)) for d in 1:D)
 
 function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
-    # Each component is stored on a staggered face, so shift query for that
-    # component and then clamp to the valid scalar interpolation domain.
-    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(_interp(_interp_clamp(x + shift(i), size(varr)[1:D]), varr, i) for i in 1:D)
+    # Component i is stored on face i (see `stagger`), so shift the query to it and clamp
+    return SVector{D,T}(_interp(_interp_clamp(x .- stagger(i,D,T), size(varr)[1:D]), varr, i) for i in 1:D)
 end
 interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T} = _interp(_interp_clamp(x, size(arr)), arr)
 function _interp(x::SVector{D,T}, arr::AbstractArray{T}, c...) where {D,T}
