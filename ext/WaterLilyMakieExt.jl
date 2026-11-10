@@ -141,7 +141,8 @@ Keyword arguments:
         A negative entry also flips the sign of the mirrored field (eg. the velocity normal to the plane), as the default
         vorticity does.
     - `at`: Location of the field in the cell: `:center` (default), `(:face,i)`, `(:edge,i)` or `:corner` (see
-        [`WaterLily.stagger`](@ref)). The plot is shifted accordingly, except normal to the plane of a 2D cut.
+        [`WaterLily.stagger`](@ref)). The plot is shifted accordingly, except normal to the plane of a 2D cut. The plot
+        coordinates are those of the cells in `CIs`, with the first one centered at 0.5.
     - `tidy_colormap::Bool`: Adjusts the colormap to have a fully transparent color near 0 values. Additional plotting options
         passed into `kwargs` (eg. colormap, levels) are preserved.
         Pass `threshhold::Number` to adjust the near-0 range`, `threshhold_color::RGBA` to set to a color different from white, and
@@ -236,9 +237,9 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         pdims = findall(>(1), size(CIs)) # simulation dims on the plot axes
         shift = WaterLily.stagger(at, D)[pdims]
         f === ω2D_viz! && !isnothing(sym) && (sym = ntuple(i -> pdims[i]<3 ? -abs(sym[i]) : abs(sym[i]), d)) # ω₃ is odd about x and y
-        lo = d==3 ? 0 : 1 # a volume spans (0,n) with voxel k at k-0.5, a contourf spans (1,n)
-        limits = Tuple((lo,n) for n in size(CIs) if n > 1)
-        !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (lo, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
+        o = d==2 ? -0.5 : 0. # moves the contourf sample k from k to its cell center k-0.5, where a volume puts it
+        limits = Tuple((0,n) for n in size(CIs) if n > 1)
+        !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (0, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
         if isnothing(fig_size)
             fig_size = (1200, 1200)
             d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))
@@ -274,7 +275,7 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
             algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
         end
         p = plot_σ_obs!(ax, isnothing(isomesh) ? σ : lift(a -> isosurface_mesh(a, isomesh), σ); kwargs...)
-        translate!(p, (isnothing(sym) ? shift : map((sᵢ,m) -> m==0 ? sᵢ : -sᵢ, shift, sym))...) # a mirrored axis drops the sample on the plane, so its shift flips sign
+        translate!(p, (o .+ (isnothing(sym) ? shift : map((sᵢ,m) -> m==0 ? sᵢ : -sᵢ, shift, sym)))...) # a mirrored axis drops the sample on the plane, so its shift flips sign
         hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
         hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
     end
@@ -286,7 +287,8 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
         σb_buf = similar(dat, mirror_size(bslice0, symb))
         mirror_sym!(σb_buf, bslice0, symb)
         σb_obs = Observable(get_body(σb_buf, Val{body2mesh}()))
-        plot_body_obs!(ax, σb_obs; color=body_color)
+        bp = plot_body_obs!(ax, σb_obs; color=body_color)
+        pathlines || translate!(bp, ntuple(_->o, d)...)
     end
 
     _fig_steppers[fig] = (sim,t) -> step_sim_and_viz!(sim, t)
