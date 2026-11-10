@@ -90,11 +90,8 @@ jobs:
         with:
           version: '1'
           arch: 'default'
-      - run: |
-          julia --project=docs -e '
-            using Pkg
-            Pkg.develop(PackageSpec(path=pwd()))
-            Pkg.instantiate()'
+      # docs/Project.toml points WaterLily at this checkout through `[sources]`
+      - run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
       - run: |
           julia --project=docs -e '
             using Documenter: doctest

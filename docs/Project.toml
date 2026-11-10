@@ -13,6 +13,10 @@ TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 WaterLily = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
+# Document this checkout of WaterLily, not the registered release
+[sources]
+WaterLily = {path = ".."}
+
 [compat]
 Documenter = "1"
 DocumenterVitepress = "0.3"

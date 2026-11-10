@@ -64,10 +64,6 @@ let package_json = joinpath(@__DIR__, "package.json")
     end
 end
 
-# Copy the images referenced from the README (which is spliced into the WaterLily
-# docstring, and therefore into the front page) next to the generated pages
-include("copy_assets.jl")
-
 # Generate the examples
 include("generate.jl")
 

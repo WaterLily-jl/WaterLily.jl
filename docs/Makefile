@@ -6,8 +6,13 @@ default: liveserver
 liveserver:
 	julia --project=${SRCDIR} ${SRCDIR}/liveserver.jl
 
+# Install the docs environment. `resolve` makes an existing Manifest pick up the
+# `[sources]` entry in Project.toml, which points WaterLily at this checkout
+instantiate:
+	julia --project=${SRCDIR} -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'
+
 # Full build: runs the examples and renders the static site into build/1
-build:
+build: instantiate
 	julia --project=${SRCDIR} --threads=auto ${SRCDIR}/make.jl
 
 # Serve the last full build. Uses `vitepress preview` rather than a plain file server
@@ -23,4 +28,4 @@ serve: build preview
 clean:
 	julia ${SRCDIR}/clean.jl
 
-.PHONY: default liveserver build preview serve clean
+.PHONY: default liveserver instantiate build preview serve clean

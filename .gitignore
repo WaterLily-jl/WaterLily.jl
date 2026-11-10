@@ -6,7 +6,7 @@ LocalPreferences.toml
 /docs/build/
 /docs/node_modules/
 
-# Literate.jl output and assets copied in by docs/make.jl
+# Literate.jl output, and README images that earlier docs builds copied into docs/src/assets
 /docs/src/examples/*
 !/docs/src/examples/index.md
 /docs/src/gallery/*
