@@ -204,8 +204,16 @@ Using `i=0` returns the cell center s.t. `loc = I`. `T` sets the return number t
 """
     stagger(at,D)
 
-Offset in cells from the cell center to the location `at`: `:center` (eg. `p`, `ω`),
-`(:face,i)` (eg. `u[I,i]`), `(:edge,i)` (eg. `curl(i,I,u)`, the corner in 2D) or `:corner`.
+Offset in cells from the cell center to the location `at`. Of the faces, edges or corners of cell `I`,
+it is the one at the lower end, where `a[I]` is stored (as in `loc`).
+
+| `at`        | eg.           | 2D            | 3D                 |
+|:------------|:--------------|:--------------|:-------------------|
+| `:center`   | `p`, `ω`      | `(0,0)`       | `(0,0,0)`          |
+| `(:face,1)` | `u[I,1]`      | `(-0.5,0)`    | `(-0.5,0,0)`       |
+| `(:edge,3)` | `curl(3,I,u)` | `(-0.5,-0.5)` | `(-0.5,-0.5,0)`    |
+| `(:edge,1)` | `curl(1,I,u)` |               | `(0,-0.5,-0.5)`    |
+| `:corner`   |               | `(-0.5,-0.5)` | `(-0.5,-0.5,-0.5)` |
 """
 stagger(at::Symbol,D) = at==:center ? ntuple(_->0.,D) : at==:corner ? ntuple(_->-0.5,D) : throw(ArgumentError("unknown location $at"))
 stagger((at,i)::Tuple,D) = at==:face ? .-δ(i,Val(D)).I./2 : at==:edge ? (δ(i,Val(D)).I.-1)./2 : throw(ArgumentError("unknown location $at"))
