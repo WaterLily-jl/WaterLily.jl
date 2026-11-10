@@ -26,8 +26,16 @@ of size `2+ϵ` around the body. This function also fills `flow.σ` with the sign
 See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016/j.cma.2014.09.007).
 """
 function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
-    a.V .= zero(T); a.μ₀ .= one(T); a.μ₁ .= zero(T); d²=T(2+ϵ)^2
-    measure_sdf!(a.σ, body, t; fastd²=d²) # measure separately to allow specialization
+    d²=T(2+ϵ)^2
+    # define kernel functions to reset and remeasure the fields
+    @inline function clear!(μ₀,μ₁,V,I)
+        for i ∈ 1:N
+            V[I,i] = zero(T); μ₀[I,i] = one(T)
+            for j ∈ 1:N
+                μ₁[I,i,j] = zero(T)
+            end
+        end
+    end
     @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         if d[I]^2<d²
             for i ∈ 1:N
@@ -45,7 +53,10 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
             end
         end
     end
-    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ inside(a.p)
+    # loop the kernels, measure the sdf and udpate the BCs
+    @loop clear!(a.μ₀,a.μ₁,a.V,I) over I ∈ bbox(body,inside(a.p))
+    measure_sdf!(a.σ, body, t; fastd²=d²)
+    @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ bbox(body,inside(a.p))
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
 end
@@ -66,12 +77,14 @@ Measure only the distance. Defaults to fastd²=0 for quick evaluation.
 """
 sdf(body::AbstractBody,x,t=0;fastd²=0) = measure(body,x,t;fastd²)[1]
 
+@inline bbox(body::AbstractBody,R) = R
+
 """
     measure_sdf!(a::AbstractArray, body::AbstractBody, t=0; fastd²=0)
 
 Uses `sdf(body,x,t)` to fill `a`. Defaults to fastd²=0 for quick evaluation.
 """
-measure_sdf!(a::AbstractArray{T},body::AbstractBody,t=zero(T);fastd²=zero(T)) where T = @inside a[I] = sdf(body,loc(0,I,T),t;fastd²)
+measure_sdf!(a::AbstractArray{T},body::AbstractBody,t=zero(T);fastd²=zero(T)) where T = @inside a[I] = sdf(body,loc(0,I,eltype(a)),t;fastd²)
 
 """
     NoBody
@@ -86,7 +99,7 @@ function measure!(::AbstractFlow,::NoBody;kwargs...) end # skip measure! entirel
     SetBody
 
 Body defined as a lazy set operation on two `AbstractBody`s.
-The operations are only evaluated when `measure`d.
+The operations are only evaluated when `measure`d. `body.map` is the map shared by both parts.
 """
 struct SetBody{O<:Function,Ta<:AbstractBody,Tb<:AbstractBody} <: AbstractBody
     op::O
@@ -100,6 +113,11 @@ Base.:+(a::AbstractBody, b::AbstractBody) = a ∪ b
 Base.:∩(a::AbstractBody, b::AbstractBody) = SetBody(max,a,b)
 Base.:-(a::AbstractBody) = SetBody(-,a,NoBody())
 Base.:-(a::AbstractBody, b::AbstractBody) = a ∩ (-b)
+
+Base.getproperty(b::SetBody,s::Symbol) = s===:map ? sharedmap(b.a.map,b.b.map) : getfield(b,s)
+Base.getproperty(b::NoBody,s::Symbol) = s===:map ? nothing : getfield(b,s)
+sharedmap(a,::Nothing) = a
+sharedmap(a,b) = a==b ? a : throw(ArgumentError("SetBody parts have different maps"))
 
 # Measurements
 function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T

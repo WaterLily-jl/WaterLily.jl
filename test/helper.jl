@@ -34,3 +34,30 @@ end
 gravity!(flow::AbstractFlow,t; jerk=4) = for i ∈ 1:last(size(flow.f))
     WaterLily.@loop flow.f[I,i] += i==1 ? t*jerk : 0 over I ∈ CartesianIndices(Base.front(size(flow.f)))
 end
+
+# Reference conv_diff! with branching upwind fluxes and one loop per boundary, component and direction (`flow` test file)
+module RefLoops
+using WaterLily
+using WaterLily: @loop, ϕ, ∂, CI, CIj, size_u, inside_u, face
+ϕu(a,I,f,u,λ) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+ϕuP(a,Ip,I,f,u,λ) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+ϕuL(a,I,f,u,λ) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
+ϕuR(a,I,f,u,λ) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+function conv_diff!(r,u,Φ,λ;ν=0.1,perdir=())
+    r .= zero(eltype(r)); N,n = size_u(u)
+    for i ∈ 1:n, j ∈ 1:n
+        if j in perdir
+            @loop (Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ)-ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ face(N,2,j,2)
+        else
+            @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ face(N,2,j,2)
+        end
+        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
+        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
+        if j in perdir
+            @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ face(N,N[j],j,2)
+        else
+            @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ face(N,N[j],j,2)
+        end
+    end
+end
+end

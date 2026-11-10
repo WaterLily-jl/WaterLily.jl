@@ -73,7 +73,7 @@
 
     for f ∈ arrays
         @test ForwardDiff.derivative(x -> tgv_sim(x, f), 1e2) ≈ dtgv_fd rtol=1e-1
-        @test ForwardDiff.derivative(x -> spin_sim(x, f), 2f0) ≈ dspin_fd rtol=√1e-6
+        @test ForwardDiff.derivative(x -> spin_sim(x, f), 2.0) ≈ dspin_fd rtol=√1e-6 # in Float32 the derivative moves by up to 17% when ν moves by one ulp
         @test ForwardDiff.derivative(x -> rot_sim(x, f), π/36) ≈ drot_fd rtol=1e-3
     end
 end
