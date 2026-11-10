@@ -2,16 +2,21 @@ using ReadVTK, WriteVTK, JLD2
 
 function sphere_sim(radius = 8; D=2, mem=Array, exitBC=false)
     body = AutoBody((x,t)-> √sum(abs2,x .- (2radius+1.5)) - radius)
-    D==2 && Simulation(radius.*(6,4),(1,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
-    Simulation(radius.*(6,4,1),(1,0,0),radius; body, ν=radius/250, T=Float32, mem, exitBC)
+    Simulation(radius.*(6,4,1)[1:D],(1,0,0)[1:D],radius; body, ν=radius/250, T=Float32, mem, exitBC)
 end
 @testset "VTKExt.jl" begin
     for D ∈ [2,3], mem ∈ arrays
         # make a simulation
         sim = sphere_sim(;D,mem);
-        # make a vtk writer
-        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR")
+        # make a vtk writer, also writing the pressure at the cell corners to check the layout
+        pc(sim) = Array(sim.flow.p)
+        wr = vtkWriter("test_vtk_reader_$D";dir="TEST_DIR",attrib=merge(default_attrib(),Dict("pc"=>pc=>:corner)))
         sim_step!(sim,1); save!(wr, sim); close(wr)
+        # fields are cell data, and point data padded to N+1 points at the corners
+        vtk = VTKFile("TEST_DIR/test_vtk_reader_$(D)_000000.vti")
+        @test issubset(("Pressure","Velocity"), keys(get_cell_data(vtk)))
+        @test WaterLily.squeeze(get_data_reshaped(get_point_data(vtk)["pc"]))[CartesianIndices(sim.flow.p)] == pc(sim)
+        @test_throws ArgumentError save!(vtkWriter("test_vtk_bad";dir="TEST_DIR",attrib=Dict("u"=>pc=>(:face,1))), sim)
 
         # re start the sim from a paraview file
         restart = sphere_sim(;D,mem);
@@ -24,9 +29,16 @@ end
         @test sim.flow.Δt[end] == restart.flow.Δt[end]
         @test abs(sim_time(sim)-sim_time(restart))<1e-3
 
+        # re start from the point data of older versions
+        vtk = vtk_grid("TEST_DIR/test_vtk_old_$D", [1:n for n in size(sim.flow.p)]...)
+        vtk["Pressure"] = Array(sim.flow.p); vtk["Velocity"] = permutedims(Array(sim.flow.u),[D+1,1:D...])
+        pvd = paraview_collection("test_vtk_old_$D"); pvd[sim_time(sim)] = vtk; vtk_save(pvd)
+        restart = sphere_sim(;D,mem); load!(restart; fname="test_vtk_old_$D.pvd")
+        @test all(sim.flow.p .== restart.flow.p) && all(sim.flow.u .== restart.flow.u)
+
         # clean-up
         @test_nowarn rm("TEST_DIR",recursive=true)
-        @test_nowarn rm("test_vtk_reader_$D.pvd")
+        @test_nowarn rm("test_vtk_reader_$D.pvd"); @test_nowarn rm("test_vtk_old_$D.pvd")
     end
 end
 
