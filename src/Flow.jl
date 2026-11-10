@@ -5,10 +5,10 @@
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @fastmath cds(u,c,d) = (c+d)/2
 
-@inline ϕu(a,I,f,u,λ) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuP(a,Ip,I,f,u,λ) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuL(a,I,f,u,λ) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuR(a,I,f,u,λ) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+@inline ϕu(a,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[I-2δ(a,I)],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
+@inline ϕuP(a,Ip,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[Ip],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
+@inline ϕuL(a,I,f,u,λ) = @inbounds u*ifelse(u>0,ϕ(a,I,f),λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)]))
+@inline ϕuR(a,I,f,u,λ) = @inbounds u*ifelse(u<0,ϕ(a,I,f),λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]))
 
 @fastmath @inline function div(I::CartesianIndex{m},u) where {m}
     init=zero(eltype(u))
@@ -27,30 +27,36 @@ end
 @fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
-    r .= zero(eltype(r))
+    fill!(r,zero(eltype(r)))
     N,n = size_u(u)
-    for i ∈ 1:n, j ∈ 1:n
-        # if it is periodic direction
-        tagper = (j in perdir)
-        # treatment for bottom boundary with BCs
-        lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
-        # inner cells
-        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
-               r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
-        # treatment for upper boundary with BCs
-        upperBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
+    for j ∈ 1:n
+        for i ∈ 1:n # inner cells
+            @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
+                   r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
+            @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
+        end
+        boundaries!(r,u,ν,j,N,λ,Val{j in perdir}())
     end
 end
 
-# Neumann BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
-
-# Periodic BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
+# Fluxes on domain boundaries normal to `j`
+function boundaries!(r,u,ν,j,N,λ,per)
+    R = CartesianIndices((ntuple(k -> k==j ? (2:2) : (2:N[k]), length(N))...,1:length(N)))
+    Nj = N[j]
+    @loop boundary!(r,Ii,u,ν,j,Nj,λ,per) over Ii ∈ face(R,j)
+end
+# Neumann BC
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{false})
+    I,i,IN = Base.front(Ii),last(Ii),CIj(j,Ii,N)
+    @inbounds r[Ii] += ϕuL(j,Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
+    @inbounds r[CIj(j,Ii,N-1)] -= ϕuR(j,IN,u,ϕ(i,CI(Base.front(IN),j),u),λ) - ν*∂(j,IN,u)
+end
+# Periodic BC
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{true})
+    I,i = Base.front(Ii),last(Ii)
+    Φ = ϕuP(j,CIj(j,Ii,N-2),Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
+    @inbounds r[Ii] += Φ; @inbounds r[CIj(j,Ii,N-1)] -= Φ
+end
 
 """
     accelerate!(r,t,g,U)
@@ -128,12 +134,13 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(u0) && (u0 = ic_function(uBC))
-        u = Array{T}(undef, Nd...) |> mem
+        b = get_backend(mem([zero(T)])) # the device of `mem`; the fields are allocated with `zeros_on`
+        u = zeros_on(b,T,Nd)
         isa(u0, Function) ? apply!(u0, u) : apply!(ic_function(T.(u0)), u)
         BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
-        u⁰ = copy(u)
-        fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
-        V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
+        u⁰ = copyto!(zeros_on(b,T,Nd),u)
+        fv, p, σ = zeros_on(b,T,Nd), zeros_on(b,T,Ng), zeros_on(b,T,Ng)
+        V, μ₀, μ₁ = zeros_on(b,T,Nd), ones_on(b,T,Nd), zeros_on(b,T,(Ng...,D,D))
         BC!(μ₀,ntuple(zero, D),false,perdir)
         new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end
@@ -149,17 +156,18 @@ end
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+`kwargs` are passed to `udf` and `poisson_kwargs` to `solver!`.
 """
-@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
-    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
+    a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
-    mom_project!(a,b,1,t₁)
+    mom_project!(a,b,1,t₁;poisson_kwargs...)
     # corrector u → u¹
     @log "c"
     mom_correct!(a,t₁;udf,kwargs...)
-    mom_project!(a,b,2,t₁)
+    mom_project!(a,b,2,t₁;poisson_kwargs...)
     push!(a.Δt,CFL(a))
 end
 
@@ -170,10 +178,10 @@ Current flow time.
 """
 time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
-function BDIM!(a::AbstractFlow)
+function BDIM!(a::AbstractFlow,s=1)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
-    @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
+    @loop a.u[Ii] = (a.u[Ii]+(μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii]))/s over Ii ∈ inside_u(size(a.p))
 end
 
 """
@@ -185,7 +193,7 @@ by `mom_project!`.
 """
 function mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u⁰,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,a.u⁰,t₀; kwargs...) # advect with u⁰ (a.u is zeroed by scale_u!)
+    udf!(a,udf,a.u⁰,t₀; kwargs...) # advect with u⁰
     accelerate!(a.f,t₀,a.g,a.uBC)
     BDIM!(a)
 end
@@ -200,27 +208,24 @@ function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
     conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
     udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
     accelerate!(a.f,t,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5)
+    BDIM!(a,2)
 end
-function scale_u!(a::AbstractFlow{D,T}, scale) where {D,T}
-    s = T(scale)
-    @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p))
-end
+scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p)))
 
 """
-    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
 
-Projection phase of `mom_step!`: solve the pressure Poisson equation, correct 
+Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
-in the corrector. On return `a.u` is divergence-free and BC-consistent.
+in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
     w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
     Dp = diagonal(b)                                # Poisson matrix diagonal
     @inside b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
-    solver!(b)
+    solver!(b; kwargs...)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end
@@ -229,6 +234,7 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
 end
 
 function CFL(a::AbstractFlow;Δt_max=10)
+    fill!(a.σ,0) # the ghosts hold scratch values (such as the fluxes of conv_diff!)
     @inside a.σ[I] = flux_out(I,a.u)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end

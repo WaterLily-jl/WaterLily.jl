@@ -34,10 +34,10 @@ function restrictML(b::Poisson)
     N,n = size_u(b.L)
     c = coarsen_mask(N)
     Na = ntuple(j-> c[j] ? 1+N[j]÷2 : N[j], n)
-    aL = similar(b.L,(Na...,n)); fill!(aL,0)
-    ax = similar(b.x,Na); fill!(ax,0)
+    dev,T = get_backend(b.x),eltype(b.x)
+    aL = zeros_on(dev,T,(Na...,n))
     restrictL!(aL,b.L,c,perdir=b.perdir)
-    Poisson(ax,aL,copy(ax);b.perdir)
+    Poisson(zeros_on(dev,T,Na),aL,zeros_on(dev,T,Na);b.perdir)
 end
 function restrictL!(a::AbstractArray{T,M},b,c;perdir=()) where {T,M}
     Na,n = size_u(a)
@@ -109,12 +109,12 @@ const smooth! = GaussSeidelRB!
 function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
-    residual!(p); r₁ = L₁(p); r∞ = L∞(p); ω = T(1)
+    residual!(p); r₁, r∞ = L₁L∞(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω);
-        rnew = L₁(p); r∞ = L∞(p); nᵖ+=1
+        smooth!(p; ω)
+        rnew, r∞ = L₁L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $rnew, $ω\n"
         if     rnew ≥ r₁
             ω = max(0.2, 0.9ω) |> T
