@@ -60,10 +60,15 @@ let package_json = joinpath(@__DIR__, "package.json")
 end
 
 # Generate the examples
-include("generate.jl")
+include(joinpath(@__DIR__, "generate.jl"))
 
 # Build documentation.
 @timeit dto "makedocs" makedocs(
+    # Without this, Documenter takes the current directory as the root when make.jl is not
+    # run as a file (e.g. evaluated piece by piece in an editor). From the repository root
+    # it then reads WaterLily's own `src/` as the docs source, and writes the site, and the
+    # npm install that DocumenterVitepress runs next to it, into the repository root.
+    root = @__DIR__,
     modules = [WaterLily, EXTENSIONS...],
     # The site is rendered by Vitepress rather than by Documenter's own HTML writer. Documenter
     # still does all of the work up to and including running the `@example` blocks; this writer
