@@ -30,7 +30,7 @@ function _interp(x::SVector{D,T}, arr::AbstractArray{T}, c...) where {D,T}
 end
 
 """
-    sgs!(flow, u, t; νₜ, S, Cs, Δ)
+    sgs!(flow, u, t; νₜ, S=nothing, ∇u=nothing, kwargs...)
 
 Implements a user-defined function `udf` to model subgrid-scale LES stresses based on the Boussinesq approximation
     τᵃᵢⱼ = τʳᵢⱼ - (1/3)τʳₖₖδᵢⱼ = -2νₜS̅ᵢⱼ
@@ -38,28 +38,76 @@ where
             ▁▁▁▁
     τʳᵢⱼ =  uᵢuⱼ - u̅ᵢu̅ⱼ
 
-and we add -∂ⱼ(τᵃᵢⱼ) to the RHS as a body force (the isotropic part of the tensor is automatically modelled by the pressure gradient term).
-Users need to define the turbulent viscosity function `νₜ` and pass it as a keyword argument to this function together with rate-of-strain
-tensor array buffer `S`, Smagorinsky constant `Cs`, and filter width `Δ`.
+and we add -∂ⱼ(τᵃᵢⱼ) = ∂ⱼ(νₜ(∂ⱼuᵢ+∂ᵢuⱼ)) to the RHS as a body force (the isotropic part of the tensor is automatically
+modelled by the pressure gradient term). The fluxes are evaluated where `conv_diff!` evaluates its own, with `νₜ` taken at
+the cell centre for the normal stresses and averaged over the four cells around an edge for the shear stresses, on all
+the faces of the domain, periodic or not.
+
+Users need to define the turbulent viscosity function `νₜ(I::CartesianIndex; kwargs...)`, evaluated at the centre of cell `I`,
+and pass it as a keyword argument to this function together with the buffers and parameters it needs:
+  - `S`: array of size `(size(flow.p)...,D,D)`, filled with the rate-of-strain tensor `S̅ᵢⱼ` and passed on to `νₜ`.
+  - `∇u`: array of the same size, filled with the velocity gradient `∂uᵢ/∂xⱼ` and passed on to `νₜ`.
+  - any other keyword argument is passed on to `νₜ` as it is.
+
 For example, the standard Smagorinsky–Lilly model for the sub-grid scale stresses is
 
     νₜ = (CₛΔ)²|S̅ᵢⱼ|=(CₛΔ)²√(2S̅ᵢⱼS̅ᵢⱼ)
 
-It can be implemented as
-    `smagorinsky(I::CartesianIndex{m} where m; S, Cs, Δ) = @views (Cs*Δ)^2*sqrt(dot(S[I,:,:],S[I,:,:]))`
-and passed into `sim_step!` as a keyword argument together with the varibles than the function needs (`S`, `Cs`, and `Δ`):
-    `sim_step!(sim, ...; udf=sgs, νₜ=smagorinsky, S, Cs, Δ)`
-"""
-function sgs!(flow, u, t; νₜ, S, Cs, Δ)
-    N,n = size_u(u)
-    @loop S[I,:,:] .= WaterLily.S(I,u) over I ∈ inside(flow.σ)
-    for i ∈ 1:n, j ∈ 1:n
-        WaterLily.@loop (
-            flow.σ[I] = -νₜ(I;S,Cs,Δ)*∂(j,CI(I,i),u);
-            flow.f[I,i] += flow.σ[I];
-        ) over I ∈ inside_u(N,j)
-        WaterLily.@loop flow.f[I-δ(j,I),i] -= flow.σ[I] over I ∈ WaterLily.inside_u(N,j)
+It can be implemented with an explicit loop, which compiles inside the kernels on every backend, as
+
+    @inline function smagorinsky(I::CartesianIndex{D}; S, Cs, Δ) where D
+        s = zero(eltype(S))
+        for i in 1:D, j in 1:D
+            s += S[I,i,j]^2
+        end
+        (Cs*Δ)^2*√(2s)
     end
+
+and passed into `sim_step!` as a keyword argument together with the variables that the function needs (`S`, `Cs`, and `Δ`):
+
+    sim_step!(sim, ...; udf=WaterLily.sgs!, νₜ=smagorinsky, S, Cs, Δ)
+
+Models built on the full velocity gradient, which vanish in a pure shear (Vreman, WALE, σ), take the buffer `∇u` instead.
+`flow.σ` holds `νₜ` on return.
+"""
+function sgs!(flow, u, t; νₜ, S=nothing, ∇u=nothing, kwargs...)
+    isnothing(S) || @loop S[I,:,:] .= WaterLily.S(I,u) over I ∈ inside(flow.σ)
+    isnothing(∇u) || @loop ∇u[I,:,:] .= WaterLily.∇u(I,u) over I ∈ inside(flow.σ)
+    kw = (;(isnothing(S) ? (;) : (;S))...,(isnothing(∇u) ? (;) : (;∇u))...,kwargs...)
+    @loop flow.σ[I] = νₜ(I;kw...) over I ∈ inside(flow.σ)
+    neumannBC!(flow.σ,flow.perdir)
+    @loop flow.f[Ii] += sgs_force(Ii,u,flow.σ) over Ii ∈ inside_u(size(flow.σ))
+end
+
+# Zero-gradient ghost cells of a scalar field, periodic along `perdir`
+function neumannBC!(a,perdir=())
+    N = size(a)
+    for j ∈ eachindex(N)
+        j in perdir && continue
+        @loop a[I] = a[I+δ(j,I)] over I ∈ slice(N,1,j)
+        @loop a[I] = a[I-δ(j,I)] over I ∈ slice(N,N[j],j)
+    end
+    perBC!(a,perdir)
+end
+
+"""
+    sgs_flux(i,j,I,u,νₜ)
+
+SGS flux `νₜ(∂ⱼuᵢ+∂ᵢuⱼ)` of the momentum component `i` through the lower face along `j` of the control volume of `u[I,i]`,
+where `conv_diff!` evaluates its flux `Φ`. This is the centre of cell `I-δ(i,I)` when `i==j` and an edge of cell `I` otherwise,
+where the eddy viscosity `νₜ`, given at the cell centres, is averaged over the four cells around it.
+"""
+@fastmath @inline function sgs_flux(i,j,I::CartesianIndex,u,νₜ)
+    ν = @inbounds i==j ? νₜ[I-δ(i,I)] : (νₜ[I]+νₜ[I-δ(i,I)]+νₜ[I-δ(j,I)]+νₜ[I-δ(i,I)-δ(j,I)])/4
+    ν*(∂(j,CI(I,i),u)+∂(i,CI(I,j),u))
+end
+# SGS force on the face `Ii`: divergence of `sgs_flux` over its control volume
+@fastmath @inline function sgs_force(Ii::CartesianIndex{np1},u,νₜ) where np1
+    I,i = CartesianIndex(Base.front(Ii.I)),last(Ii.I); s = zero(eltype(u))
+    for j ∈ 1:np1-1
+        s += sgs_flux(i,j,I+δ(j,I),u,νₜ)-sgs_flux(i,j,I,u,νₜ)
+    end
+    return s
 end
 
 squeeze(a::AbstractArray) = dropdims(a, dims = tuple(findall(size(a) .== 1)...))

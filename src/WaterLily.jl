@@ -33,6 +33,8 @@ export MeanFlow,update!,uu!,uu
 
 include("util.jl")
 
+include("WallModel.jl")
+
 include("RigidMap.jl")
 export RigidMap,setmap
 

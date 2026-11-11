@@ -155,6 +155,12 @@ end
 Rate-of-strain tensor.
 """
 @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
+"""
+    ∇u(I::CartesianIndex,u)
+
+Velocity gradient tensor `∂uᵢ/∂xⱼ` at the center of cell `I`.
+"""
+@inline ∇u(I::CartesianIndex{D},u) where D = SMatrix{D,D}(∂(i,j,I,u) for i ∈ 1:D, j ∈ 1:D)
 @inline Snds(I,u,body,t) = (n = nds(body,loc(0,I,eltype(u)),t); iszero(n) ? n : S(I,u)*n)
 
 """
