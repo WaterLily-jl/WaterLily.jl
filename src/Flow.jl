@@ -26,6 +26,22 @@ end
 end
 @fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
+"""
+    conv_diff!(r,u,Φ,λ;ν=0.1,perdir=())
+
+Accumulate the convective and diffusive momentum flux of the Navier-Stokes equations
+
+    r = (u⋅∇)u - ν∇²u
+
+for the velocity field `u` into `r`.
+
+- `r`: convective and viscous force vector, overwritten.
+- `u`: velocity field to take the fluxes of.
+- `Φ`: dummy work array.
+- `λ`: convective interpolation scheme `λ(u,c,d)`, e.g. `quick`, `cds` or `vanLeer`.
+- `ν`: kinematic viscosity.
+- `perdir`: tuple of periodic directions.
+"""
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     fill!(r,zero(eltype(r)))
     N,n = size_u(u)

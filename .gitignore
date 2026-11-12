@@ -4,6 +4,14 @@
 Manifest.toml
 LocalPreferences.toml
 /docs/build/
+/docs/node_modules/
+
+# Literate.jl output, and README images that earlier docs builds copied into docs/src/assets
+/docs/src/examples/*
+!/docs/src/examples/index.md
+/docs/src/gallery/*
+!/docs/src/gallery/index.md
+/docs/src/assets/*
 
 # gfx
 *.png
@@ -26,6 +34,10 @@ LocalPreferences.toml
 *.pvd
 
 # exceptions
+!/docs/src/literate-gallery/*.gif
+!/docs/src/literate-gallery/*.png
+!/docs/src/assets/logo.png
+!/docs/src/assets/favicon.ico
 !/examples/JuliaCon2021.jpg
 !/examples/JuliaCon2024.png
 !/examples/julia.gif
