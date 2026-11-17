@@ -129,7 +129,7 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     perdir :: NTuple # tuple of periodic direction
     λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
-            u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
+            u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=koren, T=Float32) where D
         u0 = ic_kwarg(u0, uλ) # to be removed in v2.0
         uBC isa Tuple && (uBC = T.(uBC)) # same type for all components: `uBC[i]` must be type-stable in GPU kernels
         Ng = N .+ 2

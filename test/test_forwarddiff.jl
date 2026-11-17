@@ -43,15 +43,15 @@
     end
     # ∂/∂Lift of spinning cylinder lift generation
     rot(θ) = SA[cos(θ) -sin(θ); sin(θ) cos(θ)]  # rotation matrix
-    function spinning(ξ, mem; D=16, Re=500)
+    function spinning(ξ, mem; D=16, Re=500, ν=D/Re)
         C,R,U = SA[D,D],D÷2,1
         body = AutoBody((x,t)->√(x'*x)-R,          # circle sdf
                         (x,t)->rot(ξ*U*t/R)*(x-C)) # center & spin!
-        Simulation((2D,2D), (U,0), D; ν=U*D/Re, body, mem, T=typeof(ξ))
+        Simulation((2D,2D), (U,0), D; ν, body, mem, T=typeof(ξ))
     end
-    function spin_sim(ξ, mem)
-        sim = spinning(ξ, mem)
-        sim_step!(sim, 1; remeasure=false)
+    function spin_sim(ξ, mem; tend=1, kw...)
+        sim = spinning(ξ, mem; kw...)
+        sim_step!(sim, tend; remeasure=false)
         WaterLily.total_force(sim)[2]/(ξ^2*sim.U^2*sim.L)
     end
     # ∂/∂θ of sum(sim.flow.p) for a θ-rotated body
@@ -68,12 +68,18 @@
     dtgv_fd = (tgv_sim(1e2+h, Array) - tgv_sim(1e2-h, Array)) / 2h
     h = 1e-6
     dspin_fd = (spin_sim(2+h, Array) - spin_sim(2-h, Array)) / 2h
+    dspin4_fd = (spin_sim(2+h, Array; tend=4) - spin_sim(2-h, Array; tend=4)) / 2h
     h = π/36/100
     drot_fd = (rot_sim(π/36+h, Array) - rot_sim(π/36-h, Array)) / 2h
 
     for f ∈ arrays
         @test ForwardDiff.derivative(x -> tgv_sim(x, f), 1e2) ≈ dtgv_fd rtol=1e-1
-        @test ForwardDiff.derivative(x -> spin_sim(x, f), 2.0) ≈ dspin_fd rtol=√1e-6 # in Float32 the derivative moves by up to 17% when ν moves by one ulp
+        @test ForwardDiff.derivative(x -> spin_sim(x, f), 2.0) ≈ dspin_fd rtol=√1e-6
+        # the derivative of the default scheme stays put when ν moves by one ulp in Float32, and after 4 convective times (#358)
+        for k ∈ -1:1
+            @test ForwardDiff.derivative(x -> spin_sim(x, f; ν=nextfloat(16f0/500, k)), 2f0) ≈ dspin_fd rtol=1e-3
+        end
+        @test ForwardDiff.derivative(x -> spin_sim(x, f; tend=4), 2.0) ≈ dspin4_fd rtol=1e-3
         @test ForwardDiff.derivative(x -> rot_sim(x, f), π/36) ≈ drot_fd rtol=1e-3
     end
 end
