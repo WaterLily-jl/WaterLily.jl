@@ -37,9 +37,12 @@ RigidMap(x₀::SVector,θ=no_rotation(x₀);xₚ=zero(x₀),V=zero(x₀),ω=zero
 no_rotation(::SVector{2,T}) where T = zero(T)
 no_rotation(x₀::SVector{3}) = zero(x₀)
 
-# this is the function map(x,t) AND derivative(t->map(x,t),t)
+# this is the function map(x,t) AND derivative(t->map(x,t),t). Only the `_InnerTag` seed of
+# `WaterLily.derivative` asks for the velocity: a `Dual` time in any other tag (eg. a flow
+# differentiated with ForwardDiff, whose Δt carries partials) is just a time, and the map does
+# not depend on it
 (m::RigidMap)(x::SVector,t=0) = m.R̂*(x-m.x₀-m.xₚ)+m.xₚ
-(m::RigidMap)(x::SVector,t::ForwardDiff.Dual{Tag}) where Tag = Dual{Tag}.(m(x),map_velocity(m, x, t))
+(m::RigidMap)(x::SVector,t::Dual{_InnerTag}) = Dual{_InnerTag}.(m(x),map_velocity(m, x, t))
 map_jacobian(m::RigidMap, x, t) = m.R̂
 map_velocity(m::RigidMap, x, t) = -m.R̂*(m.V + m.ω×(x-m.x₀-m.xₚ))
 
