@@ -4,6 +4,10 @@
     @test vanLeer(1,0,1) == 0 && vanLeer(1,2,1) == 2 # larger or smaller than both u,d, reverts to itself
     @test vanLeer(1,2,3) == 2.5 && vanLeer(3,2,1) == 1.5 # if c is between u,d, limiter is quadratic
 
+    # Test Koren: QUICK where the profile is smooth, bounded by 2c-u where it is steep
+    @test koren(1,0,1) == 0 && koren(1,2,1) == 2 # larger or smaller than both u,d, reverts to itself
+    @test koren(1,2,3) ≈ WaterLily.quick(1,2,3) ≈ 2.5 && koren(0,1,10) == 2 # QUICK gives 25/6 here
+
     # Test central difference scheme
     cds = WaterLily.cds
     @test cds(1,0,1) == 0.5 && cds(1,2,-1) == 0.5 # central difference between downstream and itself
@@ -85,7 +89,7 @@
 end
 
 @testset "conv_diff! against the reference loops" begin # the upwind values are chosen with ifelse and each direction has one boundary loop
-    for f ∈ arrays, dims ∈ ((12,10),(12,10,8)), λ ∈ (quick,WaterLily.vanLeer,cds), m ∈ 0:2^length(dims)-1
+    for f ∈ arrays, dims ∈ ((12,10),(12,10,8)), λ ∈ (koren,quick,WaterLily.vanLeer,cds), m ∈ 0:2^length(dims)-1
         D = length(dims); perdir = Tuple(j for j ∈ 1:D if isodd(m>>(j-1)))
         u = rand(dims...,D) .- 0.5; r = fill(7.,dims...,D); RefLoops.conv_diff!(r,u,zeros(dims),λ;ν=0.01,perdir)
         r̃ = f(fill(7.,dims...,D)); WaterLily.conv_diff!(r̃,f(u),f(zeros(dims)),λ;ν=0.01,perdir) # every cell is written

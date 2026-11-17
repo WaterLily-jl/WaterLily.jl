@@ -20,7 +20,7 @@ include("MultiLevelPoisson.jl")
 export MultiLevelPoisson,solver!,mult!
 
 include("Flow.jl")
-export AbstractFlow,Flow,mom_step!,quick,cds,apply!
+export AbstractFlow,Flow,mom_step!,koren,quick,cds,apply!
 
 include("Body.jl")
 export AbstractBody,measure_sdf!
@@ -72,7 +72,7 @@ Constructor for a WaterLily.jl simulation:
   - `ϵ`: BDIM kernel width.
   - `perdir`: Domain periodic boundary condition in the `(i,)` direction.
   - `λ`: Convective interpolation scheme `λ(u,c,d)` (upstream, central, downstream), e.g. `quick` (default),
-        `cds`, or `vanLeer`.
+        `koren`, `cds`, or `vanLeer`.
   - `u0`: Velocity field applied to the initial condition.
         Define a Tuple for homogeneous (per direction) IC, or a `Function` for space varying IC `u0(i,x)`.
         The deprecated `uλ` keyword is still accepted as an alias and will be removed in a future release.
