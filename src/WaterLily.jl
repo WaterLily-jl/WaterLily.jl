@@ -1,6 +1,3 @@
-"""
-$(README)
-"""
 module WaterLily
 
 using DocStringExtensions, Printf
@@ -87,7 +84,9 @@ Constructor for a WaterLily.jl simulation:
         Called after `flow_ctor` with the constructed flow as argument.
         Used by downstream packages (e.g. BiotSavartBCs.jl) to inject a custom `AbstractPoisson` subtype.
 
-See the repository [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) for more examples.
+See the [Examples](https://waterlily-jl.github.io/WaterLily.jl/stable/examples/) section of the
+documentation, and the repository [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples)
+for many more.
 """
 mutable struct Simulation <: AbstractSimulation
     U :: Number # velocity scale
@@ -161,7 +160,7 @@ Prints information on the current state of a simulation.
 sim_info(sim::AbstractSimulation) = @printf "tU/L=%.4f, Δt=%.3f\n" sim_time(sim) sim.flow.Δt[end]
 
 """
-    perturb!(sim::AbstractSimulations; noise=0.1)
+    perturb!(sim::AbstractSimulation; noise=0.1)
 Perturb the velocity field of a simulation with `noise` level with respect to velocity scale `U`.
 """
 perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flow.u))*sim.U*noise |> typeof(sim.flow.u).name.wrapper

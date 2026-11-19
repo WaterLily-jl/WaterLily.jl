@@ -1,0 +1,46 @@
+name: Documentation
+# Separate from ci.yml, so that a change to the docs alone builds the docs without also
+# running the whole test matrix
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/docs.yml'
+      - 'docs/**'
+      - 'ext/**'
+      - 'src/**'
+      - 'Project.toml'
+  push:
+    branches:
+      - master
+    tags: '*'
+    paths:
+      - '.github/workflows/docs.yml'
+      - 'docs/**'
+      - 'ext/**'
+      - 'src/**'
+      - 'Project.toml'
+jobs:
+  docs:
+    if: github.event.pull_request.draft == false
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        # DocumenterVitepress reads the git tags to decide whether a release is the newest one,
+        # and therefore also gets the `stable` alias. A shallow clone has no tags, so a backport
+        # release (e.g. v1.10.1 after v2.0.0) would otherwise overwrite `stable`.
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+          arch: 'default'
+      # docs/Project.toml points WaterLily at this checkout through `[sources]`
+      - run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+      # Examples are Literate.jl programs that are executed during the build, so give
+      # the KernelAbstractions CPU backend some threads to work with. `makedocs` also runs
+      # any doctests.
+      - run: julia --project=docs --threads=auto docs/make.jl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
