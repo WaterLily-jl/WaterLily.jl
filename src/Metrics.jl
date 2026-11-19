@@ -155,39 +155,57 @@ end
 Rate-of-strain tensor.
 """
 @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
-@inline Snds(I,u,body,t) = (n = nds(body,loc(0,I,eltype(u)),t); iszero(n) ? n : S(I,u)*n)
+
+"""
+    νtraction(x,d,n,V,u,ν,ϵ)
+
+Viscous traction `-2νS⋅n` on the wall a distance `d` from `x` along `-n`, moving with velocity `V`.
+The wall gradient `∂ₙu` is taken from `V` to `u` a distance `ϵ` into the fluid, past the BDIM
+smoothing, and includes the `μ₁(0)` slip. Neglecting surface gradients of `V`, `2S⋅n = ∂ₙu+(n⋅∂ₙu)n`.
+"""
+@inline function νtraction(x,d,n,V,u,ν,ϵ)
+    ϵ = eltype(x)(ϵ); ∂ₙu = (interp(x+(ϵ-d)*n,u)-V)/(ϵ+μ₁(zero(ϵ),ϵ))
+    -ν*(∂ₙu+(n'*∂ₙu)*n)
+end
+@inline function νnds(I,u,ν,body,t,ϵ)
+    x = loc(0,I,eltype(u)); d,n,V = measure(body,x,t,fastd²=one(eltype(u)))
+    iszero(n) ? n : kern(clamp(d,-1,1))*νtraction(x,d,n,V,u,ν,ϵ)
+end
 
 """
     viscous_force(sim)
 
 Compute the viscous force on an immersed body.
 """
-viscous_force(sim) = viscous_force(sim.flow,sim.body)
-viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
-function viscous_force(u,ν,df,body,t=0)
+viscous_force(sim) = viscous_force(sim.flow,sim.body,sim.ϵ)
+viscous_force(flow,body,ϵ=1) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow),ϵ)
+function viscous_force(u,ν,df,body,t=0,ϵ=1)
     df .= zero(eltype(u))
-    @loop df[I,:] .= -2ν*Snds(I,u,body,t) over I ∈ bbox(body,inside_u(u))
+    @loop df[I,:] .= νnds(I,u,ν,body,t,ϵ) over I ∈ bbox(body,inside_u(u))
     sumdims(df)
 end
 
 """
     τ(I,p,u,ν)
 
-Total stress tensor (pressure and viscous) acting on the body surface, so that `τ⋅nds` is the force density.
+Total stress tensor (pressure and viscous).
 """
 @inline τ(I::CartesianIndex{D},p,u,ν) where D = (s = S(I,u); p[I]*one(s)-2ν*s)
-@inline τnds(I,p,u,ν,body,t) = (n = nds(body,loc(0,I,eltype(p)),t); iszero(n) ? n : τ(I,p,u,ν)*n)
+@inline function τnds(I,p,u,ν,body,t,ϵ)
+    x = loc(0,I,eltype(p)); d,n,V = measure(body,x,t,fastd²=one(eltype(p)))
+    iszero(n) ? n : kern(clamp(d,-1,1))*(p[I]*n+νtraction(x,d,n,V,u,ν,ϵ))
+end
 
 """
     total_force(sim)
 
 Compute the total force on an immersed body.
 """
-total_force(sim) = total_force(sim.flow,sim.body)
-total_force(flow,body) = total_force(flow.p,flow.u,flow.ν,flow.f,body,time(flow))
-function total_force(p,u,ν,df,body,t=0)
+total_force(sim) = total_force(sim.flow,sim.body,sim.ϵ)
+total_force(flow,body,ϵ=1) = total_force(flow.p,flow.u,flow.ν,flow.f,body,time(flow),ϵ)
+function total_force(p,u,ν,df,body,t=0,ϵ=1)
     df .= zero(eltype(p))
-    @loop df[I,:] .= τnds(I,p,u,ν,body,t) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= τnds(I,p,u,ν,body,t,ϵ) over I ∈ bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -212,11 +230,11 @@ end
 Computes the viscous moment on an immersed body relative to point x₀.
 `x₀` is converted to the element type of the velocity field.
 """
-viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
-viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
-function viscous_moment(x₀,u,ν,df,body,t=0)
+viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body,sim.ϵ)
+viscous_moment(x₀,flow,body,ϵ=1) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow),ϵ)
+function viscous_moment(x₀,u,ν,df,body,t=0,ϵ=1)
     df .= zero(eltype(u)); x₀ = eltype(u).(x₀)
-    @loop df[I,:] .= -2ν*cross(loc(0,I,eltype(u))-x₀,Snds(I,u,body,t)) over I ∈ bbox(body,inside_u(u))
+    @loop df[I,:] .= cross(loc(0,I,eltype(u))-x₀,νnds(I,u,ν,body,t,ϵ)) over I ∈ bbox(body,inside_u(u))
     sumdims(df)
 end
 
@@ -225,11 +243,11 @@ end
 
 Computes the total (pressure + viscous) moment on an immersed body relative to point x₀.
 """
-total_moment(x₀,sim) = total_moment(x₀,sim.flow,sim.body)
-total_moment(x₀,flow,body) = total_moment(x₀,flow.p,flow.u,flow.ν,flow.f,body,time(flow))
-function total_moment(x₀,p,u,ν,df,body,t=0)
+total_moment(x₀,sim) = total_moment(x₀,sim.flow,sim.body,sim.ϵ)
+total_moment(x₀,flow,body,ϵ=1) = total_moment(x₀,flow.p,flow.u,flow.ν,flow.f,body,time(flow),ϵ)
+function total_moment(x₀,p,u,ν,df,body,t=0,ϵ=1)
     df .= zero(eltype(p)); x₀ = eltype(p).(x₀)
-    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t)) over I ∈ bbox(body,inside(p))
+    @loop df[I,:] .= cross(loc(0,I,eltype(p))-x₀,τnds(I,p,u,ν,body,t,ϵ)) over I ∈ bbox(body,inside(p))
     sumdims(df)
 end
 
@@ -239,15 +257,15 @@ end
 Computes the total force and the total moment relative to point x₀ in a single pass over the body.
 The moment is accumulated in `flow.u⁰`, which is free between time steps.
 """
-total_force_and_moment(x₀,sim) = total_force_and_moment(x₀,sim.flow,sim.body)
-total_force_and_moment(x₀,flow,body) = total_force_and_moment(x₀,flow.p,flow.u,flow.ν,flow.f,flow.u⁰,body,time(flow))
-function total_force_and_moment(x₀,p,u,ν,df,dm,body,t=0)
+total_force_and_moment(x₀,sim) = total_force_and_moment(x₀,sim.flow,sim.body,sim.ϵ)
+total_force_and_moment(x₀,flow,body,ϵ=1) = total_force_and_moment(x₀,flow.p,flow.u,flow.ν,flow.f,flow.u⁰,body,time(flow),ϵ)
+function total_force_and_moment(x₀,p,u,ν,df,dm,body,t=0,ϵ=1)
     df .= zero(eltype(p)); dm .= zero(eltype(p)); x₀ = eltype(p).(x₀)
-    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t) over I ∈ bbox(body,inside(p))
+    @loop force_moment!(df,dm,I,p,u,ν,x₀,body,t,ϵ) over I ∈ bbox(body,inside(p))
     sumdims(df), sumdims(dm)
 end
-@inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t)
-    F = τnds(I,p,u,ν,body,t)
+@inline function force_moment!(df,dm,I,p,u,ν,x₀,body,t,ϵ)
+    F = τnds(I,p,u,ν,body,t,ϵ)
     df[I,:] .= F; dm[I,:] .= cross(loc(0,I,eltype(p))-x₀,F)
 end
 
