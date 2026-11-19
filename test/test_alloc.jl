@@ -2,7 +2,7 @@ using BenchmarkTools, Printf
 
 backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed to run allocations tests, use SIMD backend"))
 @testset "mom_step! allocations" begin
-    function Sim(θ;L=32,U=1,Re=100,perdir=(),λ=quick)
+    function Sim(θ;L=32,U=1,Re=100,perdir=(),λ=koren)
         function map(x,t)
             s,c = sincos(θ)
             SA[c -s; s c]*(x-SA[L,L])
@@ -13,7 +13,7 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
         end
         Simulation((20L,20L),(U,0),L,ν=U*L/Re,body=AutoBody(sdf,map),T=Float32,perdir=perdir,λ=λ)
     end
-    sim = Sim(Float32(π/36)) # default λ=quick
+    sim = Sim(Float32(π/36)) # default λ=koren
 
     sim_step!(sim)
     b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
