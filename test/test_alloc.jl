@@ -39,15 +39,15 @@ report(case, bytes) = @printf("▶ %-34s %6.2f KiB\n", case, bytes/1024)
     report("mom_step! (perdir=(2,))", r.memory)
     @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
 
-    b = @benchmarkable measure!($sim) samples=100; tune!(b)
+    b = @benchmarkable measure!($sim) samples=100; tune!(b) # concrete Simulation and Poisson fields: no runtime dispatch
     r = run(b)
     report("measure! (perdir=(2,))", r.memory)
-    @test r.memory < 1024 # less than 1 KiB on the best run (commit 7458970: 0.44 KiB)
+    @test r.memory == 0 # no allocations on the best run (commit 96d14b4: 0 B)
 end
 
 @testset "semi-coarsening + remeasure allocations" begin
     # Non-square (4:1) domain + moving body: exercises semi-coarsening and the per-step remeasure
-    # path through the multigrid V-cycle. Tight bound to catch per-V-cycle boxing (commit 7458970: 0.22 KiB).
+    # path through the multigrid V-cycle. Zero bound to catch per-V-cycle boxing (commit 96d14b4: 0 B).
     function SimAniso(θ; L=32, U=1, Re=100)
         function map(x,t)
             s,c = sincos(θ + t*U/L)
@@ -64,5 +64,5 @@ end
     b = @benchmarkable sim_step!($sim; remeasure=true) samples=100; tune!(b) # full step incl. remeasure
     r = run(b)
     report("sim_step! (aniso, remeasure=true)", r.memory)
-    @test r.memory < 512 # less than 0.5 KiB; 0.22 KiB at commit 7458970, ~2 KiB if a V-cycle call boxes
+    @test r.memory == 0 # no allocations on the best run (commit 96d14b4: 0 B), ~2 KiB if a V-cycle call boxes
 end
