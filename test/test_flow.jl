@@ -232,5 +232,12 @@ end
         @test all(Array(sim.flow.u)[2,2:end-1,1] .== 2) # BC! uses the new uBC
         swap!(sim,(3,0)) # Int tuple must be converted to the flow's eltype
         @test sim.flow.uBC === (3f0,0f0)
+        # a uBC function changes the type of the flow: swap it into a new Simulation instead
+        flow = WaterLily.setproperties(sim.flow; uBC=(i,x,t)->i==1 ? 4f0 : 0f0)
+        @test_throws MethodError (sim.flow = flow)
+        sim2 = WaterLily.setproperties(sim; flow)
+        @test sim2.flow.u === sim.flow.u && sim2.pois === sim.pois # fields are not copied
+        sim_step!(sim2)
+        @test all(Array(sim2.flow.u)[2,2:end-1,1] .== 4) # BC! uses the new uBC
     end
 end
