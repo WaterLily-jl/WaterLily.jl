@@ -37,8 +37,7 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
     @test r.memory <= mem₀ # periodic directions must not add allocations to mom_step!
 
-    # periodic conv_diff! must not allocate more than the non-periodic one: a runtime `Val{j in perdir}()`
-    # reached boundaries! by dynamic dispatch and boxed its arguments (≈ 0.3 KiB per call)
+    # periodic conv_diff! must not allocate more than the non-periodic one
     function conv_diff_memory(fl,perdir)
         local b = @benchmarkable WaterLily.conv_diff!($(fl.f),$(fl.u),$(fl.σ),$(fl.λ);ν=$(fl.ν),perdir=$perdir) samples=100; tune!(b)
         run(b).memory

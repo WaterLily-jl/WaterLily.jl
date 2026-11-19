@@ -39,8 +39,7 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     end
 end
 
-# Boundary types of the fluxes on the domain faces normal to `j`. `j in perdir` is a runtime value, but
-# `boundary_type` returns a small `Union`, so the compiler splits the `boundaries!` call into static calls
+# Boundary types of the fluxes on the domain faces normal to `j`
 struct Neumann end
 struct Periodic end
 boundary_type(j,perdir) = j in perdir ? Periodic() : Neumann()
