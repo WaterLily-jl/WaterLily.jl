@@ -20,26 +20,26 @@ report(case, bytes) = @printf("▶ %-34s %6.2f KiB\n", case, bytes/1024)
     sim = Sim(Float32(π/36)) # default λ=quick
 
     sim_step!(sim)
-    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
+    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b)
     r = run(b)
     report("mom_step! (λ=quick)", r.memory)
     @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
 
     sim_cds = Sim(Float32(π/36); λ=cds) # convective scheme selected at construction; mom_step! must still specialize
     sim_step!(sim_cds)
-    b = @benchmarkable mom_step!($sim_cds.flow, $sim_cds.pois) samples=100; tune!(b) # check 100 times
+    b = @benchmarkable mom_step!($sim_cds.flow, $sim_cds.pois) samples=100; tune!(b)
     r = run(b)
     report("mom_step! (λ=cds)", r.memory)
     @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
 
     sim = Sim(Float32(π/36); perdir=(2,)) # periodic conv_diff! fluxes must not allocate either
     sim_step!(sim)
-    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
+    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b)
     r = run(b)
     report("mom_step! (perdir=(2,))", r.memory)
     @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
 
-    b = @benchmarkable measure!($sim) samples=100; tune!(b) # check 100 times
+    b = @benchmarkable measure!($sim) samples=100; tune!(b)
     r = run(b)
     report("measure! (perdir=(2,))", r.memory)
     @test r.memory < 1024 # less than 1 KiB on the best run (commit 7458970: 0.44 KiB)
