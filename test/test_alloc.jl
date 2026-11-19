@@ -20,6 +20,7 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
     r = run(b)
     println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+    mem₀ = r.memory # non-periodic reference for the periodic case below
 
     sim_cds = Sim(Float32(π/36); λ=cds) # convective scheme selected at construction; mom_step! must still specialize
     sim_step!(sim_cds)
@@ -34,6 +35,17 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
     r = run(b)
     println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
     @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+    @test r.memory <= mem₀ # periodic directions must not add allocations to mom_step!
+
+    # periodic conv_diff! must not allocate more than the non-periodic one: a runtime `Val{j in perdir}()`
+    # reached boundaries! by dynamic dispatch and boxed its arguments (≈ 0.3 KiB per call)
+    function conv_diff_memory(fl,perdir)
+        local b = @benchmarkable WaterLily.conv_diff!($(fl.f),$(fl.u),$(fl.σ),$(fl.λ);ν=$(fl.ν),perdir=$perdir) samples=100; tune!(b)
+        run(b).memory
+    end
+    m₀, m = conv_diff_memory(sim.flow,()), conv_diff_memory(sim.flow,sim.flow.perdir)
+    println("▶ Allocated (conv_diff!, perdir=$(sim.flow.perdir)) "*@sprintf("%.2f", m/1e3)*" KiB, (perdir=()) "*@sprintf("%.2f", m₀/1e3)*" KiB")
+    @test m <= m₀
 
     b = @benchmarkable measure!($sim) samples=100; tune!(b) # check 100 times
     r = run(b)

@@ -35,24 +35,30 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
                    r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
             @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         end
-        boundaries!(r,u,ν,j,N,λ,Val{j in perdir}())
+        boundaries!(r,u,ν,j,N,λ,boundary_type(j,perdir))
     end
 end
 
+# Boundary types of the fluxes on the domain faces normal to `j`. `j in perdir` is a runtime value, but
+# `boundary_type` returns a small `Union`, so the compiler splits the `boundaries!` call into static calls
+struct Neumann end
+struct Periodic end
+boundary_type(j,perdir) = j in perdir ? Periodic() : Neumann()
+
 # Fluxes on domain boundaries normal to `j`
-function boundaries!(r,u,ν,j,N,λ,per)
+function boundaries!(r,u,ν,j,N,λ,bc)
     R = CartesianIndices((ntuple(k -> k==j ? (2:2) : (2:N[k]), length(N))...,1:length(N)))
     Nj = N[j]
-    @loop boundary!(r,Ii,u,ν,j,Nj,λ,per) over Ii ∈ face(R,j)
+    @loop boundary!(r,Ii,u,ν,j,Nj,λ,bc) over Ii ∈ face(R,j)
 end
 # Neumann BC
-@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{false})
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Neumann)
     I,i,IN = Base.front(Ii),last(Ii),CIj(j,Ii,N)
     @inbounds r[Ii] += ϕuL(j,Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
     @inbounds r[CIj(j,Ii,N-1)] -= ϕuR(j,IN,u,ϕ(i,CI(Base.front(IN),j),u),λ) - ν*∂(j,IN,u)
 end
 # Periodic BC
-@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{true})
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Periodic)
     I,i = Base.front(Ii),last(Ii)
     Φ = ϕuP(j,CIj(j,Ii,N-2),Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
     @inbounds r[Ii] += Φ; @inbounds r[CIj(j,Ii,N-1)] -= Φ
