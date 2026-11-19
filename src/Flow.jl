@@ -5,10 +5,10 @@
 @fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
 @fastmath cds(u,c,d) = (c+d)/2
 
-@inline ϕu(a,I,f,u,λ) = @inbounds u>0 ? u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuP(a,Ip,I,f,u,λ) = @inbounds u>0 ? u*λ(f[Ip],f[I-δ(a,I)],f[I]) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuL(a,I,f,u,λ) = @inbounds u>0 ? u*ϕ(a,I,f) : u*λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)])
-@inline ϕuR(a,I,f,u,λ) = @inbounds u<0 ? u*ϕ(a,I,f) : u*λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I])
+@inline ϕu(a,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[I-2δ(a,I)],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
+@inline ϕuP(a,Ip,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[Ip],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
+@inline ϕuL(a,I,f,u,λ) = @inbounds u*ifelse(u>0,ϕ(a,I,f),λ(f[I+δ(a,I)],f[I],f[I-δ(a,I)]))
+@inline ϕuR(a,I,f,u,λ) = @inbounds u*ifelse(u<0,ϕ(a,I,f),λ(f[I-2δ(a,I)],f[I-δ(a,I)],f[I]))
 
 @fastmath @inline function div(I::CartesianIndex{m},u) where {m}
     init=zero(eltype(u))
@@ -22,44 +22,41 @@ end
     for j ∈ 1:np1-1
         s+= @inbounds μ[I,j]*(f[I+δ(j,I)]-f[I-δ(j,I)])
     end
-    return 0.5s
+    return s/2
 end
-function median(a,b,c)
-    if a>b
-        b>=c && return b
-        a>c && return c
-    else
-        b<=c && return b
-        a<c && return c
-    end
-    return a
-end
+@fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
-    r .= zero(eltype(r))
+    fill!(r,zero(eltype(r)))
     N,n = size_u(u)
-    for i ∈ 1:n, j ∈ 1:n
-        # if it is periodic direction
-        tagper = (j in perdir)
-        # treatment for bottom boundary with BCs
-        lowerBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
-        # inner cells
-        @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
-               r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
-        @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
-        # treatment for upper boundary with BCs
-        upperBoundary!(r,u,Φ,ν,i,j,N,λ,Val{tagper}())
+    for j ∈ 1:n
+        for i ∈ 1:n # inner cells
+            @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
+                   r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
+            @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
+        end
+        boundaries!(r,u,ν,j,N,λ,Val{j in perdir}())
     end
 end
 
-# Neumann BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I,i] += ϕuL(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{false}) = @loop r[I-δ(j,I),i] += -ϕuR(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) + ν*∂(j,CI(I,i),u) over I ∈ slice(N,N[j],j,2)
-
-# Periodic BC Building block
-lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
-    Φ[I] = ϕuP(j,CIj(j,CI(I,i),N[j]-2),CI(I,i),u,ϕ(i,CI(I,j),u),λ) -ν*∂(j,CI(I,i),u); r[I,i] += Φ[I]) over I ∈ slice(N,2,j,2)
-upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
+# Fluxes on domain boundaries normal to `j`
+function boundaries!(r,u,ν,j,N,λ,per)
+    R = CartesianIndices((ntuple(k -> k==j ? (2:2) : (2:N[k]), length(N))...,1:length(N)))
+    Nj = N[j]
+    @loop boundary!(r,Ii,u,ν,j,Nj,λ,per) over Ii ∈ face(R,j)
+end
+# Neumann BC
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{false})
+    I,i,IN = Base.front(Ii),last(Ii),CIj(j,Ii,N)
+    @inbounds r[Ii] += ϕuL(j,Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
+    @inbounds r[CIj(j,Ii,N-1)] -= ϕuR(j,IN,u,ϕ(i,CI(Base.front(IN),j),u),λ) - ν*∂(j,IN,u)
+end
+# Periodic BC
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{true})
+    I,i = Base.front(Ii),last(Ii)
+    Φ = ϕuP(j,CIj(j,Ii,N-2),Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
+    @inbounds r[Ii] += Φ; @inbounds r[CIj(j,Ii,N-1)] -= Φ
+end
 
 """
     accelerate!(r,t,g,U)
@@ -69,10 +66,40 @@ Accounts for applied and reference-frame acceleration using `rᵢ += g(i,x,t)+dU
 accelerate!(r,t,::Nothing,::Union{Nothing,Tuple}) = nothing
 accelerate!(r,t,f::Function) = @loop r[Ii] += f(last(Ii),loc(Ii,eltype(r)),t) over Ii ∈ CartesianIndices(r)
 accelerate!(r,t,g::Function,::Union{Nothing,Tuple}) = accelerate!(r,t,g)
-accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->ForwardDiff.derivative(τ->U(i,x,τ),t))
-accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+ForwardDiff.derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,::Nothing,U::Function) = accelerate!(r,t,(i,x,t)->derivative(τ->U(i,x,τ),t))
+accelerate!(r,t,g::Function,U::Function) = accelerate!(r,t,(i,x,t)->g(i,x,t)+derivative(τ->U(i,x,τ),t))
+
 """
-    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}}
+    apply!(f, c)
+
+Apply a vector function `f(i,x)` to the faces of a uniform staggered array `c` or
+a function `f(x)` to the center of a uniform array `c`.
+"""
+apply!(f,c) = hasmethod(f,Tuple{Int,CartesianIndex}) ? applyV!(f,c) : applyS!(f,c)
+applyV!(f,c) = @loop c[Ii] = f(last(Ii),loc(Ii,eltype(c))) over Ii ∈ CartesianIndices(c)
+applyS!(f,c) = @loop c[I] = f(loc(0,I,eltype(c))) over I ∈ CartesianIndices(c)
+
+ic_function(uBC::Function) = (i,x)->uBC(i,x,0)
+ic_function(uBC) = (i,x)->uBC[i]
+
+"""
+    ic_kwarg(u0, uλ)
+
+Resolve the initial-condition keyword argument. `uλ` is the deprecated name for `u0`:
+if it is supplied a deprecation warning is emitted and its value is used only when `u0`
+is not given. Returns the effective initial condition (possibly `nothing`).
+
+Remove this function in WL 2.0
+"""
+function ic_kwarg(u0, uλ)
+    isnothing(uλ) && return u0
+    @warn "The `uλ` keyword argument is deprecated and will be removed in a future release. Use `u0` instead." maxlog=1
+    isnothing(u0) ? uλ : u0
+end
+
+abstract type AbstractFlow{D,T} end
+"""
+    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, Lf, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
@@ -81,7 +108,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -96,92 +123,138 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     uBC :: UBC # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    g :: G # acceleration field funciton
+    g :: G # acceleration field function
     exitBC :: Bool # Convection exit
     perdir :: NTuple # tuple of periodic direction
-    function Flow(N::NTuple{D}, uBC; f=Array, Δt=0.25, ν=0., g=nothing,
-            uλ=nothing, perdir=(), exitBC=false, T=Float32) where D
+    λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
+    function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
+            u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
+        u0 = ic_kwarg(u0, uλ) # to be removed in v2.0
+        uBC isa Tuple && (uBC = T.(uBC)) # same type for all components: `uBC[i]` must be type-stable in GPU kernels
         Ng = N .+ 2
         Nd = (Ng..., D)
-        isnothing(uλ) && (uλ = ic_function(uBC))
-        u = Array{T}(undef, Nd...) |> f
-        isa(uλ, Function) ? apply!(uλ, u) : apply!((i,x)->uλ[i], u)
-        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,0.)
-        u⁰ = copy(u)
-        fv, p, σ = zeros(T, Nd) |> f, zeros(T, Ng) |> f, zeros(T, Ng) |> f
-        V, μ₀, μ₁ = zeros(T, Nd) |> f, ones(T, Nd) |> f, zeros(T, Ng..., D, D) |> f
+        isnothing(u0) && (u0 = ic_function(uBC))
+        b = get_backend(mem([zero(T)])) # the device of `mem`; the fields are allocated with `zeros_on`
+        u = zeros_on(b,T,Nd)
+        isa(u0, Function) ? apply!(u0, u) : apply!(ic_function(T.(u0)), u)
+        BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
+        u⁰ = copyto!(zeros_on(b,T,Nd),u)
+        fv, p, σ = zeros_on(b,T,Nd), zeros_on(b,T,Ng), zeros_on(b,T,Ng)
+        V, μ₀, μ₁ = zeros_on(b,T,Nd), ones_on(b,T,Nd), zeros_on(b,T,(Ng...,D,D))
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(uBC),typeof(g)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ),typeof(uBC),typeof(g)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
+    end
+    # field-wise constructor: lets `setproperties(flow; uBC)` swap non-field values without reallocating the fields
+    function Flow(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
+        uBC isa Tuple && (uBC = eltype(p).(uBC)) # same type-stability requirement as above
+        new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ),typeof(uBC),typeof(g)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
     end
 end
 
 """
-    time(a::Flow)
-
-Current flow time.
-"""
-time(a::Flow) = sum(@view(a.Δt[1:end-1]))
-
-function BDIM!(a::Flow)
-    dt = a.Δt[end]
-    @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
-    @loop a.u[Ii] += μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii] over Ii ∈ inside_u(size(a.p))
-end
-
-function project!(a::Flow{n},b::AbstractPoisson,w=1) where n
-    dt = w*a.Δt[end]
-    @inside b.z[I] = div(I,a.u); b.x .*= dt # set source term & solution IC
-    solver!(b)
-    for i ∈ 1:n  # apply solution and unscale to recover pressure
-        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
-    end
-    b.x ./= dt
-end
-
-"""
-    mom_step!(a::Flow,b::AbstractPoisson;λ=quick,udf=nothing,kwargs...)
+    mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+`kwargs` are passed to `udf` and `poisson_kwargs` to `solver!`.
 """
-@fastmath function mom_step!(a::Flow{N},b::AbstractPoisson;λ=quick,udf=nothing,kwargs...) where N
-    a.u⁰ .= a.u; scale_u!(a,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
+    a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
-    conv_diff!(a.f,a.u⁰,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t₀; kwargs...)
-    accelerate!(a.f,t₀,a.g,a.uBC)
-    BDIM!(a); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁) # BC MUST be at t₁
-    a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit
-    project!(a,b); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    mom_predict!(a,t₀,t₁;udf,kwargs...)
+    mom_project!(a,b,1,t₁;poisson_kwargs...)
     # corrector u → u¹
     @log "c"
-    conv_diff!(a.f,a.u,a.σ,λ;ν=a.ν,perdir=a.perdir)
-    udf!(a,udf,t₁; kwargs...)
-    accelerate!(a.f,t₁,a.g,a.uBC)
-    BDIM!(a); scale_u!(a,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
-    project!(a,b,0.5); BC!(a.u,a.uBC,a.exitBC,a.perdir,t₁)
+    mom_correct!(a,t₁;udf,kwargs...)
+    mom_project!(a,b,2,t₁;poisson_kwargs...)
     push!(a.Δt,CFL(a))
 end
-scale_u!(a,scale) = @loop a.u[Ii] *= scale over Ii ∈ inside_u(size(a.p))
 
-function CFL(a::Flow;Δt_max=10)
+"""
+    time(a::AbstractFlow)
+
+Current flow time.
+"""
+time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
+
+function BDIM!(a::AbstractFlow,s=1)
+    dt = a.Δt[end]
+    @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
+    @loop a.u[Ii] = (a.u[Ii]+(μddn(Ii,a.μ₁,a.f)+a.V[Ii]+a.μ₀[Ii]*a.f[Ii]))/s over Ii ∈ inside_u(size(a.p))
+end
+
+"""
+    mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
+
+Predictor phase of `mom_step!`: advect under `u⁰` with the convective scheme `a.λ` and apply BDIM.
+`t₀` and `t₁` are the start and end times of the step; the domain BCs are enforced at `t₁`
+by `mom_project!`.
+"""
+function mom_predict!(a::AbstractFlow, t₀, t₁; udf=nothing, kwargs...)
+    conv_diff!(a.f,a.u⁰,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
+    udf!(a,udf,a.u⁰,t₀; kwargs...) # advect with u⁰
+    accelerate!(a.f,t₀,a.g,a.uBC)
+    BDIM!(a)
+end
+
+"""
+    mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
+
+Corrector phase of `mom_step!`: advect under the projected `u` with the convective scheme `a.λ`,
+apply BDIM and blend with the trapezoidal weight.
+"""
+function mom_correct!(a::AbstractFlow, t; udf=nothing, kwargs...)
+    conv_diff!(a.f,a.u,a.σ,a.λ;ν=a.ν,perdir=a.perdir)
+    udf!(a,udf,a.u,t; kwargs...) # advect with projected a.u
+    accelerate!(a.f,t,a.g,a.uBC)
+    BDIM!(a,2)
+end
+scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p)))
+
+"""
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
+
+Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
+the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
+in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
+"""
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
+    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
+    w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
+    dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
+    Dp = diagonal(b)                                # Poisson matrix diagonal
+    @inside b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
+    solver!(b; kwargs...)
+    for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
+        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
+    end
+    b.x ./= dt
+    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
+end
+
+function CFL(a::AbstractFlow;Δt_max=10)
+    fill!(a.σ,0) # the ghosts hold scratch values (such as the fluxes of conv_diff!)
     @inside a.σ[I] = flux_out(I,a.u)
     min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
-    s = zero(eltype(u))
+    s = z = zero(eltype(u))
     for i in 1:d
-        s += @inbounds(max(0,u[I+δ(i,I),i])+max(0,-u[I,i]))
+        s += @inbounds(max(z,u[I+δ(i,I),i])+max(z,-u[I,i]))
     end
     return s
 end
 
 """
-    udf!(flow::Flow,udf::Function,t)
+    udf!(flow::AbstractFlow,udf::Function,u,t)
 
-User defined function using `udf::Function` to operate on `flow::Flow` during the predictor and corrector step, in sync with time `t`.
-Keyword arguments must be passed to `sim_step!` for them to be carried over the actual function call.
+User defined function using `udf::Function` to operate on `flow::AbstractFlow` during the
+predictor and corrector step, in sync with time `t`. `u` is the velocity field the convective
+flux is evaluated on in that phase (`a.u⁰` in the predictor, `a.u` in the corrector).
+A `udf` that needs the advecting velocity (eg. SGS) should use `force!(flow,u,t; kwargs...)`.
+Keyword arguments must be passed to `sim_step!` for them to be carried over the actual call.
 """
-udf!(flow,::Nothing,t; kwargs...) = nothing
-udf!(flow,force!::Function,t; kwargs...) = force!(flow,t; kwargs...)
+udf!(flow,::Nothing,u,t; kwargs...) = nothing
+udf!(flow,force!::Function,u,t; kwargs...) =
+    applicable(force!,flow,u,t) ? force!(flow,u,t; kwargs...) : force!(flow,t; kwargs...)
