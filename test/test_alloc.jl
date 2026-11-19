@@ -2,8 +2,12 @@ using BenchmarkTools, Printf
 
 backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed to run allocations tests, use SIMD backend"))
 
-# Print the memory allocated on the best (minimum) run of a benchmark, labelled with the test case it belongs to
-report(case, bytes) = @printf("▶ %-34s %6.2f KiB\n", case, bytes/1024)
+# Run benchmark `b`, print the bytes allocated on its best (minimum) run next to the test `case`, and test that it is zero
+function noalloc(case, b)
+    tune!(b); r = run(b)
+    @printf("▶ %-34s %d B\n", case, r.memory)
+    @test r.memory == 0
+end
 
 @testset "mom_step! allocations" begin
     function Sim(θ;L=32,U=1,Re=100,perdir=(),λ=quick)
@@ -18,36 +22,23 @@ report(case, bytes) = @printf("▶ %-34s %6.2f KiB\n", case, bytes/1024)
         Simulation((20L,20L),(U,0),L,ν=U*L/Re,body=AutoBody(sdf,map),T=Float32,perdir=perdir,λ=λ)
     end
     sim = Sim(Float32(π/36)) # default λ=quick
-
     sim_step!(sim)
-    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b)
-    r = run(b)
-    report("mom_step! (λ=quick)", r.memory)
-    @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
+    noalloc("mom_step! (λ=quick)", @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100)
 
     sim_cds = Sim(Float32(π/36); λ=cds) # convective scheme selected at construction; mom_step! must still specialize
     sim_step!(sim_cds)
-    b = @benchmarkable mom_step!($sim_cds.flow, $sim_cds.pois) samples=100; tune!(b)
-    r = run(b)
-    report("mom_step! (λ=cds)", r.memory)
-    @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
+    noalloc("mom_step! (λ=cds)", @benchmarkable mom_step!($sim_cds.flow, $sim_cds.pois) samples=100)
 
     sim = Sim(Float32(π/36); perdir=(2,)) # periodic conv_diff! fluxes must not allocate either
     sim_step!(sim)
-    b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b)
-    r = run(b)
-    report("mom_step! (perdir=(2,))", r.memory)
-    @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
-
-    b = @benchmarkable measure!($sim) samples=100; tune!(b) # concrete Simulation and Poisson fields: no runtime dispatch
-    r = run(b)
-    report("measure! (perdir=(2,))", r.memory)
-    @test r.memory == 0 # no allocations on the best run (commit 96d14b4: 0 B)
+    noalloc("mom_step! (perdir=(2,))", @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100)
+    # concretely typed Simulation and Poisson fields: no runtime dispatch
+    noalloc("measure! (perdir=(2,))", @benchmarkable measure!($sim) samples=100)
 end
 
 @testset "semi-coarsening + remeasure allocations" begin
     # Non-square (4:1) domain + moving body: exercises semi-coarsening and the per-step remeasure
-    # path through the multigrid V-cycle. Zero bound to catch per-V-cycle boxing (commit 96d14b4: 0 B).
+    # path through the multigrid V-cycle, where a boxed V-cycle call would allocate ~2 KiB.
     function SimAniso(θ; L=32, U=1, Re=100)
         function map(x,t)
             s,c = sincos(θ + t*U/L)
@@ -61,8 +52,5 @@ end
     end
     sim = SimAniso(Float32(π/36))
     sim_step!(sim)
-    b = @benchmarkable sim_step!($sim; remeasure=true) samples=100; tune!(b) # full step incl. remeasure
-    r = run(b)
-    report("sim_step! (aniso, remeasure=true)", r.memory)
-    @test r.memory == 0 # no allocations on the best run (commit 96d14b4: 0 B), ~2 KiB if a V-cycle call boxes
+    noalloc("sim_step! (aniso, remeasure=true)", @benchmarkable sim_step!($sim; remeasure=true) samples=100) # full step incl. remeasure
 end
