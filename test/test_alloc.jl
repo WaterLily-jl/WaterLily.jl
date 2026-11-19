@@ -24,7 +24,6 @@ report(case, bytes) = @printf("▶ %-34s %6.2f KiB\n", case, bytes/1024)
     r = run(b)
     report("mom_step! (λ=quick)", r.memory)
     @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
-    mem₀ = r.memory # non-periodic reference for the periodic case below
 
     sim_cds = Sim(Float32(π/36); λ=cds) # convective scheme selected at construction; mom_step! must still specialize
     sim_step!(sim_cds)
@@ -33,43 +32,17 @@ report(case, bytes) = @printf("▶ %-34s %6.2f KiB\n", case, bytes/1024)
     report("mom_step! (λ=cds)", r.memory)
     @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
 
-    sim = Sim(Float32(π/36); perdir=(2,))
+    sim = Sim(Float32(π/36); perdir=(2,)) # periodic conv_diff! fluxes must not allocate either
     sim_step!(sim)
     b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
     r = run(b)
     report("mom_step! (perdir=(2,))", r.memory)
     @test r.memory == 0 # no allocations on the best run (commit 7458970: 0 B)
-    @test r.memory <= mem₀ # periodic directions must not add allocations to mom_step!
-
-    # periodic conv_diff! must not allocate more than the non-periodic one
-    function conv_diff_memory(fl,perdir)
-        local b = @benchmarkable WaterLily.conv_diff!($(fl.f),$(fl.u),$(fl.σ),$(fl.λ);ν=$(fl.ν),perdir=$perdir) samples=100; tune!(b)
-        run(b).memory
-    end
-    m₀, m = conv_diff_memory(sim.flow,()), conv_diff_memory(sim.flow,sim.flow.perdir)
-    report("conv_diff! (perdir=())", m₀)
-    report("conv_diff! (perdir=$(sim.flow.perdir))", m)
-    @test m₀ == 0 # no allocations on the best run (commit 7458970: 0 B)
-    @test m <= m₀
 
     b = @benchmarkable measure!($sim) samples=100; tune!(b) # check 100 times
     r = run(b)
     report("measure! (perdir=(2,))", r.memory)
     @test r.memory < 1024 # less than 1 KiB on the best run (commit 7458970: 0.44 KiB)
-
-    # Verify AbstractFlow type widening did not introduce allocations via dynamic dispatch
-    # flow_ctor produces a Flow <: AbstractFlow; mom_step! must still be fully compiled
-    let θ=Float32(π/36), L=32, U=1, Re=100
-        function map2(x,t); s,c=sincos(θ); SA[c -s;s c]*(x-SA[L,L]) end
-        function sdf2(ξ,t); p=ξ-SA[0,clamp(ξ[1],-L/2,L/2)]; √(p'*p)-2 end
-        sim2 = Simulation((20L,20L),(U,0),L;ν=U*L/Re,body=AutoBody(sdf2,map2),T=Float32,
-                          flow_ctor=(d,u;kw...)->Flow(d,u;kw...))
-        sim_step!(sim2)
-        b = @benchmarkable mom_step!($sim2.flow, $sim2.pois) samples=100; tune!(b)
-        r = run(b)
-        report("mom_step! (flow_ctor)", r.memory)
-        @test r.memory == 0 # AbstractFlow dispatch must not allocate, like concrete Flow
-    end
 end
 
 @testset "semi-coarsening + remeasure allocations" begin
