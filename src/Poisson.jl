@@ -184,6 +184,7 @@ function GaussSeidelRB!(p::Poisson{T};it=4, ω=1, residual=true) where {T}
 end
 
 using LinearAlgebra: ⋅
+import AcceleratedKernels as AK
 """
     perdot(a,b,perdir)
 
@@ -192,7 +193,7 @@ Apply dot product to the inner cells of two _scalar_ fields, assuming zero value
 perdot(a,b,::Tuple{}) = a⋅b
 perdot(a,b,perdir,R=inside(a)) = perdot(get_backend(a),a,b,R)
 perdot(::CPU,a,b,R) = sum(@inbounds(a[I]*b[I]) for I ∈ R)
-perdot(::Backend,a,b,R) = mapreduce(*,+,view(a,R.indices...),view(b,R.indices...))
+perdot(B::Backend,a,b,R) = AK.mapreduce(I->@inbounds(a[I]*b[I]),+,R;backend=B) # reduces over the indices, no views
 """
     global_perdot(a,b,perdir)
 
@@ -238,11 +239,19 @@ Squared L₂ norm of array `a` over `R`, which excludes the ghost cells by defau
 """
 L₂(a,R::CartesianIndices=inside(a)) = L₂(get_backend(a),a,R)
 L₂(::CPU,a,R) = sum(abs2,@inbounds(a[I]) for I ∈ R)
-L₂(::Backend,a,R) = mapreduce(abs2,+,view(a,R.indices...))
-L₂(p::Poisson) = global_dot(p.r, p.r)               # Σr² across ranks (outside(p.r)≡0)
+L₂(B::Backend,a,R) = AK.mapreduce(I->abs2(@inbounds(a[I])),+,R;backend=B)
+L₂(p::Poisson) = global_dot(p.r, p.r)                # Σr² across ranks (outside(p.r)≡0)
 L₁(p::Poisson) = global_allreduce(local_sumabs(p.r)) # Σ|r| across ranks (outside(p.r)≡0)
-L∞(p::Poisson) = global_max(maximum(abs,p.r))       # max|r| across ranks (outside(p.r)≡0)
-L₁L∞(p::Poisson) = global_sum_max(local_sumabs(p.r), maximum(abs,p.r)) # (L₁, L∞) in one reduction across ranks
+L∞(p::Poisson) = global_max(maximum(abs,p.r))        # max|r| across ranks (outside(p.r)≡0)
+"""
+    L₁L∞(p::Poisson)
+
+Returns the L₁(p) and L∞(p) norms of the `p::Poisson` residual `r`, across ranks in one
+reduction (`global_sum_max`).
+"""
+L₁L∞(p::Poisson) = global_sum_max(L₁L∞(get_backend(p.r),p.r)...)
+L₁L∞(::CPU,r) = (sum(abs,r),maximum(abs,r))
+L₁L∞(::Backend,r) = AK.mapreduce(x->(abs(x),abs(x)),(a,b)->(a[1]+b[1],max(a[2],b[2])),r;init=(zero(eltype(r)),zero(eltype(r))))
 
 # mean residual  Σ|r|/N < tol/10   ⟺   L₁(p)=Σ|r| < (tol/10)·N.
 # N = p.inslen: global interior-cell count (mode-aware, so serial≡parallel).

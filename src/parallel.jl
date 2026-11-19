@@ -259,7 +259,6 @@ _comm!(a, perdir, ::Serial) = perBC!(a, perdir)
 write the cells of `a` it loops over, not its ghosts): first over `inner(R)`
 while the messages travel, then over `shell(R)` once the halo is in.
 """
-# `f::F`: Julia does not specialize on an argument it only passes on, and the closure would be allocated
 comm!(f::F, a, perdir, R=inside(a)) where F = _comm!(f, a, perdir, R, par_mode[])
 _comm!(f, a, perdir, R, ::Serial) = (perBC!(a, perdir); f(R))
 

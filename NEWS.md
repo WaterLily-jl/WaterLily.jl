@@ -1,5 +1,9 @@
 # WaterLily.jl release notes
 
+## Unreleased
+
+- **AcceleratedKernels.jl fused reductions on GPUs**: [AcceleratedKernels.jl](https://github.com/JuliaGPU/AcceleratedKernels.jl) is now a dependency. The GPU methods of `perdot` and `L₂` reduce over the interior indices with `AK.mapreduce` instead of over views. Also, the mean and maximum residual norms stem from the new internal `L₁L∞(p::Poisson)`, which is one AcceleratedKernels.jl reduction on GPUs instead of two.
+
 ## v1.11
 
 ### Highlights
