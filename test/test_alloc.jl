@@ -1,6 +1,10 @@
 using BenchmarkTools, Printf
 
 backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed to run allocations tests, use SIMD backend"))
+
+# Print the memory allocated on the best (minimum) run of a benchmark, labelled with the test case it belongs to
+report(case, bytes) = @printf("▶ %-34s %6.2f KiB\n", case, bytes/1024)
+
 @testset "mom_step! allocations" begin
     function Sim(θ;L=32,U=1,Re=100,perdir=(),λ=quick)
         function map(x,t)
@@ -18,23 +22,23 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
     sim_step!(sim)
     b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
     r = run(b)
-    println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
-    @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+    report("mom_step! (λ=quick)", r.memory)
+    @test r.memory < 50000 # less than 50 kB on the best run (commit 7458970: 0.00 KiB)
     mem₀ = r.memory # non-periodic reference for the periodic case below
 
     sim_cds = Sim(Float32(π/36); λ=cds) # convective scheme selected at construction; mom_step! must still specialize
     sim_step!(sim_cds)
     b = @benchmarkable mom_step!($sim_cds.flow, $sim_cds.pois) samples=100; tune!(b) # check 100 times
     r = run(b)
-    println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
-    @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+    report("mom_step! (λ=cds)", r.memory)
+    @test r.memory < 50000 # less than 50 kB on the best run (commit 7458970: 0.00 KiB)
 
     sim = Sim(Float32(π/36); perdir=(2,))
     sim_step!(sim)
     b = @benchmarkable mom_step!($sim.flow, $sim.pois) samples=100; tune!(b) # check 100 times
     r = run(b)
-    println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
-    @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+    report("mom_step! (perdir=(2,))", r.memory)
+    @test r.memory < 50000 # less than 50 kB on the best run (commit 7458970: 0.00 KiB)
     @test r.memory <= mem₀ # periodic directions must not add allocations to mom_step!
 
     # periodic conv_diff! must not allocate more than the non-periodic one
@@ -43,13 +47,14 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
         run(b).memory
     end
     m₀, m = conv_diff_memory(sim.flow,()), conv_diff_memory(sim.flow,sim.flow.perdir)
-    println("▶ Allocated (conv_diff!, perdir=$(sim.flow.perdir)) "*@sprintf("%.2f", m/1e3)*" KiB, (perdir=()) "*@sprintf("%.2f", m₀/1e3)*" KiB")
+    report("conv_diff! (perdir=())", m₀)
+    report("conv_diff! (perdir=$(sim.flow.perdir))", m)
     @test m <= m₀
 
     b = @benchmarkable measure!($sim) samples=100; tune!(b) # check 100 times
     r = run(b)
-    println("▶ Allocated "*@sprintf("%.0f", r.memory/1e3)*" KiB")
-    @test r.memory < 50000 # less than 50 KiB allocated on the best mom_step! run (commit f721343 ≈ 8 KiB)
+    report("measure! (perdir=(2,))", r.memory)
+    @test r.memory < 50000 # less than 50 kB on the best run (commit 7458970: 0.44 KiB)
 
     # Verify AbstractFlow type widening did not introduce allocations via dynamic dispatch
     # flow_ctor produces a Flow <: AbstractFlow; mom_step! must still be fully compiled
@@ -61,14 +66,14 @@ backend != "SIMD" && throw(ArgumentError("KernelAbstractions backend not allowed
         sim_step!(sim2)
         b = @benchmarkable mom_step!($sim2.flow, $sim2.pois) samples=100; tune!(b)
         r = run(b)
-        println("▶ Allocated (flow_ctor path) "*@sprintf("%.0f", r.memory/1e3)*" KiB")
+        report("mom_step! (flow_ctor)", r.memory)
         @test r.memory < 50000 # AbstractFlow dispatch must not allocate more than concrete Flow
     end
 end
 
 @testset "semi-coarsening + remeasure allocations" begin
     # Non-square (4:1) domain + moving body: exercises semi-coarsening and the per-step remeasure
-    # path through the multigrid V-cycle. Tight bound to catch per-V-cycle boxing (clean ≈ 0.45 KiB).
+    # path through the multigrid V-cycle. Tight bound to catch per-V-cycle boxing (commit 7458970: 0.22 KiB).
     function SimAniso(θ; L=32, U=1, Re=100)
         function map(x,t)
             s,c = sincos(θ + t*U/L)
@@ -84,6 +89,6 @@ end
     sim_step!(sim)
     b = @benchmarkable sim_step!($sim; remeasure=true) samples=100; tune!(b) # full step incl. remeasure
     r = run(b)
-    println("▶ Allocated (aniso sim_step! remeasure) "*@sprintf("%.2f", r.memory/1e3)*" KiB")
-    @test r.memory < 1000 # less than 1 KiB; ~0.45 KiB clean, ~2 KiB if a V-cycle call boxes
+    report("sim_step! (aniso, remeasure=true)", r.memory)
+    @test r.memory < 1000 # less than 1 kB; 0.22 KiB at commit 7458970, ~2 KiB if a V-cycle call boxes
 end
