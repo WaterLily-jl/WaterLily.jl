@@ -3,9 +3,8 @@
 # Serial WaterLily dispatches all parallel hooks through `par_mode[]` (defaults
 # to Serial()). The MPI extension (WaterLilyMPIExt) adds `Parallel <:
 # AbstractParMode` with MPI-aware methods — no method overwriting, so
-# precompilation works normally. This file only depends on Base/stdlib and is
-# included before core.jl (whose `_BC!`/`_exitBC!` signatures reference
-# `AbstractParMode`).
+# precompilation works normally. This file only depends on Base/stdlib and
+# StaticArrays.
 using LinearAlgebra: ⋅
 using StaticArrays
 

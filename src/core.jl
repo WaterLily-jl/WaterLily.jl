@@ -288,8 +288,7 @@ Periodic directions are handled by `velocity_comm!` (called at the end, unless
 exchange supplies neighbor data there instead).
 """
 BC!(a,U,saveexit=false,perdir=(),t=0;comm=true) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t;comm)
-BC!(a,uBC::Function,saveexit=false,perdir=(),t=0;comm=true) = _BC!(a, uBC, saveexit, perdir, t, comm, par_mode[])
-function _BC!(a, uBC::Function, saveexit, perdir, t, comm, ::AbstractParMode)
+function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0;comm=true)
     N,n = size_u(a)
     for j ∈ 1:n
         j in perdir && continue  # periodic handled by velocity_comm!
@@ -317,8 +316,7 @@ end
 Apply a 1D convection scheme to fill the ghost cell on the exit of the domain,
 then exchange the halo (`comm=false`: left to a later `velocity_comm!`).
 """
-exitBC!(u,u⁰,Δt;comm=true) = _exitBC!(u,u⁰,Δt,comm,par_mode[])
-function _exitBC!(u,u⁰,Δt,comm,::AbstractParMode)
+function exitBC!(u,u⁰,Δt;comm=true)
     N,_ = size_u(u)
     inflowL = slice(N.-1,2,1,2)              # inflow face (left wall face)
     exitR   = slice(N.-1,N[1],1,2)           # exit slice excluding ghosts (right wall face)

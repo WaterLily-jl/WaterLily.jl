@@ -8,8 +8,7 @@ using DocStringExtensions, Printf
 abstract type AbstractSimulation end
 
 # AbstractParMode dispatch machinery + MPI-parallel interface (Serial defaults;
-# WaterLilyMPIExt adds the Parallel methods). Included before core.jl because
-# `_BC!`/`_exitBC!` signatures reference `AbstractParMode`.
+# WaterLilyMPIExt adds the Parallel methods).
 include("parallel.jl")
 export global_allreduce,global_allreduce!,global_dot,global_sum,global_length,global_min,global_max,
        scalar_halo!,velocity_halo!,comm!,velocity_comm!,

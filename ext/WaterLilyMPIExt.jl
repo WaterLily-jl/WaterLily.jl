@@ -330,7 +330,7 @@ function _overlap!(f, a, R)
     f(WaterLily.shell(R))
 end
 
-# Rank-internal faces are non-physical: `_BC!`/`_exitBC!` skip writes there
+# Rank-internal faces are non-physical: `BC!`/`exitBC!` skip writes there
 # and the halo supplies neighbor data.
 WaterLily._phys_left(j,  p::Parallel) = p.neighbors[1, j] < 0
 WaterLily._phys_right(j, p::Parallel) = p.neighbors[2, j] < 0
