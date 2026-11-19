@@ -37,7 +37,7 @@ end
 
 function ω2D_viz!(cpu_array, sim)
     a = sim.flow.σ
-    WaterLily.@inside a[I] = WaterLily.curl(3,I,sim.flow.u)
+    WaterLily.@inside a[I] = last(WaterLily.ω(I,sim.flow.u)) # ω₃, also in 3D
     copyto!(cpu_array, ad_f(sim)(@view a[inside(a)]))
 end
 function ω3D_viz!(cpu_array, sim)
@@ -102,7 +102,7 @@ plot_σ_obs!(ax, σ::Observable{<:GeometryBasics.Mesh}; color=RGBf(0.35,0.55,0.8
 """
     viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
         udf=nothing, udf_kwargs=nothing,
-        d=ndims(sim.flow.p), CIs=nothing, cut=nothing, tidy_colormap=true, isomesh=nothing,
+        d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, at=:center, tidy_colormap=true, isomesh=nothing,
         body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
         video=nothing, img=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
         theme=nothing, fig_size=nothing, fig_pad=10, kwargs...)
@@ -138,6 +138,11 @@ Keyword arguments:
         full body. Defaults to `nothing` (no mirroring). Length must match the plot dimension `d`. A non-zero entry flags the
         dimension to mirror: e.g. `d=2, sym=(0,1)` mirrors along the 2nd plot axis; `d=3, sym=(1,1,0)` mirrors along the 1st and
         2nd plot axes. Both the scalar field and the body SDF are mirrored; the axis `limits` are doubled along mirrored dims.
+        A negative entry also flips the sign of the mirrored field (eg. the velocity normal to the plane), as the default
+        vorticity does.
+    - `at`: Location of the field in the cell: `:center` (default), `(:face,i)`, `(:edge,i)` or `:corner` (see
+        [`WaterLily.stagger`](@ref)). The plot is shifted accordingly, except normal to the plane of a 2D cut. The plot
+        coordinates are those of the cells in `CIs`, with the first one centered at 0.5.
     - `tidy_colormap::Bool`: Adjusts the colormap to have a fully transparent color near 0 values. Additional plotting options
         passed into `kwargs` (eg. colormap, levels) are preserved.
         Pass `threshhold::Number` to adjust the near-0 range`, `threshhold_color::RGBA` to set to a color different from white, and
@@ -177,7 +182,7 @@ Keyword arguments:
 """
 function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbose=true,
     udf=nothing, udf_kwargs=nothing,
-    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, tidy_colormap=true, isomesh=nothing,
+    d=ndims(sim.flow.p), CIs=nothing, cut=nothing, sym=nothing, at=:center, tidy_colormap=true, isomesh=nothing,
     body=!(typeof(sim.body)<:WaterLily.NoBody), body_color=:grey, body2mesh=false,
     video=nothing, img=nothing, hidedecorations=false, elevation=π/8, azimuth=1.275π, framerate=60, compression=5,
     theme=nothing, fig_size=nothing, fig_pad=10, fig=nothing, ax=nothing, kwargs...)
@@ -188,12 +193,12 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     function update_data()
         if !pathlines
             f(dat, sim)
-            mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym)
+            mirror_sym!(σ_buf, WaterLily.squeeze(@view dat[CIs]), sym, shift)
             σ[] = σ_buf
         end
         if body && remeasure
             update_body!(dat, sim)
-            mirror_sym!(σb_buf, WaterLily.squeeze(@view dat[CIs]), sym)
+            mirror_sym!(σb_buf, WaterLily.squeeze(@view dat[CIs]), symb)
             σb_obs[] = get_body(σb_buf, Val{body2mesh}())
         end
     end
@@ -229,8 +234,12 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
             cut_dim = findfirst(!=(0), cut)
             CIs = Tuple(i == cut_dim ? (cut[i]:cut[i]) : CIs.indices[i] for i in 1:D) |> CartesianIndices
         end
-        limits = Tuple((1,n) for n in size(CIs) if n > 1)
-        !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (1, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
+        pdims = findall(>(1), size(CIs)) # simulation dims on the plot axes
+        shift = WaterLily.stagger(at, D)[pdims]
+        f === ω2D_viz! && !isnothing(sym) && (sym = ntuple(i -> pdims[i]<3 ? -abs(sym[i]) : abs(sym[i]), d)) # ω₃ is odd about x and y
+        o = d==2 ? -0.5 : 0. # moves the contourf sample k from k to its cell center k-0.5, where a volume puts it
+        limits = Tuple((0,n) for n in size(CIs) if n > 1)
+        !isnothing(sym) && (limits = Tuple(sym[i] != 0 ? (0, 2*lim[2]) : lim for (i, lim) in enumerate(limits)))
         if isnothing(fig_size)
             fig_size = (1200, 1200)
             d == 2 && (fig_size = (fig_size[1], fig_size[2] * (limits[2][2] / limits[1][2])))
@@ -243,8 +252,8 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
     else
         f(dat, sim)
         slice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
-        σ_buf = similar(dat, mirror_size(slice0, sym))
-        mirror_sym!(σ_buf, slice0, sym)
+        σ_buf = similar(dat, mirror_size(slice0, sym, shift))
+        mirror_sym!(σ_buf, slice0, sym, shift)
         σ = Observable(σ_buf)
 
         !isnothing(theme) && set_theme!(theme)
@@ -265,18 +274,21 @@ function viz!(sim; f=nothing, duration=nothing, step=0.1, remeasure=true, verbos
             algorithm = :algorithm in keys(kwargs) ? kwargs[:algorithm] : :mip
             algorithm != :iso && !(:enable_depth in keys(kwargs)) && (kwargs = add_kwarg(:enable_depth=>false; kwargs...))
         end
-        plot_σ_obs!(ax, isnothing(isomesh) ? σ : lift(a -> isosurface_mesh(a, isomesh), σ); kwargs...)
+        p = plot_σ_obs!(ax, isnothing(isomesh) ? σ : lift(a -> isosurface_mesh(a, isomesh), σ); kwargs...)
+        translate!(p, (o .+ (isnothing(sym) ? shift : map((sᵢ,m) -> m==0 ? sᵢ : -sᵢ, shift, sym)))...) # a mirrored axis drops the sample on the plane, so its shift flips sign
         hidedecorations && d==3 && (hidedecorations!(ax); ax.xspinesvisible = false; ax.yspinesvisible = false; ax.zspinesvisible = false)
         hidedecorations && d==2 && (hidedecorations!(ax); ax.spinewidth=0)
     end
 
+    symb = isnothing(sym) ? nothing : map(abs, sym) # the body SDF is even
     if body
         update_body!(dat, sim)
         bslice0 = WaterLily.squeeze(@view dat[CIs]) |> ad_f(sim)
-        σb_buf = similar(dat, mirror_size(bslice0, sym))
-        mirror_sym!(σb_buf, bslice0, sym)
+        σb_buf = similar(dat, mirror_size(bslice0, symb))
+        mirror_sym!(σb_buf, bslice0, symb)
         σb_obs = Observable(get_body(σb_buf, Val{body2mesh}()))
-        plot_body_obs!(ax, σb_obs; color=body_color)
+        bp = plot_body_obs!(ax, σb_obs; color=body_color)
+        pathlines || translate!(bp, ntuple(_->o, d)...)
     end
 
     _fig_steppers[fig] = (sim,t) -> step_sim_and_viz!(sim, t)
@@ -336,12 +348,13 @@ remove_kwargs(args...; kwargs...) = (;(x.first=>x.second for x in kwargs if !in(
 ad_f(sim) = eltype(sim.flow.p) <: Dual ? x -> value.(x) : identity
 
 """
-    mirror_size(arr, sym)
+    mirror_size(arr, sym[, shift])
 
-Size of the mirrored array: each dimension `i` with `sym[i] != 0` is doubled. Returns `size(arr)` if `sym === nothing`.
+Size of the mirrored array: each dimension `i` with `sym[i] != 0` is doubled, less the sample on the symmetry plane
+if `shift[i] != 0`. Returns `size(arr)` if `sym === nothing`.
 """
-mirror_size(arr::AbstractArray, ::Nothing) = size(arr)
-mirror_size(arr::AbstractArray{T,N}, sym) where {T,N} = ntuple(i -> sym[i] != 0 ? 2*size(arr,i) : size(arr,i), N)
+mirror_size(arr::AbstractArray, ::Nothing, shift=nothing) = size(arr)
+mirror_size(arr::AbstractArray{T,N}, sym, shift=ntuple(_->0,N)) where {T,N} = ntuple(i -> sym[i] != 0 ? 2*size(arr,i) - (shift[i] != 0) : size(arr,i), N)
 
 """
     mirror_sym(arr, sym)
@@ -356,18 +369,18 @@ function mirror_sym(arr::AbstractArray{T,N}, sym) where {T,N}
 end
 
 """
-    mirror_sym!(dst, src, sym)
+    mirror_sym!(dst, src, sym[, shift])
 
-In-place mirror: fills `dst` from `src` reflected along each dimension `i` where `sym[i] != 0`.
-`dst` must have size `mirror_size(src, sym)`. `sym === nothing` does a plain `copyto!`.
+In-place mirror: fills `dst` from `src` reflected along each dimension `i` where `sym[i] != 0`, and negated where
+`sym[i] < 0`. A sample on the symmetry plane (`shift[i] = -1/2`, see [`WaterLily.stagger`](@ref)) is not repeated.
+`dst` must have size `mirror_size(src, sym, shift)`. `sym === nothing` does a plain `copyto!`.
 """
-mirror_sym!(dst::AbstractArray, src::AbstractArray, ::Nothing) = copyto!(dst, src)
-function mirror_sym!(dst::AbstractArray{T,N}, src::AbstractArray{S,N}, sym) where {T,S,N}
-    Ns = size(src)
+mirror_sym!(dst::AbstractArray, src::AbstractArray, ::Nothing, shift=nothing) = copyto!(dst, src)
+function mirror_sym!(dst::AbstractArray{T,N}, src::AbstractArray{S,N}, sym, shift=ntuple(_->0,N)) where {T,S,N}
+    Ns = size(src); M = mirror_size(src, sym, shift) .- Ns # number of reflected samples along each dim
     @inbounds for I in CartesianIndices(dst)
-        J = CartesianIndex(ntuple(i -> sym[i] != 0 ?
-            (I[i] <= Ns[i] ? Ns[i] + 1 - I[i] : I[i] - Ns[i]) : I[i], N))
-        dst[I] = src[J]
+        J = CartesianIndex(ntuple(i -> I[i] <= M[i] ? Ns[i] + 1 - I[i] : I[i] - M[i], N))
+        dst[I] = prod(i -> I[i] <= M[i] ? sign(sym[i]) : 1, 1:N) * src[J]
     end
     return dst
 end
