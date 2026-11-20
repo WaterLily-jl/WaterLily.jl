@@ -80,3 +80,8 @@ any(a -> startswith(a, "--jobs"), args) ||
     push!(args, "--jobs=$(max(1, Sys.CPU_THREADS ÷ WATERLILY_NTHREADS))")
 
 ParallelTestRunner.runtests(WaterLily, args; testsuite, init_code, exeflags)
+
+# MPI tests (mpiexec workers) after the others; skipped on Windows and with WATERLILY_SKIP_MPI=1
+if Sys.isunix() && get(ENV, "WATERLILY_SKIP_MPI", "0") != "1" && "--list" ∉ args
+    include("mpitests.jl")
+end

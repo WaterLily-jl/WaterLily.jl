@@ -42,7 +42,7 @@ end
 # Boundary types of the fluxes on the domain faces normal to `j`
 struct Neumann end
 struct Periodic end
-boundary_type(j,perdir) = j in perdir ? Periodic() : Neumann()
+boundary_type(j,perdir) = j in perdir && !decomposed(j) ? Periodic() : Neumann()
 
 # Fluxes on domain boundaries normal to `j`
 function boundaries!(r,u,ν,j,N,λ,bc)
@@ -223,25 +223,29 @@ scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
 in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
+Code that writes `flow.p` between steps must refresh its ghosts (`comm!(flow.p, flow.perdir)`), as `load!` and `udf!` do.
 """
 function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
-    BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
-    w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
     Dp = diagonal(b)                                # Poisson matrix diagonal
-    @inside b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
-    solver!(b; kwargs...)
-    for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
-        @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
+    BC!(a.u,a.uBC,a.exitBC,a.perdir,t;comm=false)   # BC MUST be at t₁
+    w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end];comm=false) # convective exit, predictor (w=1) only
+    velocity_comm!(a.u,a.perdir,inside(b.z)) do R   # one halo for both, while the divergence runs
+        @loop b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) over I ∈ R # flow divergence, not BDIM-ϵ stretching
     end
-    b.x ./= dt
+    solver!(b; synced=true, kwargs...) do R  # apply solution while the pressure halo travels
+        for i ∈ 1:ndims(a.p)
+            @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ R
+        end
+    end
+    b.x ./= dt                  # unscale to recover pressure
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 
-function CFL(a::AbstractFlow;Δt_max=10)
+function CFL(a::AbstractFlow{D,T};Δt_max=T(10)) where {D,T}
     fill!(a.σ,0) # the ghosts hold scratch values (such as the fluxes of conv_diff!)
     @inside a.σ[I] = flux_out(I,a.u)
-    min(Δt_max,inv(maximum(a.σ)+5a.ν))
+    global_min(Δt_max,inv(maximum(a.σ)+5a.ν))
 end
 @fastmath @inline function flux_out(I::CartesianIndex{d},u) where {d}
     s = z = zero(eltype(u))
@@ -259,7 +263,10 @@ predictor and corrector step, in sync with time `t`. `u` is the velocity field t
 flux is evaluated on in that phase (`a.u⁰` in the predictor, `a.u` in the corrector).
 A `udf` that needs the advecting velocity (eg. SGS) should use `force!(flow,u,t; kwargs...)`.
 Keyword arguments must be passed to `sim_step!` for them to be carried over the actual call.
+The ghosts of `flow.p` are refreshed after it.
 """
 udf!(flow,::Nothing,u,t; kwargs...) = nothing
-udf!(flow,force!::Function,u,t; kwargs...) =
+function udf!(flow,force!::Function,u,t; kwargs...)
     applicable(force!,flow,u,t) ? force!(flow,u,t; kwargs...) : force!(flow,t; kwargs...)
+    comm!(flow.p,flow.perdir)
+end
