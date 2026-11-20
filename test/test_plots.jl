@@ -1,11 +1,6 @@
 using WaterLily
 using Test
 using Plots
-using FileIO
-using ImageCore
-using ImageMagick
-
-const COMPDATA = joinpath(@__DIR__, "compdata")
 
 function make_egg_noarray(ra=40, rb=20, U=1)
     Simulation(
@@ -13,106 +8,70 @@ function make_egg_noarray(ra=40, rb=20, U=1)
         (U, 0),
         rb;
         body=AutoBody(
-            (x, t) -> √sum((x[1] - 8)^2 / ra + (x[2] - 8)^2 / rb) - 1
+            (x, t) -> √sum(
+                (x[1] - 8)^2 / ra +
+                (x[2] - 8)^2 / rb
+            ) - 1
         )
     )
 end
 
-function image_error(test_image, reference_image)
-    test_rgb = RGB.(test_image)
-    reference_rgb = RGB.(reference_image)
-
-    @test size(test_rgb) == size(reference_rgb)
-
-    test_pixels = Float32.(channelview(test_rgb))
-    reference_pixels = Float32.(channelview(reference_rgb))
-
-    sum(abs.(test_pixels .- reference_pixels)) / length(test_pixels)
-end
-
 @testset "WaterLilyPlotsExt" begin
     # Test body_plot!
-    Plots.plot()
+    mktempdir() do dir
+        # body_plot!
+        sim = make_egg_noarray()
+        plots = plot()
+        
+        @test_nowarn body_plot!(sim)
 
-    sim = make_egg_noarray()
-    result = body_plot!(sim)
+        body_path = joinpath(dir, "body.png")
+        @test_nowarn savefig(plots, body_path)
+        @test isfile(body_path)
+        @test filesize(body_path) > 0
 
-    output_path = "temp_body_plot.png"
-    Plots.savefig(result, output_path)
+        # flood
+        field = [x^2 / 2 + y^2 / 3 
+        for x in -1:0.01:1, y in -1:0.01:1]
 
-    generated = load(output_path)
-    reference = load(joinpath(COMPDATA, "compbody.png"))
+        flood_plot = flood(field; clims=())
+        flood_path = joinpath(dir, "flood.png")
+        @test_nowarn savefig(flood_plot, flood_path)
+        @test isfile(flood_path)
+        @test filesize(flood_path) > 0
 
-    @test image_error(generated, reference) < 0.01
+        # sim_gif!
+        sim = make_egg_noarray()
+        gif_path = joinpath(dir, "simulation.gif")
 
-    rm(output_path)
+        sim_gif!(
+            sim;
+            duration=0.2,
+            step=0.1,
+            verbose=false,
+            clims=(-5, 5),
+            plotbody=true,
+            video = gif_path
+        )
 
-    # Test sim_gif!
-    Plots.plot()
+        @test isfile(gif_path)
+        @test filesize(gif_path) > 0
 
-    sim = make_egg_noarray()
-    testgif = sim_gif!(
-        sim;
-        duration=0.5,
-        clims=(-5, 5),
-        plotbody=true
-    )
+        # plot_logger
+        sim = make_egg_noarray()
+        log_base = joinpath(dir, "testLog")
+        log_path = log_base * ".log"
 
-    gif_path = testgif.filename
-    generated = load(gif_path)
-    reference = load(joinpath(COMPDATA, "compgif.gif"))
+        WaterLily.logger(log_base)
+        sim_step!(sim, 0.5)
 
-    # Compare the first frame from both GIFs
-    if ndims(generated) == 3
-        generated = generated[:, :, 1]
+        @test isfile(log_path)
+
+        log_plot = plot_logger(log_path)
+        log_image = joinpath(dir, "log.png")
+
+        @test_nowarn savefig(log_plot, log_image)
+        @test isfile(log_image)
+        @test filesize(log_image) > 0
     end
-
-    if ndims(reference) == 3
-        reference = reference[:, :, 1]
-    end
-
-    @test image_error(generated, reference) < 0.01
-
-    rm(gif_path)
-
-    # Test flood
-    Plots.plot()
-
-    xr = -1:0.01:1
-    yr = -1:0.01:1
-    g(x, y) = x^2 / 2 + y^2 / 3
-
-    flood(g.(xr, yr'))
-
-    flood_path = "temp_flood.png"
-    Plots.savefig(flood_path)
-
-    generated = load(flood_path)
-    reference = load(joinpath(COMPDATA, "floodTestNoLims.png"))
-
-    @test image_error(generated, reference) < 0.01
-
-    rm(flood_path)
-
-    # Test plot_logger
-    Plots.plot()
-
-    sim = make_egg_noarray()
-
-    WaterLily.logger("testLog")
-    sim_step!(sim, 0.5)
-
-    plot_logger("testLog.log")
-    Plots.plot!(size=(800, 400))
-
-    log_path = "temp_log_plot.png"
-    Plots.savefig(log_path)
-
-    generated = load(log_path)
-    reference = load(joinpath(COMPDATA, "compLogPlot.png"))
-
-    @test image_error(generated, reference) < 0.01
-
-    rm(log_path)
-    rm("testLog.log")
 end

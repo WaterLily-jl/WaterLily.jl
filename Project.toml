@@ -70,5 +70,4 @@ ImageCore = "a09fc81d-aa75-5fe9-8630-4744c3626534"
 ImageMagick = "6218d12a-5da1-5696-b52f-db25d2ecc6d1"
 
 [targets]
-test = ["Test", "BenchmarkTools", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2", "Pkg", "ParallelTestRunner", 
-"FileIO", "ImageCore", "ImageMagick", "Plots"]
+test = ["Test", "BenchmarkTools", "GPUArrays", "WriteVTK", "ReadVTK", "JLD2", "Pkg", "ParallelTestRunner", "FileIO", "ImageCore", "ImageMagick", "Plots"]
