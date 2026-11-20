@@ -33,6 +33,29 @@
         @test ForwardDiff.derivative(t -> measure_sum(t, f), 0.3) ≈ cpu_kd rtol=1e-3
     end
 
+    # A RigidMap whose position, velocity AND time carry an outer Dual, as in a differentiated
+    # flow, where Δt depends on the parameter. The velocity overload used to fire on any Dual
+    # time, mistaking the outer one for `derivative`'s seed: -Inf/NaN on the CPU and a
+    # MethodError inside a kernel.
+    function rigid_measure(p)
+        body = AutoBody((x,_)->√sum(abs2,x)-4, RigidMap(SA[16,16.8+p]; V=SA[zero(p),0.3+2p], ω=p))
+        d,n,V = measure(body, SA[14.0,15.0+zero(p)], 0.5+3p)
+        [d; n; V]
+    end
+    h = 1e-6
+    @test ForwardDiff.derivative(rigid_measure, 0.0) ≈ (rigid_measure(h)-rigid_measure(-h))/2h rtol=1e-6
+    function rigid_sum(p, mem; L=16)
+        body = AutoBody((x,_)->√sum(abs2,x)-4, RigidMap(SA[L,L+p]; V=SA[zero(p),0.3+2p], ω=p))
+        out = mem(zeros(typeof(p), 2L, 2L)); t = 0.5+3p
+        WaterLily.@loop out[I] = sum(WaterLily.measure(body, WaterLily.loc(0, I, typeof(p)), t)[3]) over I ∈ CartesianIndices(out)
+        sum(out)
+    end
+    h = 1e-6
+    drigid_fd = (rigid_sum(h, Array) - rigid_sum(-h, Array)) / 2h
+    for f ∈ arrays
+        @test ForwardDiff.derivative(p -> rigid_sum(p, f), 0.0) ≈ drigid_fd rtol=1e-6
+    end
+
     # End-to-end ForwardDiff AD
     # ∂/∂Re of KE for TGV
     function tgv_sim(Re, mem)
