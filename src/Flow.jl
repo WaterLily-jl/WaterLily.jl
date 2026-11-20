@@ -36,7 +36,6 @@ accumulated into `r` (force per unit volume) and `Φ` is a working scalar.
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     fill!(r,zero(eltype(r)))
     N,n = size_u(u)
-    perdir = effective_perdir(perdir)  # MPI-decomposed periodic → non-periodic boundary
     for j ∈ 1:n
         for i ∈ 1:n # inner cells
             @loop (Φ[I] = ϕu(j,CI(I,i),u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,CI(I,i),u);
@@ -47,10 +46,10 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     end
 end
 
-# Boundary types of the fluxes on the domain faces normal to `j`
+# Boundary types of the fluxes on the domain faces normal to `j` (a periodic `j` split across MPI ranks: Neumann, see `decomposed`)
 struct Neumann end
 struct Periodic end
-boundary_type(j,perdir) = j in perdir ? Periodic() : Neumann()
+boundary_type(j,perdir) = j in perdir && !decomposed(j) ? Periodic() : Neumann()
 
 # Fluxes on domain boundaries normal to `j`
 function boundaries!(r,u,ν,j,N,λ,bc)

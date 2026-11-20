@@ -335,10 +335,9 @@ end
 WaterLily._phys_left(j,  p::Parallel) = p.neighbors[1, j] < 0
 WaterLily._phys_right(j, p::Parallel) = p.neighbors[2, j] < 0
 
-# `effective_perdir` filter: conv_diff!'s periodic stencil `ϕuP` wraps within
-# the local array — wrong when the periodic partner is on a remote rank and
-# halowidth=1 can't supply its 2-cell stencil. Decomposed dims route to the
-# `Val{false}` stencil, whose 1 ghost cell the halo's periodic wrap fills.
+# conv_diff!'s periodic fluxes `ϕuP` wrap within the local array, wrong when the
+# periodic partner is on a remote rank: `boundary_type` gives decomposed dims the
+# Neumann fluxes, whose 1 ghost cell the halo's periodic wrap fills.
 WaterLily._decomposed(j, p::Parallel) = j <= length(p.dims) && p.dims[j] > 1
 
 end # module WaterLilyMPIExt

@@ -309,22 +309,14 @@ end
     decomposed(j)
 
 Whether direction `j` is split across MPI ranks (`true`) or owned in full
-by every rank (`false`).  Always `false` in serial.
+by every rank (`false`).  Always `false` in serial. A periodic direction split
+across ranks takes `conv_diff!`'s Neumann boundary fluxes (`boundary_type`):
+the periodic ones (`ϕuP`) wrap within the local array, two cells back, while
+the Neumann ones need the one ghost cell the halo fills from the periodic
+neighbour.
 """
 decomposed(j) = _decomposed(j, par_mode[])
 _decomposed(j, ::Serial) = false
-
-"""
-    effective_perdir(perdir)
-
-Return directions where periodic wrap can be handled via explicit `N[j]-2`
-indexing on the local array.  In serial this is the full `perdir`.  In MPI,
-directions decomposed across ranks are excluded — the halo (halowidth=1)
-cannot supply the 2-cells-back stencil required by `ϕuP`, so `conv_diff!`
-falls back to the non-periodic boundary scheme (`ϕuL`/`ϕuR`) that only
-needs 1 ghost cell (filled by halo from the periodic neighbor).
-"""
-effective_perdir(perdir) = Tuple(j for j in perdir if !decomposed(j))
 
 # ── MPI parallel interface (implemented by WaterLilyMPIExt) ───────────────────
 """

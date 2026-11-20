@@ -19,7 +19,7 @@ end
 # ── Parity simulations (deterministic, low-res, run identically in serial / MPI) ─
 
 # 2D moving cylinder in a doubly-periodic domain: tests `remeasure`,
-# `effective_perdir` (decomposed periodic dirs route to non-periodic stencil
+# `boundary_type` (decomposed periodic dirs route to the Neumann fluxes
 # at MPI seams), and `comm!` halo exchange.
 function run_cylinder!(parallel::Bool; nsteps=20)
     n, m   = 64, 32
@@ -338,13 +338,13 @@ elseif ROLE == "unit"
             end
         end
 
-        @testset "decomposed + effective_perdir" begin
+        @testset "decomposed + boundary_type" begin
             g = ext._par()
             for j in 1:2
                 @test WaterLily.decomposed(j) == (g.dims[j] > 1)
+                @test WaterLily.boundary_type(j, (1, 2)) ==
+                      (WaterLily.decomposed(j) ? WaterLily.Neumann() : WaterLily.Periodic())
             end
-            @test WaterLily.effective_perdir((1, 2)) ==
-                  Tuple(j for j in (1, 2) if !WaterLily.decomposed(j))
         end
 
         @testset "shape-aware topology" begin
