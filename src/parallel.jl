@@ -194,7 +194,8 @@ scalar_halo!(x) = _scalar_halo!(x, par_mode[])
     velocity_halo!(u)
 
 Exchange halo cells for a velocity (vector) array `u` (all components at once).
-No-op in serial.
+Every dimension past the spatial ones holds components, so a tensor such as
+`flow.μ₁` goes as it is. No-op in serial.
 """
 velocity_halo!(u) = _velocity_halo!(u, par_mode[])
 _scalar_halo!(x, ::Serial) = nothing
