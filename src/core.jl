@@ -144,9 +144,7 @@ Note that `get_backend` is used on the _first_ variable in `expr` (`a` in this e
 `R` is any array, such as a `CartesianIndices`, a [`face`](@ref) or a vector on the same device as `a`,
 and `I` takes its values.
 
-Inside `expr` the name `loc` is bound to `loc` with the MPI rank offset appended, so `loc(...)`
-calls written in `expr` return *global* coordinates in MPI-parallel runs; in serial it is `loc`
-itself. Functions called from `expr` that call `loc` themselves get local coordinates.
+`loc(...)` written in `expr` returns global coordinates under MPI (not in the functions `expr` calls).
 """
 macro loop(args...)
     ex,_,itr = args
@@ -156,8 +154,8 @@ macro loop(args...)
     setdiff!(sym,[I]) # don't want to pass I as an argument
     symT = [gensym() for _ in 1:length(sym)] # generate a list of types for each symbol
     symWtypes = joinsymtype(rep.(sym),symT) # symbols with types: [a::A, b::B, ...]
-    @gensym(kern, kern_, R_, J_, B_, offset) # generate unique kernel function names for serial and KA execution, the range, launch index and backend, and the captured offset
-    loc_ = :loc ∈ sym ? :loc : :($(GlobalRef(@__MODULE__,:_loop_loc))($offset)) # `loc` in ex, unless ex uses a variable of that name
+    @gensym(kern, kern_, R_, J_, B_, offset) # generate unique kernel function names for serial and KA execution, the range, launch index, backend and offset
+    loc_ = :loc ∈ sym ? :loc : :($(GlobalRef(@__MODULE__,:_loop_loc))($offset)) # unless ex has a variable named loc
     @static if backend == "KernelAbstractions"
         return quote
             local $offset = WaterLily._loop_offset(eltype($(sym[1])))
@@ -202,7 +200,7 @@ rep(ex::Expr) = ex.head == :. ? Symbol(ex.args[2].value) : ex
 joinsymtype(sym::Symbol,symT::Symbol) = Expr(:(::), sym, symT)
 joinsymtype(sym,symT) = zip(sym,symT) .|> x->joinsymtype(x...)
 
-# `loc` as seen by a @loop body: the function itself in serial, with the MPI rank offset appended otherwise
+# `loc` in a @loop body: with the rank offset appended under MPI
 _loop_loc(::Nothing) = loc
 _loop_loc(offset) = (x...) -> loc(x..., offset)
 
@@ -212,16 +210,10 @@ using StaticArrays
 
 Location in space of the cell at CartesianIndex `I` at face `i`.
 Using `i=0` returns the cell center s.t. `loc = I`. `T` sets the return number type.
-
-Written inside a `@loop` body, `loc(...)` gets the MPI rank-local offset
-appended, so it returns *global* coordinates and user code is identical in
-serial and parallel. Elsewhere (including functions called from a `@loop`
-body) `loc(...)` returns rank-local coordinates; add `global_offset(Val(N), T)`
-explicitly to get global ones.
+Under MPI it is rank-local outside a `@loop` body: add `global_offset(Val(N), T)`.
 """
 @inline loc(i,I::CartesianIndex{N},T::Type=Float32) where N = SVector{N,T}(I.I .- T(1.5) .- δ(i,I).I ./T(2))
 @inline loc(Ii::CartesianIndex,T::Type=Float32) = loc(last(Ii),Base.front(Ii),T)
-# SVector offset overloads — used by `loc` inside @loop under MPI (`_loop_loc`)
 @inline loc(i,I::CartesianIndex{N},offset::SVector{N,T}) where {N,T} = loc(i,I,T) + offset
 @inline loc(Ii::CartesianIndex,offset::SVector) = loc(last(Ii),Base.front(Ii),eltype(offset)) + offset
 @inline loc(i,I::CartesianIndex{N},T::Type,offset::SVector{N}) where N = loc(i,I,T) + offset
@@ -257,12 +249,7 @@ it is normal to `j=1`.
 """
 face(R::CartesianIndices{N},j) where N = (i=only(R.indices[j]); MappedArr(J->insert(J,i,j),CartesianIndices(ntuple(k -> R.indices[k<j ? k : k+1], N-1))))
 face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
-"""
-    chain(s::Tuple)
-
-The cells of the ranges in `s`, one range after the other, as one `MappedArr` over `1:n`, so that one `@loop`
-launch covers them all (the `shell` of a range).
-"""
+# the ranges in `s` one after the other, for a single `@loop`
 chain(s::Tuple) = MappedArr(n -> _chain(s, n), 1:sum(length, s))
 @inline _chain(s::Tuple{Any}, n) = @inbounds first(s)[n]
 @inline _chain(s::Tuple, n) = (l = length(first(s)); n <= l ? @inbounds(first(s)[n]) : _chain(Base.tail(s), n - l))
@@ -281,17 +268,13 @@ A zero Neumann condition is applied to the tangential components.
 so a convective outflow set by `exitBC!` is kept and every other face is always overwritten.
 `perdir` lists the dimensions using periodic BCs instead.
 `t` is passed to `U` when it is a function `(i,x,t)->...`.
-
-Periodic directions are handled by `velocity_comm!` (called at the end, unless
-`comm=false`), separating domain BCs from communication BCs.  Under MPI the `phys_left`/
-`phys_right` gates skip physical writes at rank-internal faces (the halo
-exchange supplies neighbor data there instead).
+Periodic and rank-internal faces are filled by `velocity_comm!` (skipped with `comm=false`).
 """
 BC!(a,U,saveexit=false,perdir=(),t=0;comm=true) = BC!(a,(i,x,t)->U[i],saveexit,perdir,t;comm)
 function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0;comm=true)
     N,n = size_u(a)
     for j ∈ 1:n
-        j in perdir && continue  # periodic handled by velocity_comm!
+        j in perdir && continue
         L, R = phys_left(j), phys_right(j)
         for i ∈ 1:n
             if i==j # Normal direction, Dirichlet
@@ -301,7 +284,7 @@ function BC!(a,uBC::Function,saveexit=false,perdir=(),t=0;comm=true)
                     end
                 end
                 R && (!saveexit || i>1) && (@loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t) over I ∈ face(N,N[j],j)) # overwrite exit
-            else    # Tangential directions, Neumann: mirror
+            else    # Tangential directions, Neumann
                 L && @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I+δ(j,I),i]-uBC(i,loc(i,I+δ(j,I),eltype(a)),t) over I ∈ face(N,1,j)
                 R && @loop a[I,i] = uBC(i,loc(i,I,eltype(a)),t)+a[I-δ(j,I),i]-uBC(i,loc(i,I-δ(j,I),eltype(a)),t) over I ∈ face(N,N[j],j)
             end
@@ -313,20 +296,20 @@ end
 """
     exitBC!(u,u⁰,Δt;comm=true)
 
-Apply a 1D convection scheme to fill the ghost cell on the exit of the domain,
-then exchange the halo (`comm=false`: left to a later `velocity_comm!`).
+Apply a 1D convection scheme to fill the ghost cell on the exit of the domain
+(and the halo, unless `comm=false`).
 """
 function exitBC!(u,u⁰,Δt;comm=true)
     N,_ = size_u(u)
-    inflowL = slice(N.-1,2,1,2)              # inflow face (left wall face)
-    exitR   = slice(N.-1,N[1],1,2)           # exit slice excluding ghosts (right wall face)
-    L, R = phys_left(1), phys_right(1)       # ranks owning the inflow / exit faces
-    glen = global_allreduce(R ? length(exitR) : 0)                          # global exit-face length
+    inflowL = slice(N.-1,2,1,2)              # inflow slice excluding ghosts
+    exitR   = slice(N.-1,N[1],1,2)           # exit slice excluding ghosts
+    L, R = phys_left(1), phys_right(1)       # this rank holds the inflow / exit
+    glen = global_allreduce(R ? length(exitR) : 0)
     U = global_allreduce(L ? sum(@view u[inflowL,1]) : zero(eltype(u)))/glen # inflow mass flux
     R && @loop u[I,1] = u⁰[I,1]-U*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ face(exitR,1)
     ∮u = global_allreduce(R ? sum(@view u[exitR,1]) : zero(eltype(u)))/glen - U  # mass flux imbalance
     R && @loop u[I,1] -= ∮u over I ∈ face(exitR,1)     # correct flux
-    comm && velocity_halo!(u)                # no-op serial; MPI exchange parallel
+    comm && velocity_halo!(u)
 end
 """
     perBC!(a,perdir)

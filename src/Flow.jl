@@ -26,13 +26,6 @@ end
 end
 @fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
-"""
-    conv_diff!(r, u, Φ, λ; ν=0.1, perdir=())
-
-Compute the convective and diffusive fluxes of velocity `u` using the
-convection scheme `λ(u,c,d)` and kinematic viscosity `ν`.  The result is
-accumulated into `r` (force per unit volume) and `Φ` is a working scalar.
-"""
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     fill!(r,zero(eltype(r)))
     N,n = size_u(u)
@@ -46,7 +39,7 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     end
 end
 
-# Boundary types of the fluxes on the domain faces normal to `j` (a periodic `j` split across MPI ranks: Neumann, see `decomposed`)
+# Boundary types of the fluxes on the domain faces normal to `j`
 struct Neumann end
 struct Periodic end
 boundary_type(j,perdir) = j in perdir && !decomposed(j) ? Periodic() : Neumann()
@@ -119,9 +112,6 @@ Flow solves the unsteady incompressible [Navier-Stokes equations](https://en.wik
 Solid boundaries are modelled using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/).
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
-
-All arrays use the N+2 staggered layout: `N` interior cells plus 1 ghost/boundary
-cell per side, giving total size `M = N + 2` per spatial dimension.
 """
 struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf, P<:NTuple, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}} <: AbstractFlow{D,T}
     # Fluid fields
@@ -193,14 +183,6 @@ Current flow time.
 """
 time(a::AbstractFlow) = sum(@view(a.Δt[1:end-1]))
 
-"""
-    BDIM!(a::Flow,s=1)
-
-Apply the Boundary Data Immersion Method to enforce the body velocity.
-Uses the zeroth and first kernel moments (`μ₀`, `μ₁`) to blend the
-body velocity `V` with the predicted fluid velocity, divided by `s`
-(`s=2` averages the predictor and corrector velocities).
-"""
 function BDIM!(a::AbstractFlow,s=1)
     dt = a.Δt[end]
     @loop a.f[Ii] = a.u⁰[Ii]+dt*a.f[Ii]-a.V[Ii] over Ii in CartesianIndices(a.f)
@@ -241,9 +223,7 @@ scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
 in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
-The solve starts from `b.x` without a halo of it (`synced=true`): its ghosts are those the previous solve
-left, scaled with it. Code that writes `flow.p` between steps must refresh them (`comm!(flow.p, flow.perdir)`),
-as `load!` does and as `udf!` does after a `udf`.
+Code that writes `flow.p` between steps must refresh its ghosts (`comm!(flow.p, flow.perdir)`), as `load!` and `udf!` do.
 """
 function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
@@ -262,12 +242,6 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)
 end
 
-"""
-    CFL(a::AbstractFlow{D,T};Δt_max=T(10))
-
-Compute the CFL-limited time step from the maximum outward flux at each cell.
-Uses `global_min` for MPI-safe reduction across all ranks.
-"""
 function CFL(a::AbstractFlow{D,T};Δt_max=T(10)) where {D,T}
     fill!(a.σ,0) # the ghosts hold scratch values (such as the fluxes of conv_diff!)
     @inside a.σ[I] = flux_out(I,a.u)
@@ -289,8 +263,7 @@ predictor and corrector step, in sync with time `t`. `u` is the velocity field t
 flux is evaluated on in that phase (`a.u⁰` in the predictor, `a.u` in the corrector).
 A `udf` that needs the advecting velocity (eg. SGS) should use `force!(flow,u,t; kwargs...)`.
 Keyword arguments must be passed to `sim_step!` for them to be carried over the actual call.
-The `udf` may write any field of `flow`: the ghosts of `flow.p`, which the next pressure solve
-starts from (see `mom_project!`), are refreshed after it.
+The ghosts of `flow.p` are refreshed after it.
 """
 udf!(flow,::Nothing,u,t; kwargs...) = nothing
 function udf!(flow,force!::Function,u,t; kwargs...)

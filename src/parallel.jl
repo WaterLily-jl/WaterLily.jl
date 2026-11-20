@@ -1,10 +1,4 @@
-# ── AbstractParMode dispatch pattern ──────────────────────────────────────────
-#
-# Serial WaterLily dispatches all parallel hooks through `par_mode[]` (defaults
-# to Serial()). The MPI extension (WaterLilyMPIExt) adds `Parallel <:
-# AbstractParMode` with MPI-aware methods — no method overwriting, so
-# precompilation works normally. This file only depends on Base/stdlib and
-# StaticArrays.
+# Parallel hooks dispatch on `par_mode[]` (`Serial()` here; WaterLilyMPIExt adds `Parallel` methods)
 using LinearAlgebra: ⋅
 using StaticArrays
 
@@ -12,21 +6,14 @@ abstract type AbstractParMode end
 struct Serial <: AbstractParMode end
 const par_mode = Ref{AbstractParMode}(Serial())
 
-# Rank-local reduction kernels the global reductions build on.
 local_dot(a, b) = a⋅b
 local_sum(a) = sum(a)
-local_sumabs(a) = sum(abs, a)  # Σ|aᵢ| — L₁ bulk term of the Poisson stopping criterion
+local_sumabs(a) = sum(abs, a)
 
 """
-    mpi_rank()   → Int
-    mpi_comm()   → Union{Nothing,MPI.Comm}
-    mpi_nprocs() → Int
+    mpi_rank(), mpi_comm(), mpi_nprocs()
 
-Rank accessors available in any mode: serial returns `0` / `nothing` / `1`;
-under MPI the extension returns the rank, communicator, and rank count stored
-on `par_mode[]::Parallel`. Useful for rank-gated printing
-(`mpi_rank() == 0 && @info ...`) and rank-count-aware iteration bounds without
-threading `(me, comm, np)` through user scope.
+The rank, communicator and number of ranks (`0`, `nothing`, `1` in serial).
 """
 mpi_rank()   = _mpi_rank(par_mode[])
 mpi_comm()   = _mpi_comm(par_mode[])
@@ -37,30 +24,9 @@ _mpi_nprocs(::Serial) = 1
 
 """
     @distributed Simulation(dims, uBC, L; kwargs...)
-    @distributed sim = Simulation(dims, uBC, L; kwargs...)
 
-Boilerplate-free MPI initialization for a WaterLily simulation.  The macro
-pulls the global `dims` (first positional argument) and the optional `perdir`
-keyword out of the constructor call, invokes `init_waterlily_mpi(dims; perdir)`,
-and substitutes the returned rank-local dimensions back into the call.
-Requires `using MPI` so the extension is loaded; otherwise the generated
-`init_waterlily_mpi` call throws `MethodError`.
-
-Any constructor that follows `Simulation`'s calling convention is accepted, not
-only `Simulation` itself: the first positional argument must be the global
-`dims` tuple, and periodicity must be visible as a `perdir` keyword in the call
-(`f(dims, ...; perdir=(1,))`, the shorthand `f(dims, ...; perdir)`, or
-`f(dims, ..., perdir=(1,))`; a splatted `kwargs...` is not inspected).
-Downstream `AbstractSimulation` constructors such as
-`BiotSimulation(dims, uBC, L; ...)` therefore work unchanged.
-
-Example:
-
-    using WaterLily, MPI
-    sim = @distributed Simulation((192, 128), (U, 0), L;
-                                  ν=ν, body=body, perdir=(1,2))
-    mpi_rank() == 0 && @info "decomposed and ready"
-    # ... time stepping ...
+Call `init_waterlily_mpi(dims; perdir)` (needs `using MPI`) and construct with the rank-local `dims`.
+Works for any constructor taking the global `dims` first, with `perdir` written as a keyword of the call.
 """
 macro distributed(ex)
     if ex isa Expr && ex.head === :(=)
@@ -78,15 +44,13 @@ function _rewrite_distributed_call(ex)
         error("@distributed expects a constructor call `f(dims, ...; perdir=...)` " *
               "such as `Simulation(dims, uBC, L; kwargs...)`, got $(ex)")
     f = ex.args[1]
-    # `f(dims, ...; kw...)` parses the `;` keywords into a leading :parameters
-    # block; `f(dims, ..., kw=...)` leaves them as trailing :kw arguments.
+    # keywords after `;` are a leading :parameters block, those after `,` trailing :kw arguments
     has_params = length(ex.args) >= 2 && ex.args[2] isa Expr && ex.args[2].head === :parameters
     dims_idx   = has_params ? 3 : 2
     (length(ex.args) >= dims_idx && !_iskw(ex.args[dims_idx])) ||
         error("@distributed: `$(f)(...)` has no positional `dims` argument (it must come first)")
     global_dims = ex.args[dims_idx]
 
-    # `perdir` may be `; perdir=(1,)`, the shorthand `; perdir`, or `, perdir=(1,)`
     perdir = :(())
     for kw in (has_params ? ex.args[2].args : ())
         kw === :perdir && (perdir = :perdir; break)
@@ -107,171 +71,82 @@ function _rewrite_distributed_call(ex)
     end
 end
 
-"""
-    _loop_offset(::Type{T})
-
-Return the offset captured into `@loop` bodies so `loc(...)` calls inside the
-expression return global coordinates.  Serial returns `nothing` (the body sees
-plain `loc`, see `_loop_loc`); the MPI extension returns an `SVector{N,T}`
-rank-local offset.
-"""
+# The rank's offset that `@loop` adds to `loc(...)` in its body (`nothing` in serial)
 _loop_offset(::Type{T}) where T = _loop_offset(T, par_mode[])
 _loop_offset(::Type{T}, ::Serial) where T = nothing
 
 """
-    global_dot(a, b)
+    global_dot(a, b), global_sum(a), global_length(r), global_min(a, b), global_max(x)
 
-Global dot product `a⋅b`.  In serial, equivalent to `a⋅b`.
-The MPI extension replaces this with `MPI.Allreduce(…, SUM)`.
+Reductions across MPI ranks (the local value in serial).
 """
 global_dot(a, b) = global_allreduce(local_dot(a, b))
-"""
-    global_sum(a)
-
-Global sum of array `a`.  MPI-aware via dispatch on `par_mode[]`.
-"""
 global_sum(a) = global_allreduce(local_sum(a))
-"""
-    global_length(r)
-
-Global length of index range `r`.  MPI-aware via dispatch on `par_mode[]`.
-"""
 global_length(r) = global_allreduce(length(r))
-"""
-    global_min(a, b)
-
-Global minimum of `a` and `b`.  MPI-aware via dispatch on `par_mode[]`.
-"""
 global_min(a, b) = _global_min(a, b, par_mode[])
-
 _global_min(a, b, ::Serial) = min(a, b)
-
-"""
-    global_max(x)
-
-Global maximum of scalar `x` across ranks.  MPI-aware via dispatch on `par_mode[]`.
-"""
 global_max(x) = _global_max(x, par_mode[])
-
 _global_max(x, ::Serial) = x
-
-"""
-    global_sum_max(s, m)
-
-`(global_allreduce(s), global_max(m))` in one reduction across ranks.
-MPI-aware via dispatch on `par_mode[]`.
-"""
+# `(global_allreduce(s), global_max(m))` in one reduction
 global_sum_max(s, m) = _global_sum_max(s, m, par_mode[])
-
 _global_sum_max(s, m, ::Serial) = (s, m)
 
 """
-    global_allreduce(x)
+    global_allreduce(x), global_allreduce!(x)
 
-Reduce a pre-computed value `x` (scalar or vector) across all MPI ranks
-with element-wise summation.  In serial, returns `x` unchanged.
-This is the primitive that other global reductions build on:
-`global_sum(a) = global_allreduce(local_sum(a))`.
+Sum of `x` (a scalar or an array, element-wise) across MPI ranks; `global_allreduce!` in place.
 """
 global_allreduce(x) = _global_allreduce(x, par_mode[])
 _global_allreduce(x, ::Serial) = x
-"""
-    global_allreduce!(x)
-
-In-place `global_allreduce` of a contiguous array `x` (on any backend): `x` becomes
-the element-wise sum across ranks and is returned.  In serial, returns `x` unchanged.
-"""
 global_allreduce!(x) = _global_allreduce!(x, par_mode[])
 _global_allreduce!(x, ::Serial) = x
 
 """
-    scalar_halo!(x)
+    scalar_halo!(x), velocity_halo!(u)
 
-Exchange halo cells for scalar array `x`.  No-op in serial.
+Fill the ghosts of `x`, or of all components of `u` (every dim past the spatial ones), from the neighbour ranks.
+No-op in serial.
 """
 scalar_halo!(x) = _scalar_halo!(x, par_mode[])
-"""
-    velocity_halo!(u)
-
-Exchange halo cells for a velocity (vector) array `u` (all components at once).
-Every dimension past the spatial ones holds components, so a tensor such as
-`flow.μ₁` goes as it is. No-op in serial.
-"""
 velocity_halo!(u) = _velocity_halo!(u, par_mode[])
 _scalar_halo!(x, ::Serial) = nothing
 _velocity_halo!(u, ::Serial) = nothing
-"""
-    HaloBackend
-
-What moves the halo bytes under MPI, picked by `init_waterlily_mpi(...; halo)`: `:native` (`NativeHalo`,
-WaterLilyMPIExt: one message per neighbour rank, any eltype, `comm!(f, ...)`'s work while the messages
-travel) or a backend an extension registers in `_halo_backends` (WaterLilyIGGExt: `:igg`).
-`_halo!(work, a, backend)` exchanges the ghosts of `a` and runs `work()` while its messages travel or after;
-`_init_halo!(backend, comm, dims, periods, nlocal)` sets the backend up for the rank layout of the Cartesian
-communicator `comm`.
-"""
+# Halo backends, picked by `init_waterlily_mpi(...; halo)` from `_halo_backends`: `_halo!(work, a, backend)` fills
+# the ghosts of `a` and runs `work()`; `_init_halo!(backend, comm, dims, periods, nlocal)` sets it up
 abstract type HaloBackend end
 struct NativeHalo <: HaloBackend end
 function _halo! end
 function _init_halo! end
 const _halo_backends = Dict{Symbol,HaloBackend}(:native => NativeHalo())
-# Kernels may still be writing an array that MPI is about to read: wait for them.
+# wait for the kernels writing `a` before MPI reads it
 _sync(a) = KernelAbstractions.synchronize(KernelAbstractions.get_backend(a))
-# Halo arrays opt out of the GPU package's implicit synchronization between streams (WaterLilyCUDAExt): a
-# backend that packs and unpacks on streams of its own waits for the backend's queue itself (`_sync`)
+# turns the GPU package's implicit stream synchronization off for a halo array (WaterLilyCUDAExt)
 _no_stream_sync!(a) = a
-# Halo buffers of `n` elements of type `T` in host memory, for kernels on `a`'s backend: the
-# array they use, and the one MPI sends and receives (the same, unless a GPU extension maps
-# page-locked host memory into the device: WaterLilyCUDAExt, WaterLilyAMDGPUExt)
+# a halo buffer of `n` elements for kernels on `a`'s backend, and its host view for MPI
 _host_buffers(a, T, n) = (b = similar(a, T, n); (b, b))
-# The device choice of each GPU package loaded, for node-local MPI rank `l` (from 0) of `n`
+# GPU selection of each GPU extension loaded, called with node-local rank `l` of `n`
 const _device_selectors = Function[]
-# The GPU of node-local rank `l` of `n`, out of `ndev`: one each, as ImplicitGlobalGrid's `select_device`
 _node_gpu(l, n, ndev) = n <= ndev ? l : error("more MPI ranks on a node ($n) than GPUs ($ndev): start one rank per GPU, " *
     "make one GPU visible to each rank (CUDA_VISIBLE_DEVICES, ROCR_VISIBLE_DEVICES), or pass select_device=false")
 
-"""
-    phys_left(j), phys_right(j)
-
-Whether direction `j`'s left/right ghost lies on a physical domain wall.
-Always `true` in serial; in MPI, `false` at rank-internal boundaries (where
-halo exchange supplies neighbor data instead).
-"""
+# whether the left/right side of direction `j` is a domain boundary, not a neighbour rank
 phys_left(j)  = _phys_left(j, par_mode[])
 phys_right(j) = _phys_right(j, par_mode[])
 _phys_left(j, ::Serial)  = true
 _phys_right(j, ::Serial) = true
 
 """
-    comm!(a, perdir)
+    comm!(a, perdir), comm!(f, a, perdir, R=inside(a))
 
-Scalar communication: periodic BC copy + MPI halo exchange.
-In serial, just applies `perBC!`. In parallel, `perBC!` handles periodic
-dims owned in full by the rank and the MPI halo handles decomposed dims.
+`perBC!` and the halo of `a`. With `f`, then `f(R)`: `f` loops a 7-point stencil of `a`
+over the range it gets, `inner(R)` while the halo messages travel and `shell(R)` after.
 """
 comm!(a, perdir) = _comm!(a, perdir, par_mode[])
 _comm!(a, perdir, ::Serial) = perBC!(a, perdir)
-
-"""
-    comm!(f, a, perdir, R=inside(a))
-
-`comm!(a, perdir); f(R)`, with the halo messages in flight while `f` runs.
-`f` loops over the range it is given (a 7-point stencil of `a`, which may
-write the cells of `a` it loops over, not its ghosts): first over `inner(R)`
-while the messages travel, then over `shell(R)` once the halo is in.
-"""
 comm!(f::F, a, perdir, R=inside(a)) where F = _comm!(f, a, perdir, R, par_mode[])
 _comm!(f, a, perdir, R, ::Serial) = (perBC!(a, perdir); f(R))
 
-"""
-    inner(R), shell(R)
-
-The cells of `R` whose 7-point stencil reads no ghost of a decomposed dim
-(`R` without its first and last layer in those dims), and the others, as one
-range for a single `@loop`: the layers of `R` in the decomposed dims, each
-without the cells of the layers before it (`max(a+1,b)` keeps a one-cell
-range from counting its cell twice).
-"""
+# the cells of `R` whose 7-point stencil reads no ghost of a decomposed dim, and the others (as one range)
 inner(R::CartesianIndices{N}) where N =
     CartesianIndices(ntuple(j -> decomposed(j) ? (first(R.indices[j])+1:last(R.indices[j])-1) : R.indices[j], N))
 function shell(R::CartesianIndices{N}) where N
@@ -284,18 +159,11 @@ function shell(R::CartesianIndices{N}) where N
 end
 
 """
-    velocity_comm!(a, perdir)
+    velocity_comm!(a, perdir), velocity_comm!(f, a, perdir, R)
 
-Velocity communication: periodic BC copy + MPI halo exchange.
-In serial, copies periodic ghost cells for all velocity components.
+`comm!` for every component of the velocity `a`.
 """
 velocity_comm!(a, perdir) = _velocity_comm!(a, perdir, par_mode[])
-"""
-    velocity_comm!(f, a, perdir, R)
-
-`velocity_comm!(a, perdir); f(R)`, with `f` looping over `inner(R)` while the
-halo messages travel and over `shell(R)` after, as `comm!(f, a, perdir, R)`.
-"""
 velocity_comm!(f::F, a, perdir, R) where F = _velocity_comm!(f, a, perdir, R, par_mode[])
 _velocity_comm!(f, a, perdir, R, ::Serial) = (_velocity_comm!(a, perdir, Serial()); f(R))
 function _velocity_comm!(a, perdir, ::Serial)
@@ -305,35 +173,24 @@ function _velocity_comm!(a, perdir, ::Serial)
     end
 end
 
-"""
-    decomposed(j)
-
-Whether direction `j` is split across MPI ranks (`true`) or owned in full
-by every rank (`false`).  Always `false` in serial. A periodic direction split
-across ranks takes `conv_diff!`'s Neumann boundary fluxes (`boundary_type`):
-the periodic ones (`ϕuP`) wrap within the local array, two cells back, while
-the Neumann ones need the one ghost cell the halo fills from the periodic
-neighbour.
-"""
+# whether direction `j` is split across ranks (a split periodic one takes the Neumann fluxes in `conv_diff!`)
 decomposed(j) = _decomposed(j, par_mode[])
 _decomposed(j, ::Serial) = false
 
-# ── MPI parallel interface (implemented by WaterLilyMPIExt) ───────────────────
 """
-    global_offset(Val(N), T=Float32) → SVector{N,T}
+    global_offset(Val(N), T=Float32)
 
-Return the global coordinate offset for this MPI rank.  Serial default returns
-zero.  The MPI extension adds a method for `Parallel` that returns the rank-local
-origin in global index space.
+The global coordinates of this rank's origin (zero in serial).
 """
 global_offset(::Val{N}, ::Type{T}=Float32) where {N,T} = _global_offset(Val(N), T, par_mode[])
 global_offset(N::Int, T::Type=Float32) = global_offset(Val(N), T)
 _global_offset(::Val{N}, ::Type{T}, ::Serial) where {N,T} = zero(SVector{N,T})
 
 """
-    init_waterlily_mpi(global_dims; perdir=(), select_device=!_gpu_bound(), halo=:native) → (local_dims, rank, comm)
+    init_waterlily_mpi(global_dims; perdir=(), select_device, halo) → (local_dims, rank, comm)
 
-Initialize MPI domain decomposition for WaterLily.  Implemented by `WaterLilyMPIExt`.
-`halo` (default from `WATERLILY_HALO`) picks the halo backend (`HaloBackend`).
+Split `global_dims` over the MPI ranks (needs `using MPI`). `select_device` gives each node-local rank its own GPU
+(by default unless the launcher binds one GPU per rank); `halo` picks the halo backend, `:native` or `:igg`
+(with ImplicitGlobalGrid; default `ENV["WATERLILY_HALO"]`).
 """
 function init_waterlily_mpi end

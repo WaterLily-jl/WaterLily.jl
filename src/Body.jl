@@ -27,7 +27,7 @@ See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016
 """
 function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     d²=T(2+ϵ)^2
-    offset = global_offset(Val(N), T) # rank-local → global coords (zero in serial)
+    offset = global_offset(Val(N), T)
     # define kernel functions to reset and remeasure the fields
     @inline function clear!(μ₀,μ₁,V,I)
         for i ∈ 1:N
@@ -60,7 +60,7 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
     @loop fill!(a.μ₀,a.μ₁,a.V,a.σ,I) over I ∈ local_bbox(body,inside(a.p))
     BC!(a.μ₀,zeros(SVector{N,T}),false,a.perdir) # BC on μ₀, don't fill normal component yet
     BC!(a.V ,zeros(SVector{N,T}),a.exitBC,a.perdir)
-    velocity_halo!(a.μ₁) # halo on μ₁ tensor (no-op in serial): every dim past the spatial ones is components
+    velocity_halo!(a.μ₁)
 end
 
 # Convolution kernel and its moments
@@ -82,17 +82,10 @@ sdf(body::AbstractBody,x,t=0;fastd²=0) = measure(body,x,t;fastd²)[1]
 """
     bbox(body::AbstractBody, R)
 
-Return the part of the cell range `R` where `body` needs measuring. `measure!` and the force
-and moment integrals only loop over it. Defaults to `R`. Under MPI, `R` and the returned range
-are in global cell indices (the serial domain's indices, as `sdf` takes global coordinates).
+The part of the cell range `R` where `body` needs measuring (`R` by default), in global cell indices under MPI.
 """
 @inline bbox(body::AbstractBody,R) = R
-"""
-    local_bbox(body, R)
-
-`bbox(body, R)` for this rank's block `R`. Serial calls `bbox` directly; the MPI extension shifts
-`R` to global cell indices and the result back, clipped to `R`.
-"""
+# `bbox` for this rank's block `R`
 local_bbox(body,R) = _local_bbox(body,R,par_mode[])
 _local_bbox(body,R,::Serial) = bbox(body,R)
 

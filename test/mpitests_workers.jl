@@ -1,7 +1,4 @@
-# Child driver invoked via `mpiexec -n N julia ... mpitests_workers.jl ROLE`.
-# ROLE = "unit" | "parity_serial" | "parity_parallel"
-# The orchestrator (mpitests.jl) launches us, reads exit code + result files,
-# and wraps everything in @testset on the parent side.
+# `mpiexec -n N julia mpitests_workers.jl ROLE` (from mpitests.jl), ROLE = "unit" | "parity_serial" | "parity_parallel"
 
 using Test
 using WaterLily
@@ -16,11 +13,8 @@ if HALO == :igg
     using ImplicitGlobalGrid
 end
 
-# ── Parity simulations (deterministic, low-res, run identically in serial / MPI) ─
 
-# 2D moving cylinder in a doubly-periodic domain: tests `remeasure`,
-# `boundary_type` (decomposed periodic dirs route to the Neumann fluxes
-# at MPI seams), and `comm!` halo exchange.
+# 2D moving cylinder in a doubly periodic domain (remeasure, decomposed periodic dims)
 function run_cylinder!(parallel::Bool; nsteps=20)
     n, m   = 64, 32
     U      = T(1)
@@ -46,10 +40,7 @@ function run_cylinder!(parallel::Bool; nsteps=20)
             t=Float64(sim_time(sim)))
 end
 
-# Anisotropic 2D channel (aspect 4, Neumann pressure on every wall), decomposed along the
-# long axis: guards the multigrid depth under MPI. With too shallow a hierarchy the lowest
-# Neumann mode of the long direction survives the residual-based stopping criterion and
-# the pressure (not the velocity) drifts from serial by tens of percent.
+# 2D channel of aspect 4, split along its length: a too shallow multigrid leaves the pressure off serial
 function run_channel!(parallel::Bool; nsteps=20)
     n, m   = 256, 64
     U      = T(1)
@@ -73,7 +64,7 @@ function run_channel!(parallel::Bool; nsteps=20)
             t=Float64(sim_time(sim)))
 end
 
-# Low-resolution 3D sphere: tests 3D halo exchange + `exitBC` under MPI.
+# 3D sphere with `exitBC`
 function run_sphere!(parallel::Bool; nsteps=15)
     D = 8
     Lgrid = (6, 4, 4)
@@ -101,9 +92,7 @@ function run_sphere!(parallel::Bool; nsteps=15)
             t=Float64(sim_time(sim)))
 end
 
-# A body with a `bbox`: another body's fields, measured only over a fixed box of global
-# cell indices. The box isn't intersected with `R`, which is fine in serial since it lies
-# in the domain; under MPI the rank's share of it has to come from WaterLily.
+# a body measured only over a fixed box of global cell indices
 struct Boxed{B} <: WaterLily.AbstractBody
     body::B
     box::CartesianIndices{2,NTuple{2,UnitRange{Int}}}
@@ -112,7 +101,7 @@ WaterLily.measure(b::Boxed, x, t; kwargs...) = WaterLily.measure(b.body, x, t; k
 WaterLily.sdf(b::Boxed, x, t=0; kwargs...) = WaterLily.sdf(b.body, x, t; kwargs...)
 WaterLily.bbox(b::Boxed, R) = b.box
 
-# ── Serialise a NamedTuple to TOML so the parent can read without JLD2 ────────
+# results as TOML for the parent
 
 function write_results(path, key, nt::NamedTuple)
     open(path, "w") do io
@@ -123,10 +112,8 @@ function write_results(path, key, nt::NamedTuple)
     end
 end
 
-# ── Roles ─────────────────────────────────────────────────────────────────────
 
 if ROLE == "parity_serial"
-    # MPI isn't initialised here — the cases run rank-locally back-to-back.
     cyl = run_cylinder!(false)
     sph = run_sphere!(false)
     chan = run_channel!(false)
@@ -156,14 +143,12 @@ elseif ROLE == "unit"
     using MPI
     using ForwardDiff: Dual, Partials, value, partials
 
-    # Initialise a 64×32 grid so the unit tests run on a real decomposition.
     local_dims, me, comm = init_waterlily_mpi((64, 32))
     np   = MPI.Comm_size(comm)
     Nloc = local_dims                         # rank-local interior dims
     ext  = Base.get_extension(WaterLily, :WaterLilyMPIExt)
 
-    # Every ghost must hold the value of the cell it stands for: its global index (G₁ + 1000G₂ + 10⁶G₃, plus
-    # 10⁹ per component), -1 past a physical boundary. Fine, coarse and velocity-shaped arrays; Dual and Bool too.
+    # every ghost holds its cell's global index (G₁ + 1000G₂ + 10⁶G₃ + 10⁹c), -1 past a domain boundary
     function halo_selfcheck(ldims, perdir)
         p, D = ext._par(), length(ldims)
         for sz in (Tuple(ldims .+ 2), Tuple(ldims .÷ 2 .+ 2), (Tuple(ldims .+ 2)..., D))
@@ -186,8 +171,6 @@ elseif ROLE == "unit"
         end
     end
 
-    # Tests run on every rank — `Test` aborts with non-zero exit on first
-    # failure, which the orchestrator surfaces via `success(run(cmd))`.
     @testset "MPI unit (rank $(me)/$(np))" begin
 
         @testset "par_mode + accessors" begin
@@ -248,14 +231,12 @@ elseif ROLE == "unit"
         end
 
         @testset "scalar halo exchange" begin
-            # Fill rank-local interior with `me`; ghosts start at -1 sentinel.
             arr = fill(T(-1), (Nloc[1]+2, Nloc[2]+2))
             arr[2:Nloc[1]+1, 2:Nloc[2]+1] .= T(me)
             WaterLily.scalar_halo!(arr)
             g = ext._par()
             for j in 1:2
                 nleft, nright = g.neighbors[1, j], g.neighbors[2, j]
-                # left ghost should hold neighbour's rank value (or -1 at physical wall)
                 lslice = j == 1 ? @view(arr[1, 2:end-1]) : @view(arr[2:end-1, 1])
                 rslice = j == 1 ? @view(arr[end, 2:end-1]) : @view(arr[2:end-1, end])
                 if nleft >= 0
@@ -276,8 +257,7 @@ elseif ROLE == "unit"
         end
 
         @testset "inner + shell: every cell of a range once" begin
-            # inner(R) reads no ghost of a decomposed dim (both are, 2×2 ranks);
-            # with shell(R) it covers R once, also when R is one or two cells thick
+            # inner(R) and shell(R) cover R once, also when R is one or two cells thick
             for R in (inside(zeros(T, Nloc .+ 2)), CartesianIndices((2:2, 2:5)), CartesianIndices((2:3, 4:4)))
                 I, S = vec(collect(WaterLily.inner(R))), collect(WaterLily.shell(R))
                 @test sort!(vcat(I, S)) == sort!(vec(collect(R)))
@@ -298,19 +278,16 @@ elseif ROLE == "unit"
         end
 
         @testset "global_offset + @loop coords" begin
-            # Inside @loop, `loc(0,I)` returns global coords.  Build coord array
-            # via `apply!` (which uses @loop) and compare to expected globals.
+            # `loc` in @loop gives global coordinates
             arr = zeros(T, Nloc[1]+2, Nloc[2]+2)
             apply!((i,x) -> i==1 ? x[1] : zero(T), reshape(arr, size(arr)..., 1))
             offset = WaterLily.global_offset(Val(2), T)
-            # First interior cell in x: local index 2, face 1 → loc = 0 + offset[1]
             @test arr[2, 2] ≈ offset[1]
             @test arr[3, 2] ≈ offset[1] + 1
         end
 
         @testset "bbox in global cell indices" begin
-            # Circles boxed a few cells wider than the band `measure!` fills: the first across
-            # the x and y seams, the second left of x = 33, so the ranks right of it loop over nothing.
+            # boxed circles: one across both seams, one that the ranks right of x = 33 miss
             r, R = T(6), inside(zeros(T, Nloc .+ 2))
             for (c, box) in ((SA{T}[33, 17], (24:45, 8:29)), (SA{T}[20, 17], (11:32, 8:29)))
                 circle = AutoBody((x, t) -> √sum(abs2, x .- c) - r)
@@ -348,16 +325,12 @@ elseif ROLE == "unit"
         end
 
         @testset "shape-aware topology" begin
-            # Known asymmetric case (1024×64, 8 ranks → (8,1) wins on halo
-            # surface vs (4,2)); isotropic case where Dims_create's tiebreak wins.
             @test ext._shape_aware_topology((1024, 64), 8) == (8, 1)
             @test ext._shape_aware_topology((128, 128), 4) == (2, 2)
         end
 
         @testset "ForwardDiff.Dual reductions" begin
-            # `Dual{Tag,V,N}` reductions reinterpret to flat V[value, partials...].
-            # Per-rank value (me+1, partials=(1, me)) — chosen so SUM/MIN/MAX
-            # produce distinct global answers in both the value and partials.
+            # per-rank Dual (me+1, partials (1, me)): SUM, MIN and MAX differ in value and partials
             mkdual2(v, p1, p2) = Dual{Nothing,Float64,2}(v, Partials{2,Float64}((p1, p2)))
             mkdual1(v, p1)     = Dual{Nothing,Float64,1}(v, Partials{1,Float64}((p1,)))
             x = mkdual2(Float64(me + 1), 1.0, Float64(me))
@@ -380,11 +353,9 @@ elseif ROLE == "unit"
             @test partials(mx)[1] ≈ 1.0
             @test partials(mx)[2] ≈ Float64(np - 1)
 
-            # SUM and MAX together: the two reductions above
             sm = WaterLily.global_sum_max(x, x)
             @test sm[1] == s && sm[2] == mx
 
-            # Array SUM (via the flat-V alias), into a copy or in place.
             a = fill(mkdual2(Float64(me), Float64(me), 1.0), 3)
             sa = WaterLily.global_allreduce(a)
             @test all(==(mkdual2(Float64(me), Float64(me), 1.0)), a)
@@ -396,7 +367,6 @@ elseif ROLE == "unit"
                 @test partials(sa[k])[2] ≈ Float64(np)
             end
 
-            # Halo exchange of a Dual array (MPI sends it as a derived datatype).
             arr = fill(mkdual1(-1.0, -1.0), (Nloc[1]+2, Nloc[2]+2))
             interior = mkdual1(Float64(me), Float64(me))
             arr[2:Nloc[1]+1, 2:Nloc[2]+1] .= interior
@@ -416,7 +386,6 @@ elseif ROLE == "unit"
                 end
             end
 
-            # Velocity-shaped Dual array: all components at once.
             u = fill(mkdual1(-1.0, -1.0), (Nloc[1]+2, Nloc[2]+2, 2))
             for c in 1:2
                 u[2:Nloc[1]+1, 2:Nloc[2]+1, c] .= mkdual1(Float64(me + 10c), Float64(c))
@@ -438,7 +407,7 @@ elseif ROLE == "unit"
         end
 
         @testset "halo, 3D and periodic: every ghost holds the value of its cell" begin
-            # last, since it changes the decomposition: 2×2×1 ranks, so perBC! wraps z and the halo x and y
+            # last (it changes the decomposition): 2×2×1 ranks, perBC! wraps z and the halo x and y
             ld, _, _ = init_waterlily_mpi((16, 16, 8); perdir=(1, 2, 3))
             halo_selfcheck(ld, (1, 2, 3))
         end

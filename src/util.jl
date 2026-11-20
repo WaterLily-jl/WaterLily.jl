@@ -4,12 +4,7 @@
 Linear interpolation from array `arr` at Cartesian-coordinate `x`. Interpolation queries are clamped to the computational domain.
 Note: This routine works for any number of dimensions.
 
-`offset` shifts `x` before indexing — used in MPI parallel to map global
-coordinates to rank-local array indices (pass `flow.offset`).  The
-rank-local coordinate is then clamped to the local array bounds so
-out-of-domain queries snap to the edge rather than indexing past it
-(in MPI any query past the rank's local extent is the neighbor's
-responsibility anyway).
+`offset` (the rank's `global_offset` under MPI) is subtracted from `x` first.
 
 To interpolate from an `arr<:GPUArray`, the call for `interp` should be broadcasted over the coordinates `x` as follows:
 ```julia

@@ -7,8 +7,6 @@ using DocStringExtensions, Printf
 
 abstract type AbstractSimulation end
 
-# AbstractParMode dispatch machinery + MPI-parallel interface (Serial defaults;
-# WaterLilyMPIExt adds the Parallel methods).
 include("parallel.jl")
 export global_allreduce,global_allreduce!,global_dot,global_sum,global_length,global_min,global_max,
        scalar_halo!,velocity_halo!,comm!,velocity_comm!,
@@ -231,7 +229,7 @@ A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstr
 """
 function check_nthreads()
     Base.generating_output() && return nothing
-    is_mpi_launched() && return nothing   # 1 thread per rank is the design
+    is_mpi_launched() && return nothing   # one thread per rank
     if backend == "KernelAbstractions" && Threads.nthreads() == 1
         @warn """
         Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because it defaults to serial CPU execution.
@@ -240,21 +238,13 @@ function check_nthreads()
     end
 end
 
-# True when the current process was launched by an MPI launcher (mpiexec /
-# mpirun / srun).  Detected via env vars the launcher sets on every rank,
-# regardless of when `using MPI` happens — so this works at WaterLily's
-# `__init__` time, before any extension is loaded.
+# started by an MPI launcher (known before `using MPI`)
 is_mpi_launched() = haskey(ENV, "OMPI_COMM_WORLD_SIZE") ||  # OpenMPI
                     haskey(ENV, "PMI_SIZE")            ||  # MPICH
                     haskey(ENV, "PMI_RANK")            ||  # MPICH / Intel MPI
                     haskey(ENV, "PMIX_RANK")           ||  # PMIx (Slurm, OpenMPI 5+)
                     haskey(ENV, "MPI_LOCALNRANKS")          # Hydra
-"""
-    check_mem(mem)
-
-Check that the memory type `mem` is compatible with the current backend.
-GPU array types (anything other than `Array`) require the KernelAbstractions backend.
-"""
+# GPU arrays need the KernelAbstractions backend
 function check_mem(mem)
     if backend == "SIMD" && mem !== Array
         error("GPU memory (mem=$mem) requires the KernelAbstractions backend. " *

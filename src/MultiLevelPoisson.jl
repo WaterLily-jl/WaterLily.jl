@@ -30,13 +30,6 @@ end
 # mask used to build level `coarse` from `fine` (recovered from their sizes)
 @inline coarsen_mask(fine,coarse) = ntuple(j-> size(coarse,j)<size(fine,j), ndims(fine))
 
-"""
-    restrictML(b::Poisson)
-
-Build a new coarse-level `Poisson` from fine-level `b` by restricting the
-lower diagonal `L` (in the still-divisible directions) and allocating
-matching solution/residual arrays.
-"""
 function restrictML(b::Poisson)
     N,n = size_u(b.L)
     c = coarsen_mask(N)
@@ -46,13 +39,6 @@ function restrictML(b::Poisson)
     restrictL!(aL,b.L,c,perdir=b.perdir)
     Poisson(zeros_on(dev,T,Na),aL,zeros_on(dev,T,Na);b.perdir)
 end
-"""
-    restrictL!(a, b, c; perdir=())
-
-Restrict the fine-grid lower diagonal `b` into coarse-grid `a` using
-coarsening mask `c`, then apply `BC!` to zero the normal component at
-boundary faces (halo-exchanged at MPI rank-internal faces).
-"""
 function restrictL!(a::AbstractArray{T,M},b,c;perdir=()) where {T,M}
     Na,n = size_u(a)
     for i ∈ 1:n
@@ -86,7 +72,6 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T},P<:NTuple} <:
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        # N>6 divisibility keeps coarsest interior ≥ 2x2 — no perturbation needed
         new{T,typeof(x),typeof(L),typeof(perdir)}(x,L,z,levels,[],perdir)
     end
 end
@@ -109,7 +94,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fill!(coarse.x,0)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
-    smooth!(coarse;ω,residual=false) # restrict! overwrites coarse.r before it is read again
+    smooth!(coarse;ω,residual=false) # coarse.r is overwritten before it is read
     # correct fine
     prolongate!(fine.ϵ,coarse.x,c)
     increment!(fine; ω)
@@ -121,20 +106,9 @@ diagonal(ml::MultiLevelPoisson) = diagonal(ml.levels[1])
 
 const smooth! = GaussSeidelRB!
 
-"""
-    solver!(ml::MultiLevelPoisson; tol=2e-3, itmx=32, synced=false)
-    solver!(f, ml::MultiLevelPoisson; tol=2e-3, itmx=32, synced=false)
-
-Multigrid solver: iterates V-cycles with adaptive relaxation `ω` until BOTH the
-grid-independent max-norm `max|r| < tol` and the mean residual `Σ|r|/N < tol/10`
-hold. Ends with `pin_pressure!` + `comm!` to remove the null-space mode and
-synchronize halos, with `f` looping over `inside(x)` while the halo travels
-(`comm!(f, x, perdir)`). `synced=true` skips the halo of `x` before the first
-residual, for an `x` whose ghosts still hold their neighbours' values (or the
-periodic wrap), as this `comm!` leaves them (see `mom_project!`).
-"""
+# `f(R)` loops over `inside(x)` while the closing halo travels; `synced=true`: the ghosts of `x` are still filled
 solver!(ml::MultiLevelPoisson; kwargs...) = solver!(Returns(nothing), ml; kwargs...)
-function solver!(f::F, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where {F,T} # f::F: see comm!(f, ...)
+function solver!(f::F, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where {F,T}
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
     residual!(p; comm=!synced); r₁, r∞ = L₁L∞(p); ω = T(1)

@@ -6,18 +6,18 @@ using Printf: @sprintf
 import Base: close
 
 """
-    pvd_collection(fname; append=false)
+    pvd_collection(fname;append=false)
 
-Wrapper for `paraview_collection` returning a pvd file header.
+Wrapper for a `paraview_collection` that returns a pvd file header
 """
 pvd_collection(fname;append=false) = paraview_collection(fname;append=append)
 """
-    VTKWriter(fname; attrib, dir, T, body_mask=false, include_bc=false)
+    VTKWriter(fname;attrib,dir,T,body_mask=false,include_bc=false)
 
-Holds the collection name and `Dict{String,Function}` attributes for VTK output.
-Defaults save `Velocity` and `Pressure`. With `include_bc=true`, the `buff=1`
-ghost layer is retained along non-periodic physical boundaries (under MPI, only
-by the rank that owns the global boundary in that direction).
+Generates a `VTKWriter` that hold the collection name to which the `vtk` files are written.
+The default attributes that are saved are the `Velocity` and the `Pressure` fields.
+Custom attributes can be passed as `Dict{String,Function}` to the `attrib` keyword.
+`body_mask=true` multiplies the fields by the BDIM mask `μ₀`; `include_bc=true` keeps the ghosts of non-periodic boundaries.
 """
 struct VTKWriter
     fname         :: String
@@ -29,7 +29,7 @@ struct VTKWriter
     include_bc    :: Bool
 end
 function vtkWriter(fname="WaterLily";attrib=default_attrib(),dir="vtk_data",T=Float32,body_mask=false,include_bc=false)
-    mkpath(dir)  # race-safe: multiple MPI ranks may enter here at once
+    mkpath(dir)
     VTKWriter(fname,dir,pvd_collection(fname),attrib,[0],body_mask,include_bc)
 end
 function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k,body_mask::Bool=false,include_bc::Bool=false)
@@ -38,31 +38,24 @@ end
 """
     default_attrib()
 
-Returns a `Dict{String,Function}` of attribute name → simulation accessor; the
-function builds the data written under that VTK key. Extend by passing your
-own dict to `vtkWriter`.
+Returns a `Dict` containing the `name` and `bound_function` for the default attributes.
+The `name` is used as the key in the `vtk` file and the `bound_function` generates the data
+to put in the file. With this approach, any variable can be save to the vtk file.
 """
 _velocity(a::AbstractSimulation) = a.flow.u
 _pressure(a::AbstractSimulation) = a.flow.p
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 
-# Optional attribute accessors. None added to `default_attrib()` — opt in via
-#     vtkWriter("name"; attrib = merge(default_attrib(), vtk_attribs(:sdf, :rank)))
-# All write into `flow.σ` (scratch) and return it; `_interior` then copies before
-# the next call clobbers σ, so multiple selections compose cleanly.
+# attributes of `vtk_attribs`: each writes `flow.σ` and returns it
 function _sdf_attrib(a::AbstractSimulation)
     σ, body, t, T = a.flow.σ, a.body, sum(a.flow.Δt), eltype(a.flow.σ)
-    # Interior via measure_sdf! preserves the flood-fill sign flip for closed MeshBodies.
     WaterLily.measure_sdf!(σ, body, t; fastd²=T(Inf))
-    # Fill the ghost layer too so `include_bc=true` displays real geometry rather than
-    # stale/zero σ. The natural BVH sign is correct for cells outside the body, which
-    # is the usual case for ghosts; the flood-fill flip is interior-only.
     Rin = inside(σ)
     WaterLily.@loop σ[I] = (I in Rin ? σ[I] : WaterLily.sdf(body, loc(0,I,T), t)) over I ∈ CartesianIndices(σ)
     return σ
 end
 function _vorticity_attrib(a::AbstractSimulation)
-    fill!(a.flow.σ, zero(eltype(a.flow.σ)))   # clear ghosts so they don't carry the previous attrib's σ
+    fill!(a.flow.σ, zero(eltype(a.flow.σ)))
     if ndims(a.flow.p) == 2
         WaterLily.@inside a.flow.σ[I] = WaterLily.curl(3, I, a.flow.u)
     else
@@ -86,11 +79,9 @@ const _attrib_lib = Dict(
 )
 
 """
-    vtk_attribs(syms::Symbol...) → Dict{String,Function}
+    vtk_attribs(syms::Symbol...)
 
-Pre-built attribute accessors for `vtkWriter`. Available keys: `:sdf`,
-`:vorticity` (ω₃ in 2D, |ω| in 3D), `:lambda2` (3D only), `:rank`. Merge into
-`default_attrib()` to opt in.
+Attributes for `vtkWriter`, to merge with `default_attrib()`: `:sdf`, `:vorticity` (ω₃ in 2D, |ω| in 3D), `:lambda2`, `:rank`.
 """
 function vtk_attribs(syms::Symbol...)
     d = Dict{String,Function}()
@@ -101,8 +92,7 @@ function vtk_attribs(syms::Symbol...)
     return d
 end
 
-# Strip the `buff=1` ghost layer along the first `nd` spatial dims. `lo[d]`/`hi[d]` ∈ {0,1}
-# keep one BC cell on that side. Returns a copy when slicing, the original array otherwise.
+# `data` without its ghosts, but those of the sides with `lo[d]`/`hi[d]` = 1
 function _interior(data::AbstractArray, nd::Int, N_int::NTuple;
                    lo::NTuple=ntuple(_->0, nd), hi::NTuple=ntuple(_->0, nd))
     size(data)[1:nd] == N_int && return data
@@ -110,11 +100,7 @@ function _interior(data::AbstractArray, nd::Int, N_int::NTuple;
     return Array(@view data[axs...])
 end
 
-# Cell-centred BDIM mask `μ₀(sdf, ϵ) ∈ [0,1]`. Reuses `flow.σ` (scratch between mom_steps)
-# and uses `fastd²=(ϵ+1)²` so the BVH closest-point search short-circuits far from the body
-# — cells beyond saturate to μ₀=1 anyway. Ghost cells are filled too; otherwise stale σ at
-# the BC layer would yield mask=μ₀(0,ϵ)=0.5 and scale every output field down. Returns an
-# owned buffer (`_interior` copies).
+# the BDIM mask μ₀ at the cell centres (ghosts included)
 function _body_mask(a::AbstractSimulation, nd::Int, N_int::NTuple; kw...)
     σ, body, t, T = a.flow.σ, a.body, sum(a.flow.Δt), eltype(a.flow.σ)
     WaterLily.measure_sdf!(σ, body, t; fastd²=T((a.ϵ+1)^2))
@@ -125,8 +111,6 @@ function _body_mask(a::AbstractSimulation, nd::Int, N_int::NTuple; kw...)
     return σ_int
 end
 
-# Multiply `data` by `mask` in place. Scalar fields share the mask shape; vector fields
-# carry an extra trailing axis broadcast across components. `data` must be owned.
 function _apply_mask!(data::AbstractArray, mask::AbstractArray, nd::Int)
     if ndims(data) == nd
         data .*= mask
@@ -138,7 +122,6 @@ function _apply_mask!(data::AbstractArray, mask::AbstractArray, nd::Int)
     return data
 end
 
-# Common attribute-write loop shared by serial and MPI paths.
 function _write_attribs!(vtk, w::VTKWriter, a::AbstractSimulation, nd::Int, N_int::NTuple, lo::NTuple, hi::NTuple)
     mask = w.body_mask ? _body_mask(a, nd, N_int; lo, hi) : nothing
     for (name, func) in w.output_attrib
@@ -149,18 +132,15 @@ function _write_attribs!(vtk, w::VTKWriter, a::AbstractSimulation, nd::Int, N_in
 end
 
 """
-    save!(w::VTKWriter, a::AbstractSimulation)
+    save!(w::VTKWriter, sim<:AbstractSimulation)
 
-Write `a` to VTK. Dispatches on `par_mode[]`: serial → `.vti`; parallel → per-rank
-`.vti` pieces with a `.pvti` header on rank 0. Ghost layers are stripped automatically.
+Write the simulation data at time `sim_time(sim)` to a `vti` file (a piece of a `pvti` under MPI)
+and add the file path to the collection file.
 """
 function save!(w::VTKWriter, a::AbstractSimulation)
-    # Refresh velocity ghosts so `include_bc=true` shows BC values, not stale data.
     w.include_bc && WaterLily.BC!(a.flow.u, a.flow.uBC, a.flow.exitBC, a.flow.perdir, sum(a.flow.Δt))
     _save!(w, a, WaterLily.par_mode[])
-    # Attribs (sdf/rank/body_mask) leak values into σ ghosts; CFL reads `maximum(a.σ)`
-    # over the full array, so leave σ zeroed for the next step.
-    fill!(a.flow.σ, zero(eltype(a.flow.σ)))
+    fill!(a.flow.σ, zero(eltype(a.flow.σ))) # `CFL` reads all of σ
 end
 
 function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.Serial)
@@ -181,13 +161,13 @@ function _save!(w::VTKWriter, a::AbstractSimulation, ::WaterLily.AbstractParMode
     nprocs == 1 && return _save!(w, a, WaterLily.Serial())
 
     nd = ndims(a.flow.p)
-    nx = size(a.flow.p) .- 2                                            # rank-local interior cells
-    off = WaterLily.global_offset(Val(nd), Int)                         # coords .* nx
+    nx = size(a.flow.p) .- 2
+    off = WaterLily.global_offset(Val(nd), Int)
     coords_mat = reshape(MPIMod.Allgather(Int32[off[d] ÷ nx[d] for d in 1:nd], comm), nd, nprocs)
     dims_proc  = ntuple(d -> Int(maximum(@view coords_mat[d, :])) + 1, nd)
     bc = ntuple(d -> w.include_bc && !(d in a.flow.perdir) ? 1 : 0, nd)
 
-    # Per-rank VTK extents: leftmost/rightmost rank owns the BC cell, middle ranks shift by bc.
+    # the extent of each rank's piece, the first and last ranks with the ghosts of `include_bc`
     extents = [ntuple(d -> begin
                  c = Int(coords_mat[d, r])
                  lo = c == 0 ? bc[d] : 0; hi = c == dims_proc[d]-1 ? bc[d] : 0
@@ -208,11 +188,15 @@ end
 """
     close(w::VTKWriter)
 
-Flush the pvd collection file. Must be called to finalise the dataset.
+Closes the `VTKWriter`, this is required to write the collection file.
 """
-close(w::VTKWriter) = (vtk_save(w.collection); nothing)
+close(w::VTKWriter)=(vtk_save(w.collection);nothing)
+"""
+    components_first(a::Array)
 
-# Move the trailing component axis of a vector field to the front (VTK requirement).
-components_first(a::AbstractArray{T,N}) where {T,N} = permutedims(a, [N, 1:N-1...])
+Permute the dimensions such that the u₁,u₂,(u₃) components of a vector field are the first dimensions and not the last
+this is reqired for the vtk file.
+"""
+components_first(a::AbstractArray{T,N}) where {T,N} = permutedims(a,[N,1:N-1...])
 
 end # module

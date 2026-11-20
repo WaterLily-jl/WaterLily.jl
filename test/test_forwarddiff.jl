@@ -77,8 +77,7 @@
         sim_step!(sim, 1; remeasure=false)
         WaterLily.total_force(sim)[2]/(ξ^2*sim.U^2*sim.L)
     end
-    # ∂/∂θ of an L²-norm-like pressure scalar for a θ-rotated body
-    # (sum(p) is pinned to ≈0 by pin_pressure!, so its derivative carries no signal)
+    # ∂/∂θ of an L²-norm-like pressure scalar for a θ-rotated body (pin_pressure! makes sum(p) ≈ 0)
     function rotating(θ, mem; L=32, U=1, Re=100)
         s, c = sincos(θ)
         body = AutoBody((ξ, _) -> √sum(abs2, ξ - SA[0, clamp(ξ[1], -L/2, L/2)]) - 2,

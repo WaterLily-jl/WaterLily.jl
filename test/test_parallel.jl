@@ -1,6 +1,5 @@
 @testset "parallel.jl" begin
-    # Serial defaults of the AbstractParMode dispatch hooks (the MPI extension's methods are
-    # exercised by test/mpitests.jl)
+    # serial defaults of the parallel hooks (MPI: test/mpitests.jl)
     @test WaterLily.par_mode[] isa WaterLily.Serial
     @test mpi_rank() == 0 && mpi_comm() === nothing && mpi_nprocs() == 1
     @test global_allreduce(3) === 3 && global_sum([1,2,3]) == 6 && global_dot([1,2],[3,4]) == 11
@@ -12,9 +11,7 @@
     @test global_offset(Val(2)) == zeros(SVector{2,Float32}) && WaterLily._loop_offset(Float64) === nothing
     @test scalar_halo!(zeros(4,4)) === nothing && velocity_halo!(zeros(4,4,2)) === nothing
 
-    # @distributed rewrite: `(local,_,_) = init_waterlily_mpi(dims; perdir=…); f(local, …)` for ANY
-    # constructor call `f(dims, …)` (dims = first positional argument), with `perdir` found in the
-    # `; perdir=…`, `; perdir` and `, perdir=…` keyword forms.
+    # @distributed for any constructor `f(dims, …)`, with `perdir` after `;`, as `; perdir`, or after `,`
     function rewrite(ex)
         r = Base.remove_linenums!(WaterLily._rewrite_distributed_call(ex))
         init, call = r.args                       # (local,_,_) = init…(dims; perdir=…) ; f(local,…)

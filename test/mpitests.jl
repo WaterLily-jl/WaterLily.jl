@@ -1,16 +1,5 @@
-# MPI test orchestrator. Spawns child Julia processes via `MPI.mpiexec()` to
-# run `mpitests_workers.jl` in three roles:
-#
-#   - "parity_serial"        : plain Julia, serial reference
-#   - "parity_parallel_cyl"  : np=NP_2D, 2D moving cylinder
-#   - "parity_parallel_sph"  : np=NP_3D, 3D sphere
-#   - "parity_parallel_chan" : np=NP_2D, 2D anisotropic channel (multigrid depth guard)
-#   - "unit"                 : np=NP_2D, rank-aware unit tests
-#
-# Pattern follows Trixi.jl: launches go through `MPI.mpiexec() do cmd; ... end`
-# which sets up the launcher correctly for both system MPI and `MPI_jll`, and
-# each `run(...)` is preceded by `@test true` (MPI.jl#391 workaround) so an
-# mpiexec crash registers as a testset failure rather than aborting the testset.
+# Runs `mpitests_workers.jl` under `MPI.mpiexec()`: rank-aware unit tests, and serial/parallel parity
+# of a 2D moving cylinder, a 3D sphere and a 2D anisotropic channel (multigrid depth)
 
 using Test, MPI, Printf
 
@@ -19,26 +8,20 @@ if get(ENV, "WATERLILY_SKIP_MPI", "0") == "1"
     return
 end
 
-# Default rank counts. Override via env vars for resource-constrained CI.
 const NP_2D   = parse(Int, get(ENV, "WATERLILY_MPI_NP_2D", "4"))
 const NP_3D   = parse(Int, get(ENV, "WATERLILY_MPI_NP_3D", "8"))
-# Halo backends: the unit tests run on each, the parity cases on each must give the native results bit for bit
+# the parity cases of every halo backend must give the native results bit for bit
 const HALOS   = split(get(ENV, "WATERLILY_MPI_HALOS", "native,igg"), ',')
 const TESTDIR = @__DIR__
 const WORKER  = joinpath(TESTDIR, "mpitests_workers.jl")
 const OUTDIR  = mktempdir()
 const JULIA   = Base.julia_cmd()
-# Inherit the orchestrator's active project so workers see the test [extras]
-# (MPI, ...) without us having to configure a separate env.
 const PROJECT = "--project=$(Base.active_project())"
 
-# CI runners may have fewer hardware cores than the rank count.  Both env vars
-# below tell OpenMPI / PRRTE to oversubscribe; MPICH ignores them.
+# let OpenMPI oversubscribe the cores of CI runners
 const OVERSUB_ENV = ("OMPI_MCA_rmaps_base_oversubscribe"   => "1",
                      "PRTE_MCA_rmaps_default_mapping_policy" => ":oversubscribe")
 
-# Run the worker under `MPI.mpiexec()` (returns the launcher Cmd directly —
-# the do-block form is deprecated since MPI.jl 0.20).
 function mpi_run(np::Int, role::AbstractString; halo="native", outdir=OUTDIR)
     cmd = addenv(
         `$(MPI.mpiexec()) -n $(np) $(JULIA) $(PROJECT) --startup-file=no
@@ -60,10 +43,7 @@ function read_toml(path)
     return d
 end
 
-# Compare two field dicts: meaningful (large-magnitude) metrics agree to `rtol`,
-# near-zero symmetry components are skipped (FP32 chaos amplification — see
-# `MPI_PORT.md` parity criterion in WaterLilyMeshBodies / WaterLilyIGG).
-# Prints a per-metric serial/parallel/Δ table so CI logs show what was compared.
+# metrics agree to `rtol`, but those below `abs_floor` (symmetry components, FP32 chaos); prints the table
 function compare_metrics(serial, parallel, name; rtol=0.02, abs_floor=0.05)
     keys_sorted = sort(collect(keys(serial)))
     println("\n  $(name) parity  (rtol=$(rtol), abs_floor=$(abs_floor))")
@@ -96,7 +76,6 @@ end
     end
 
     # ── parity tests ──────────────────────────────────────────────────────────
-    # Each parallel run gets its own subprocess (and rank count).
     @testset "parity" begin
         @test true
         cmd_s = `$(JULIA) $(PROJECT) --startup-file=no $(WORKER) parity_serial $(OUTDIR)`
@@ -106,8 +85,6 @@ end
                                 ("sph",  "sphere",   NP_3D),
                                 ("chan", "channel",  NP_2D))
             @testset "$(key) np=$(np)" begin
-                # Remove any stale parallel result before launching: prevents a
-                # crashed worker from passing the `isfile` check on leftovers.
                 pfile = joinpath(OUTDIR, "parallel_$(case).toml")
                 isfile(pfile) && rm(pfile)
 
