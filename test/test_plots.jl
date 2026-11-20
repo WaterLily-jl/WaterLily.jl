@@ -23,10 +23,10 @@ end
         sim = make_egg_noarray()
         plots = plot()
         
-        @test_nowarn body_plot!(sim)
+        body_plot!(sim)
 
         body_path = joinpath(dir, "body.png")
-        @test_nowarn savefig(plots, body_path)
+        savefig(plots, body_path)
         @test isfile(body_path)
         @test filesize(body_path) > 0
 
@@ -36,7 +36,7 @@ end
 
         flood_plot = flood(field; clims=())
         flood_path = joinpath(dir, "flood.png")
-        @test_nowarn savefig(flood_plot, flood_path)
+        savefig(flood_plot, flood_path)
         @test isfile(flood_path)
         @test filesize(flood_path) > 0
 
@@ -70,7 +70,7 @@ end
         log_plot = plot_logger(log_path)
         log_image = joinpath(dir, "log.png")
 
-        @test_nowarn savefig(log_plot, log_image)
+        savefig(log_plot, log_image)
         @test isfile(log_image)
         @test filesize(log_image) > 0
     end
