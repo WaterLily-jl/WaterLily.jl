@@ -1,7 +1,7 @@
 abstract type AbstractPoisson{T,S,V} end
 
 """
-    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
+    Poisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}, P<:NTuple}
 
 Composite type for conservative variable coefficient Poisson equations:
 
@@ -19,7 +19,7 @@ To help iteratively solve the system above, the Poisson structure holds
 helper arrays for `inv(D)`, the error `ϵ`, and residual `r=z-Ax`. An iterative
 solution method then estimates the error `ϵ=̃A⁻¹r` and increments `x+=ϵ`, `r-=Aϵ`.
 """
-struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T},P<:NTuple} <: AbstractPoisson{T,S,V}
     L :: V # Lower diagonal coefficients
     D :: S # Diagonal coefficients
     iD :: S # 1/Diagonal
@@ -28,12 +28,12 @@ struct Poisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S
     r :: S # residual
     z :: S # source
     n :: Vector{Int16} # pressure solver iterations
-    perdir :: NTuple # direction of periodic boundary condition
+    perdir :: P # direction of periodic boundary condition
     function Poisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};perdir=()) where T
         @assert axes(x) == axes(z) && axes(x) == Base.front(axes(L)) && last(axes(L)) == eachindex(axes(x))
         r,ϵ,D,iD = ntuple(_->zeros_on(get_backend(x),T,size(x)),4)
         set_diag!(D,iD,L)
-        new{T,typeof(x),typeof(L)}(L,D,iD,x,ϵ,r,z,[],perdir)
+        new{T,typeof(x),typeof(L),typeof(perdir)}(L,D,iD,x,ϵ,r,z,[],perdir)
     end
 end
 

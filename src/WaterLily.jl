@@ -87,15 +87,19 @@ Constructor for a WaterLily.jl simulation:
         Called after `flow_ctor` with the constructed flow as argument.
         Used by downstream packages (e.g. BiotSavartBCs.jl) to inject a custom `AbstractPoisson` subtype.
 
+The `Simulation` type is parametric in the types of its fields, so a field can only be reassigned in place
+(e.g. `sim.body = setmap(sim.body; θ)`) with a value of the same type. To swap a field for one of a different
+type, such as a `flow` with a new `uBC` function, use `sim = WaterLily.setproperties(sim; flow)`, which does not copy the arrays.
+
 See the repository [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) for more examples.
 """
-mutable struct Simulation <: AbstractSimulation
-    U :: Number # velocity scale
-    L :: Number # length scale
-    ϵ :: Number # kernel width
-    flow :: AbstractFlow
-    body :: AbstractBody
-    pois :: AbstractPoisson
+mutable struct Simulation{F<:AbstractFlow, B<:AbstractBody, P<:AbstractPoisson, TU<:Number, TL<:Number, Tϵ<:Number} <: AbstractSimulation
+    U :: TU # velocity scale
+    L :: TL # length scale
+    ϵ :: Tϵ # kernel width
+    flow :: F
+    body :: B
+    pois :: P
     function Simulation(dims::NTuple{N}, uBC, L::Number;
                         Δt=0.25, ν=0., g=nothing, U=nothing, ϵ=1, perdir=(),
                         u0=nothing, uλ=nothing, exitBC=false, λ=quick, body::AbstractBody=NoBody(),
@@ -108,8 +112,11 @@ mutable struct Simulation <: AbstractSimulation
         check_fn(uBC,N,T,3); check_fn(g,N,T,3); check_fn(u0,N,T,2)
         flow = flow_ctor(dims,uBC;u0,Δt,ν,g,λ,T,mem,perdir,exitBC)
         measure!(flow,body;ϵ)
-        new(U,L,ϵ,flow,body,pois_ctor(flow))
+        Simulation(U,L,ϵ,flow,body,pois_ctor(flow))
     end
+    # field-wise constructor: lets `setproperties(sim; flow)` swap a field for one of a different type
+    Simulation(U::Number,L::Number,ϵ::Number,flow::AbstractFlow,body::AbstractBody,pois::AbstractPoisson) =
+        new{typeof(flow),typeof(body),typeof(pois),typeof(U),typeof(L),typeof(ϵ)}(U,L,ϵ,flow,body,pois)
 end
 
 time(sim::AbstractSimulation) = time(sim.flow)
