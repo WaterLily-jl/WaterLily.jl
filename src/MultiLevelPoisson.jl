@@ -34,10 +34,10 @@ function restrictML(b::Poisson)
     N,n = size_u(b.L)
     c = coarsen_mask(N)
     Na = ntuple(j-> c[j] ? 1+N[j]÷2 : N[j], n)
-    aL = similar(b.L,(Na...,n)); fill!(aL,0)
-    ax = similar(b.x,Na); fill!(ax,0)
+    dev,T = get_backend(b.x),eltype(b.x)
+    aL = zeros_on(dev,T,(Na...,n))
     restrictL!(aL,b.L,c,perdir=b.perdir)
-    Poisson(ax,aL,copy(ax);b.perdir)
+    Poisson(zeros_on(dev,T,Na),aL,zeros_on(dev,T,Na);b.perdir)
 end
 function restrictL!(a::AbstractArray{T,M},b,c;perdir=()) where {T,M}
     Na,n = size_u(a)
@@ -53,18 +53,18 @@ prolongate!(a,b,c) = @inside a[I] = b[down(I,c)]
 # keep coarsening while ANY direction is still divisible (semi-coarsening)
 @inline divisible(l::Poisson) = any(size(l.x) .|> divisible)
 """
-    MultiLevelPoisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}}
+    MultiLevelPoisson{T::Float, S<:AbstractArray{T,D}, V<:AbstractArray{T,D+1}, P<:NTuple}
 
 Composite type used to solve the pressure Poisson equation with a [geometric multigrid](https://en.wikipedia.org/wiki/Multigrid_method) method.
 The main field is `levels`, a vector of nested `Poisson` systems from fine to coarse.
 """
-struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractPoisson{T,S,V}
+struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T},P<:NTuple} <: AbstractPoisson{T,S,V}
     x::S
     L::V
     z::S
-    levels :: Vector{Poisson{T,S,V}}
+    levels :: Vector{Poisson{T,S,V,P}}
     n :: Vector{Int16}
-    perdir :: NTuple # direction of periodic boundary condition
+    perdir :: P # direction of periodic boundary condition
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=10,perdir=()) where T
         levels = Poisson[Poisson(x,L,z;perdir)]
         while divisible(levels[end]) && length(levels) <= maxlevels
@@ -72,7 +72,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
+        new{T,typeof(x),typeof(L),typeof(perdir)}(x,L,z,levels,[],perdir)
     end
 end
 
@@ -109,12 +109,12 @@ const smooth! = GaussSeidelRB!
 function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
-    residual!(p); r₁ = L₁(p); r∞ = L∞(p); ω = T(1)
+    residual!(p); r₁, r∞ = L₁L∞(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
-        smooth!(p; ω);
-        rnew = L₁(p); r∞ = L∞(p); nᵖ+=1
+        smooth!(p; ω)
+        rnew, r∞ = L₁L∞(p); nᵖ+=1
         @log ", $nᵖ, $r∞, $rnew, $ω\n"
         if     rnew ≥ r₁
             ω = max(0.2, 0.9ω) |> T

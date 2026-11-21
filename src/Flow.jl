@@ -35,24 +35,29 @@ function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
                    r[I,i] += Φ[I]) over I ∈ inside_u(N,j)
             @loop r[I-δ(j,I),i] -= Φ[I] over I ∈ inside_u(N,j)
         end
-        boundaries!(r,u,ν,j,N,λ,Val{j in perdir}())
+        boundaries!(r,u,ν,j,N,λ,boundary_type(j,perdir))
     end
 end
 
+# Boundary types of the fluxes on the domain faces normal to `j`
+struct Neumann end
+struct Periodic end
+boundary_type(j,perdir) = j in perdir ? Periodic() : Neumann()
+
 # Fluxes on domain boundaries normal to `j`
-function boundaries!(r,u,ν,j,N,λ,per)
+function boundaries!(r,u,ν,j,N,λ,bc)
     R = CartesianIndices((ntuple(k -> k==j ? (2:2) : (2:N[k]), length(N))...,1:length(N)))
     Nj = N[j]
-    @loop boundary!(r,Ii,u,ν,j,Nj,λ,per) over Ii ∈ face(R,j)
+    @loop boundary!(r,Ii,u,ν,j,Nj,λ,bc) over Ii ∈ face(R,j)
 end
 # Neumann BC
-@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{false})
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Neumann)
     I,i,IN = Base.front(Ii),last(Ii),CIj(j,Ii,N)
     @inbounds r[Ii] += ϕuL(j,Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
     @inbounds r[CIj(j,Ii,N-1)] -= ϕuR(j,IN,u,ϕ(i,CI(Base.front(IN),j),u),λ) - ν*∂(j,IN,u)
 end
 # Periodic BC
-@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Val{true})
+@fastmath @inline function boundary!(r,Ii,u,ν,j,N,λ,::Periodic)
     I,i = Base.front(Ii),last(Ii)
     Φ = ϕuP(j,CIj(j,Ii,N-2),Ii,u,ϕ(i,CI(I,j),u),λ) - ν*∂(j,Ii,u)
     @inbounds r[Ii] += Φ; @inbounds r[CIj(j,Ii,N-1)] -= Φ
@@ -99,7 +104,7 @@ end
 
 abstract type AbstractFlow{D,T} end
 """
-    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, Lf}
+    Flow{D::Int, T::Float, Sf<:AbstractArray{T,D}, Vf<:AbstractArray{T,D+1}, Tf<:AbstractArray{T,D+2}, Lf, P<:NTuple, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}}
 
 Composite type for a multidimensional immersed boundary flow simulation.
 
@@ -108,7 +113,7 @@ Solid boundaries are modelled using the [Boundary Data Immersion Method](https:/
 The primary variables are the scalar pressure `p` (an array of dimension `D`)
 and the velocity vector field `u` (an array of dimension `D+1`).
 """
-struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf} <: AbstractFlow{D,T}
+struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{T}, Lf, P<:NTuple, UBC<:Union{NTuple{D,Number},Function}, G<:Union{Function,Nothing}} <: AbstractFlow{D,T}
     # Fluid fields
     u :: Vf # velocity vector field
     u⁰:: Vf # previous velocity
@@ -120,12 +125,12 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
     μ₀:: Vf # zeroth-moment vector
     μ₁:: Tf # first-moment tensor field
     # Non-fields
-    uBC :: Union{NTuple{D,Number},Function} # domain boundary values/function
+    uBC :: UBC # domain boundary values/function
     Δt:: Vector{T} # time step (stored in CPU memory)
     ν :: T # kinematic viscosity
-    g :: Union{Function,Nothing} # acceleration field funciton
+    g :: G # acceleration field function
     exitBC :: Bool # Convection exit
-    perdir :: NTuple # tuple of periodic direction
+    perdir :: P # tuple of periodic direction
     λ :: Lf # convective scheme λ(u,c,d); a type parameter so conv_diff!'s kernel specializes on it
     function Flow(N::NTuple{D}, uBC; mem=Array, Δt=0.25, ν=0., g=nothing,
             u0=nothing, uλ=nothing, perdir=(), exitBC=false, λ=quick, T=Float32) where D
@@ -134,19 +139,20 @@ struct Flow{D, T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Tf<:AbstractArray{
         Ng = N .+ 2
         Nd = (Ng..., D)
         isnothing(u0) && (u0 = ic_function(uBC))
-        u = Array{T}(undef, Nd...) |> mem
+        b = get_backend(mem([zero(T)])) # the device of `mem`; the fields are allocated with `zeros_on`
+        u = zeros_on(b,T,Nd)
         isa(u0, Function) ? apply!(u0, u) : apply!(ic_function(T.(u0)), u)
         BC!(u,uBC,exitBC,perdir); exitBC!(u,u,zero(T))
-        u⁰ = copy(u)
-        fv, p, σ = zeros(T, Nd) |> mem, zeros(T, Ng) |> mem, zeros(T, Ng) |> mem
-        V, μ₀, μ₁ = zeros(T, Nd) |> mem, ones(T, Nd) |> mem, zeros(T, Ng..., D, D) |> mem
+        u⁰ = copyto!(zeros_on(b,T,Nd),u)
+        fv, p, σ = zeros_on(b,T,Nd), zeros_on(b,T,Ng), zeros_on(b,T,Ng)
+        V, μ₀, μ₁ = zeros_on(b,T,Nd), ones_on(b,T,Nd), zeros_on(b,T,(Ng...,D,D))
         BC!(μ₀,ntuple(zero, D),false,perdir)
-        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
+        new{D,T,typeof(p),typeof(u),typeof(μ₁),typeof(λ),typeof(perdir),typeof(uBC),typeof(g)}(u,u⁰,fv,p,σ,V,μ₀,μ₁,uBC,T[Δt],T(ν),g,exitBC,perdir,λ)
     end
     # field-wise constructor: lets `setproperties(flow; uBC)` swap non-field values without reallocating the fields
     function Flow(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
         uBC isa Tuple && (uBC = eltype(p).(uBC)) # same type-stability requirement as above
-        new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
+        new{ndims(p),eltype(p),typeof(p),typeof(u),typeof(μ₁),typeof(λ),typeof(perdir),typeof(uBC),typeof(g)}(u,u⁰,f,p,σ,V,μ₀,μ₁,uBC,Δt,ν,g,exitBC,perdir,λ)
     end
 end
 
@@ -155,17 +161,18 @@ end
 
 Integrate the `Flow` one time step using the [Boundary Data Immersion Method](https://eprints.soton.ac.uk/369635/)
 and the `AbstractPoisson` pressure solver to project the velocity onto an incompressible flow.
+`kwargs` are passed to `udf` and `poisson_kwargs` to `solver!`.
 """
-@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,kwargs...)
+@fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
     a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
-    mom_project!(a,b,1,t₁)
+    mom_project!(a,b,1,t₁;poisson_kwargs...)
     # corrector u → u¹
     @log "c"
     mom_correct!(a,t₁;udf,kwargs...)
-    mom_project!(a,b,2,t₁)
+    mom_project!(a,b,2,t₁;poisson_kwargs...)
     push!(a.Δt,CFL(a))
 end
 
@@ -211,19 +218,19 @@ end
 scale_u!(a::AbstractFlow{D,T},s) where {D,T} = (s=T(s); @loop a.u[Ii] *= s over Ii ∈ inside_u(size(a.p)))
 
 """
-    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
+    mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
 
 Projection phase of `mom_step!`: solve the pressure Poisson equation, correct
 the velocity by `Δt/w·∇p`, and enforce BCs at time `t`. `w=1` in the predictor and `w=2`
-in the corrector. On return `a.u` is divergence-free and BC-consistent.
+in the corrector. On return `a.u` is divergence-free and BC-consistent. `kwargs` are passed to `solver!`.
 """
-function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t)
+function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
     w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
     Dp = diagonal(b)                                # Poisson matrix diagonal
     @inside b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
-    solver!(b)
+    solver!(b; kwargs...)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)
     end

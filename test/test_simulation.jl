@@ -14,6 +14,9 @@
     end
     # Test sim_time, and sim_step! stopping time
     sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)
+    # concretely typed fields, so `sim_step!` and `measure!(sim)` dispatch statically
+    @test all(isconcretetype,fieldtypes(typeof(sim)))
+    @test all(isconcretetype,fieldtypes(typeof(sim.pois)))
     @test sim_time(sim) == 0
     sim_step!(sim,0.1,remeasure=false)
     @test sim_time(sim) ≥ 0.1 > sum(sim.flow.Δt[1:end-2])*sim.U/sim.L
@@ -56,6 +59,11 @@
     @test sim.pois isa MultiLevelPoisson
     sim_step!(sim,0.5,remeasure=false)
     @test all(isfinite, sim.flow.u)
+
+    # `poisson_kwargs` reaches both projections and not `udf`; the impulsive start needs more than one V-cycle
+    sim = Simulation(nm,(1,0),radius; body=AutoBody(circle), ν, T)
+    sim_step!(sim; udf=(a,t)->nothing, poisson_kwargs=(;itmx=1))
+    @test sim.pois.n == [1,1]
 
     # Initial-condition keyword `u0` and its deprecated alias `uλ`
     # Test to be removed in WL 2.0
