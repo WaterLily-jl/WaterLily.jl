@@ -57,6 +57,7 @@ end
     a,b = @inbounds L[I,i],L[I+δ(i,I),i]
     I.I[i] ∈ (2,size(L,i)-1) && iszero(a*b) ? max(a,b) : (a+b)/2
 end)/d
+@inline project_source(I,u,V,L) = div(I,u)-δv(L,I)*div(I,V)
 
 """
     mult!(p::Poisson,x)
