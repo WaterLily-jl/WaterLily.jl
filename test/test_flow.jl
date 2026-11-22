@@ -222,6 +222,19 @@ end
     end
 end
 
+@testset "Moving body on a domain face" begin
+    # A circle sliding along the y=0 slip wall: BC! zeroes the wall face of μ₀, which must not count
+    # as solid in δv, or div(V) where V is cut off leaves a source in the fluid row along the wall
+    R = 8f0
+    for f ∈ arrays
+        body = AutoBody((x,t)->√(x'*x)-R,RigidMap(SA_F32[32,0],0f0;V=SA_F32[1,0]))
+        sim = Simulation((64,32),(0,0),2R;ν=2R/250,T=Float32,mem=f,body)
+        sim_step!(sim;remeasure=false); u,μ₀ = Array(sim.flow.u),Array(sim.flow.μ₀)
+        fluid(i,j) = μ₀[i,j,1]==μ₀[i+1,j,1]==μ₀[i,j+1,2]==1
+        @test maximum(i->fluid(i,2) ? abs(WaterLily.div(CartesianIndex(i,2),u)) : 0f0, 2:65) < 2f-3 # solver tol
+    end
+end
+
 @testset "Update uBC with setproperties" begin
     swap!(sim,uBC) = (sim.flow = WaterLily.setproperties(sim.flow; uBC); nothing)
     for f ∈ arrays
