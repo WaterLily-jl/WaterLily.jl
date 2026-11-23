@@ -228,7 +228,6 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
     w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
-    @inside b.z[I] = div(I,a.u)-δv(b.L,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
     @inside b.z[I] = project_source(I,a.u,a.V,b.L)
     solver!(b; kwargs...)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
