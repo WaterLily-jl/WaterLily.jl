@@ -210,28 +210,19 @@ end
     R,ε,Tc = 8f0,0.25f0,64f0; s(t) = 1-ε*(1-cospi(2t/Tc)); ṡ(t) = -2ε*Float32(π)/Tc*sinpi(2t/Tc)
     circle(c,s) = AutoBody((x,t)->√(x'*x)-R,(x,t)->(x .- c)/s(t))
     for f ∈ arrays
-        # single body: the net dilatation is absorbed by the solved rows only
-        sim = Simulation((64,64),(0,0),2R;ν=2R/250,T=Float32,mem=f,body=circle(SA_F32[32,32],s))
+        # single body on the y=0 slip wall: the net dilatation is absorbed by the solved rows only, and
+        # the wall face zeroed by BC! must not count as solid in δv, or it leaves a source along the wall
+        sim = Simulation((64,32),(0,0),2R;ν=2R/250,T=Float32,mem=f,body=circle(SA_F32[32,0],s))
         foreach(_->sim_step!(sim),1:8); p = sim.pois.levels[1]; WaterLily.residual!(p)
         @test maximum(abs,p.r .* (p.iD .== 0)) == 0 && abs(sum(p.r)) < 1f-6sum(abs,p.r)
+        u,μ₀ = Array(sim.flow.u),Array(sim.flow.μ₀)
+        fluid(i) = μ₀[i,2,1]==μ₀[i+1,2,1]==μ₀[i,3,2]==1
+        @test maximum(i->fluid(i) ? abs(WaterLily.div(CartesianIndex(i,2),u)) : 0f0, 2:65) < 2f-3 # solver tol
         # anti-phase pair: no net dilatation, so the flux between them is exactly dA₁/dt
         sim = Simulation((128,64),(0,0),2R;ν=2R/250,T=Float32,mem=f,
                          body=circle(SA_F32[32,32],s)+circle(SA_F32[96,32],t->√(2-s(t)^2)))
         foreach(_->sim_step!(sim),1:8); t = WaterLily.time(sim.flow)
         @test sum(@view sim.flow.u[66,2:65,1]) ≈ 2Float32(π)*R^2*s(t)*ṡ(t) rtol=0.01
-    end
-end
-
-@testset "Moving body on a domain face" begin
-    # A circle sliding along the y=0 slip wall: BC! zeroes the wall face of μ₀, which must not count
-    # as solid in δv, or div(V) where V is cut off leaves a source in the fluid row along the wall
-    R = 8f0
-    for f ∈ arrays
-        body = AutoBody((x,t)->√(x'*x)-R,RigidMap(SA_F32[32,0],0f0;V=SA_F32[1,0]))
-        sim = Simulation((64,32),(0,0),2R;ν=2R/250,T=Float32,mem=f,body)
-        sim_step!(sim;remeasure=false); u,μ₀ = Array(sim.flow.u),Array(sim.flow.μ₀)
-        fluid(i,j) = μ₀[i,j,1]==μ₀[i+1,j,1]==μ₀[i,j+1,2]==1
-        @test maximum(i->fluid(i,2) ? abs(WaterLily.div(CartesianIndex(i,2),u)) : 0f0, 2:65) < 2f-3 # solver tol
     end
 end
 
