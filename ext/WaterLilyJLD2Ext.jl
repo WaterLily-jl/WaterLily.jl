@@ -38,8 +38,9 @@ onto `flow`'s grid when its resolution is `scale` times the stored one or its do
 """
 function load!(flow::AbstractFlow; fname="WaterLily.jld2", dir="./", scale=1, kwargs...)
     jldopen(joinpath(dir, fname)) do obj
-        sz = size(flow.p)
-        regrid!(flow.p, obj["p"], sz, scale)
+        sz, p = size(flow.p), obj["p"]
+        check_sizes(sz, size(p), scale)
+        regrid!(flow.p, p, sz, scale)
         regrid!(flow.u, obj["u"], sz, scale)
         empty!(flow.Δt)
         push!(flow.Δt, (scale .* obj["Δt"][1:end-1])..., CFL(flow))
@@ -56,8 +57,9 @@ interpolated as in `load!(flow::AbstractFlow)`.
 """
 function load!(meanflow::MeanFlow; fname="WaterLilyMean.jld2", dir="./", scale=1, kwargs...)
     jldopen(joinpath(dir, fname)) do obj
-        sz = size(meanflow.P)
-        regrid!(meanflow.P, obj["P"], sz, scale)
+        sz, P = size(meanflow.P), obj["P"]
+        check_sizes(sz, size(P), scale)
+        regrid!(meanflow.P, P, sz, scale)
         regrid!(meanflow.U, obj["U"], sz, scale)
         isnothing(meanflow.UU) || regrid!(meanflow.UU, obj["UU"], sz, scale)
         empty!(meanflow.t)
@@ -65,6 +67,7 @@ function load!(meanflow::MeanFlow; fname="WaterLilyMean.jld2", dir="./", scale=1
     end
     meanflow
 end
+check_sizes(a, b, s) = s == 1 && a != b && @warn "Saved grid size $b differs from request size $a; interpolating."
 
 function regrid!(a, b, sz, scale)
     size(a) == size(b) && scale == 1 && return copyto!(a, b)
