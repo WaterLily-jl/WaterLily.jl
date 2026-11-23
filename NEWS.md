@@ -1,5 +1,9 @@
 # WaterLily.jl release notes
 
+## Unreleased
+
+- **Load a saved flow onto a new grid**: `load!(sim; scale)` interpolates a JLD2-saved flow or `MeanFlow` onto `scale`× the resolution and/or a larger domain, preserving `sim_time`.
+
 ## v1.11
 
 ### Highlights
