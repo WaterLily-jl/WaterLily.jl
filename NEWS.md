@@ -1,5 +1,9 @@
 # WaterLily.jl release notes
 
+## v1.12
+
+- **Breaking:** `δv(L,I)` replaces `δv(D,I)` and `diagonal`, so a domain face zeroed by `BC!` no longer counts as solid where a body crosses it; the projection source is `project_source(I,u,V,L)` ([#395](https://github.com/WaterLily-jl/WaterLily.jl/pull/395)). BiotSavartBCs needs [#41](https://github.com/WaterLily-jl/BiotSavartBCs.jl/pull/41).
+
 ## v1.11
 
 ### Highlights
