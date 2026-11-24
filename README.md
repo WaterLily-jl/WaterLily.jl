@@ -5,10 +5,10 @@
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
 [![News](https://img.shields.io/badge/release-notes-blue.svg)](NEWS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
-[![CI CPU](https://img.shields.io/github/actions/workflow/status/WaterLily-jl/WaterLily.jl/ci.yml?branch=master&label=CI%20CPU)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml?query=branch%3Amaster)
-[![CI GPU](https://img.shields.io/buildkite/ee51e8bcd961fd45767426df6d23c2da243407ab9f43e8d847/master?label=CI%20GPU)](https://buildkite.com/julialang/waterlily-dot-jl)
-[![Lint](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml/badge.svg?branch=master)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml?query=branch%3Amaster)
-[![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
+[![CI CPU](https://img.shields.io/github/actions/workflow/status/WaterLily-jl/WaterLily.jl/ci.yml?branch=main&label=CI%20CPU)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml?query=branch%3Amain)
+[![CI GPU](https://img.shields.io/buildkite/ee51e8bcd961fd45767426df6d23c2da243407ab9f43e8d847/main?label=CI%20GPU)](https://buildkite.com/julialang/waterlily-dot-jl)
+[![Lint](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml/badge.svg?branch=main)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/main/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
 [![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109748-blue.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
 
 ![Julia flow](assets/julia.gif)
@@ -83,7 +83,7 @@ contourf(u') # transpose the array for the plot
 
 As you can see, the velocity within the circle is zero, the velocity far from the circle is one, and there are accelerated and decelerated regions around the circle. The `sim_step!` has only taken a single time step, and this initial flow around our circle looks similar to the potential flow because the viscous boundary layer has not separated yet.
 
-A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/master/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the pressure force on the immersed body. Note that `pressure_force` returns the integral of `p n` with the normal `n` pointing out of the body, which is the negative of the force acting on the body, so the drag below comes out negative. The function is applied over a time range, and the forces are plotted.
+A set of [flow metric functions](https://github.com/WaterLily-jl/WaterLily.jl/blob/main/src/Metrics.jl) have been implemented, and we can use them to measure the simulation. The following code block defines a function to step the simulation to time `t` and then use the `pressure_force` metric to measure the pressure force on the immersed body. Note that `pressure_force` returns the integral of `p n` with the normal `n` pointing out of the body, which is the negative of the force acting on the body, so the drag below comes out negative. The function is applied over a time range, and the forces are plotted.
 
 ```Julia
 function get_forces!(sim,t)
@@ -169,7 +169,7 @@ We always appreciate new contributions, so please [submit a pull request](https:
 
 ``` sh
 git clone https://github.com/WaterLily-jl/WaterLily-Benchmarks && cd WaterLily-Benchmarks
-sh benchmark.sh -wd "<your/waterlily/path>" -w "<your_waterlily_branch> master"
+sh benchmark.sh -wd "<your/waterlily/path>" -w "<your_waterlily_branch> main"
 julia --project compare.jl
 ```
 

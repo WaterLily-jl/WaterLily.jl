@@ -80,7 +80,7 @@ We always appreciate new contributions, so please [submit a pull request](https:
 
 ``` sh
 git clone https://github.com/WaterLily-jl/WaterLily-Benchmarks && cd WaterLily-Benchmarks
-sh benchmark.sh -wd "<your/waterlily/path>" -w "<your_waterlily_branch> master"
+sh benchmark.sh -wd "<your/waterlily/path>" -w "<your_waterlily_branch> main"
 julia --project compare.jl
 ```
 

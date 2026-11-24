@@ -52,7 +52,7 @@ end
     # the stylesheet lives in `src/.vitepress/theme/overrides.css` -- this writer has no `assets`.
     format = DocumenterVitepress.MarkdownVitepress(
         repo = "https://github.com/WaterLily-jl/WaterLily.jl",
-        devbranch = "master",
+        devbranch = "main",
         devurl = "dev",
         description = "A differentiable and backend-agnostic Julia solver for incompressible " *
             "viscous flow around dynamic bodies",
@@ -98,7 +98,7 @@ end
 if !liveserver
     @timeit dto "deploydocs" DocumenterVitepress.deploydocs(
         repo = "github.com/WaterLily-jl/WaterLily.jl.git",
-        devbranch = "master",
+        devbranch = "main",
         target = "build",
         branch = "gh-pages",
         push_preview = true,
