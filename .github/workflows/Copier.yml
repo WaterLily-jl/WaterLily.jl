@@ -1,14 +1,10 @@
 name: Copier Update
 
-# Opens a pull request when a new BestieTemplate release changes the files this
-# repository takes from the template. Nothing happens without a new release, or while an
-# earlier update pull request is open, since a new run would overwrite its branch.
-# Files where the release conflicts with WaterLily's own changes keep WaterLily's version
-# and are listed in the pull request, so the template's changes to them are ported by hand.
-# The COPIER_PAT secret (a token with write access to contents, pull requests and
-# workflows) pushes the branch, so the usual checks run on the pull request. The default
-# token cannot push changes to workflow files, so without the secret only releases that
-# leave .github/workflows alone get through.
+# Opens a PR when a new BestieTemplate release changes the files taken from the template,
+# unless an earlier update PR is still open. Files that conflict with WaterLily's changes
+# keep WaterLily's version and are listed in the PR, to port the template's changes by hand.
+# COPIER_PAT (write access to contents, pull requests and workflows) pushes the branch so
+# the checks run; the default token cannot push changes to .github/workflows.
 
 on:
   schedule:
