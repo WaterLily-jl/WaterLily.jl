@@ -1,3 +1,6 @@
+@inline _interp_clamp(x::SVector{D,T}, sz::NTuple{D,Int}) where {D,T} =
+    SVector{D,T}(clamp(x[d], zero(T), T(sz[d] - 2)) for d in 1:D)
+
 """
     interp(x::SVector, arr::AbstractArray)
 
@@ -13,9 +16,6 @@ WaterLily.interp.(x, Ref(p)) # Broadcast
 WaterLily.interp.(x, Ref(u)) # Broadcast (x=[-0.5,2.5] is shifted to [0,2.5] because we are in a vector field)
 ```
 """
-@inline _interp_clamp(x::SVector{D,T}, sz::NTuple{D,Int}) where {D,T} =
-    SVector{D,T}(clamp(x[d], zero(T), T(sz[d] - 2)) for d in 1:D)
-
 function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
     # Each component is stored on a staggered face, so shift query for that
     # component and then clamp to the valid scalar interpolation domain.
