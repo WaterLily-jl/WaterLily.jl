@@ -4,10 +4,12 @@
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://WaterLily-jl.github.io/WaterLily.jl/dev/)
 [![Examples](https://img.shields.io/badge/view-examples-blue.svg)](https://github.com/WaterLily-jl/WaterLily-Examples/)
 [![News](https://img.shields.io/badge/release-notes-blue.svg)](NEWS.md)
-[![CI](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml)
+[![CI CPU](https://img.shields.io/github/actions/workflow/status/WaterLily-jl/WaterLily.jl/ci.yml?branch=master&label=CI%20CPU)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/ci.yml?query=branch%3Amaster)
+[![CI GPU](https://img.shields.io/buildkite/ee51e8bcd961fd45767426df6d23c2da243407ab9f43e8d847/master?label=CI%20GPU)](https://buildkite.com/julialang/waterlily-dot-jl)
 [![Lint](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml/badge.svg?branch=master)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml?query=branch%3Amaster)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/master/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
 [![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109748-blue.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
 
 ![Julia flow](assets/julia.gif)
 
