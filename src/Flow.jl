@@ -1,9 +1,9 @@
 @inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
 @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])/2
-@fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
-@fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
-@fastmath cds(u,c,d) = (c+d)/2
+@fastmath @inline quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
+@fastmath @inline vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
+@fastmath @inline cds(u,c,d) = (c+d)/2
 
 @inline ϕu(a,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[I-2δ(a,I)],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
 @inline ϕuP(a,Ip,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[Ip],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
@@ -24,7 +24,7 @@ end
     end
     return s/2
 end
-@fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
+@fastmath @inline median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
 """
     conv_diff!(r,u,Φ,λ;ν=0.1,perdir=())
