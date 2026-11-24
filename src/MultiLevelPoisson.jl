@@ -94,7 +94,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fill!(coarse.x,0)
     # solve coarse (with recursion if possible)
     l+1<length(ml.levels) && Vcycle!(ml,l=l+1; ω)
-    smooth!(coarse;ω)
+    smooth!(coarse;ω,residual=false) # coarse.r is overwritten before it is read
     # correct fine
     prolongate!(fine.ϵ,coarse.x,c)
     increment!(fine; ω)
@@ -106,10 +106,12 @@ diagonal(ml::MultiLevelPoisson) = diagonal(ml.levels[1])
 
 const smooth! = GaussSeidelRB!
 
-function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
+# `f(R)` loops over `inside(x)` while the closing halo travels; `synced=true`: the ghosts of `x` are still filled
+solver!(ml::MultiLevelPoisson; kwargs...) = solver!(Returns(nothing), ml; kwargs...)
+function solver!(f::F, ml::MultiLevelPoisson{T};tol=2e-3,itmx=32,synced=false) where {F,T}
     p = ml.levels[1]
     r₁tol = l1n_tol(p, tol); r∞tol = tol
-    residual!(p); r₁, r∞ = L₁L∞(p); ω = T(1)
+    residual!(p; comm=!synced); r₁, r∞ = L₁L∞(p); ω = T(1)
     nᵖ=0; @log ", $nᵖ, $r∞, $r₁, $ω\n"
     while nᵖ<itmx
         Vcycle!(ml; ω)
@@ -124,6 +126,6 @@ function solver!(ml::MultiLevelPoisson{T};tol=2e-3,itmx=32) where T
         r₁ = rnew
         (r₁<r₁tol && r∞<r∞tol) && break
     end
-    perBC!(p.x,p.perdir)
+    pin_pressure!(p); comm!(f,p.x,p.perdir)
     push!(ml.n,nᵖ);
 end
