@@ -9,4 +9,6 @@ The WaterLily ecosystem is growing, with a number of packages that extend the co
 - [**BiotSavartBCs.jl**](https://github.com/WaterLily-jl/BiotSavartBCs.jl) -- replaces the domain boundary condition with a Biot-Savart evaluation of the velocity induced by the vorticity in the domain, so a much smaller domain behaves as if it were unbounded. Useful for freely moving bodies and for forces that are sensitive to blockage.
 - [**Pathlines.jl**](https://github.com/WaterLily-jl/Pathlines.jl) -- Pathline visualization tools for WaterLily simulations, allows to track the motion of fluid particles over time.
 - [**WaterLilyNarrowBand.jl**](https://github.com/WaterLily-jl/WaterLilyNarrowBand.jl) -- Measure moving bodies faster using a narrow band around their surface.
+<!-- CoupledSimulations.jl is private for now, so its link fails the link checker. Restore the entry once it is public:
 - [**CoupledSimulations.jl**](https://github.com/WaterLily-jl/CoupledSimulations.jl) -- Couples WaterLily with other simulation codes, such as structural solvers, to allow for fluid-structure interaction simulations.
+-->
