@@ -20,6 +20,7 @@ Before editing, check `git status` and keep unrelated work. Do not commit or pus
 | `src/Metrics.jl`, `src/util.jl` | forces, moments, vorticity, `MeanFlow`; `interp`, `sgs!`, `spread!` |
 | `ext/` | package extensions (CUDA, AMDGPU, Plots, Makie, Meshing, WriteVTK, ReadVTK, JLD2) |
 | `test/` | `runtests.jl` (ParallelTestRunner), one `test_*.jl` per area, shared setups in `helper.jl` |
+| `docs/` | Documenter site rendered by DocumenterVitepress: `make.jl`, the API pages in `src/reference/`, which pull in docstrings by source file through `@autodocs`, and a `Makefile` for a draft live server or a full build |
 
 Optional dependencies go in an extension: declare an empty function in `src/WaterLily.jl`, add the package to `[weakdeps]` and `[extensions]` in `Project.toml`, implement it in `ext/`. Never import an optional package from `src/`.
 
@@ -86,7 +87,7 @@ WATERLILY_BACKENDS=cpu,cuda julia --project -e 'using Pkg; Pkg.test(test_args=["
 - Each `test/test_*.jl` is a set that runs in its own worker. `WATERLILY_BACKENDS` (`cpu`, `cuda`, `amdgpu`, `metal`, `all`; default `cpu`) fills the `arrays` list the tests loop over; GPU packages are installed on demand. With a GPU, pass a small `--jobs` (2 works) or the workers run out of device memory. `WATERLILY_NTHREADS` (default 2) sets the threads per worker. The header of `test/runtests.jl` documents the rest.
 - The test dependencies are in `test/Project.toml`, which loads WaterLily from this checkout. `julia --project=test` gives an environment for running test code by hand.
 - With the `"SIMD"` backend preference only `test_alloc.jl` runs (allocation checks); with `"KernelAbstractions"` every other set runs. CI runs both, on Julia 1.11 and 1.13, and Buildkite runs the GPU backends.
-- New behavior needs a test in the matching `test_*.jl`, looping over `arrays` so it also runs on GPUs. A change to a hot path must keep `test_alloc.jl` passing.
+- New behavior needs a test in the matching `test_*.jl`, looping over `arrays` so it also runs on GPUs. `test_alloc.jl` requires zero allocations from `mom_step!`, `measure!(sim)` and `sim_step!`, so a change to a hot path must keep it passing.
 
 ## Performance
 
@@ -94,7 +95,7 @@ Every contribution comes with benchmark results (see the README): run [WaterLily
 
 ## Code style
 
-- Match the surrounding code: terse kernels with few comments. Explain the reasoning in the PR description or a docstring, not in long code comments. Public functions get a docstring.
+- Match the surrounding code: terse kernels with few comments. Explain the reasoning in the PR description or a docstring, not in long code comments. Public functions get a docstring. The docs build is strict: a docstring in a new `src/` file needs an `@autodocs` entry in `docs/src/reference/`, and every `@ref` link must resolve.
 - Mutating functions end in `!` and take the mutated argument first.
 - Use the existing Unicode names (`ν` is the Greek letter, `μ₀`, `σ`, `ϵ`, `δ`, `∂`).
 - Keep the export list short; internal helpers are reached as `WaterLily.name`.
@@ -103,6 +104,7 @@ Every contribution comes with benchmark results (see the README): run [WaterLily
 ## Extension points and downstream packages
 
 - `Simulation(...; flow_ctor, pois_ctor)` injects a custom `AbstractFlow` or `AbstractPoisson`. `flow_ctor` receives `(dims, uBC; u0, Δt, ν, g, λ, T, mem, perdir, exitBC)`.
+- `Simulation` and `Flow` are parametric in the types of their fields, so a field can only be reassigned with a value of the same type. To change a type, for example a `uBC` tuple for a function, build the new value and swap it in, which does not copy the arrays: `flow = WaterLily.setproperties(sim.flow; uBC)`, then `sim = WaterLily.setproperties(sim; flow)` (tested in `test_flow.jl`).
 - Dispatch on your own subtype: the `mom_step!` phases and `CFL` for an `AbstractFlow`; `solver!`, `update!`, `diagonal` (or all of `mom_project!`) for an `AbstractPoisson`; `measure`, `measure_sdf!`, `bbox` for an `AbstractBody`; `sim_step!` for an `AbstractSimulation`.
 
 These packages use internal functions, so internals are API for them. Search them before renaming a function or changing its arguments or meaning. The Downstream workflow runs the tests of the first three, and of ParametricBodies.jl and WaterLilyMeshBodies.jl, on every PR that changes `src/`, `ext/` or `Project.toml`:
