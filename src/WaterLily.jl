@@ -1,6 +1,3 @@
-"""
-$(README)
-"""
 module WaterLily
 
 using DocStringExtensions, Printf
@@ -168,7 +165,7 @@ Prints information on the current state of a simulation.
 sim_info(sim::AbstractSimulation) = @printf "tU/L=%.4f, Δt=%.3f\n" sim_time(sim) sim.flow.Δt[end]
 
 """
-    perturb!(sim::AbstractSimulations; noise=0.1)
+    perturb!(sim::AbstractSimulation; noise=0.1)
 Perturb the velocity field of a simulation with `noise` level with respect to velocity scale `U`.
 """
 perturb!(sim::AbstractSimulation; noise=0.1) = sim.flow.u .+= randn(size(sim.flow.u))*sim.U*noise |> typeof(sim.flow.u).name.wrapper
