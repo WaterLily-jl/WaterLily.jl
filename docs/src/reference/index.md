@@ -13,7 +13,7 @@
 - **[Grid, loops and boundary conditions](grid.md)**: the Cartesian grid conventions, the
   loop macros that every kernel is written with, and the domain boundary conditions.
 - **[Input and output](io.md)**: writing and restarting simulations (ParaView and JLD2).
-- **[Plotting](plotting.md)**: the Plots helpers used throughout the examples, and `viz!`
+- **[Plotting](plotting.md)**: the Plots helpers, and `viz!`
   for interactive and 3D rendering with Makie.
 - **[Utilities](utilities.md)**: interpolation, sub-grid-scale modelling, and 2D-to-3D
   field spreading.

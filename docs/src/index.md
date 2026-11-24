@@ -12,7 +12,7 @@ hero:
   actions:
     - theme: brand
       text: Get started
-      link: /examples/
+      link: /#getting-started
     - theme: alt
       text: About
       link: /about
@@ -22,13 +22,13 @@ hero:
 
 features:
   - title: Examples
-    details: Tutorial-style examples that guide you through the process of simulating a flow with WaterLily.
+    details: "Coming soon: tutorial-style examples that guide you through the process of simulating a flow with WaterLily."
     link: /examples/
   - title: API reference
     details: The technical API reference of types, functions and macros (i.e. the documentation strings), organized by the layer of the solver each one belongs to.
     link: /reference/
   - title: Gallery
-    details: Some examples of flows simulated with WaterLily.
+    details: "Coming soon: some examples of flows simulated with WaterLily and its ecosystem."
     link: /gallery/
   - title: Paper
     details: The 2025 paper in *Computer Physics Communications* describes the main features of the solver and provides benchmarking, validation and profiling results.
@@ -44,7 +44,7 @@ features:
 
 ## Getting started
 
-As a new user of WaterLily it is suggested to start working with the examples before using WaterLily to tackle the specific flow you ultimately want to simulate. The examples start with explaining the basic concepts and then increase in complexity. Understanding the first example program, [the flow over a circle](@ref examples-TwoD_Circle), is essential in order to understand how WaterLily works: already this rather simple program introduces the three pieces every simulation is built from -- an implicitly defined geometry, a `Simulation`, and a time loop you measure from. See the [examples overview](@ref Examples) for a suggestion on how to progress to more advanced usage.
+As a new user of WaterLily it is suggested to start working with examples before using WaterLily to tackle the specific flow you ultimately want to simulate. The [README](https://github.com/WaterLily-jl/WaterLily.jl#readme) walks through the flow over a circle, which already introduces the three pieces every simulation is built from -- an implicitly defined geometry, a `Simulation`, and a time loop you measure from. The [WaterLily-Examples](https://github.com/WaterLily-jl/WaterLily-Examples) repository then holds a much larger collection of programs and notebooks. Tutorial-style examples will be added to these pages soon.
 
 ### Installation
 
@@ -59,7 +59,7 @@ This will install WaterLily and all necessary dependencies. Press backspace to g
 WaterLily is written entirely in Julia and depends only on registered Julia packages, so it runs on Linux, macOS and Windows. Some capabilities live in package extensions and switch on when you load the relevant package, none of which is required to run a simulation:
 
 ```julia
-pkg> add Plots      # the plotting helpers used throughout the Examples
+pkg> add Plots      # the plotting helpers
 pkg> add CUDA       # to run on an NVIDIA GPU (or AMDGPU, for a ROCm device)
 pkg> add WriteVTK   # to write ParaView output
 ```

@@ -44,11 +44,6 @@ export default defineConfig({
   description: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
   lastUpdated: true,
   cleanUrls: true,
-  // ADDITION: every example and gallery page links to its own source as a `.jl` script and a
-  // `.ipynb` notebook, which Literate writes next to the generated Markdown. Vitepress only
-  // knows about Markdown routes, so it reports those links as dead; `make.jl` copies the files
-  // into the finished site after the build instead.
-  ignoreDeadLinks: [/\.(jl|ipynb)$/],
   outDir: 'REPLACE_ME_DOCUMENTER_VITEPRESS', // This is required for MarkdownVitepress to work correctly...
   head: [
     ['link', { rel: 'icon', href: 'REPLACE_ME_DOCUMENTER_VITEPRESS_FAVICON' }],

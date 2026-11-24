@@ -16,7 +16,6 @@ push!(ARGS, "liveserver")
 include(joinpath(@__DIR__, "make.jl"))
 
 # ... and hand it to Vitepress' own dev server, which serves the site and hot-reloads it
-# whenever the Markdown changes. Rerun this script to pick up changes to docstrings or to
-# the Literate sources in src/literate-examples and src/literate-gallery.
+# whenever the Markdown changes. Rerun this script to pick up changes to docstrings.
 import DocumenterVitepress
 DocumenterVitepress.dev_docs(joinpath(@__DIR__, "build"))

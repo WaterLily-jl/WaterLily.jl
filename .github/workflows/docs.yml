@@ -37,9 +37,8 @@ jobs:
           arch: 'default'
       # docs/Project.toml points WaterLily at this checkout through `[sources]`
       - run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
-      # Examples are Literate.jl programs that are executed during the build, so give
-      # the KernelAbstractions CPU backend some threads to work with. `makedocs` also runs
-      # any doctests.
+      # Give the KernelAbstractions CPU backend some threads for the `@example` blocks.
+      # `makedocs` also runs any doctests.
       - run: julia --project=docs --threads=auto docs/make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

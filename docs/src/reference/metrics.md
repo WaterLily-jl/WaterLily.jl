@@ -6,15 +6,10 @@ CurrentModule = WaterLily
 
 These are the functions that turn a flow field into a number. Most are *cell-wise*: they take a
 `CartesianIndex` and the velocity field and return the value at that cell, so they are used
-inside an [`@inside`](@ref) loop writing into a scratch array (usually `sim.flow.σ`), which is
-the pattern every example on these pages uses.
+inside an [`@inside`](@ref) loop writing into a scratch array (usually `sim.flow.σ`).
 
 The forces and moments are the exception: they integrate over the immersed surface and return a
 vector directly.
-
-See [Flow over a circle](@ref examples-TwoD_Circle) for force measurement,
-[Taylor-Green vortex](@ref examples-ThreeD_TaylorGreenVortex) for `λ₂` and energy, and
-[many bodies at once](@ref examples-TwoD_MultipleBodies) for per-body forces.
 
 ## Forces and moments
 
