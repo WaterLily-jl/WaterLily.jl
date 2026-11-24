@@ -56,6 +56,17 @@
         @test ForwardDiff.derivative(p -> rigid_sum(p, f), 0.0) ≈ drigid_fd rtol=1e-6
     end
 
+    # The limiters hold no call with Duals, and a `@loop` kernel over Duals is compiled fully inlined where the backend can
+    let T = ForwardDiff.Dual{Nothing,Float32,2}
+        calls(λ) = count(s -> Meta.isexpr(s, :invoke), first(only(code_typed(λ, NTuple{3,T}))).code)
+        @test all(iszero ∘ calls, (WaterLily.quick, WaterLily.vanLeer, WaterLily.cds))
+        for f ∈ arrays
+            b = get_backend(f(zeros(Float32,2))); bT = WaterLily.kernel_backend(b, T)
+            @test WaterLily.kernel_backend(b, Float32) === b
+            @test hasproperty(bT, :always_inline) ? bT.always_inline : bT === b
+        end
+    end
+
     # End-to-end ForwardDiff AD
     # ∂/∂Re of KE for TGV
     function tgv_sim(Re, mem)
