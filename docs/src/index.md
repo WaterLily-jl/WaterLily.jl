@@ -77,11 +77,13 @@ You are now all set to start using WaterLily!
 ## Contributing to WaterLily
 
 We always appreciate new contributions, so please [submit a pull request](https://github.com/WaterLily-jl/WaterLily.jl/compare) with your changes and help us make WaterLily even better! Note that contributions need to be submitted together with benchmark results - WaterLily should always be fast! 😃 For this, we have a [fully automated benchmarking suite](https://github.com/WaterLily-jl/WaterLily-Benchmarks) that conducts performance tests. In short, to compare your changes with the latest WaterLily, clone that repo and run the benchmarks with
+
 ``` sh
 git clone https://github.com/WaterLily-jl/WaterLily-Benchmarks && cd WaterLily-Benchmarks
 sh benchmark.sh -wd "<your/waterlily/path>" -w "<your_waterlily_branch> master"
 julia --project compare.jl
 ```
+
 This will run benchmarks for CPU and GPU backends. If you do not have a GPU, simply pass `-b "Array"` when running `benchmark.sh`. More information on the benchmark suite is available in that [README](https://github.com/WaterLily-jl/WaterLily-Benchmarks/blob/main/README.md).
 
 Of course, ideas, suggestions, and questions are welcome too! Please [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) to address any of these.
@@ -89,7 +91,6 @@ Of course, ideas, suggestions, and questions are welcome too! Please [raise an i
 ### Getting help
 
 If you have questions about WaterLily, or ideas and suggestions for it, you are encouraged to [raise an issue](https://github.com/WaterLily-jl/WaterLily.jl/issues/new/choose) on the GitHub repository. Bug reports are most useful when they come with a short program that reproduces the problem.
-
 
 ## Citing WaterLily
 
