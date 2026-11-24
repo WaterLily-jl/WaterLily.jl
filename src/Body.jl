@@ -120,6 +120,8 @@ sharedmap(a,::Nothing) = a
 sharedmap(a,b) = a==b ? a : throw(ArgumentError("SetBody parts have different maps"))
 
 # Measurements
+@inline sdf(body::SetBody,x,t=0;fastd²=0) = body.op(sdf(body.a,x,t;fastd²),sdf(body.b,x,t;fastd²))
+@inline sdf(body::SetBody{typeof(-)},x,t=0;fastd²=0) = -sdf(body.a,x,t;fastd²)
 function measure(body::SetBody,x::AbstractVector{T},t;fastd²=T(Inf)) where T
     body.op(measure(body.a,x,t;fastd²),measure(body.b,x,t;fastd²)) # can't mapreduce within GPU kernel
 end

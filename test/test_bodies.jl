@@ -25,6 +25,8 @@ end
 
     # test sdf and exactly equal distance bodies
     @test sdf(AutoBody(circ)+AutoBody(circ,(x,t)->x.-[6,0]),[3.,0.],0.) == 1
+    @test sdf(body1-body2,[-√2.,-√2.],1.) ≈ √2.
+    @test sdf(-body1,[2.,0.,0.],1.) ≈ 1.
 
     # test scaling
     body = AutoBody(circ)
