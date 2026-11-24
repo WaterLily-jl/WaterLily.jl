@@ -13,3 +13,15 @@ updates:
     ignore:
       # Ignore itself so `path = ".."` in subdir/Project.toml doesn't trigger it
       - dependency-name: "WaterLily"
+      # Packages without a compat entry (standard libraries and extension packages): Dependabot
+      # would add one pinned to the latest release. Drop a name here once it gets a compat entry.
+      - dependency-name: "AMDGPU"
+      - dependency-name: "CUDA"
+      - dependency-name: "JLD2"
+      - dependency-name: "LinearAlgebra"
+      - dependency-name: "Meshing"
+      - dependency-name: "Plots"
+      - dependency-name: "Printf"
+      - dependency-name: "ReadVTK"
+      - dependency-name: "TOML"
+      - dependency-name: "WriteVTK"
