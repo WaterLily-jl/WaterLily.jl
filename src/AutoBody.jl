@@ -16,7 +16,7 @@ AutoBody(sdf, map=(x,t)->x) = AutoBody(sdf, map)
 """
     d = sdf(body::AutoBody,x,t) = body.sdf(body.map(x,t),t)
 """
-@inline sdf(body::AutoBody,x,t=0;kwargs...) = body.sdf(body.map(x,t),t)
+@inline sdf(body::AutoBody,x,t=0;kwargs...) = @inline body.sdf((@inline body.map(x,t)),t)
 
 """
     d,n,V = measure(body::AutoBody,x,t;fastd²=Inf)
