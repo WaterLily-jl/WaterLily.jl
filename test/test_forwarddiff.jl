@@ -64,6 +64,7 @@
             b = get_backend(f(zeros(Float32,2))); bT = WaterLily.kernel_backend(b, T)
             @test WaterLily.kernel_backend(b, Float32) === b
             @test hasproperty(bT, :always_inline) ? bT.always_inline : bT === b
+            @test iszero(@allocated WaterLily.kernel_backend(b, T))
         end
     end
 
