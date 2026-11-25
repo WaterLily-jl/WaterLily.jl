@@ -27,5 +27,5 @@ This checklist tells PR authors what reviewers look for, and gives reviewers a s
 
 #### Performance
 
-- [ ] Benchmark results against master are posted (`/benchmark` comment or WaterLily-Benchmarks).
+- [ ] Benchmark results against main are posted (`/benchmark` comment or WaterLily-Benchmarks).
 - [ ] There are no new type instabilities, allocations, or `Float64` values in `Float32` kernels.

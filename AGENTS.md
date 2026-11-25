@@ -91,7 +91,7 @@ WATERLILY_BACKENDS=cpu,cuda julia --project -e 'using Pkg; Pkg.test(test_args=["
 
 ## Performance
 
-Every contribution comes with benchmark results (see the README): run [WaterLily-Benchmarks](https://github.com/WaterLily-jl/WaterLily-Benchmarks) against master, or ask a maintainer to comment `/benchmark` on the PR (`.github/workflows/benchmark.yml`). Run benchmarks one at a time on an otherwise idle machine; compare means as well as medians.
+Every contribution comes with benchmark results (see the README): run [WaterLily-Benchmarks](https://github.com/WaterLily-jl/WaterLily-Benchmarks) against main, or ask a maintainer to comment `/benchmark` on the PR (`.github/workflows/benchmark.yml`). Run benchmarks one at a time on an otherwise idle machine; compare means as well as medians.
 
 ## Code style
 

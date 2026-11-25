@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **Repository tooling** ([#372](https://github.com/WaterLily-jl/WaterLily.jl/pull/372)): a Lint workflow runs pre-commit checks and a link checker, a Downstream workflow runs the tests of LilyPad, BiotSavartBCs, WaterLilyNarrowBand, ParametricBodies and WaterLilyMeshBodies on PRs that change the source, and a review checklist is posted on new PRs. New `AGENTS.md` (instructions for AI coding agents), `AUTHORS.md`, `CITATION.cff` and `.github/CONTRIBUTING.md` with a policy for LLM-assisted contributions. The test dependencies moved to `test/Project.toml`, so `julia --project=test` gives the test environment.
+- **Repository tooling** ([#372](https://github.com/WaterLily-jl/WaterLily.jl/pull/372)): a Lint workflow runs pre-commit checks and a link checker, a Downstream workflow runs the tests of LilyPad, BiotSavartBCs, WaterLilyNarrowBand, ParametricBodies and WaterLilyMeshBodies on PRs that change the source. New `AGENTS.md` (instructions for AI coding agents), `AUTHORS.md`, `CITATION.cff` and `.github/CONTRIBUTING.md` with a policy for LLM-assisted contributions. The test dependencies moved to `test/Project.toml`, so `julia --project=test` gives the test environment.
+- **Default branch renamed to `main`**: GitHub redirects links to `master` and moved the open PRs. Update a local clone with `git branch -m master main && git fetch origin && git branch -u origin/main main && git remote set-head origin -a`.
 
 ## v1.11
 

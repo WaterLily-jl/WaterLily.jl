@@ -11,7 +11,7 @@ on:
       - 'Project.toml'
   push:
     branches:
-      - master
+      - main
     paths:
       - '.github/workflows/Downstream.yml'
       - 'ext/**'

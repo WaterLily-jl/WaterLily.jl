@@ -6,10 +6,10 @@ WaterLily.jl and its contributions are licensed under the MIT license (see [LICE
 
 ## Pull requests
 
-- Submit benchmark results with every pull request: WaterLily should always be fast. Run [WaterLily-Benchmarks](https://github.com/WaterLily-jl/WaterLily-Benchmarks) against master (see the README), or ask a maintainer to comment `/benchmark` on the pull request.
+- Submit benchmark results with every pull request: WaterLily should always be fast. Run [WaterLily-Benchmarks](https://github.com/WaterLily-jl/WaterLily-Benchmarks) against main (see the README), or ask a maintainer to comment `/benchmark` on the pull request.
 - Run the tests (`julia --project -e 'using Pkg; Pkg.test()'`; the header of `test/runtests.jl` explains how to include GPU backends) and the pre-commit checks (`pre-commit run -a`).
 - Note user-visible changes in `NEWS.md`.
-- A [review checklist](review-checklist.md) is added to every new pull request. It lists what reviewers look for; add `[no checklist]` to the description to skip it.
+- Reviewers go through the [review checklist](review-checklist.md); reading it before you open a PR saves a round of review.
 
 ## LLM/AI usage
 
