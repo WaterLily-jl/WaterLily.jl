@@ -7,6 +7,7 @@ type: software
 abstract: A differentiable and backend-agnostic Julia solver for incompressible viscous flow around dynamic bodies
 license: MIT
 repository-code: https://github.com/WaterLily-jl/WaterLily.jl
+doi: 10.5281/zenodo.23530773 # Zenodo concept DOI, which resolves to the latest release
 keywords:
   - computational fluid dynamics
   - immersed boundary method

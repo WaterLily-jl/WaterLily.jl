@@ -9,7 +9,8 @@
 [![CI GPU](https://img.shields.io/buildkite/ee51e8bcd961fd45767426df6d23c2da243407ab9f43e8d847/main?label=CI%20GPU)](https://buildkite.com/julialang/waterlily-dot-jl)
 [![Lint](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml/badge.svg?branch=main)](https://github.com/WaterLily-jl/WaterLily.jl/actions/workflows/Lint.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/gh/WaterLily-jl/WaterLily.jl/branch/main/graph/badge.svg?token=8XYFWKOUFN)](https://codecov.io/gh/WaterLily-jl/WaterLily.jl)
-[![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2025.109748-blue.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
+[![Paper](https://img.shields.io/badge/paper-10.1016%2Fj.cpc.2025.109748-blue.svg)](https://doi.org/10.1016/j.cpc.2025.109748)
+[![Zenodo](https://img.shields.io/badge/Zenodo-10.5281%2Fzenodo.23530773-blue.svg)](https://doi.org/10.5281/zenodo.23530773)
 
 ![Julia flow](assets/julia.gif)
 
