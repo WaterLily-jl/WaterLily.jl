@@ -18,6 +18,8 @@ There is no related issue.
 
 ## Checklist
 
+Reviewers also go through the [review checklist](https://github.com/WaterLily-jl/WaterLily.jl/blob/main/.github/review-checklist.md).
+
 <!-- mark true if NA -->
 <!-- leave PR as draft until all is checked -->
 - [ ] Tests are passing
