@@ -43,6 +43,7 @@ All grid computations go through `@loop expr over I ∈ R` (or `@inside a[I] = .
 - Derivatives inside the solver use WaterLily's `gradient`, `jacobian` and `derivative` (`src/core.jl`) with `SVector` inputs, not raw ForwardDiff: they are safe in GPU kernels and when nested.
 - With KernelAbstractions 0.10 the CPU backend is PoCL, which compiles kernels as a GPU does, so everything called inside a kernel (`u0`, `uBC`, body `sdf` and `map`) must be GPU-compatible on the CPU too: isbits captures, no allocation. Allocate fields with `zeros_on(backend,T,dims)` and `ones_on`, which fall back to `Base.zeros` under `"SIMD"`.
 - CUDA.jl 6.5 also exports `update!`: with `using WaterLily, CUDA`, write `WaterLily.update!`.
+- `@loop` launches its kernel on `kernel_backend(get_backend(a),eltype(a))` (`src/core.jl`), a hook for GPU extensions. The CUDA extension uses it to compile kernels over `ForwardDiff.Dual`s with `always_inline`: `@fastmath` sends `Dual` arithmetic through Base fallbacks that Julia stops inlining beyond 5 partials.
 
 ## The time step
 

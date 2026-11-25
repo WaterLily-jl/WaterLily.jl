@@ -4,6 +4,7 @@
 
 - **Repository tooling** ([#372](https://github.com/WaterLily-jl/WaterLily.jl/pull/372)): a Lint workflow runs pre-commit checks and a link checker, a Downstream workflow runs the tests of LilyPad, BiotSavartBCs, WaterLilyNarrowBand, ParametricBodies and WaterLilyMeshBodies on PRs that change the source. New `AGENTS.md` (instructions for AI coding agents), `AUTHORS.md`, `CITATION.cff` and `.github/CONTRIBUTING.md` with a policy for LLM-assisted contributions. The test dependencies moved to `test/Project.toml`, so `julia --project=test` gives the test environment.
 - **Default branch renamed to `main`**: GitHub redirects links to `master` and moved the open PRs. Update a local clone with `git branch -m master main && git fetch origin && git branch -u origin/main main && git remote set-head origin -a`.
+- **Forward-mode AD with many partials on CUDA**: `@fastmath`, which wraps every `@loop`, sends the arithmetic of `ForwardDiff.Dual` numbers through Base fallbacks that Julia stops inlining beyond 5 partials, which left a function call per operation in the GPU kernels and made a step with 6 partials about 1.6 times as expensive as one with 5. `@loop` now launches its kernel on `WaterLily.kernel_backend(backend,T)`, a hook the CUDA extension uses to compile kernels over `Dual`s fully inlined; kernels over plain floats are launched as before. The convection limiters `quick`, `vanLeer`, `cds` and `median` are `@inline`, which they already were in effect for plain floats. Other backends keep the jump for now.
 
 ## v1.11
 
