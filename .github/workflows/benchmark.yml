@@ -52,7 +52,7 @@ jobs:
           REQUEST: ${{ github.event.comment.body || inputs.args }}
         run: |
           args=${REQUEST%%$'\n'*}; args=${args#/benchmark}  # first line, command removed
-          [[ $args =~ ^[A-Za-z0-9\ ,._=\"-]*$ ]] || { echo "::error::unexpected characters in the arguments: $args"; exit 1; }
+          [[ $args =~ ^[A-Za-z0-9\ ,._=+\"-]*$ ]] || { echo "::error::unexpected characters in the arguments: $args"; exit 1; }
           echo "number=$PR" >> "$GITHUB_OUTPUT"
           echo "args=$args" >> "$GITHUB_OUTPUT"
 
