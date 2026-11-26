@@ -11,6 +11,8 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 WaterLily = "ed894a53-35f9-47f1-b17f-85db9237eebd"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+Meshing = "e6723b4c-ebff-59f1-b4b7-d97aa5274f73"
 
 [sources]
 WaterLily = {path = ".."}
