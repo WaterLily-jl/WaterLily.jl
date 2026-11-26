@@ -1,0 +1,69 @@
+/* Overrides on top of DocumenterVitepress' own theme. This file is imported last by
+   `.vitepress/theme/index.ts`, so rules here win. DocumenterVitepress copies in its default
+   version of any theme file we do not provide, and Documenter copies this one into the build
+   along with the rest of `src/`.
+
+   Cards for the example and code gallery overviews. The markdown for each entry is wrapped in
+   these divs with `@raw html` blocks, so that the links inside stay ordinary markdown and
+   Documenter rewrites them to the right place. Colours come from Vitepress' own custom
+   properties, so the cards follow the light and dark themes without a second set of rules. */
+
+.gallery-card {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+    border: 1px solid var(--vp-c-divider);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin: 1.5rem 0;
+    background: var(--vp-c-bg-soft);
+    transition: border-color 0.25s, background-color 0.25s;
+}
+
+.gallery-card:hover {
+    border-color: var(--vp-c-brand-1);
+}
+
+.gallery-card-figure {
+    flex: 0 0 300px;
+    max-width: 300px;
+}
+
+/* markdown wraps the image in a <p>, whose default margin would offset the figure */
+.gallery-card-figure p {
+    margin: 0;
+}
+
+.gallery-card-figure img {
+    width: 100%;
+    border-radius: 8px;
+    display: block;
+}
+
+.gallery-card-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* the heading is the card title: no top margin, and no border above it */
+.gallery-card-body h4 {
+    margin-top: 0 !important;
+    margin-bottom: 0.6rem !important;
+    padding-top: 0 !important;
+    border-top: none !important;
+}
+
+.gallery-card-body p:last-child {
+    margin-bottom: 0;
+}
+
+/* stack the card on narrow screens */
+@media screen and (max-width: 768px) {
+    .gallery-card {
+        flex-direction: column;
+    }
+    .gallery-card-figure {
+        flex: 1 1 auto;
+        max-width: 100%;
+    }
+}

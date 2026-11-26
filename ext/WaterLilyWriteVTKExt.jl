@@ -32,6 +32,8 @@ end
 function vtkWriter(fname,dir::String,collection,attrib::Dict{String,Function},k)
     VTKWriter(fname,dir,collection,attrib,[k])
 end
+_velocity(a::AbstractSimulation) = a.flow.u |> Array;
+_pressure(a::AbstractSimulation) = a.flow.p |> Array;
 """
     default_attrib()
 
@@ -39,8 +41,6 @@ Returns a `Dict` containing the `name` and `bound_function` for the default attr
 The `name` is used as the key in the `vtk` file and the `bound_function` generates the data
 to put in the file. With this approach, any variable can be save to the vtk file.
 """
-_velocity(a::AbstractSimulation) = a.flow.u |> Array;
-_pressure(a::AbstractSimulation) = a.flow.p |> Array;
 default_attrib() = Dict("Velocity"=>_velocity, "Pressure"=>_pressure)
 """
     save!(w::VTKWriter, sim<:AbstractSimulation)

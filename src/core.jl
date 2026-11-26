@@ -238,7 +238,7 @@ face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
 
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
 condition `a[I,i]=U[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`.
+boundary. For example `aₓ(x)=Uₓ ∀ x ∈ minmax(X)`.
 A zero Neumann condition is applied to the tangential components.
 `saveexit=true` leaves the normal component on the `x` exit face (upper `x` boundary) untouched,
 so a convective outflow set by `exitBC!` is kept and every other face is always overwritten.
