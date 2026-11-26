@@ -26,10 +26,11 @@ The gradient of `d=sdf(map(x,t))` is used to improve `d` for pseudo-sdfs.
 The velocity is determined _solely_ from the optional `map` function.
 Skips the `n,V` calculation when `d²>fastd²`.
 """
-function measure(body::AutoBody,x,t;fastd²=Inf)
-    d = sdf(body,x,t)
+@inline function measure(body::AutoBody,x,t;fastd²=Inf)
+    ξ = @inline body.map(x,t)
+    d = @inline body.sdf(ξ,t)
     d^2>fastd² && return (d,zero(x),zero(x))
-    n = gradient(ξ->body.sdf(ξ,t), body.map(x,t)) # body-frame only
+    n = gradient(ξ->body.sdf(ξ,t), ξ)             # body-frame only
     any(isnan, n) && return (d,zero(x),zero(x)) # handle non-diff'able points
     J = jacobian(x->body.map(x,t), x)             # for mapping n,V to x-frame
     n = J'n; m = √sum(abs2,n); d /= m; n /= m     # chain rule then normalise

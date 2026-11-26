@@ -1,5 +1,5 @@
 @inline _interp_clamp(x::SVector{D,T}, sz::NTuple{D,Int}) where {D,T} =
-    SVector{D,T}(clamp(x[d], zero(T), T(sz[d] - 2)) for d in 1:D)
+    SVector{D,T}(_tuple_inl(d -> @inbounds(clamp(x[d], zero(T), T(sz[d] - 2))), Val(D)))
 
 """
     interp(x::SVector, arr::AbstractArray)
@@ -16,18 +16,19 @@ WaterLily.interp.(x, Ref(p)) # Broadcast
 WaterLily.interp.(x, Ref(u)) # Broadcast (x=[-0.5,2.5] is shifted to [0,2.5] because we are in a vector field)
 ```
 """
-function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
+@inline function interp(x::SVector{D,T}, varr::AbstractArray{T}) where {D,T}
     # Each component is stored on a staggered face, so shift query for that
     # component and then clamp to the valid scalar interpolation domain.
-    @inline shift(i) = SVector{D,T}(ifelse(i==j,0.5,0.) for j in 1:D)
-    return SVector{D,T}(_interp(_interp_clamp(x + shift(i), size(varr)[1:D]), varr, i) for i in 1:D)
+    @inline shift(i) = SVector{D,T}(_tuple_inl(j -> ifelse(i==j,T(0.5),zero(T)), Val(D)))
+    sz = Base.front(size(varr))
+    return SVector{D,T}(_tuple_inl(i -> _interp(_interp_clamp(x + shift(i), sz), varr, i), Val(D)))
 end
-interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T} = _interp(_interp_clamp(x, size(arr)), arr)
-function _interp(x::SVector{D,T}, arr::AbstractArray{T}, c...) where {D,T}
-    x = x .+ 1.5f0; I = floor.(Int,x); y = x.-I
-    sum(ntuple(Val(1<<D)) do k
-        o = ntuple(d -> ((k-1)>>(d-1)) & 1, D)
-        @inbounds arr[CartesianIndex(Tuple(I) .+ o), c...] * prod(ntuple(d -> o[d]==1 ? y[d] : 1-y[d], D))
+@inline interp(x::SVector{D,T}, arr::AbstractArray{T,D}) where {D,T} = _interp(_interp_clamp(x, size(arr)), arr)
+@inline function _interp(x::SVector{D,T}, arr::AbstractArray{T}, c...) where {D,T}
+    x = x .+ T(1.5); I = SVector{D,Int}(_tuple_inl(d -> floor(Int, @inbounds(x[d])), Val(D))); y = x.-I
+    sum(_tuple_inl(Val(1<<D)) do k
+        o = ntuple(d -> ((k-1)>>(d-1)) & 1, Val(D))
+        @inbounds arr[CartesianIndex(Tuple(I) .+ o), c...] * prod(ntuple(d -> @inbounds(o[d]==1 ? y[d] : one(T)-y[d]), Val(D)))
     end)
 end
 

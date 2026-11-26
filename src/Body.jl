@@ -28,7 +28,7 @@ See Maertens & Weymouth, doi:[10.1016/j.cma.2014.09.007](https://doi.org/10.1016
 function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where {N,T}
     d²=T(2+ϵ)^2
     # define kernel functions to reset and remeasure the fields
-    @inline function clear!(μ₀,μ₁,V,I)
+    Base.@propagate_inbounds @inline function clear!(μ₀,μ₁,V,I)
         for i ∈ 1:N
             V[I,i] = zero(T); μ₀[I,i] = one(T)
             for j ∈ 1:N
@@ -36,15 +36,16 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
             end
         end
     end
-    @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
+    Base.@propagate_inbounds @fastmath @inline function fill!(μ₀,μ₁,V,d,I)
         if d[I]^2<d²
             for i ∈ 1:N
                 dᵢ,nᵢ,Vᵢ = measure(body,loc(i,I,T),t,fastd²=d²)
-                dᵢ = abs(dᵢ) ≤ 0.5 ? dᵢ : copysign(dᵢ,d[I]) # enforce sign consistency
+                dᵢ = abs(dᵢ) ≤ T(0.5) ? dᵢ : copysign(dᵢ,d[I]) # enforce sign consistency
                 V[I,i] = Vᵢ[i]
                 μ₀[I,i] = WaterLily.μ₀(dᵢ,ϵ)
+                m₁ = WaterLily.μ₁(dᵢ,ϵ)
                 for j ∈ 1:N
-                    μ₁[I,i,j] = WaterLily.μ₁(dᵢ,ϵ)*nᵢ[j]
+                    μ₁[I,i,j] = m₁*nᵢ[j]
                 end
             end
         elseif d[I]<zero(T)
@@ -62,13 +63,13 @@ function measure!(a::AbstractFlow{N,T},body::AbstractBody;t=zero(T),ϵ=1) where 
 end
 
 # Convolution kernel and its moments
-@fastmath kern(d) = (1+cospi(d))/2
-@fastmath kern₀(d::T) where T = (1+d+sinpi(d)/T(π))/2
-@fastmath kern₁(d::T) where T = (1-d^2)/4-(d*sinpi(d)+(1+cospi(d))/T(π))/2T(π)
+@fastmath @inline kern(d) = (1+cospi(d))/2
+@fastmath @inline kern₀(d::T) where T = (1+d+sinpi(d)/T(π))/2
+@fastmath @inline kern₁(d::T) where T = (1-d^2)/4-(d*sinpi(d)+(1+cospi(d))/T(π))/2T(π)
 
 # Kernel moments truncated at -1+√eps to bound 1/μ₀ in the fluid
-μ₀(d,ϵ) = d/ϵ<-1+√eps(d) ? zero(d) : kern₀(min(d/ϵ,1))
-μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))
+@inline μ₀(d,ϵ) = d/ϵ<-1+√eps(d) ? zero(d) : kern₀(min(d/ϵ,1))
+@inline μ₁(d,ϵ) = ϵ*kern₁(clamp(d/ϵ,-1,1))
 
 """
     d = sdf(a::AbstractBody,x,t=0;fastd²=0)
