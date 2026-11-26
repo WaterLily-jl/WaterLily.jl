@@ -62,3 +62,51 @@ end
     end
     @test_nowarn rm(test_dir, recursive=true)
 end
+
+lin(y, c) = sum(Tuple(c); init=1f0) + sum(y .* (0.5f0, 0.25f0, 0.125f0)[1:length(y)])
+offset(c, N) = SVector{N,Float32}(count(==(d), Tuple(c))/2max(1, length(c)) for d in 1:N)
+function fill_lin!(a, N)
+    h = Array(a)
+    for c in CartesianIndices(size(h)[N+1:end]), I in CartesianIndices(size(h)[1:N])
+        h[I, c] = lin(WaterLily.loc(0, I, Float32) - offset(c, N), c)
+    end
+    copyto!(a, h)
+end
+function regridded(a, n, scale, N)
+    h = similar(Array(a))
+    for c in CartesianIndices(size(h)[N+1:end]), I in CartesianIndices(size(h)[1:N])
+        s = offset(c, N)
+        h[I, c] = lin(clamp.((WaterLily.loc(0, I, Float32) - s) / scale + s, 0, SVector(n) .- 2) - s, c)
+    end
+    h
+end
+
+@testset "WaterLilyJLD2Ext.jl regrid" begin
+    test_dir = "TEST_DIR"; mkpath(test_dir)
+    for D ∈ [2,3], mem ∈ arrays
+        m, scale = (16,8,8)[1:D], 2
+        n = m .+ 2
+        sim1 = Simulation(m, ntuple(i -> i==1, D), 4; T=Float32, mem)
+        sim2 = Simulation(scale .* m .+ (16,8,8)[1:D], ntuple(i -> i==1, D), 4scale; T=Float32, mem)
+        fill_lin!(sim1.flow.p, D); fill_lin!(sim1.flow.u, D)
+        empty!(sim1.flow.Δt); push!(sim1.flow.Δt, 0.3f0, 0.2f0, 0.25f0)
+        save!("lin.jld2", sim1; dir=test_dir)
+        load!(sim2.flow; fname="lin.jld2", dir=test_dir, scale)
+        @test Array(sim2.flow.p) ≈ regridded(sim2.flow.p, n, scale, D)
+        @test Array(sim2.flow.u) ≈ regridded(sim2.flow.u, n, scale, D)
+        @test sim_time(sim2) ≈ sim_time(sim1)
+        @test sim2.flow.Δt[end] == WaterLily.CFL(sim2.flow)
+
+        mean1 = MeanFlow(sim1.flow; uu_stats=true)
+        fill_lin!(mean1.P, D); fill_lin!(mean1.U, D); fill_lin!(mean1.UU, D)
+        push!(mean1.t, 1f0)
+        save!("linmean.jld2", mean1; dir=test_dir)
+        mean2 = MeanFlow(sim2.flow; uu_stats=true)
+        load!(mean2; fname="linmean.jld2", dir=test_dir, scale)
+        @test Array(mean2.P) ≈ regridded(mean2.P, n, scale, D)
+        @test Array(mean2.U) ≈ regridded(mean2.U, n, scale, D)
+        @test Array(mean2.UU) ≈ regridded(mean2.UU, n, scale, D)
+        @test mean2.t == scale .* mean1.t
+    end
+    @test_nowarn rm(test_dir, recursive=true)
+end
