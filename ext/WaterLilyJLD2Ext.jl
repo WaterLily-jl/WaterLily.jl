@@ -2,6 +2,7 @@ module WaterLilyJLD2Ext
 
 using JLD2, WaterLily
 import WaterLily: save!, load!
+using WaterLily: SVector, loc, interp, CFL
 
 """
     save!(fname, flow::AbstractFlow; dir="./")
@@ -30,42 +31,54 @@ save!(fname, meanflow::MeanFlow; dir="./") = jldsave(
 )
 
 """
-    load!(flow::AbstractFlow; kwargs...)
+    load!(flow::AbstractFlow; fname="WaterLily.jld2", dir="./", scale=1)
 
-Load pressure, velocity, and time steps arrays from a JLD2-formatted binary file.
-Keyword arguments considered are `fname="WaterLily.jld2"` and `dir="./"`.
+Load pressure, velocity, and time steps arrays from a JLD2-formatted binary file, interpolated
+onto `flow`'s grid when its resolution is `scale` times the stored one or its domain is larger.
 """
-function load!(flow::AbstractFlow; kwargs...)
-    fname = get(Dict(kwargs), :fname, "WaterLily.jld2")
-    dir = get(Dict(kwargs), :dir, "./")
-    obj = jldopen(joinpath(dir, fname))
-    @assert size(flow.p) == size(obj["p"]) "Simulation size does not match the size of the JLD2-stored simulation."
-    copyto!(flow.p, obj["p"])
-    copyto!(flow.u, obj["u"])
-    empty!(flow.Δt)
-    push!(flow.Δt, obj["Δt"]...)
-    close(obj)
+function load!(flow::AbstractFlow; fname="WaterLily.jld2", dir="./", scale=1, kwargs...)
+    jldopen(joinpath(dir, fname)) do obj
+        sz, p = size(flow.p), obj["p"]
+        check_sizes(sz, size(p), scale)
+        regrid!(flow.p, p, sz, scale)
+        regrid!(flow.u, obj["u"], sz, scale)
+        empty!(flow.Δt)
+        push!(flow.Δt, (scale .* obj["Δt"][1:end-1])..., CFL(flow))
+    end
+    flow
 end
 load!(sim::AbstractSimulation, ::Val{:jld2}; kwargs...) = load!(sim.flow; kwargs...)
 
-
 """
-    load!(meanflow::MeanFlow; kwargs...)
+    load!(meanflow::MeanFlow; fname="WaterLilyMean.jld2", dir="./", scale=1)
 
-Load time-averaged pressure, velocity, velocity-square, and time arrays from a JLD2-formatted binary file.
-Keyword arguments considered are `fname="WaterLilyMean.jld2"` and `dir="./"`.
+Load time-averaged pressure, velocity, velocity-square, and time arrays from a JLD2-formatted binary file,
+interpolated as in `load!(flow::AbstractFlow)`.
 """
-function load!(meanflow::MeanFlow; kwargs...)
-    fname = get(Dict(kwargs), :fname, "WaterLilyMean.jld2")
-    dir = get(Dict(kwargs), :dir, "./")
-    obj = jldopen(joinpath(dir, fname))
-    @assert size(meanflow.P) == size(obj["P"]) "Simulation size does not match the size of the JLD2-stored simulation."
-    copyto!(meanflow.P, obj["P"])
-    copyto!(meanflow.U, obj["U"])
-    isnothing(meanflow.UU) || copyto!(meanflow.UU, obj["UU"])
-    empty!(meanflow.t)
-    push!(meanflow.t, obj["t"]...)
-    close(obj)
+function load!(meanflow::MeanFlow; fname="WaterLilyMean.jld2", dir="./", scale=1, kwargs...)
+    jldopen(joinpath(dir, fname)) do obj
+        sz, P = size(meanflow.P), obj["P"]
+        check_sizes(sz, size(P), scale)
+        regrid!(meanflow.P, P, sz, scale)
+        regrid!(meanflow.U, obj["U"], sz, scale)
+        isnothing(meanflow.UU) || regrid!(meanflow.UU, obj["UU"], sz, scale)
+        empty!(meanflow.t)
+        push!(meanflow.t, (scale .* obj["t"])...)
+    end
+    meanflow
+end
+check_sizes(a, b, s) = s == 1 && a != b && @warn "Saved grid size $b differs from request size $a; interpolating."
+
+function regrid!(a, b, sz, scale)
+    size(a) == size(b) && scale == 1 && return copyto!(a, b)
+    T, N = eltype(a), length(sz)
+    b = copyto!(similar(a, size(b)), b)
+    for c in CartesianIndices(size(b)[N+1:end])
+        s, r = SVector{N,T}(count(==(d), Tuple(c))/2max(1, length(c)) for d in 1:N), inv(T(scale))
+        x(I) = (loc(0, I, eltype(s)) - s) * r + s
+        view(a, ntuple(_ -> :, N)..., c) .= interp.(x.(CartesianIndices(sz)), Ref(view(b, ntuple(_ -> :, N)..., c)))
+    end
+    a
 end
 
 end # module
