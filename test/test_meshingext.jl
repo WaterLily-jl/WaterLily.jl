@@ -23,3 +23,4 @@ end
     @test isempty(empty_mesh.position)
     @test isempty(empty_mesh.faces)
 end
+
