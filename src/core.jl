@@ -113,7 +113,6 @@ KA backend or serially with the SIMD backend.
 zeros_on(b,T,dims) = backend=="SIMD" ? zeros(T,dims) : KernelAbstractions.zeros(b,T,dims)
 ones_on(b,T,dims) = backend=="SIMD" ? ones(T,dims) : KernelAbstractions.ones(b,T,dims)
 
-# Backend that compiles and launches a `@loop` kernel over arrays of eltype `T`: a hook for the GPU extensions
 kernel_backend(backend,T) = backend
 
 """
