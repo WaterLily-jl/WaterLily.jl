@@ -6,6 +6,7 @@
 - **Load a saved flow onto a new grid**: `load!(sim; scale)` interpolates a JLD2-saved flow or `MeanFlow` onto `scale`× the resolution and/or a larger domain, preserving `sim_time`.
 - **Repository tooling** ([#372](https://github.com/WaterLily-jl/WaterLily.jl/pull/372)): a Lint workflow runs pre-commit checks and a link checker, a Downstream workflow runs the tests of LilyPad, BiotSavartBCs, WaterLilyNarrowBand, ParametricBodies and WaterLilyMeshBodies on PRs that change the source. New `AGENTS.md` (instructions for AI coding agents), `AUTHORS.md`, `CITATION.cff` and `.github/CONTRIBUTING.md` with a policy for LLM-assisted contributions. The test dependencies moved to `test/Project.toml`, so `julia --project=test` gives the test environment.
 - **Default branch renamed to `main`**: GitHub redirects links to `master` and moved the open PRs. Update a local clone with `git branch -m master main && git fetch origin && git branch -u origin/main main && git remote set-head origin -a`.
+- **Faster forward-mode AD on CUDA** ([#408](https://github.com/WaterLily-jl/WaterLily.jl/pull/408)): kernels over `ForwardDiff.Dual`s are compiled fully inlined, through the new `@loop` hook `WaterLily.kernel_backend(backend,T)`, since Julia stops inlining `@fastmath` `Dual` arithmetic beyond 5 partials. A step is about 30 % shorter from 6 partials on and 6 to 13 % shorter below (TGV 128³, laptop GPU).
 
 ## v1.11
 
