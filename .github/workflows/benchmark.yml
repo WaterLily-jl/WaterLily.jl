@@ -1,9 +1,9 @@
 name: Benchmark
 
-# On-demand benchmarks of a pull request against master with WaterLily-Benchmarks: a maintainer comments `/benchmark`,
+# On-demand benchmarks of a pull request against main with WaterLily-Benchmarks: a maintainer comments `/benchmark`,
 # optionally followed by benchmark.sh arguments (e.g. `/benchmark -c "tgv sphere" -r 3`), or runs it from the Actions
 # tab. Default: tgv and jelly-biotsavart on CPUx01 and CPUx02, 2 repetitions; the report is a PR comment that later
-# runs update. This file always comes from master, but the PR code does run: read the diff first.
+# runs update. This file always comes from main, but the PR code does run: read the diff first.
 
 on:
   issue_comment:
@@ -21,8 +21,8 @@ on:
 
 permissions:
   contents: read
-  issues: write         # reaction
-  pull-requests: write  # report comment
+  issues: write # reaction
+  pull-requests: write # report comment
 
 # One benchmark per PR at a time. A group keeps a single pending run and cancels the older one, and every comment
 # starts a run, so only requests that the job runs share a group: another comment cannot replace a pending request.
@@ -52,7 +52,7 @@ jobs:
           REQUEST: ${{ github.event.comment.body || inputs.args }}
         run: |
           args=${REQUEST%%$'\n'*}; args=${args#/benchmark}  # first line, command removed
-          [[ $args =~ ^[A-Za-z0-9\ ,._=\"-]*$ ]] || { echo "::error::unexpected characters in the arguments: $args"; exit 1; }
+          [[ $args =~ ^[A-Za-z0-9\ ,._=+\"-]*$ ]] || { echo "::error::unexpected characters in the arguments: $args"; exit 1; }
           echo "number=$PR" >> "$GITHUB_OUTPUT"
           echo "args=$args" >> "$GITHUB_OUTPUT"
 
@@ -62,19 +62,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X POST "repos/$GITHUB_REPOSITORY/issues/comments/${{ github.event.comment.id }}/reactions" -f content=rocket
 
-      - name: Check out master
+      - name: Check out main
         uses: actions/checkout@v7
         with:
-          ref: master
+          ref: main
           persist-credentials: false
 
       - name: Fetch the PR head as pr-${{ steps.pr.outputs.number }}
         run: git fetch origin "pull/${{ steps.pr.outputs.number }}/head:pr-${{ steps.pr.outputs.number }}"
 
-      - name: Benchmark master vs the PR
+      - name: Benchmark main vs the PR
         uses: WaterLily-jl/WaterLily-Benchmarks@main
         with:
-          base: master
+          base: main
           head: pr-${{ steps.pr.outputs.number }}
           args: ${{ steps.pr.outputs.args }}
           pr: ${{ steps.pr.outputs.number }}

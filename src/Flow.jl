@@ -26,6 +26,22 @@ end
 end
 @fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
+"""
+    conv_diff!(r,u,Φ,λ;ν=0.1,perdir=())
+
+Accumulate the convective and diffusive momentum flux of the Navier-Stokes equations
+
+    r = (u⋅∇)u - ν∇²u
+
+for the velocity field `u` into `r`.
+
+- `r`: convective and viscous force vector, overwritten.
+- `u`: velocity field to take the fluxes of.
+- `Φ`: dummy work array.
+- `λ`: convective interpolation scheme `λ(u,c,d)`, e.g. `quick`, `cds` or `vanLeer`.
+- `ν`: kinematic viscosity.
+- `perdir`: tuple of periodic directions.
+"""
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     fill!(r,zero(eltype(r)))
     N,n = size_u(u)
@@ -164,7 +180,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 `kwargs` are passed to `udf` and `poisson_kwargs` to `solver!`.
 """
 @fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
-    a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+    copyto!(a.u⁰,a.u); fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
