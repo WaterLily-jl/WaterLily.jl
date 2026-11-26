@@ -113,6 +113,8 @@ KA backend or serially with the SIMD backend.
 zeros_on(b,T,dims) = backend=="SIMD" ? zeros(T,dims) : KernelAbstractions.zeros(b,T,dims)
 ones_on(b,T,dims) = backend=="SIMD" ? ones(T,dims) : KernelAbstractions.ones(b,T,dims)
 
+kernel_backend(backend,T) = backend
+
 """
     @loop <expr> over <I ∈ R>
 
@@ -161,7 +163,7 @@ macro loop(args...)
                 @fastmath @inbounds $ex
             end
             function $kern($kern_,$(symWtypes...)) where {$(symT...)} # kernel passed as argument: capturing it would box it
-                $R_ = $R; $B_ = get_backend($(rep(sym[1])))
+                $R_ = $R; $B_ = $kernel_backend(get_backend($(rep(sym[1]))),eltype($(rep(sym[1]))))
                 $kern_($B_,$workgroup($B_)...)($(rep.(sym)...),$R_,ndrange=size($R_))
             end
             $kern($kern_,$(sym...))
@@ -238,7 +240,7 @@ face(dims::NTuple,i,j,low=1) = face(slice(dims,i,j,low),j)
 
 Apply boundary conditions to the ghost cells of a _vector_ field. A Dirichlet
 condition `a[I,i]=U[i]` is applied to the vector component _normal_ to the domain
-boundary. For example `aₓ(x)=Aₓ ∀ x ∈ minmax(X)`.
+boundary. For example `aₓ(x)=Uₓ ∀ x ∈ minmax(X)`.
 A zero Neumann condition is applied to the tangential components.
 `saveexit=true` leaves the normal component on the `x` exit face (upper `x` boundary) untouched,
 so a convective outflow set by `exitBC!` is kept and every other face is always overwritten.

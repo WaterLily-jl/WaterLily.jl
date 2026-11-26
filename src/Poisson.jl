@@ -52,8 +52,12 @@ update!(p::Poisson) = set_diag!(p.D,p.iD,p.L)
     end
     return s
 end
-@fastmath @inline δv(D,I::CartesianIndex{d}) where {d} = 1+@inbounds(D[I])/2d
-diagonal(p::Poisson) = p.D
+# Solid fraction 1+diag/2d, except a domain face zeroed by `BC!` takes the opposite face's value
+@fastmath @inline δv(L,I::CartesianIndex{d}) where d = 1-sum(ntuple(d) do i
+    a,b = @inbounds L[I,i],L[I+δ(i,I),i]
+    I.I[i] ∈ (2,size(L,i)-1) && iszero(a*b) ? max(a,b) : (a+b)/2
+end)/d
+@inline project_source(I,u,V,L) = div(I,u)-δv(L,I)*div(I,V) # flow divergence, not BDIM-ϵ stretching
 
 """
     mult!(p::Poisson,x)

@@ -1,9 +1,9 @@
 @inline ∂(a,I::CartesianIndex{d},f::AbstractArray{T,d}) where {T,d} = @inbounds f[I]-f[I-δ(a,I)]
 @inline ∂(a,I::CartesianIndex{m},u::AbstractArray{T,n}) where {T,n,m} = @inbounds u[I+δ(a,I),a]-u[I,a]
 @inline ϕ(a,I,f) = @inbounds (f[I]+f[I-δ(a,I)])/2
-@fastmath quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
-@fastmath vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
-@fastmath cds(u,c,d) = (c+d)/2
+@fastmath @inline quick(u,c,d) = median((5c+2d-u)/6,c,median(10c-9u,c,d))
+@fastmath @inline vanLeer(u,c,d) = (c≤min(u,d) || c≥max(u,d)) ? c : c+(d-c)*(c-u)/(d-u)
+@fastmath @inline cds(u,c,d) = (c+d)/2
 
 @inline ϕu(a,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[I-2δ(a,I)],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
 @inline ϕuP(a,Ip,I,f,u,λ) = (p = u>0; @inbounds u*λ(ifelse(p,f[Ip],f[I+δ(a,I)]),ifelse(p,f[I-δ(a,I)],f[I]),ifelse(p,f[I],f[I-δ(a,I)])))
@@ -24,8 +24,24 @@ end
     end
     return s/2
 end
-@fastmath median(a,b,c) = max(min(a,b),min(max(a,b),c))
+@fastmath @inline median(a,b,c) = max(min(a,b),min(max(a,b),c))
 
+"""
+    conv_diff!(r,u,Φ,λ;ν=0.1,perdir=())
+
+Accumulate the convective and diffusive momentum flux of the Navier-Stokes equations
+
+    r = (u⋅∇)u - ν∇²u
+
+for the velocity field `u` into `r`.
+
+- `r`: convective and viscous force vector, overwritten.
+- `u`: velocity field to take the fluxes of.
+- `Φ`: dummy work array.
+- `λ`: convective interpolation scheme `λ(u,c,d)`, e.g. `quick`, `cds` or `vanLeer`.
+- `ν`: kinematic viscosity.
+- `perdir`: tuple of periodic directions.
+"""
 function conv_diff!(r,u,Φ,λ::F;ν=0.1,perdir=()) where {F}
     fill!(r,zero(eltype(r)))
     N,n = size_u(u)
@@ -164,7 +180,7 @@ and the `AbstractPoisson` pressure solver to project the velocity onto an incomp
 `kwargs` are passed to `udf` and `poisson_kwargs` to `solver!`.
 """
 @fastmath function mom_step!(a::AbstractFlow,b::AbstractPoisson;udf=nothing,poisson_kwargs=(;),kwargs...)
-    a.u⁰ .= a.u; fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
+    copyto!(a.u⁰,a.u); fill!(a.u,0); t₁ = sum(a.Δt); t₀ = t₁-a.Δt[end]
     # predictor u → u'
     @log "p"
     mom_predict!(a,t₀,t₁;udf,kwargs...)
@@ -228,8 +244,7 @@ function mom_project!(a::AbstractFlow, b::AbstractPoisson, w::Int, t; kwargs...)
     BC!(a.u,a.uBC,a.exitBC,a.perdir,t)              # BC MUST be at t₁
     w==1 && a.exitBC && exitBC!(a.u,a.u⁰,a.Δt[end]) # convective exit, predictor (w=1) only
     dt = a.Δt[end]/w; b.x .*= dt                    # initial pressure solution
-    Dp = diagonal(b)                                # Poisson matrix diagonal
-    @inside b.z[I] = div(I,a.u)-δv(Dp,I)*div(I,a.V) # flow divergence, not BDIM-ϵ stretching
+    @inside b.z[I] = project_source(I,a.u,a.V,b.L)
     solver!(b; kwargs...)
     for i ∈ 1:ndims(a.p)  # apply solution and unscale to recover pressure
         @loop a.u[I,i] -= b.L[I,i]*∂(i,I,b.x) over I ∈ inside(b.x)

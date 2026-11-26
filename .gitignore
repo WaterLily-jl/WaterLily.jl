@@ -4,6 +4,10 @@
 Manifest.toml
 LocalPreferences.toml
 /docs/build/
+/docs/node_modules/
+
+# README images that earlier docs builds copied into docs/src/assets
+/docs/src/assets/*
 
 # gfx
 *.png
@@ -26,9 +30,18 @@ LocalPreferences.toml
 *.pvd
 
 # exceptions
+!/docs/src/assets/logo.png
+!/docs/src/assets/favicon.ico
 !/examples/JuliaCon2021.jpg
 !/examples/JuliaCon2024.png
 !/examples/julia.gif
 !/examples/julia2024.gif
 !/examples/hover.gif
 !/examples/oscillating.gif
+
+# tooling
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+/coverage/
+node_modules
