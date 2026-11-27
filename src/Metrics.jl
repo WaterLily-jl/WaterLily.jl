@@ -5,7 +5,7 @@ using StaticArrays
 Base.@propagate_inbounds @inline _tuple_inl(f,::Val{0}) = ()
 Base.@propagate_inbounds @inline _tuple_inl(f,::Val{N}) where N = (_tuple_inl(f,Val(N-1))...,@inline f(N))
 Base.@propagate_inbounds @inline fSV(f,n) = SVector(_tuple_inl(f,Val(n)))
-Base.@propagate_inbounds @inline @fastmath fsum(f,n) = sum(ntuple(f,n))
+Base.@propagate_inbounds @inline fsum(f,n) = @fastmath sum(_tuple_inl(f,Val(n)))
 norm2(x) = √(x'*x)
 """
     shiftDir(d,D,i)
@@ -13,10 +13,10 @@ norm2(x) = √(x'*x)
 Shift the index of direction `d` to `i` steps away in dimension space of `D`.
 So `shiftDir(1,3,2) = 3`, `shiftDir(1,4,-1) = 4`
 """
-shiftDir(d,D,i) = mod(d+i-1,D)+1
-Base.@propagate_inbounds @fastmath function permute(f,i)
+@inline shiftDir(d,D,i) = mod(d+i-1,D)+1
+Base.@propagate_inbounds @inline @fastmath function permute(f,i)
     j,k = shiftDir(i,3,1), shiftDir(i,3,2)
-    @inline f(j,k)-f(k,j)
+    (@inline f(j,k))-(@inline f(k,j))
 end
 ×(a,b) = fSV(i->permute((j,k)->a[j]*b[k],i),3)
 @fastmath @inline function dot(a,b)
@@ -33,7 +33,7 @@ end
 Compute ``½∥𝐮-𝐔∥²`` at center of cell `I` where `U` can be used
 to subtract a background flow (by default, `U=0`).
 """
-ke(I::CartesianIndex{m},u,U=fSV(zero,m)) where m = fsum(m) do i
+Base.@propagate_inbounds @inline @fastmath ke(I::CartesianIndex{m},u,U=zero(SVector{m,eltype(u)})) where m = fsum(m) do i
     abs2(@inbounds(u[I,i]+u[I+δ(i,I),i]-2U[i]))/8
 end
 """
@@ -54,8 +54,8 @@ using LinearAlgebra: eigvals, Hermitian
 See [https://en.wikipedia.org/wiki/Lambda2_method](https://en.wikipedia.org/wiki/Lambda2_method) and
 Jeong, J., & Hussain, F., doi:[10.1017/S0022112095000462](https://doi.org/10.1017/S0022112095000462)
 """
-function λ₂(I::CartesianIndex{3},u)
-    J = @SMatrix [∂(i,j,I,u) for i ∈ 1:3, j ∈ 1:3]
+@inline function λ₂(I::CartesianIndex{3},u)
+    J = SMatrix{3,3}(_tuple_inl(k -> ∂((k-1)%3+1, (k-1)÷3+1, I, u), Val(9)))
     S,Ω = (J+J')/2,(J-J')/2
     eigvals(Hermitian(S^2+Ω^2))[2]
 end
@@ -68,7 +68,7 @@ For example `curl(3,CartesianIndex(2,2,2),u)` will compute
 `ω₃(x=1.5,y=1.5,z=2)` as this edge produces the highest
 accuracy for this mix of cross derivatives on a staggered grid.
 """
-curl(i,I,u) = permute((j,k)->∂(j,CI(I,k),u), i)
+Base.@propagate_inbounds @inline curl(i,I,u) = permute((j,k)->∂(j,CI(I,k),u), i)
 """
     ω(I::CartesianIndex{3},u)
 
@@ -107,13 +107,13 @@ end
 Compute the helicity density at collocated cell `I` from dot product of velocity `u` and vorticity `ω`.
 `u` and `ω` should all be average to the collocated cell in each directional operation.
 """
-function helicity(I::CartesianIndex{3},u::AbstractArray{T},ω) where T
+@fastmath @inline function helicity(I::CartesianIndex{3},u::AbstractArray{T},ω) where T
     s = zero(T)
     for d∈1:3
-        dir1,dir2 = shiftDir.(d,3,1:2)
-        umid = u[I,d]+u[I+δ(d,I),d]
+        dir1,dir2 = shiftDir(d,3,1),shiftDir(d,3,2)
+        umid = @inbounds u[I,d]+u[I+δ(d,I),d]
         for id1∈0:1,id2∈0:1
-            s+=umid*ω[I+id1*δ(dir1,I)+id2*δ(dir2,I),d]
+            s+=umid*@inbounds ω[I+id1*δ(dir1,I)+id2*δ(dir2,I),d]
         end
     end
     s/8
@@ -154,7 +154,10 @@ end
 
 Rate-of-strain tensor.
 """
-@inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
+@fastmath @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}(_tuple_inl(k -> begin
+    i, j = (k-1)%D+1, (k-1)÷D+1
+    i==j ? ∂(i,I,u) : (∂(i,j,I,u)+∂(j,i,I,u))/2
+end, Val(D*D)))
 @inline Snds(I,u,body,t) = (n = nds(body,loc(0,I,eltype(u)),t); iszero(n) ? n : S(I,u)*n)
 
 """
@@ -290,7 +293,7 @@ end
 function update!(meanflow::MeanFlow, flow::AbstractFlow)
     dt = time(flow) - meanflow.t[end]
     ε = dt / (dt + time(meanflow) + eps(eltype(flow.p)))
-    length(meanflow.t) == 1 && (ε = 1) # if it's the first update, we just take the instantaneous flow field
+    length(meanflow.t) == 1 && (ε = one(dt)) # if it's the first update, we just take the instantaneous flow field
     @loop meanflow.P[I] = ε * flow.p[I] + (1 - ε) * meanflow.P[I] over I in CartesianIndices(flow.p)
     @loop meanflow.U[Ii] = ε * flow.u[Ii] + (1 - ε) * meanflow.U[Ii] over Ii in CartesianIndices(flow.u)
     if meanflow.uu_stats
