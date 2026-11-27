@@ -37,13 +37,15 @@ import WaterLily: ×
             @inside p3[I] = WaterLily.ω(I,u3)[i]; apply!(x->2x[i%3+1], r3)
             Array(p3)[2:7,2:7,2:7] ≈ Array(r3)[2:7,2:7,2:7]
         end
-        # test helicity
+        # test helicity (in a kernel so GPU compilation is exercised too)
         u_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[1] : 0.0, u_h)
         ω_h = zeros(6,6,6,3) |> f; apply!((i,x)-> i==1 ? x[2]-0.5 + 1 : 0.0, ω_h)
+        p_h = zeros(6,6,6) |> f
+        @inside p_h[I] = WaterLily.helicity(I,u_h,ω_h)
         I_h = CartesianIndex(3,3,3)
         T_h = eltype(u_h)
         umid = loc(0,I_h,T_h)[1]; ωmid=loc(0,I_h,T_h)[2]+1
-        @test GPUArrays.@allowscalar WaterLily.helicity(I_h,u_h,ω_h) == umid*ωmid
+        @test GPUArrays.@allowscalar p_h[I_h] == umid*ωmid
 
         apply!((x)->1,p)
         @test WaterLily.L₂(p)≈prod(size(p).-2)
